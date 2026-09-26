@@ -283,6 +283,21 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         Screen::Help | Screen::Confirm => dialog(frame, area, app),
     }
 }
+fn refresh_status(app: &App) -> String {
+    let mode = if app.auto {
+        "LIVE · every 5s"
+    } else {
+        "MANUAL · r refresh"
+    };
+    if app.stopping {
+        format!("{mode} · requesting termination…")
+    } else if app.scanning {
+        format!("{mode} · {} scanning", ["◐", "◓", "◑", "◒"][app.pulse % 4])
+    } else {
+        mode.into()
+    }
+}
+
 fn main_view(frame: &mut Frame, area: Rect, app: &mut App) {
     let tabs = vec![
         Span::styled("oflh  ", accent()),
@@ -339,20 +354,12 @@ fn main_view(frame: &mut Frame, area: Rect, app: &mut App) {
             Style::default().fg(MUTED),
         );
     }
-    let activity = if app.stopping {
-        "requesting termination…".to_owned()
-    } else if app.scanning {
-        format!("{} scanning", ["◐", "◓", "◑", "◒"][app.pulse % 4])
-    } else if app.auto {
-        "LIVE · every 5s".into()
-    } else {
-        "MANUAL · r refresh".into()
-    };
     text(
         frame,
         line_area(area, 1),
         format!(
-            "{}  ·  {activity}",
+            "{}  ·  {}",
+            refresh_status(app),
             safe(&app.target.path.to_string_lossy())
         ),
         Style::default().fg(MUTED),
@@ -545,8 +552,16 @@ fn render_main_table(frame: &mut Frame, area: Rect, app: &App) {
         vec![
             Constraint::Length(3),
             Constraint::Length(8),
-            Constraint::Percentage(40),
+            Constraint::Percentage(35),
+            Constraint::Length(6),
             Constraint::Min(4),
+        ]
+    } else {
+        vec![
+            Constraint::Length(2),
+            Constraint::Length(7),
+            Constraint::Min(4),
+            Constraint::Length(6),
         ]
     };
     let headers = if wide {
@@ -566,7 +581,7 @@ fn render_main_table(frame: &mut Frame, area: Rect, app: &App) {
     } else if show_ports {
         vec!["", "PID", "PROCESS", "PORTS", "PATH"]
     } else {
-        vec!["", "PID", "PROCESS", "PATH"]
+        vec!["", "PID", "PROCESS", "LOCKS"]
     };
     let rows = app.rows.iter().skip(start).take(count).map(|row| {
         let process = &app.snapshot.processes[row.process];
@@ -799,11 +814,17 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
         "oflh  /  process details",
         accent(),
     );
+    text(
+        frame,
+        line_area(area, 1),
+        refresh_status(app),
+        Style::default().fg(MUTED),
+    );
     let Some(process) = app.detail() else {
         let footer_height = (footer_lines(area.width, app).len() as u16).min(area.height);
         text(
             frame,
-            Rect::new(area.x, area.y + 2, area.width, 3),
+            Rect::new(area.x, area.y + 3, area.width, 3),
             "Process exited or PID was reused. Press Esc to return.",
             Style::default().fg(LOCK),
         );
@@ -861,12 +882,12 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
         ];
         frame.render_widget(
             Paragraph::new(lines),
-            Rect::new(area.x, area.y + 1, area.width, 2),
+            Rect::new(area.x, area.y + 2, area.width, 2),
         );
     } else {
         frame.render_widget(
             Paragraph::new(header),
-            Rect::new(area.x, area.y + 1, area.width, 5),
+            Rect::new(area.x, area.y + 2, area.width, 5),
         );
     }
     text(
@@ -881,17 +902,7 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
         app,
         true,
     );
-    let locked = app
-        .usage_rows
-        .iter()
-        .filter_map(|&i| {
-            process.usages[i]
-                .lock
-                .as_ref()
-                .map(|_| &process.usages[i].path)
-        })
-        .collect::<std::collections::HashSet<_>>()
-        .len();
+    let locked = locked_path_count(process, &app.usage_rows);
     text(
         frame,
         line_area(area, head_height + 3),
@@ -1156,6 +1167,9 @@ Unknown owners have no actionable PID. Enter opens process details.
 
 READING THE EVIDENCE
 An open file is not necessarily locked.
+LOCKS counts distinct paths with evidence in filtered results.
+0 means none detected; reported Windows owners remain unverified.
+MANUAL / LIVE shows refresh mode in the main and details views.
 locked         Platform lock / sharing-conflict evidence
 open           Observed file descriptor
 cwd            Current working directory

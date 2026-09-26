@@ -1,4 +1,5 @@
   oflh  /  process details
+  MANUAL · r refresh
   dotnet   PID 424242 · alice
   EXE /usr/bin/dotnet
   CWD /build
