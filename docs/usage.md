@@ -34,9 +34,10 @@ information in the process details view.
 ## Ports
 
 Press `3` for **Ports**, or start directly with `oflh --ports`. The default is all
-visible local bindings. Press `s` to show only ports of processes associated with
-the target path. For example, `oflh --ports ./project` starts with all ports;
-press `s` to filter them to that project. File and port search text are
+visible local bindings when no path is supplied. An explicit path starts in
+**THIS PATH**: `oflh --ports ./project` shows ports of processes associated with
+that project, and `oflh --port 5040 ./project` adds an exact port filter.
+Press `s` to switch between this path and all ports. File and port search text are
 independent, so switching tabs does not mix their filters.
 
 | Query | Meaning |

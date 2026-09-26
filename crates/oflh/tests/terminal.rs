@@ -22,6 +22,7 @@ fn native_terminal_workflow() {
         })
         .unwrap();
     let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_oflh"));
+    cmd.arg("--ports");
     cmd.arg(dir.path());
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
@@ -81,7 +82,11 @@ fn native_terminal_workflow() {
             std::thread::sleep(Duration::from_millis(20));
         }
     };
-    wait("Processes");
+    wait("THIS PATH");
+    wait(&port.to_string());
+    send(b"s");
+    wait("ALL PORTS");
+    send(b"1");
     wait("terminal-fixture");
     send(b"/terminal-fixture\r");
     wait("1 of");

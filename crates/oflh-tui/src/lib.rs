@@ -37,6 +37,8 @@ pub struct StartOptions {
     pub follow_port_folder: bool,
     /// Start in the Ports tab and collect network bindings.
     pub ports: bool,
+    /// Start with bindings associated with an explicitly supplied target path.
+    pub ports_path_only: bool,
     /// Optional exact local port to search for at startup.
     pub port: Option<u16>,
 }
@@ -53,6 +55,7 @@ pub fn run(
     crossterm::execute!(std::io::stdout(), event::EnableBracketedPaste)?;
     let mut app = App::new(target, version);
     app.ports = options.ports;
+    app.ports_path_only = options.ports_path_only;
     app.follow_port_folder = options.follow_port_folder;
     app.ports_requested = true;
     app.port_query = options

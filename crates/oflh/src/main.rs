@@ -74,6 +74,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Argu
         positional = true;
     }
     result.view.follow_port_folder = result.path.is_none();
+    result.view.ports_path_only = result.view.ports && result.path.is_some();
     Ok(result)
 }
 
@@ -89,10 +90,11 @@ Usage: oflh [OPTIONS] [PATH]
   oflh .                  inspect files in the current directory
   oflh --ports            inspect all visible local port bindings
   oflh --port 3000        find a TCP listener or UDP binding on port 3000
-  oflh --ports .          start in Ports; press s to filter to this directory
+  oflh --ports .          inspect ports of processes using this directory
 
 No PATH starts in the current directory; inspecting a port follows its owner folder.
-An explicit PATH keeps the file-inspection folder fixed. Put options before PATH.
+An explicit PATH scopes Ports and keeps the file-inspection folder fixed.
+Press s in Ports to switch between This path and All ports. Put options before PATH.
 
 Options:
   --ports       start in the Ports tab (TCP listeners and bound UDP)
@@ -133,6 +135,21 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn explicit_port_paths_start_scoped_and_omitted_paths_start_global() {
+        for (arguments, scoped) in [
+            (vec!["--ports"], false),
+            (vec!["--port", "5040"], false),
+            (vec!["--ports", "./project"], true),
+            (vec!["--port", "5040", "./project"], true),
+            (vec!["--ports", "."], true),
+        ] {
+            let parsed = parse_arguments(arguments.into_iter().map(OsString::from)).unwrap();
+            assert_eq!(parsed.view.ports_path_only, scoped);
+            assert_eq!(parsed.view.follow_port_folder, !scoped);
+        }
+    }
+
     #[test]
     fn port_options_and_literal_paths() {
         let parse = |args: &[&str]| parse_arguments(args.iter().map(OsString::from));

@@ -170,7 +170,7 @@ processes observed using the target file or directory.
 ```sh
 oflh --ports             # All visible local port bindings
 oflh --port 3000         # Exact local port, TCP or UDP
-oflh --ports ./project   # All ports; press s to filter to this project
+oflh --ports ./project   # Ports of processes using this project
 ```
 
 The Processes table shows a port binding count, and the side panel previews
@@ -180,8 +180,8 @@ ports and `f` opens file usages. `Esc` returns to the view you came from: openin
 from Ports returns directly to Ports, with your search preserved.
 Without an explicit path, inspecting a port owner or switching from Ports to
 Processes/Locked files scans that process’s working directory (or its executable
-directory if unavailable). Pass a path to keep the file-inspection folder fixed. Ports still start with
-all bindings; press `s` to filter them to that folder.
+directory if unavailable). An explicit path scopes Ports to that folder and keeps
+the file-inspection folder fixed. Press `s` to switch to all ports.
 
 Normal termination and force kill use the same confirmation and identity checks
 as file inspection. Unknown owners cannot be terminated. A bound port does not
