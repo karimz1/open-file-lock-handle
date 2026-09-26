@@ -2,7 +2,6 @@
   MANUAL · r refresh
   dotnet   PID 424242 · alice
   CPU 2.4% · RAM 31.0 MiB · PARENT 0
-  PORTS · p inspect · none detected
   ╭──────────────────────────────────────────╮
   │/ Search files, DLLs, paths… · * wildcard │
   ╰──────────────────────────────────────────╯
@@ -17,5 +16,5 @@
   /build/FileLockExampleCli.dll · POSIX WRITE
 
   ────────────────────────────────────────────
-  ↑↓ select · / search · p ports · l locks
-  r refresh · ? help · Esc back · q quit
+  ↑↓ select · / search · l locks · r refresh
+  a auto · R GitHub · D Donate · Esc back

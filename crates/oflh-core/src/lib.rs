@@ -4,9 +4,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 mod path;
-pub mod ports;
 pub mod search;
-pub use ports::{Port, Protocol};
 
 pub use path::Target;
 use std::{
@@ -231,8 +229,7 @@ pub struct Ancestor {
     pub name: String,
 }
 
-/// A captured process with target-matching file usages and visible local ports.
-/// A zero identity represents unattributed ports and is never actionable.
+/// A process and all its observations matching the scan target.
 #[derive(Clone, Debug, Default)]
 pub struct Process {
     /// Captured process lifetime.
@@ -247,8 +244,6 @@ pub struct Process {
     pub cwd: PathBuf,
     /// Distinct observations matching the scan target.
     pub usages: Vec<Usage>,
-    /// Local TCP listeners and UDP bindings observed for this process lifetime.
-    pub ports: Vec<Port>,
     /// Observed immediate parent PID.
     pub parent: u32,
     /// Up to eight ancestors, nearest parent first.
@@ -279,7 +274,6 @@ impl Snapshot {
                 }
                 Entry::Occupied(mut entry) => {
                     entry.get_mut().usages.extend(process.usages);
-                    entry.get_mut().ports.extend(process.ports);
                 }
             }
         }
@@ -287,8 +281,6 @@ impl Snapshot {
         for process in &mut self.processes {
             process.usages.sort_unstable();
             process.usages.dedup();
-            process.ports.sort_unstable();
-            process.ports.dedup();
         }
     }
 }

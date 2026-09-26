@@ -17,14 +17,12 @@
 **Open File Lock Handle (`oflh`) finds processes using a file or directory on
 Windows, Linux, and macOS.** It is a command-line tool with an interactive
 terminal UI (TUI) for investigating locked files, open file handles, and mapped
-files. It also finds **TCP listening ports and bound UDP sockets**, shows their
-processes, and links them to file usage in your project. Start with a path to see which processes reference it and what they have open.
+files. Start with a path to see which processes reference it and what they have open.
 
 ```sh
 oflh ./build             # Find processes using files in a directory
 oflh ./build/plugin.dll  # Investigate a file or DLL in use
 oflh .                   # Inspect the current directory
-oflh --port 3000         # Find the process using a local port
 ```
 
 [Install](#installation) · [Quick start](#getting-started) ·
@@ -159,44 +157,11 @@ Use `?` for help. See the user guide for [search syntax](docs/usage.md#search),
 [process actions](docs/usage.md#process-actions), and the
 [full keyboard reference](docs/usage.md#keyboard-reference).
 
-## Find processes using ports
-
-Open **Ports** (`3`) to inspect local TCP listeners and bound UDP sockets. Search
-with `/` for a port number, process name, protocol, or address. Results update
-as you type: `50` matches `5040`; `port:5040` matches only that port. Press `s`
-to switch between **ALL PORTS** and **THIS PATH**, which shows ports belonging to
-processes observed using the target file or directory.
-
-```sh
-oflh --ports             # All visible local port bindings
-oflh --port 3000         # Exact local port, TCP or UDP
-oflh --ports ./project   # Ports of processes using this project
-```
-
-The Processes table shows a port binding count, and the side panel previews
-ports for the selected process. From Processes, press `Enter`, then `p` to inspect
-its ports. In Ports, `Enter` opens port details directly. Within details, `p` opens
-ports and `f` opens file usages. `Esc` returns to the view you came from: opening details
-from Ports returns directly to Ports, with your search preserved.
-Without an explicit path, inspecting a port owner or switching from Ports to
-Processes/Locked files scans that process’s working directory (or its executable
-directory if unavailable). An explicit path scopes Ports to that folder and keeps
-the file-inspection folder fixed. Press `s` to switch to all ports.
-
-Normal termination and force kill use the same confirmation and identity checks
-as file inspection. Unknown owners cannot be terminated. A bound port does not
-prove that it is reachable over the network.
-
-See [port search and scope](docs/usage.md#ports) for examples and
-[platform limitations](docs/platform-support.md#ports).
-
 ## Keyboard reference
 
 | Key | Action |
 | --- | --- |
-| `1` / `2` / `3` | Processes / Locked files / Ports |
-| `s` in Ports | Switch all ports / this path |
-| `p` / `f` in details | Inspect ports / file usages |
+| `1` / `2` | Processes / Locked files |
 | `↑` / `↓` | Move through results |
 | `/` | Search |
 | `Enter` | Finish search editing / open process details |
@@ -206,7 +171,7 @@ See [port search and scope](docs/usage.md#ports) for examples and
 | `Tab` | Switch focus between results and ancestry tree |
 | `?` | Show help and scan limitations |
 | `Esc` | Clear search, cancel, or go back |
-| `q` / `Ctrl+C` | Quit (while typing a search, use `Ctrl+C`) |
+| `q` / `Ctrl+C` | Back / quit |
 
 <a id="process-actions"></a>
 

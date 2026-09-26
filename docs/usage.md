@@ -40,67 +40,10 @@ On wide terminals, the side panel shows the selected process, its ancestry,
 resource usage, and path details. Compact terminals retain resource and parent
 information in the process details view.
 
-## Ports
-
-Press `3` for **Ports**, or start directly with `oflh --ports`. The default is all
-visible local bindings when no path is supplied. An explicit path starts in
-**THIS PATH**: `oflh --ports ./project` shows ports of processes associated with
-that project, and `oflh --port 5040 ./project` adds an exact port filter.
-Press `s` to switch between this path and all ports. File and port search text are
-independent, so switching tabs does not mix their filters.
-
-| Query | Meaning |
-| --- | --- |
-| `50` | Port numbers containing 50, such as 5040; updates while typing |
-| `port:3000` | Exact local port; does not match `13000` or a PID |
-| `tcp port:3000` | TCP listeners on port 3000 |
-| `udp` | Bound UDP sockets |
-| `ipv6` | IPv6 bindings |
-| `127.0.0.1` | Bindings matching that address |
-| `pid:424242` | Search the process ID explicitly |
-| `node port:3000` | Both the process text and exact port must match |
-
-Exact port numbers must be between 1 and 65535. Bare digits match a contiguous
-part of the local port number, independently of PIDs and addresses. Other text uses the fragment and
-wildcard rules below. Each address/protocol/port binding has its own row; IPv4
-and IPv6 bindings remain separate. The initial order is by port number.
-
-**THIS PATH** means the process has an observed file, executable, mapping, or
-working-directory reference matching the target. It is an association, not proof
-that a particular project created the socket. Scope follows the target shown in the header,
-not the search text in the Processes tab. Windows cannot inspect working
-directories through the current backend; interpreted development servers may
-therefore appear only in ALL PORTS. See [platform coverage](platform-support.md#ports).
-
-`Enter` opens the selected process's ports; `f` switches to its target-matching
-file usages; `p` opens ports. `Esc` returns to the originating tab directly unless you
-switched with `p` or `f`; then it returns to the original detail view first. Opening
-port details from Ports never requires a detour through files. The main search
-and selected binding are preserved.
-`q` quits from any screen outside search editing; `Ctrl+C` always quits. `/` searches within details. `r` refreshes and `a` toggles
-five-second auto-refresh. Port details display LIVE or MANUAL mode.
-
-When no path was supplied, opening port details or switching from Ports to a
-file tab uses the selected owner's working directory for file scanning. If the
-working directory is unavailable (including on Windows), the executable's parent
-directory is used instead; this may differ from the project's directory.
-The header shows the new target after scanning succeeds. Explicit paths keep the original file-inspection scope. Unknown owners cannot change the folder.
-The scan runs in the background and checks the captured process birth identity;
-failed or stale scans leave the previous target in place.
-
-Socket discovery runs with the initial scan and subsequent refreshes. The Processes
-view shows a PORTS binding count; the side panel and file details preview distinct
-protocol/port pairs. IPv4 and IPv6 bindings count separately in the table. Press
-Enter, then `p`, to inspect all addresses. Counts describe the whole process,
-independent of the file search filter. Zero means none detected, not proof of absence. An entry marked **owner unavailable** has no
-verified PID and cannot be terminated. Selecting multiple bindings of the same
-process produces one termination target. Selections survive scope and tab changes;
-confirmation includes hidden selections, as it does for file results.
-
 ## Search
 
 Search is case-insensitive and updates as you type. The same rules apply to
-Processes, Locked files, and file-usage details. Ports use partial numeric matching and explicit exact port terms as described above.
+Processes, Locked files, and process details.
 
 | Query | Meaning |
 | --- | --- |
@@ -124,8 +67,8 @@ an explicit sort order, such as CPU or PID, overrides relevance ordering.
 
 The matched path and `+N` count follow the active filter. When you open process
 details, file-related terms carry into the details search. Process-only terms,
-such as a PID, stay in the main search. To see all usages again, press `/`, `Ctrl+U`, then `Enter` to clear the detail search.
-Outside search editing, `Esc` retraces detail navigation as described above.
+such as a PID, stay in the main search. Press `Esc` in details to clear its search
+and see all usages again.
 
 ## Process actions
 
@@ -156,9 +99,7 @@ terminating a process may release the resources it holds.
 
 | Context | Key | Action |
 | --- | --- | --- |
-| Main view | `1` / `2` / `3` | Processes / Locked files / Ports |
-| Ports | `s` | All ports / this path |
-| Process details | `p` / `f` | Ports / file usages |
+| Main view | `1` / `2` | Processes / Locked files |
 | Lists | `↑` / `↓` | Move selection |
 | Main view | `Enter` | Inspect process usages |
 | Main view or details | `/` | Start search |
@@ -179,9 +120,9 @@ terminating a process may release the resources it holds.
 | Navigation | `Esc` | Clear search, cancel, or go back |
 | Navigation | `?` | Show help |
 | Navigation | `R` / `D` | Open repository / donation page in your default browser |
-| Navigation | `q` / `Ctrl+C` | Quit (`q` remains text while editing search) |
+| Navigation | `q` / `Ctrl+C` | Back / quit |
 
-Only `1`, `2`, and `3` switch tabs. `Tab` changes table/tree focus or selects a dialog
+Only `1` and `2` switch tabs. `Tab` changes table/tree focus or selects a dialog
 action. Selected **Cancel** has a green background; selected **Terminate** or
 **Force kill** has a red background. A pointer also identifies the choice, and
 Cancel remains the default. `R` and `D` open GitHub and Donate; Help shows both

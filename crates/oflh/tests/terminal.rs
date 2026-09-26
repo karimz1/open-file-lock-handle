@@ -7,8 +7,6 @@ use std::{
 };
 #[test]
 fn native_terminal_workflow() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("terminal-fixture ü.bin");
     let mut file = std::fs::File::create(&path).unwrap();
@@ -22,7 +20,6 @@ fn native_terminal_workflow() {
         })
         .unwrap();
     let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_oflh"));
-    cmd.arg("--ports");
     cmd.arg(dir.path());
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
@@ -82,17 +79,12 @@ fn native_terminal_workflow() {
             std::thread::sleep(Duration::from_millis(20));
         }
     };
-    wait("THIS PATH");
-    wait(&port.to_string());
-    send(b"s");
-    wait("ALL PORTS");
-    send(b"1");
+    wait("Processes");
     wait("terminal-fixture");
     send(b"/terminal-fixture\r");
     wait("1 of");
     send(b"\r");
     wait("process details");
-    wait(&format!("TCP {port}"));
     send(b"l");
     wait("LOCKS ONLY");
     send(b"l");
@@ -108,28 +100,10 @@ fn native_terminal_workflow() {
         })
         .unwrap();
     parser.lock().unwrap().screen_mut().set_size(24, 80);
-    send(b"\x1b");
-    wait("1 Processes");
-    send(b"?");
+    send(b"q?");
     wait("SCAN DETAILS");
-    send(b"\x1b");
-    wait("1 Processes");
-    send(format!("3/{port}\r").as_bytes());
-    wait("ALL PORTS");
-    wait(&std::process::id().to_string());
-    send(b"s");
-    wait("THIS PATH");
-    wait(&std::process::id().to_string());
-    send(b"\r");
-    wait("process details · ports");
-    send(b"a");
-    wait("LIVE");
-    send(b"\x1b");
-    wait("THIS PATH");
-    send(b"\r");
-    wait("process details · ports");
-    send(b"f");
-    wait("ALL USAGES");
+    send(b"q");
+    wait("Processes");
     send(b"q");
     let start = Instant::now();
     loop {
@@ -158,14 +132,6 @@ fn cli_contract() {
         .output()
         .unwrap();
     assert!(help.status.success());
-    assert!(String::from_utf8_lossy(&help.stdout).contains("--port PORT"));
-    for port in ["0", "65536", "abc"] {
-        let invalid = std::process::Command::new(bin)
-            .args(["--port", port])
-            .output()
-            .unwrap();
-        assert_eq!(invalid.status.code(), Some(2));
-    }
     let bad = std::process::Command::new(bin)
         .args(["one", "two"])
         .output()

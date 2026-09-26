@@ -17,7 +17,6 @@ use worker::{Work, Worker};
 enum Event {
     Input(std::io::Result<TerminalEvent>),
     Scan(u64, Result<Snapshot>),
-    ScopedScan(u64, Box<Result<(Target, Snapshot)>>),
     Metrics(u64, Result<Vec<(Identity, Metrics)>>),
     Killed(usize, Vec<String>),
 }
@@ -30,37 +29,12 @@ impl Drop for TerminalGuard {
         ratatui::restore();
     }
 }
-/// Initial view requested by the CLI. Refresh and process actions remain interactive.
-#[derive(Clone, Debug, Default)]
-pub struct StartOptions {
-    /// Follow a selected port owner’s folder when no explicit path was supplied.
-    pub follow_port_folder: bool,
-    /// Start in the Ports tab and collect network bindings.
-    pub ports: bool,
-    /// Start with bindings associated with an explicitly supplied target path.
-    pub ports_path_only: bool,
-    /// Optional exact local port to search for at startup.
-    pub port: Option<u16>,
-}
-
 /// Run the interactive terminal with background scanning and RAII restoration.
-pub fn run(
-    target: Target,
-    version: String,
-    backend: Box<dyn Backend>,
-    options: StartOptions,
-) -> std::io::Result<()> {
+pub fn run(target: Target, version: String, backend: Box<dyn Backend>) -> std::io::Result<()> {
     let mut terminal = ratatui::try_init()?;
     let _guard = TerminalGuard;
     crossterm::execute!(std::io::stdout(), event::EnableBracketedPaste)?;
     let mut app = App::new(target, version);
-    app.ports = options.ports;
-    app.ports_path_only = options.ports_path_only;
-    app.follow_port_folder = options.follow_port_folder;
-    app.ports_requested = true;
-    app.port_query = options
-        .port
-        .map_or_else(String::new, |port| format!("port:{port}"));
     app.scanning = true;
     terminal.draw(|frame| view::draw(frame, &mut app))?;
     let (sender, receiver) = mpsc::sync_channel(128);
@@ -77,7 +51,7 @@ pub fn run(
             }
         })?;
     let mut generation = 1;
-    worker.request(generation, scan_work(&app));
+    worker.request(generation, Work::Scan(app.target.clone()));
     let mut pulse = Instant::now() + PULSE;
     let mut refresh = Instant::now() + REFRESH;
     let mut sample: Option<Instant> = None;
@@ -136,23 +110,6 @@ pub fn run(
                 }
                 dirty = true
             }
-            Ok(Event::ScopedScan(result_generation, result)) if result_generation == generation => {
-                app.scanning = false;
-                sampling = false;
-                match *result {
-                    Ok((target, snapshot)) => {
-                        app.target = target;
-                        app.replace(snapshot);
-                        sample = Some(Instant::now() + Duration::from_secs(1));
-                    }
-                    Err(Error::Cancelled) => {}
-                    Err(error) => {
-                        app.status = format!("Process folder scan failed: {error}");
-                        app.error = true;
-                    }
-                }
-                dirty = true;
-            }
             Ok(Event::Metrics(result_generation, result)) if result_generation == generation => {
                 sampling = false;
                 if let Ok(metrics) = result {
@@ -188,18 +145,9 @@ pub fn run(
                 sample = None;
                 sampling = false;
                 app.scanning = true;
-                worker.request(generation, scan_work(&app));
+                worker.request(generation, Work::Scan(app.target.clone()));
                 pulse = Instant::now() + PULSE;
                 dirty = true
-            }
-            Effect::FollowPort(identity, path) => {
-                generation += 1;
-                sample = None;
-                sampling = false;
-                app.scanning = true;
-                worker.request(generation, Work::FollowPort(identity, path));
-                pulse = Instant::now() + PULSE;
-                dirty = true;
             }
             Effect::Kill(ids, force) => {
                 generation += 1;
@@ -231,7 +179,7 @@ pub fn run(
                 generation += 1;
                 sample = None;
                 app.scanning = true;
-                worker.request(generation, scan_work(&app));
+                worker.request(generation, Work::Scan(app.target.clone()));
                 pulse = now + PULSE;
                 dirty = true
             }
@@ -283,14 +231,5 @@ fn open_link(url: &'static str) -> std::io::Result<()> {
     });
     Ok(())
 }
-
-fn scan_work(app: &App) -> Work {
-    if app.ports_requested {
-        Work::ScanPorts(app.target.clone())
-    } else {
-        Work::Scan(app.target.clone())
-    }
-}
-
 #[cfg(test)]
 mod tests;

@@ -5,7 +5,6 @@
   CWD /build
   PARENT parent (424241)
   CPU 2.4% machine · RAM 31.0 MiB RSS
-  PORTS · p inspect · none detected
   ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │/ Search files, DLLs, paths… · * wildcard                                                                                                                 │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -38,4 +37,4 @@
   /build/FileLockExampleCli.dll · POSIX WRITE
 
   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  / search · p ports · l locks only · ↑↓ select · ←→ path · r refresh · a auto · k stop · x force · R GitHub · D Donate · Esc back · q quit
+  / search · l locks only · ↑↓ select · ←→ path · r refresh · a auto · k stop · x force · R GitHub · D Donate · Esc back
