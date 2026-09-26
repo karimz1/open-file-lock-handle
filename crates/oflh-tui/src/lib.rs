@@ -37,8 +37,6 @@ pub struct StartOptions {
     pub follow_port_folder: bool,
     /// Start in the Ports tab and collect network bindings.
     pub ports: bool,
-    /// Restrict Ports to processes referencing the target path.
-    pub ports_path_only: bool,
     /// Optional exact local port to search for at startup.
     pub port: Option<u16>,
 }
@@ -57,7 +55,6 @@ pub fn run(
     app.ports = options.ports;
     app.follow_port_folder = options.follow_port_folder;
     app.ports_requested = true;
-    app.ports_path_only = options.ports_path_only;
     app.port_query = options
         .port
         .map_or_else(String::new, |port| format!("port:{port}"));

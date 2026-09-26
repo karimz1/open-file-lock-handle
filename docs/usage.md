@@ -35,7 +35,8 @@ information in the process details view.
 
 Press `3` for **Ports**, or start directly with `oflh --ports`. The default is all
 visible local bindings. Press `s` to show only ports of processes associated with
-the target path, or start with `oflh --here .`. File and port search text are
+the target path. For example, `oflh --ports ./project` starts with all ports;
+press `s` to filter them to that project. File and port search text are
 independent, so switching tabs does not mix their filters.
 
 | Query | Meaning |
@@ -73,8 +74,7 @@ When no path was supplied, opening port details or switching from Ports to a
 file tab uses the selected owner's working directory for file scanning. If the
 working directory is unavailable (including on Windows), the executable's parent
 directory is used instead; this may differ from the project's directory.
-The header shows the new target after scanning succeeds. Explicit paths and
-`--here` keep the original scope. Unknown owners cannot change the folder.
+The header shows the new target after scanning succeeds. Explicit paths keep the original file-inspection scope. Unknown owners cannot change the folder.
 The scan runs in the background and checks the captured process birth identity;
 failed or stale scans leave the previous target in place.
 

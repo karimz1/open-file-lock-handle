@@ -47,11 +47,6 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Argu
                 result.view.ports = true;
                 continue;
             }
-            if argument == "--here" {
-                result.view.ports = true;
-                result.view.ports_path_only = true;
-                continue;
-            }
             if argument == "--port" {
                 let port = arguments
                     .next()
@@ -78,7 +73,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Argu
         }
         positional = true;
     }
-    result.view.follow_port_folder = result.path.is_none() && !result.view.ports_path_only;
+    result.view.follow_port_folder = result.path.is_none();
     Ok(result)
 }
 
@@ -94,15 +89,14 @@ Usage: oflh [OPTIONS] [PATH]
   oflh .                  inspect files in the current directory
   oflh --ports            inspect all visible local port bindings
   oflh --port 3000        find a TCP listener or UDP binding on port 3000
-  oflh --here .           ports of processes referencing this directory
+  oflh --ports .          start in Ports; press s to filter to this directory
 
 No PATH starts in the current directory; inspecting a port follows its owner folder.
-An explicit PATH or --here keeps the folder fixed. Put options before PATH.
+An explicit PATH keeps the file-inspection folder fixed. Put options before PATH.
 
 Options:
   --ports       start in the Ports tab (TCP listeners and bound UDP)
   --port PORT   start in Ports with an exact local-port filter
-  --here        limit Ports to processes referencing PATH
   --version     print version
   --help        show help"
         );
@@ -142,8 +136,8 @@ mod tests {
     #[test]
     fn port_options_and_literal_paths() {
         let parse = |args: &[&str]| parse_arguments(args.iter().map(OsString::from));
-        let args = parse(&["--port", "3000", "--here", "."]).unwrap();
-        assert!(args.view.ports && args.view.ports_path_only);
+        let args = parse(&["--port", "3000", "."]).unwrap();
+        assert!(args.view.ports);
         assert!(!args.view.follow_port_folder);
         assert!(parse(&["--port", "5040"]).unwrap().view.follow_port_folder);
         assert!(
@@ -152,7 +146,7 @@ mod tests {
                 .view
                 .follow_port_folder
         );
-        assert!(!parse(&["--here"]).unwrap().view.follow_port_folder);
+        assert!(parse(&["--here"]).is_err());
         assert_eq!(args.view.port, Some(3000));
         assert_eq!(args.path, Some(OsString::from(".")));
         for args in [
