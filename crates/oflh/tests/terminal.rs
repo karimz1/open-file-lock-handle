@@ -120,6 +120,10 @@ fn native_terminal_workflow() {
     send(b"a");
     wait("LIVE");
     send(b"\x1b");
+    wait("THIS PATH");
+    send(b"\r");
+    wait("process details · ports");
+    send(b"f");
     wait("ALL USAGES");
     send(b"q");
     let start = Instant::now();

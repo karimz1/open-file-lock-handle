@@ -177,7 +177,8 @@ oflh --port 3000 --here . # Combine port and folder filters
 The Processes table shows a port binding count, and the side panel previews
 ports for the selected process. From Processes, press `Enter`, then `f` to inspect
 its ports. In Ports, `Enter` opens port details directly. `f` switches between
-ports and file usages; `Esc` returns from ports to files, then to the main view.
+ports and file usages. `Esc` returns to the view you came from: opening details
+from Ports returns directly to Ports, with your search preserved.
 Normal termination and force kill use the same confirmation and identity checks
 as file inspection. Unknown owners cannot be terminated. A bound port does not
 prove that it is reachable over the network.

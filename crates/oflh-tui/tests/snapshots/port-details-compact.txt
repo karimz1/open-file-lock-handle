@@ -17,4 +17,4 @@
 
   ────────────────────────────────────────────
   / search · r refresh · a auto · ? help
-  Esc files · q quit
+  Esc back · q quit

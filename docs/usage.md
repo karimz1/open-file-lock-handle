@@ -62,7 +62,10 @@ directories through the current backend; interpreted development servers may
 therefore appear only in ALL PORTS. See [platform coverage](platform-support.md#ports).
 
 `Enter` opens the selected process's ports; `f` switches to its target-matching
-file usages and back. `Esc` returns to file details, then to the main view.
+file usages and back. `Esc` returns to the originating tab directly unless you
+switched with `f`; then it returns to the original detail view first. Opening
+port details from Ports never requires a detour through files. The main search
+and selected binding are preserved.
 `q` quits from any screen outside search editing; `Ctrl+C` always quits. `/` searches within details. `r` refreshes and `a` toggles
 five-second auto-refresh. Port details display LIVE or MANUAL mode.
 
@@ -103,7 +106,7 @@ an explicit sort order, such as CPU or PID, overrides relevance ordering.
 The matched path and `+N` count follow the active filter. When you open process
 details, file-related terms carry into the details search. Process-only terms,
 such as a PID, stay in the main search. To see all usages again, press `/`, `Ctrl+U`, then `Enter` to clear the detail search.
-Outside search editing, `Esc` returns to the main view from file details.
+Outside search editing, `Esc` retraces detail navigation as described above.
 
 ## Process actions
 

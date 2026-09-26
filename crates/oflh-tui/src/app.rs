@@ -581,8 +581,8 @@ impl App {
             K::Char('D') => return Effect::Link("https://buymeacoffee.com/karimz1"),
             K::Esc => {
                 if self.screen == Screen::Details {
-                    if self.detail_ports {
-                        self.detail_ports = false;
+                    if self.detail_ports != self.ports {
+                        self.detail_ports = self.ports;
                         self.usage_cursor = 0;
                         self.detail_query.clear();
                         self.filter_details()

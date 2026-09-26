@@ -154,7 +154,7 @@ fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
     let (keys, status) = match app.screen {
         Screen::Confirm => ("Tab / ←→ choose · Enter confirm · Esc cancel", ""),
         Screen::Details if app.detail_ports => (
-            "/ search · f files · r refresh · a auto · k stop · x force · ? help · Esc files · q quit",
+            "/ search · f files · r refresh · a auto · k stop · x force · ? help · Esc back · q quit",
             "",
         ),
         Screen::Main if app.ports && app.tree.is_none() => (
@@ -179,7 +179,7 @@ fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
         match app.screen {
             Screen::Main if app.ports && app.tree.is_none() => keys,
             Screen::Details if app.detail_ports => {
-                "/ search · r refresh · a auto · ? help · Esc files · q quit"
+                "/ search · r refresh · a auto · ? help · Esc back · q quit"
             }
             Screen::Main if app.tree.is_none() => {
                 "1/2/3 tabs · / search · Enter inspect · k stop · x force · ? help · R GitHub · D Donate · q quit"

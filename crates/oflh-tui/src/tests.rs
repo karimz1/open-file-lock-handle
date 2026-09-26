@@ -400,6 +400,7 @@ fn ports_scope_search_details_and_unknown_owner_actions() {
     assert!(!application.detail_ports);
     assert_eq!(application.usage_rows.len(), 3);
     key(&mut application, K::Esc);
+    key(&mut application, K::Esc);
     key(&mut application, K::Char('1'));
     assert_eq!(application.rows.len(), 1);
     assert!(
@@ -572,7 +573,7 @@ fn process_rows_and_file_details_expose_ports_without_visiting_ports_tab() {
 }
 
 #[test]
-fn port_digits_filter_while_typing_and_escape_returns_through_files() {
+fn port_digits_filter_while_typing_and_escape_returns_to_ports() {
     let mut application = ports_app();
     let mut snapshot = application.snapshot.clone();
     snapshot.processes[0].ports[0].number = 5040;
@@ -588,13 +589,13 @@ fn port_digits_filter_while_typing_and_escape_returns_through_files() {
     key(&mut application, K::Enter);
     assert!(application.detail_ports);
     assert_eq!(application.detail_query, "50");
-    key(&mut application, K::Esc);
-    assert_eq!(application.screen, Screen::Details);
-    assert!(!application.detail_ports);
-    assert_eq!(application.usage_rows.len(), 3);
-    application.detail_query = "other".into();
+    let selected_row = application.cursor;
     key(&mut application, K::Esc);
     assert_eq!(application.screen, Screen::Main);
+    assert!(application.ports);
+    assert_eq!(application.port_query, "50");
+    assert_eq!(application.cursor, selected_row);
+    assert_eq!(application.rows.len(), 1);
 }
 
 #[test]
@@ -615,4 +616,24 @@ fn quit_is_consistent_on_every_screen_but_search_accepts_text() {
         application.key(KeyEvent::new(K::Char('c'), KeyModifiers::CONTROL)),
         Effect::Quit
     ));
+}
+
+#[test]
+fn escape_retraces_explicit_detail_switches_from_each_tab() {
+    for ports in [false, true] {
+        let mut application = ports_app();
+        if ports {
+            key(&mut application, K::Char('3'));
+        }
+        key(&mut application, K::Enter);
+        assert_eq!(application.detail_ports, ports);
+        key(&mut application, K::Char('f'));
+        assert_eq!(application.detail_ports, !ports);
+        key(&mut application, K::Esc);
+        assert_eq!(application.screen, Screen::Details);
+        assert_eq!(application.detail_ports, ports);
+        key(&mut application, K::Esc);
+        assert_eq!(application.screen, Screen::Main);
+        assert_eq!(application.ports, ports);
+    }
 }
