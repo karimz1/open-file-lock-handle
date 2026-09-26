@@ -1,4 +1,5 @@
 use crossterm::event::{KeyCode as K, KeyEvent, KeyModifiers as M};
+use oflh_core::ports::{PortIndex, PortQuery};
 use oflh_core::{
     search::{ProcessIndex, Query, Scratch},
     *,
@@ -24,8 +25,7 @@ pub enum Sort {
 pub struct Row {
     pub process: usize,
     pub usages: Vec<usize>,
-    /// Distinct native paths with lock evidence among the filtered usages.
-    pub locked_paths: usize,
+    pub port: Option<usize>,
     score: u32,
 }
 #[derive(Clone, Debug)]
@@ -43,18 +43,26 @@ pub enum Effect {
     None,
     Quit,
     Scan,
+    FollowPort(Identity, std::path::PathBuf),
     Kill(Vec<Identity>, bool),
     Link(&'static str),
 }
 pub struct App {
     pub target: Target,
+    pub follow_port_folder: bool,
     pub version: String,
     pub snapshot: Snapshot,
     indices: Vec<ProcessIndex>,
+    port_indices: Vec<Vec<PortIndex>>,
     pub rows: Vec<Row>,
     pub cursor: usize,
     pub screen: Screen,
     pub locked: bool,
+    pub ports: bool,
+    pub ports_requested: bool,
+    pub ports_path_only: bool,
+    pub port_query: String,
+    pub detail_ports: bool,
     pub sort: Sort,
     pub selected: HashSet<Identity>,
     pub query: String,
@@ -89,13 +97,20 @@ impl App {
     pub fn new(target: Target, version: String) -> Self {
         Self {
             target,
+            follow_port_folder: false,
             version,
             snapshot: Snapshot::default(),
             indices: Vec::new(),
+            port_indices: Vec::new(),
             rows: Vec::new(),
             cursor: 0,
             screen: Screen::Main,
             locked: false,
+            ports: false,
+            ports_requested: false,
+            ports_path_only: false,
+            port_query: String::new(),
+            detail_ports: false,
             sort: Sort::Relevance,
             selected: HashSet::new(),
             query: String::new(),
@@ -142,6 +157,10 @@ impl App {
     }
     pub fn replace(&mut self, snapshot: Snapshot) {
         let selected = self.current().map(|process| process.identity);
+        let selected_port = self.rows.get(self.cursor).and_then(|row| {
+            row.port
+                .map(|index| self.snapshot.processes[row.process].ports[index].clone())
+        });
         let usage = self
             .rows
             .get(self.cursor)
@@ -152,8 +171,18 @@ impl App {
                     .get(row.usages[0])
             })
             .cloned();
+        let detail_port = self
+            .detail()
+            .filter(|_| self.detail_ports)
+            .and_then(|process| {
+                self.usage_rows
+                    .get(self.usage_cursor)
+                    .and_then(|&index| process.ports.get(index))
+                    .cloned()
+            });
         let detail_usage = self
             .detail()
+            .filter(|_| !self.detail_ports)
             .and_then(|process| {
                 self.usage_rows
                     .get(self.usage_cursor)
@@ -167,6 +196,18 @@ impl App {
             .iter()
             .map(ProcessIndex::new)
             .collect();
+        self.port_indices = self
+            .snapshot
+            .processes
+            .iter()
+            .map(|process| {
+                process
+                    .ports
+                    .iter()
+                    .map(|port| PortIndex::new(process, port))
+                    .collect()
+            })
+            .collect();
         self.selected.retain(|identity| {
             self.snapshot
                 .processes
@@ -176,6 +217,11 @@ impl App {
         self.refilter();
         if let Some(position) = self.rows.iter().position(|row| {
             Some(self.snapshot.processes[row.process].identity) == selected
+                && selected_port.as_ref().is_none_or(|port| {
+                    row.port.is_some_and(|index| {
+                        self.snapshot.processes[row.process].ports[index] == *port
+                    })
+                })
                 && usage.as_ref().is_none_or(|usage| {
                     row.usages
                         .iter()
@@ -185,7 +231,17 @@ impl App {
             self.cursor = position
         }
         self.filter_details();
-        if let Some(process) = self.detail()
+        if let Some(port) = detail_port
+            && let Some(process) = self.detail()
+            && let Some(position) = self
+                .usage_rows
+                .iter()
+                .position(|&index| process.ports[index] == port)
+        {
+            self.usage_cursor = position;
+        }
+        if !self.detail_ports
+            && let Some(process) = self.detail()
             && let Some(position) = self
                 .usage_rows
                 .iter()
@@ -208,17 +264,20 @@ impl App {
         }
         if matches!(self.sort, Sort::Cpu | Sort::Memory) {
             let identity = self.current().map(|process| process.identity);
+            let port = self.rows.get(self.cursor).and_then(|row| row.port);
             self.sort_rows();
-            if let Some(i) = self
-                .rows
-                .iter()
-                .position(|row| Some(self.snapshot.processes[row.process].identity) == identity)
-            {
+            if let Some(i) = self.rows.iter().position(|row| {
+                Some(self.snapshot.processes[row.process].identity) == identity && row.port == port
+            }) {
                 self.cursor = i
             }
         }
     }
     pub fn refilter(&mut self) {
+        if self.ports {
+            self.filter_ports();
+            return;
+        }
         let query = Query::new(&self.query);
         let mut scratch = Scratch::default();
         self.rows.clear();
@@ -237,7 +296,7 @@ impl App {
                         self.rows.push(Row {
                             process: i,
                             usages: vec![j],
-                            locked_paths: 1,
+                            port: None,
                             score,
                         })
                     }
@@ -255,6 +314,7 @@ impl App {
                         process: i,
                         locked_paths: locked_path_count(process, &usages),
                         usages,
+                        port: None,
                         score: index.score(&query, &mut scratch),
                     })
                 }
@@ -266,10 +326,20 @@ impl App {
     fn sort_rows(&mut self) {
         let processes = &self.snapshot.processes;
         let sort = self.sort;
+        let ports = self.ports;
         self.rows.sort_by(|a, b| {
             let left_process = &processes[a.process];
             let right_process = &processes[b.process];
             let ordering = match sort {
+                Sort::Relevance if ports => {
+                    a.port
+                        .zip(b.port)
+                        .map_or(std::cmp::Ordering::Equal, |(left, right)| {
+                            left_process.ports[left]
+                                .number
+                                .cmp(&right_process.ports[right].number)
+                        })
+                }
                 Sort::Relevance => b.score.cmp(&a.score),
                 Sort::Name => left_process
                     .name
@@ -299,6 +369,19 @@ impl App {
             return;
         };
         let process = &self.snapshot.processes[i];
+        if self.detail_ports {
+            let query = PortQuery::new(&self.detail_query);
+            let mut scratch = Scratch::default();
+            for (index, port) in process.ports.iter().enumerate() {
+                if query.matches(port, &self.port_indices[i][index], &mut scratch) {
+                    self.usage_rows.push(index);
+                }
+            }
+            self.usage_cursor = self
+                .usage_cursor
+                .min(self.usage_rows.len().saturating_sub(1));
+            return;
+        }
         let query = Query::new(&self.detail_query);
         let mut scratch = Scratch::default();
         let mut ranked = Vec::new();
@@ -331,9 +414,11 @@ impl App {
             self.insert(c)
         }
     }
-    fn input(&self) -> &str {
+    pub fn input(&self) -> &str {
         if self.screen == Screen::Details {
             &self.detail_query
+        } else if self.ports {
+            &self.port_query
         } else {
             &self.query
         }
@@ -341,6 +426,8 @@ impl App {
     fn input_mut(&mut self) -> &mut String {
         if self.screen == Screen::Details {
             &mut self.detail_query
+        } else if self.ports {
+            &mut self.port_query
         } else {
             &mut self.query
         }
@@ -446,6 +533,9 @@ impl App {
             self.edit_key(key);
             return Effect::None;
         }
+        if key.code == K::Char('q') {
+            return Effect::Quit;
+        }
         if self.screen == Screen::Confirm {
             return self.confirm_key(key.code);
         }
@@ -470,25 +560,13 @@ impl App {
                         self.prepare_kill(key.code)
                     }
                 }
-                K::Char('1' | '2') => {
-                    self.tree = None;
-                    self.locked = key.code == K::Char('2');
-                    self.cursor = 0;
-                    self.refilter()
-                }
+                K::Char('1' | '2' | '3') => return self.switch_tab(key.code),
                 K::Char('q') => return Effect::Quit,
                 _ => {}
             }
             return Effect::None;
         }
         match key.code {
-            K::Char('q') => {
-                if self.screen == Screen::Details {
-                    self.screen = Screen::Main
-                } else {
-                    return Effect::Quit;
-                }
-            }
             K::Char('/') => self.begin_search(),
             K::Char('r') => {
                 if !self.stopping {
@@ -507,14 +585,16 @@ impl App {
             K::Char('D') => return Effect::Link("https://buymeacoffee.com/karimz1"),
             K::Esc => {
                 if self.screen == Screen::Details {
-                    if !self.detail_query.is_empty() {
+                    if self.detail_ports != self.ports {
+                        self.detail_ports = self.ports;
+                        self.usage_cursor = 0;
                         self.detail_query.clear();
                         self.filter_details()
                     } else {
                         self.screen = Screen::Main
                     }
-                } else if !self.query.is_empty() {
-                    self.query.clear();
+                } else if !self.input().is_empty() {
+                    self.input_mut().clear();
                     self.refilter()
                 } else {
                     self.selected.clear()
@@ -528,7 +608,22 @@ impl App {
             | K::End
             | K::Char('j' | 'g' | 'G') => self.navigate(key.code),
             _ if self.screen == Screen::Details => match key.code {
-                K::Char('l') => {
+                K::Char('p' | 'f') if (key.code == K::Char('p')) != self.detail_ports => {
+                    self.detail_ports = key.code == K::Char('p');
+                    self.detail_query.clear();
+                    self.usage_cursor = 0;
+                    self.filter_details();
+                    if !self.detail_ports && self.ports {
+                        return self.port_folder_effect(self.detail());
+                    }
+                    if self.detail_ports && !self.ports_requested {
+                        self.ports_requested = true;
+                        if !self.stopping {
+                            return Effect::Scan;
+                        }
+                    }
+                }
+                K::Char('l') if !self.detail_ports => {
                     self.detail_locks = !self.detail_locks;
                     self.filter_details()
                 }
@@ -536,11 +631,17 @@ impl App {
                 K::Right => self.path_page = self.path_page.saturating_add(1),
                 _ => {}
             },
-            K::Enter => self.open_details(),
-            K::Char('1' | '2') => {
-                self.locked = key.code == K::Char('2');
+            K::Enter => {
+                self.open_details();
+                if self.ports {
+                    return self.port_folder_effect(self.detail());
+                }
+            }
+            K::Char('1' | '2' | '3') => return self.switch_tab(key.code),
+            K::Char('s') if self.ports => {
+                self.ports_path_only = !self.ports_path_only;
                 self.cursor = 0;
-                self.refilter()
+                self.refilter();
             }
             K::Char(' ') => {
                 if let Some(identity) = self.current().map(|process| process.identity)
@@ -582,6 +683,89 @@ impl App {
         }
         Effect::None
     }
+    fn port_folder_effect(&self, process: Option<&Process>) -> Effect {
+        if !self.follow_port_folder || self.ports_path_only || self.stopping {
+            return Effect::None;
+        }
+        let Some(process) = process else {
+            return Effect::None;
+        };
+        if process.identity.pid == 0 || process.identity.started == 0 {
+            return Effect::None;
+        }
+        let folder = if process.cwd.is_absolute() {
+            Some(process.cwd.as_path())
+        } else {
+            process
+                .executable
+                .parent()
+                .filter(|path| path.is_absolute())
+        };
+        match folder {
+            Some(folder) if folder != self.target.path => {
+                Effect::FollowPort(process.identity, folder.to_owned())
+            }
+            _ => Effect::None,
+        }
+    }
+
+    fn switch_tab(&mut self, key: K) -> Effect {
+        let folder_effect = if self.ports && key != K::Char('3') {
+            self.port_folder_effect(
+                self.rows
+                    .get(self.cursor)
+                    .map(|row| &self.snapshot.processes[row.process]),
+            )
+        } else {
+            Effect::None
+        };
+        self.tree = None;
+        self.locked = key == K::Char('2');
+        self.ports = key == K::Char('3');
+        self.cursor = 0;
+        self.refilter();
+        if !matches!(folder_effect, Effect::None) {
+            return folder_effect;
+        }
+        if self.ports && !self.ports_requested {
+            self.ports_requested = true;
+            if self.stopping {
+                Effect::None
+            } else {
+                Effect::Scan
+            }
+        } else {
+            Effect::None
+        }
+    }
+
+    fn filter_ports(&mut self) {
+        let query = PortQuery::new(&self.port_query);
+        let mut scratch = Scratch::default();
+        self.rows.clear();
+        for (process_index, process) in self.snapshot.processes.iter().enumerate() {
+            if self.ports_path_only && process.usages.is_empty() {
+                continue;
+            }
+            for (port_index, port) in process.ports.iter().enumerate() {
+                if query.matches(
+                    port,
+                    &self.port_indices[process_index][port_index],
+                    &mut scratch,
+                ) {
+                    self.rows.push(Row {
+                        process: process_index,
+                        usages: Vec::new(),
+                        port: Some(port_index),
+                        score: 0,
+                    });
+                }
+            }
+        }
+        self.sort_rows();
+        self.cursor = self.cursor.min(self.rows.len().saturating_sub(1));
+    }
+
     pub fn select_all(&mut self) {
         let all = self.rows.iter().all(|row| {
             self.selected
@@ -620,14 +804,19 @@ impl App {
         };
         let process = &self.snapshot.processes[row.process];
         self.detail_id = Some(process.identity);
+        self.detail_ports = self.ports;
         self.detail_scope = if self.locked {
             Some(process.usages[row.usages[0]].clone())
         } else {
             None
         };
-        self.detail_query = Query::new(&self.query)
-            .file_terms(&self.indices[row.process].metadata, &mut Scratch::default())
-            .text();
+        self.detail_query = if self.ports {
+            self.port_query.clone()
+        } else {
+            Query::new(&self.query)
+                .file_terms(&self.indices[row.process].metadata, &mut Scratch::default())
+                .text()
+        };
         self.detail_locks = false;
         self.usage_cursor = 0;
         self.screen = Screen::Details;
@@ -686,6 +875,16 @@ impl App {
                 identity: process.identity,
                 name: process.name.clone(),
             })
+        }
+        if self
+            .pending
+            .iter()
+            .any(|target| target.identity.validate().is_err())
+        {
+            self.pending.clear();
+            self.status = "Cannot terminate: selection includes a protected process or an unavailable identity.".into();
+            self.error = true;
+            return;
         }
         if !self.pending.is_empty() {
             self.screen = Screen::Confirm
