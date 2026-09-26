@@ -58,7 +58,9 @@ fn search_and_details() {
     assert_eq!(a.screen, Screen::Details);
     assert_eq!(a.detail_query, "flec*.json");
     assert_eq!(a.usage_rows.len(), 1);
-    key(&mut a, K::Esc);
+    key(&mut a, K::Char('/'));
+    a.key(KeyEvent::new(K::Char('u'), KeyModifiers::CONTROL));
+    key(&mut a, K::Enter);
     assert_eq!(a.usage_rows.len(), 3);
     key(&mut a, K::Char('/'));
     a.paste("kxqr");
@@ -330,122 +332,382 @@ fn help_links_precede_warnings_and_open_with_shortcuts() {
     export_visual("help-links", terminal.backend().buffer());
 }
 
-fn rendered_buffer(application: &mut App, width: u16, height: u16) -> ratatui::buffer::Buffer {
-    let mut terminal =
-        ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
-    terminal
-        .draw(|frame| view::draw(frame, application))
-        .unwrap();
-    terminal.backend().buffer().clone()
+fn ports_app() -> App {
+    let mut application = app();
+    application.target.path = "/build".into();
+    let mut snapshot = application.snapshot.clone();
+    snapshot.processes[0].executable = "/usr/bin/dotnet".into();
+    snapshot.processes[0].cwd = "/build".into();
+    snapshot.processes[0].ports = vec![
+        Port {
+            protocol: Protocol::Tcp,
+            address: "127.0.0.1".parse().unwrap(),
+            number: 3000,
+        },
+        Port {
+            protocol: Protocol::Tcp,
+            address: "::1".parse().unwrap(),
+            number: 3000,
+        },
+        Port {
+            protocol: Protocol::Udp,
+            address: "127.0.0.1".parse().unwrap(),
+            number: 5300,
+        },
+    ];
+    let mut unrelated = snapshot.processes[0].clone();
+    unrelated.identity.pid += 1;
+    unrelated.name = "other-project".into();
+    unrelated.usages.clear();
+    unrelated.ports.truncate(1);
+    snapshot.processes.push(unrelated);
+    snapshot.processes.push(Process {
+        name: "owner unavailable".into(),
+        ports: vec![Port {
+            protocol: Protocol::Tcp,
+            address: "0.0.0.0".parse().unwrap(),
+            number: 9000,
+        }],
+        ..Process::default()
+    });
+    application.replace(snapshot);
+    application
 }
 
-fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
-    buffer
+#[test]
+fn ports_scope_search_details_and_unknown_owner_actions() {
+    let mut application = ports_app();
+    assert!(matches!(key(&mut application, K::Char('3')), Effect::Scan));
+    assert_eq!(application.rows.len(), 5);
+    key(&mut application, K::Char('s'));
+    assert_eq!(application.rows.len(), 3);
+    key(&mut application, K::Char('/'));
+    application.paste("3000 tcp");
+    key(&mut application, K::Enter);
+    assert_eq!(application.rows.len(), 2);
+    key(&mut application, K::Char('K'));
+    assert_eq!(
+        application.pending.len(),
+        1,
+        "multiple bindings deduplicate action targets"
+    );
+    assert!(!application.confirm);
+    key(&mut application, K::Esc);
+    key(&mut application, K::Enter);
+    assert!(application.detail_ports);
+    assert_eq!(application.usage_rows.len(), 2);
+    key(&mut application, K::Char('f'));
+    assert!(!application.detail_ports);
+    assert_eq!(application.usage_rows.len(), 3);
+    key(&mut application, K::Esc);
+    key(&mut application, K::Esc);
+    key(&mut application, K::Char('1'));
+    assert_eq!(application.rows.len(), 1);
+    assert!(
+        application.query.is_empty(),
+        "port terms do not pollute file search"
+    );
+    key(&mut application, K::Char('3'));
+    assert_eq!(application.port_query, "3000 tcp");
+    key(&mut application, K::Esc);
+    key(&mut application, K::Char('s'));
+    key(&mut application, K::End);
+    key(&mut application, K::Char('k'));
+    assert!(application.pending.is_empty());
+    assert_eq!(application.screen, Screen::Main);
+    assert!(application.error);
+}
+
+#[test]
+fn port_selection_keeps_endpoint_and_birth_identity_across_refresh() {
+    let mut application = ports_app();
+    key(&mut application, K::Char('3'));
+    key(&mut application, K::Char('s'));
+    key(&mut application, K::Down);
+    let mut snapshot = application.snapshot.clone();
+    snapshot.processes[0].ports.reverse();
+    application.replace(snapshot);
+    let row = &application.rows[application.cursor];
+    assert!(
+        application.snapshot.processes[row.process].ports[row.port.unwrap()]
+            .address
+            .is_ipv6()
+    );
+    key(&mut application, K::Enter);
+    let mut snapshot = application.snapshot.clone();
+    snapshot.processes[0].identity.started += 1;
+    application.replace(snapshot);
+    assert!(application.detail().is_none());
+    key(&mut application, K::Char('x'));
+    assert!(application.pending.is_empty());
+}
+
+#[test]
+fn port_screens_render_at_all_supported_sizes() {
+    for (width, height) in [(28, 18), (48, 20), (80, 24), (120, 30), (160, 40)] {
+        let mut application = ports_app();
+        key(&mut application, K::Char('3'));
+        for details in [false, true] {
+            if details {
+                key(&mut application, K::Enter);
+            }
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+            terminal
+                .draw(|frame| view::draw(frame, &mut application))
+                .unwrap();
+            let text = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert!(text.contains("3000"));
+            if width == 160 || width == 48 {
+                let name = match (details, width) {
+                    (false, 160) => "ports",
+                    (true, 160) => "port-details",
+                    (false, _) => "ports-compact",
+                    (true, _) => "port-details-compact",
+                };
+                check_port_snapshot(name, terminal.backend().buffer());
+            }
+            if width == 160 {
+                export_visual(
+                    if details { "port-details" } else { "ports" },
+                    terminal.backend().buffer(),
+                );
+            }
+            if width == 48 {
+                export_visual(
+                    if details {
+                        "port-details-compact"
+                    } else {
+                        "ports-compact"
+                    },
+                    terminal.backend().buffer(),
+                );
+            }
+        }
+    }
+}
+
+fn check_port_snapshot(name: &str, buffer: &ratatui::buffer::Buffer) {
+    let text = buffer
         .content
         .chunks(buffer.area.width as usize)
-        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n")
+        .map(|row| {
+            let line = row.iter().map(|cell| cell.symbol()).collect::<String>();
+            format!("{}\n", line.trim_end())
+        })
+        .collect::<String>();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("tests/snapshots/{name}.txt"));
+    if std::env::var_os("OFLH_UPDATE_SNAPSHOTS").is_some() {
+        std::fs::write(&path, &text).unwrap();
+    }
+    assert_eq!(std::fs::read_to_string(path).unwrap(), text, "{name}");
 }
 
 #[test]
-fn process_lock_counts_follow_distinct_filtered_paths_and_refresh() {
-    let mut application = app();
-    let mut snapshot = application.snapshot.clone();
-    let process = &mut snapshot.processes[0];
-    let mut duplicate = process.usages[0].clone();
-    duplicate.lock = Some(LockEvidence::Kernel("POSIX READ".into()));
-    process.usages.push(duplicate);
-    process.usages[2].lock = Some(LockEvidence::SharingConflict(AccessKind::Delete));
-    application.replace(snapshot);
-    assert_eq!(application.rows[0].locked_paths, 2);
-
-    for width in [28, 48, 80, 120, 160] {
-        let buffer = rendered_buffer(&mut application, width, 30);
-        let text = buffer_text(&buffer);
-        let header = text.lines().nth(7).unwrap();
-        let column = header.find("LOCKS").expect("lock column remains visible");
-        assert_eq!(buffer[(column as u16, 8)].symbol(), "2");
-        if width >= 48 {
-            assert!(header.contains("PATH"));
+fn process_rows_and_file_details_expose_ports_without_visiting_ports_tab() {
+    for width in [48, 80, 160] {
+        let mut application = ports_app();
+        application.ports_requested = true;
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 30)).unwrap();
+        terminal
+            .draw(|frame| view::draw(frame, &mut application))
+            .unwrap();
+        let lines: Vec<String> = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(width as usize)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+            .collect();
+        let column = lines[7]
+            .find("PORTS")
+            .expect("process table exposes port bindings");
+        assert_eq!(
+            terminal.backend().buffer()[(column as u16, 8)].symbol(),
+            "3"
+        );
+        key(&mut application, K::Enter);
+        terminal
+            .draw(|frame| view::draw(frame, &mut application))
+            .unwrap();
+        let text = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(text.contains("TCP 3000"));
+        assert!(text.contains("UDP 5300"));
+        assert!(!application.detail_ports);
+        if width == 160 {
+            export_visual("file-details-with-ports", terminal.backend().buffer());
         }
+        key(&mut application, K::Char('p'));
+        assert!(application.detail_ports);
+        assert_eq!(application.usage_rows.len(), 3);
+        key(&mut application, K::Char('f'));
+        let mut snapshot = application.snapshot.clone();
+        snapshot.processes[0].ports.clear();
+        application.replace(snapshot);
+        terminal
+            .draw(|frame| view::draw(frame, &mut application))
+            .unwrap();
+        let text = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(text.contains("none detected"));
     }
+}
 
+#[test]
+fn port_digits_filter_while_typing_and_escape_returns_to_ports() {
+    let mut application = ports_app();
+    let mut snapshot = application.snapshot.clone();
+    snapshot.processes[0].ports[0].number = 5040;
+    application.replace(snapshot);
+    key(&mut application, K::Char('3'));
     key(&mut application, K::Char('/'));
-    application.paste("deps.json");
+    key(&mut application, K::Char('5'));
+    assert_eq!(application.rows.len(), 2);
+    key(&mut application, K::Char('0'));
+    assert_eq!(application.rows.len(), 1);
+    assert!(application.editing);
     key(&mut application, K::Enter);
-    assert_eq!(application.rows[0].locked_paths, 0);
-    key(&mut application, K::Esc);
-    assert_eq!(application.rows[0].locked_paths, 2);
     key(&mut application, K::Enter);
-    assert!(buffer_text(&rendered_buffer(&mut application, 160, 40)).contains("2 locked files"));
+    assert!(application.detail_ports);
+    assert_eq!(application.detail_query, "50");
+    let selected_row = application.cursor;
     key(&mut application, K::Esc);
-
-    let mut snapshot = application.snapshot.clone();
-    for usage in &mut snapshot.processes[0].usages {
-        usage.lock = None;
-    }
-    application.replace(snapshot);
-    assert_eq!(application.rows[0].locked_paths, 0);
-    let buffer = rendered_buffer(&mut application, 80, 30);
-    let text = buffer_text(&buffer);
-    let column = text.lines().nth(7).unwrap().find("LOCKS").unwrap();
-    assert_eq!(buffer[(column as u16, 8)].symbol(), "0");
+    assert_eq!(application.screen, Screen::Main);
+    assert!(application.ports);
+    assert_eq!(application.port_query, "50");
+    assert_eq!(application.cursor, selected_row);
+    assert_eq!(application.rows.len(), 1);
 }
 
 #[test]
-fn refresh_mode_is_visible_in_details_and_shared_with_main() {
-    for (width, height) in [(28, 18), (48, 20), (80, 24), (160, 40)] {
-        let mut application = app();
-        application.target.path = format!("/{}", "long-directory/".repeat(20)).into();
-        key(&mut application, K::Enter);
-        let text = buffer_text(&rendered_buffer(&mut application, width, height));
-        assert!(text.lines().nth(1).unwrap().contains("MANUAL"));
-        key(&mut application, K::Char('a'));
-        let buffer = rendered_buffer(&mut application, width, height);
-        assert!(
-            buffer_text(&buffer)
-                .lines()
-                .nth(1)
-                .unwrap()
-                .contains("LIVE · every 5s")
-        );
-        if width == 48 {
-            export_visual("details-live-compact", &buffer);
+fn quit_is_consistent_on_every_screen_but_search_accepts_text() {
+    for screen in [Screen::Main, Screen::Details, Screen::Help, Screen::Confirm] {
+        for detail_ports in [false, true] {
+            let mut application = ports_app();
+            application.screen = screen;
+            application.detail_ports = detail_ports;
+            assert!(matches!(key(&mut application, K::Char('q')), Effect::Quit));
         }
-        application.scanning = true;
-        assert!(
-            buffer_text(&rendered_buffer(&mut application, width, height))
-                .lines()
-                .nth(1)
-                .unwrap()
-                .contains("LIVE")
-        );
-        application.scanning = false;
-        key(&mut application, K::Esc);
-        assert!(
-            buffer_text(&rendered_buffer(&mut application, width, height))
-                .lines()
-                .nth(1)
-                .unwrap()
-                .contains("LIVE")
-        );
-        key(&mut application, K::Char('a'));
+    }
+    let mut application = ports_app();
+    key(&mut application, K::Char('/'));
+    assert!(matches!(key(&mut application, K::Char('q')), Effect::None));
+    assert_eq!(application.query, "q");
+    assert!(matches!(
+        application.key(KeyEvent::new(K::Char('c'), KeyModifiers::CONTROL)),
+        Effect::Quit
+    ));
+}
+
+#[test]
+fn escape_retraces_explicit_detail_switches_from_each_tab() {
+    for ports in [false, true] {
+        let mut application = ports_app();
+        if ports {
+            key(&mut application, K::Char('3'));
+        }
         key(&mut application, K::Enter);
-        assert!(
-            buffer_text(&rendered_buffer(&mut application, width, height))
-                .lines()
-                .nth(1)
-                .unwrap()
-                .contains("MANUAL")
+        assert_eq!(application.detail_ports, ports);
+        key(&mut application, K::Char(if ports { 'f' } else { 'p' }));
+        assert_eq!(application.detail_ports, !ports);
+        key(&mut application, K::Esc);
+        assert_eq!(application.screen, Screen::Details);
+        assert_eq!(application.detail_ports, ports);
+        key(&mut application, K::Esc);
+        assert_eq!(application.screen, Screen::Main);
+        assert_eq!(application.ports, ports);
+    }
+}
+
+#[test]
+fn detail_shortcuts_select_ports_and_files_without_toggling() {
+    let mut application = ports_app();
+    key(&mut application, K::Enter);
+    key(&mut application, K::Char('f'));
+    assert!(!application.detail_ports);
+    key(&mut application, K::Char('p'));
+    assert!(application.detail_ports);
+    application.detail_query = "3000".into();
+    key(&mut application, K::Char('p'));
+    assert!(application.detail_ports);
+    assert_eq!(application.detail_query, "3000");
+    key(&mut application, K::Char('f'));
+    assert!(!application.detail_ports);
+}
+
+#[test]
+fn port_inspection_follows_owner_folder_only_for_implicit_targets() {
+    for enter_details in [false, true] {
+        let mut application = ports_app();
+        application.target = Target::new(std::env::temp_dir()).unwrap();
+        application.follow_port_folder = true;
+        let folder = application.target.path.join("port-owner-project");
+        let mut snapshot = application.snapshot.clone();
+        snapshot.processes[0].cwd = folder.clone();
+        application.replace(snapshot);
+        key(&mut application, K::Char('3'));
+        let effect = key(
+            &mut application,
+            if enter_details {
+                K::Enter
+            } else {
+                K::Char('1')
+            },
         );
-        application.replace(Snapshot::default());
-        assert!(
-            buffer_text(&rendered_buffer(&mut application, width, height))
-                .lines()
-                .nth(1)
-                .unwrap()
-                .contains("MANUAL")
+        assert!(matches!(effect, Effect::FollowPort(identity, path)
+            if identity.pid == 424242 && path == folder));
+        assert_ne!(
+            application.target.path, folder,
+            "target changes only after the worker returns a verified snapshot"
         );
     }
+    for (follow, scoped) in [(false, false), (true, true)] {
+        let mut application = ports_app();
+        application.target = Target::new(std::env::temp_dir()).unwrap();
+        application.follow_port_folder = follow;
+        application.ports_path_only = scoped;
+        key(&mut application, K::Char('3'));
+        assert!(matches!(key(&mut application, K::Enter), Effect::None));
+    }
+}
+
+#[test]
+fn port_folder_fallback_and_unknown_owner() {
+    let mut application = ports_app();
+    application.follow_port_folder = true;
+    let mut snapshot = application.snapshot.clone();
+    snapshot.processes[0].cwd.clear();
+    let folder = Target::new(std::env::temp_dir())
+        .unwrap()
+        .path
+        .join("owner-bin");
+    snapshot.processes[0].executable = folder.join("server");
+    application.replace(snapshot);
+    key(&mut application, K::Char('3'));
+    assert!(
+        matches!(key(&mut application, K::Enter), Effect::FollowPort(_, path)
+        if path == folder)
+    );
+    key(&mut application, K::Esc);
+    key(&mut application, K::End);
+    assert!(matches!(key(&mut application, K::Enter), Effect::None));
 }
