@@ -40,15 +40,17 @@ independent, so switching tabs does not mix their filters.
 
 | Query | Meaning |
 | --- | --- |
-| `3000` or `port:3000` | Exact local port; does not match `13000` or a PID |
-| `tcp 3000` | TCP listeners on port 3000 |
+| `50` | Port numbers containing 50, such as 5040; updates while typing |
+| `port:3000` | Exact local port; does not match `13000` or a PID |
+| `tcp port:3000` | TCP listeners on port 3000 |
 | `udp` | Bound UDP sockets |
 | `ipv6` | IPv6 bindings |
 | `127.0.0.1` | Bindings matching that address |
 | `pid:424242` | Search the process ID explicitly |
-| `node 3000` | Both the process text and exact port must match |
+| `node port:3000` | Both the process text and exact port must match |
 
-Port numbers must be between 1 and 65535. Other text uses the fragment and
+Exact port numbers must be between 1 and 65535. Bare digits match a contiguous
+part of the local port number, independently of PIDs and addresses. Other text uses the fragment and
 wildcard rules below. Each address/protocol/port binding has its own row; IPv4
 and IPv6 bindings remain separate. The initial order is by port number.
 
@@ -60,7 +62,8 @@ directories through the current backend; interpreted development servers may
 therefore appear only in ALL PORTS. See [platform coverage](platform-support.md#ports).
 
 `Enter` opens the selected process's ports; `f` switches to its target-matching
-file usages and back. `/` searches within details. `r` refreshes and `a` toggles
+file usages and back. `Esc` returns to file details, then to the main view.
+`q` quits from any screen outside search editing; `Ctrl+C` always quits. `/` searches within details. `r` refreshes and `a` toggles
 five-second auto-refresh. Port details display LIVE or MANUAL mode.
 
 Socket discovery runs with the initial scan and subsequent refreshes. The Processes
@@ -75,8 +78,7 @@ confirmation includes hidden selections, as it does for file results.
 ## Search
 
 Search is case-insensitive and updates as you type. The same rules apply to
-Processes, Locked files, and file-usage details. Ports use exact matching for
-numeric port terms as described above.
+Processes, Locked files, and file-usage details. Ports use partial numeric matching and explicit exact port terms as described above.
 
 | Query | Meaning |
 | --- | --- |
@@ -100,8 +102,8 @@ an explicit sort order, such as CPU or PID, overrides relevance ordering.
 
 The matched path and `+N` count follow the active filter. When you open process
 details, file-related terms carry into the details search. Process-only terms,
-such as a PID, stay in the main search. Press `Esc` in details to clear its search
-and see all usages again.
+such as a PID, stay in the main search. To see all usages again, press `/`, `Ctrl+U`, then `Enter` to clear the detail search.
+Outside search editing, `Esc` returns to the main view from file details.
 
 ## Process actions
 
@@ -155,7 +157,7 @@ terminating a process may release the resources it holds.
 | Navigation | `Esc` | Clear search, cancel, or go back |
 | Navigation | `?` | Show help |
 | Navigation | `R` / `D` | Open repository / donation page in your default browser |
-| Navigation | `q` / `Ctrl+C` | Back / quit |
+| Navigation | `q` / `Ctrl+C` | Quit (`q` remains text while editing search) |
 
 Only `1`, `2`, and `3` switch tabs. `Tab` changes table/tree focus or selects a dialog
 action. Selected **Cancel** has a green background; selected **Terminate** or

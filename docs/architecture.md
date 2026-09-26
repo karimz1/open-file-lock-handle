@@ -40,7 +40,8 @@ Processes table and file details can show each process's ports. It runs in the s
 rejection, refresh scheduling, selection, and action confirmation. Native library
 calls cannot be interrupted internally; cancellation is checked between families,
 protocols, and returned entries. Port search indices are cached per snapshot;
-standalone numeric terms match the local port exactly.
+standalone numeric terms match contiguous port-number fragments; `port:NN` and
+CLI `--port NN` require the exact local port.
 
 ## Process actions
 

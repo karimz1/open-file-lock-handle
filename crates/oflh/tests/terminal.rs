@@ -103,9 +103,9 @@ fn native_terminal_workflow() {
         })
         .unwrap();
     parser.lock().unwrap().screen_mut().set_size(24, 80);
-    send(b"q?");
+    send(b"\x1b?");
     wait("SCAN DETAILS");
-    send(b"q");
+    send(b"\x1b");
     wait("Processes");
     send(format!("3/{port}\r").as_bytes());
     wait("ALL PORTS");
@@ -117,9 +117,9 @@ fn native_terminal_workflow() {
     wait("process details · ports");
     send(b"a");
     wait("LIVE");
-    send(b"f");
+    send(b"\x1b");
     wait("ALL USAGES");
-    send(b"qq");
+    send(b"q");
     let start = Instant::now();
     loop {
         if let Some(status) = child.try_wait().unwrap() {

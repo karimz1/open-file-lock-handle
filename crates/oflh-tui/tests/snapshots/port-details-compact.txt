@@ -16,5 +16,5 @@
   TCP 127.0.0.1:3000 · LISTEN
 
   ────────────────────────────────────────────
-  / search · f files · r refresh · a auto
-  k stop · x force · ? help · Esc back
+  / search · r refresh · a auto · ? help
+  Esc files · q quit

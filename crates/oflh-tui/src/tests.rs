@@ -58,7 +58,9 @@ fn search_and_details() {
     assert_eq!(a.screen, Screen::Details);
     assert_eq!(a.detail_query, "flec*.json");
     assert_eq!(a.usage_rows.len(), 1);
-    key(&mut a, K::Esc);
+    key(&mut a, K::Char('/'));
+    a.key(KeyEvent::new(K::Char('u'), KeyModifiers::CONTROL));
+    key(&mut a, K::Enter);
     assert_eq!(a.usage_rows.len(), 3);
     key(&mut a, K::Char('/'));
     a.paste("kxqr");
@@ -567,4 +569,50 @@ fn process_rows_and_file_details_expose_ports_without_visiting_ports_tab() {
             .collect::<String>();
         assert!(text.contains("none detected"));
     }
+}
+
+#[test]
+fn port_digits_filter_while_typing_and_escape_returns_through_files() {
+    let mut application = ports_app();
+    let mut snapshot = application.snapshot.clone();
+    snapshot.processes[0].ports[0].number = 5040;
+    application.replace(snapshot);
+    key(&mut application, K::Char('3'));
+    key(&mut application, K::Char('/'));
+    key(&mut application, K::Char('5'));
+    assert_eq!(application.rows.len(), 2);
+    key(&mut application, K::Char('0'));
+    assert_eq!(application.rows.len(), 1);
+    assert!(application.editing);
+    key(&mut application, K::Enter);
+    key(&mut application, K::Enter);
+    assert!(application.detail_ports);
+    assert_eq!(application.detail_query, "50");
+    key(&mut application, K::Esc);
+    assert_eq!(application.screen, Screen::Details);
+    assert!(!application.detail_ports);
+    assert_eq!(application.usage_rows.len(), 3);
+    application.detail_query = "other".into();
+    key(&mut application, K::Esc);
+    assert_eq!(application.screen, Screen::Main);
+}
+
+#[test]
+fn quit_is_consistent_on_every_screen_but_search_accepts_text() {
+    for screen in [Screen::Main, Screen::Details, Screen::Help, Screen::Confirm] {
+        for detail_ports in [false, true] {
+            let mut application = ports_app();
+            application.screen = screen;
+            application.detail_ports = detail_ports;
+            assert!(matches!(key(&mut application, K::Char('q')), Effect::Quit));
+        }
+    }
+    let mut application = ports_app();
+    key(&mut application, K::Char('/'));
+    assert!(matches!(key(&mut application, K::Char('q')), Effect::None));
+    assert_eq!(application.query, "q");
+    assert!(matches!(
+        application.key(KeyEvent::new(K::Char('c'), KeyModifiers::CONTROL)),
+        Effect::Quit
+    ));
 }

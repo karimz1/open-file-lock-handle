@@ -154,7 +154,7 @@ fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
     let (keys, status) = match app.screen {
         Screen::Confirm => ("Tab / ←→ choose · Enter confirm · Esc cancel", ""),
         Screen::Details if app.detail_ports => (
-            "/ search · f files · r refresh · a auto · k stop · x force · ? help · Esc back",
+            "/ search · f files · r refresh · a auto · k stop · x force · ? help · Esc files · q quit",
             "",
         ),
         Screen::Main if app.ports && app.tree.is_none() => (
@@ -162,10 +162,10 @@ fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
             "",
         ),
         Screen::Details => (
-            "/ search · f ports · l locks only · ↑↓ select · ←→ path · r refresh · a auto · k stop · x force · R GitHub · D Donate · Esc back",
+            "/ search · f ports · l locks only · ↑↓ select · ←→ path · r refresh · a auto · k stop · x force · R GitHub · D Donate · Esc back · q quit",
             "",
         ),
-        Screen::Help => ("↑↓ scroll · R GitHub · D Donate · Esc back", ""),
+        Screen::Help => ("↑↓ scroll · R GitHub · D Donate · Esc back · q quit", ""),
         Screen::Main if app.tree.is_some() => (
             "↑↓ process · k stop target · x force kill target · Tab/← back",
             "",
@@ -178,12 +178,14 @@ fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
     let keys = if width < 60 {
         match app.screen {
             Screen::Main if app.ports && app.tree.is_none() => keys,
-            Screen::Details if app.detail_ports => keys,
+            Screen::Details if app.detail_ports => {
+                "/ search · r refresh · a auto · ? help · Esc files · q quit"
+            }
             Screen::Main if app.tree.is_none() => {
                 "1/2/3 tabs · / search · Enter inspect · k stop · x force · ? help · R GitHub · D Donate · q quit"
             }
             Screen::Details => {
-                "↑↓ select · / search · f ports · l locks · r refresh · R GitHub · D Donate · Esc back"
+                "↑↓ select · / search · f ports · l locks · r refresh · ? help · Esc back · q quit"
             }
             _ => keys,
         }
@@ -758,7 +760,16 @@ fn inspector(frame: &mut Frame, area: Rect, app: &App) {
     }
     lines.extend([
         Line::raw(""),
-        Line::styled("PORTS · Enter details, f ports", accent()),
+        Line::styled(
+            if app.tree.is_some() {
+                "PORTS"
+            } else if app.ports {
+                "PORTS · Enter to inspect"
+            } else {
+                "PORTS · Enter, then f to inspect"
+            },
+            accent(),
+        ),
         Line::raw(process_port_summary(process)),
         Line::raw(""),
         Line::styled("EXECUTABLE", accent()),
@@ -1130,14 +1141,14 @@ K / X          Selection; otherwise all filtered processes
 Tab            Choose Cancel / Terminate
 ?              Show help
 R / D          Open repository / donation page
-q / Ctrl+C     Back / quit
+q / Ctrl+C     Quit (q types text while searching)
 
 Every termination requires confirmation. Cancel is the default.
 Hidden selections are included. Process identity is revalidated.
 Stopping a parent does not recursively terminate its children.
 
 PORT SEARCH
-3000 or port:3000 matches the exact local port; pid:123 matches a PID.
+50 matches ports containing 50; port:3000 is exact; pid:123 matches a PID.
 Combine terms: tcp 3000 server, udp, ipv6, or an address.
 THIS PATH uses observed file references, not a guessed project name.
 TCP LISTEN and UDP BOUND do not imply remote reachability.

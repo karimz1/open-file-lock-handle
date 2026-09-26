@@ -56,7 +56,7 @@ pub fn run(
     app.ports_path_only = options.ports_path_only;
     app.port_query = options
         .port
-        .map_or_else(String::new, |port| port.to_string());
+        .map_or_else(String::new, |port| format!("port:{port}"));
     app.scanning = true;
     terminal.draw(|frame| view::draw(frame, &mut app))?;
     let (sender, receiver) = mpsc::sync_channel(128);

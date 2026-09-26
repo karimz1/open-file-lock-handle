@@ -14,7 +14,7 @@
                                                                                                                 └─ parent (424241)
                                                                                                                   └─ dotnet (424242)
 
-                                                                                                                PORTS · Enter details, f ports
+                                                                                                                PORTS · Enter to inspect
                                                                                                                 TCP 3000 · UDP 5300
 
                                                                                                                 EXECUTABLE

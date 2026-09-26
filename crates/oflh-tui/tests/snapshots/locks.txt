@@ -14,7 +14,7 @@
                                                                                 └─ parent (424241)
                                                                                   └─ dotnet (424242)
 
-                                                                                PORTS · Enter details, f ports
+                                                                                PORTS · Enter, then f to inspect
                                                                                 none detected
 
                                                                                 EXECUTABLE

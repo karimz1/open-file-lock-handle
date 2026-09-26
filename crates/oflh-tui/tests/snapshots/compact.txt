@@ -17,4 +17,4 @@
 
   ────────────────────────────────────────────
   ↑↓ select · / search · f ports · l locks
-  r refresh · R GitHub · D Donate · Esc back
+  r refresh · ? help · Esc back · q quit

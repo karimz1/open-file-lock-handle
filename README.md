@@ -17,7 +17,8 @@
 **Open File Lock Handle (`oflh`) finds processes using a file or directory on
 Windows, Linux, and macOS.** It is a command-line tool with an interactive
 terminal UI (TUI) for investigating locked files, open file handles, and mapped
-files. Start with a path to see which processes reference it and what they have open.
+files. It also finds **TCP listening ports and bound UDP sockets**, shows their
+processes, and links them to file usage in your project. Start with a path to see which processes reference it and what they have open.
 
 ```sh
 oflh ./build             # Find processes using files in a directory
@@ -161,7 +162,8 @@ Use `?` for help. See the user guide for [search syntax](docs/usage.md#search),
 ## Find processes using ports
 
 Open **Ports** (`3`) to inspect local TCP listeners and bound UDP sockets. Search
-with `/` for an exact port number, process name, protocol, or address. Press `s`
+with `/` for a port number, process name, protocol, or address. Results update
+as you type: `50` matches `5040`; `port:5040` matches only that port. Press `s`
 to switch between **ALL PORTS** and **THIS PATH**, which shows ports belonging to
 processes observed using the target file or directory.
 
@@ -172,7 +174,10 @@ oflh --here .            # Ports of processes referencing this folder
 oflh --port 3000 --here . # Combine port and folder filters
 ```
 
-`Enter` opens process port details; `f` switches between ports and file usages.
+The Processes table shows a port binding count, and the side panel previews
+ports for the selected process. From Processes, press `Enter`, then `f` to inspect
+its ports. In Ports, `Enter` opens port details directly. `f` switches between
+ports and file usages; `Esc` returns from ports to files, then to the main view.
 Normal termination and force kill use the same confirmation and identity checks
 as file inspection. Unknown owners cannot be terminated. A bound port does not
 prove that it is reachable over the network.
@@ -196,7 +201,7 @@ See [port search and scope](docs/usage.md#ports) for examples and
 | `Tab` | Switch focus between results and ancestry tree |
 | `?` | Show help and scan limitations |
 | `Esc` | Clear search, cancel, or go back |
-| `q` / `Ctrl+C` | Back / quit |
+| `q` / `Ctrl+C` | Quit (while typing a search, use `Ctrl+C`) |
 
 <a id="process-actions"></a>
 

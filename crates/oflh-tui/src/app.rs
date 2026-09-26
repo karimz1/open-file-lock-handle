@@ -529,6 +529,9 @@ impl App {
             self.edit_key(key);
             return Effect::None;
         }
+        if key.code == K::Char('q') {
+            return Effect::Quit;
+        }
         if self.screen == Screen::Confirm {
             return self.confirm_key(key.code);
         }
@@ -560,13 +563,6 @@ impl App {
             return Effect::None;
         }
         match key.code {
-            K::Char('q') => {
-                if self.screen == Screen::Details {
-                    self.screen = Screen::Main
-                } else {
-                    return Effect::Quit;
-                }
-            }
             K::Char('/') => self.begin_search(),
             K::Char('r') => {
                 if !self.stopping {
@@ -585,7 +581,9 @@ impl App {
             K::Char('D') => return Effect::Link("https://buymeacoffee.com/karimz1"),
             K::Esc => {
                 if self.screen == Screen::Details {
-                    if !self.detail_query.is_empty() {
+                    if self.detail_ports {
+                        self.detail_ports = false;
+                        self.usage_cursor = 0;
                         self.detail_query.clear();
                         self.filter_details()
                     } else {
