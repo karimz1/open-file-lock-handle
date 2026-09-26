@@ -551,7 +551,7 @@ fn process_rows_and_file_details_expose_ports_without_visiting_ports_tab() {
         if width == 160 {
             export_visual("file-details-with-ports", terminal.backend().buffer());
         }
-        key(&mut application, K::Char('f'));
+        key(&mut application, K::Char('p'));
         assert!(application.detail_ports);
         assert_eq!(application.usage_rows.len(), 3);
         key(&mut application, K::Char('f'));
@@ -627,7 +627,7 @@ fn escape_retraces_explicit_detail_switches_from_each_tab() {
         }
         key(&mut application, K::Enter);
         assert_eq!(application.detail_ports, ports);
-        key(&mut application, K::Char('f'));
+        key(&mut application, K::Char(if ports { 'f' } else { 'p' }));
         assert_eq!(application.detail_ports, !ports);
         key(&mut application, K::Esc);
         assert_eq!(application.screen, Screen::Details);
@@ -636,4 +636,20 @@ fn escape_retraces_explicit_detail_switches_from_each_tab() {
         assert_eq!(application.screen, Screen::Main);
         assert_eq!(application.ports, ports);
     }
+}
+
+#[test]
+fn detail_shortcuts_select_ports_and_files_without_toggling() {
+    let mut application = ports_app();
+    key(&mut application, K::Enter);
+    key(&mut application, K::Char('f'));
+    assert!(!application.detail_ports);
+    key(&mut application, K::Char('p'));
+    assert!(application.detail_ports);
+    application.detail_query = "3000".into();
+    key(&mut application, K::Char('p'));
+    assert!(application.detail_ports);
+    assert_eq!(application.detail_query, "3000");
+    key(&mut application, K::Char('f'));
+    assert!(!application.detail_ports);
 }

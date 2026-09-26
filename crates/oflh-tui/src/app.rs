@@ -604,8 +604,8 @@ impl App {
             | K::End
             | K::Char('j' | 'g' | 'G') => self.navigate(key.code),
             _ if self.screen == Screen::Details => match key.code {
-                K::Char('f') => {
-                    self.detail_ports = !self.detail_ports;
+                K::Char('p' | 'f') if (key.code == K::Char('p')) != self.detail_ports => {
+                    self.detail_ports = key.code == K::Char('p');
                     self.detail_query.clear();
                     self.usage_cursor = 0;
                     self.filter_details();

@@ -162,7 +162,7 @@ fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
             "",
         ),
         Screen::Details => (
-            "/ search · f ports · l locks only · ↑↓ select · ←→ path · r refresh · a auto · k stop · x force · R GitHub · D Donate · Esc back · q quit",
+            "/ search · p ports · l locks only · ↑↓ select · ←→ path · r refresh · a auto · k stop · x force · R GitHub · D Donate · Esc back · q quit",
             "",
         ),
         Screen::Help => ("↑↓ scroll · R GitHub · D Donate · Esc back · q quit", ""),
@@ -185,7 +185,7 @@ fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
                 "1/2/3 tabs · / search · Enter inspect · k stop · x force · ? help · R GitHub · D Donate · q quit"
             }
             Screen::Details => {
-                "↑↓ select · / search · f ports · l locks · r refresh · ? help · Esc back · q quit"
+                "↑↓ select · / search · p ports · l locks · r refresh · ? help · Esc back · q quit"
             }
             _ => keys,
         }
@@ -766,7 +766,7 @@ fn inspector(frame: &mut Frame, area: Rect, app: &App) {
             } else if app.ports {
                 "PORTS · Enter to inspect"
             } else {
-                "PORTS · Enter, then f to inspect"
+                "PORTS · Enter, then p to inspect"
             },
             accent(),
         ),
@@ -872,7 +872,7 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
     text(
         frame,
         line_area(area, head_height - 1),
-        format!("PORTS · f inspect · {}", process_port_summary(process)),
+        format!("PORTS · p inspect · {}", process_port_summary(process)),
         accent(),
     );
     search(
@@ -1117,7 +1117,7 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
 const HELP: &str = "OPEN FILE LOCK HANDLE
 1 / 2 / 3      Processes / locked files / ports
 s              Ports: all ports / processes using this path
-f              Details: switch file usages / ports
+p / f          Details: ports / file usages
 ↑ / ↓, j       Navigate results
 PgUp / PgDn    Move one page
 Home / End     First / last result

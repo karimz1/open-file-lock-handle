@@ -62,8 +62,8 @@ directories through the current backend; interpreted development servers may
 therefore appear only in ALL PORTS. See [platform coverage](platform-support.md#ports).
 
 `Enter` opens the selected process's ports; `f` switches to its target-matching
-file usages and back. `Esc` returns to the originating tab directly unless you
-switched with `f`; then it returns to the original detail view first. Opening
+file usages; `p` opens ports. `Esc` returns to the originating tab directly unless you
+switched with `p` or `f`; then it returns to the original detail view first. Opening
 port details from Ports never requires a detour through files. The main search
 and selected binding are preserved.
 `q` quits from any screen outside search editing; `Ctrl+C` always quits. `/` searches within details. `r` refreshes and `a` toggles
@@ -72,7 +72,7 @@ five-second auto-refresh. Port details display LIVE or MANUAL mode.
 Socket discovery runs with the initial scan and subsequent refreshes. The Processes
 view shows a PORTS binding count; the side panel and file details preview distinct
 protocol/port pairs. IPv4 and IPv6 bindings count separately in the table. Press
-Enter, then `f`, to inspect all addresses. Counts describe the whole process,
+Enter, then `p`, to inspect all addresses. Counts describe the whole process,
 independent of the file search filter. Zero means none detected, not proof of absence. An entry marked **owner unavailable** has no
 verified PID and cannot be terminated. Selecting multiple bindings of the same
 process produces one termination target. Selections survive scope and tab changes;
@@ -139,7 +139,7 @@ terminating a process may release the resources it holds.
 | --- | --- | --- |
 | Main view | `1` / `2` / `3` | Processes / Locked files / Ports |
 | Ports | `s` | All ports / this path |
-| Process details | `f` | File usages / ports |
+| Process details | `p` / `f` | Ports / file usages |
 | Lists | `↑` / `↓` | Move selection |
 | Main view | `Enter` | Inspect process usages |
 | Main view or details | `/` | Start search |

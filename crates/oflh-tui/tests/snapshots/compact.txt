@@ -1,7 +1,7 @@
   oflh  /  process details
   dotnet   PID 424242 · alice
   CPU 2.4% · RAM 31.0 MiB · PARENT 0
-  PORTS · f inspect · none detected
+  PORTS · p inspect · none detected
   ╭──────────────────────────────────────────╮
   │/ Search files, DLLs, paths… · * wildcard │
   ╰──────────────────────────────────────────╯
@@ -16,5 +16,5 @@
   /build/FileLockExampleCli.dll · POSIX WRITE
 
   ────────────────────────────────────────────
-  ↑↓ select · / search · f ports · l locks
+  ↑↓ select · / search · p ports · l locks
   r refresh · ? help · Esc back · q quit
