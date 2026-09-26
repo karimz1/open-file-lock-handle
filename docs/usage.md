@@ -56,7 +56,7 @@ and IPv6 bindings remain separate. The initial order is by port number.
 
 **THIS PATH** means the process has an observed file, executable, mapping, or
 working-directory reference matching the target. It is an association, not proof
-that a particular project created the socket. Scope follows the original target,
+that a particular project created the socket. Scope follows the target shown in the header,
 not the search text in the Processes tab. Windows cannot inspect working
 directories through the current backend; interpreted development servers may
 therefore appear only in ALL PORTS. See [platform coverage](platform-support.md#ports).
@@ -68,6 +68,15 @@ port details from Ports never requires a detour through files. The main search
 and selected binding are preserved.
 `q` quits from any screen outside search editing; `Ctrl+C` always quits. `/` searches within details. `r` refreshes and `a` toggles
 five-second auto-refresh. Port details display LIVE or MANUAL mode.
+
+When no path was supplied, opening port details or switching from Ports to a
+file tab uses the selected owner's working directory for file scanning. If the
+working directory is unavailable (including on Windows), the executable's parent
+directory is used instead; this may differ from the project's directory.
+The header shows the new target after scanning succeeds. Explicit paths and
+`--here` keep the original scope. Unknown owners cannot change the folder.
+The scan runs in the background and checks the captured process birth identity;
+failed or stale scans leave the previous target in place.
 
 Socket discovery runs with the initial scan and subsequent refreshes. The Processes
 view shows a PORTS binding count; the side panel and file details preview distinct

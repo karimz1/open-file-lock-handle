@@ -179,6 +179,10 @@ ports for the selected process. From Processes, press `Enter`, then `p` to inspe
 its ports. In Ports, `Enter` opens port details directly. Within details, `p` opens
 ports and `f` opens file usages. `Esc` returns to the view you came from: opening details
 from Ports returns directly to Ports, with your search preserved.
+Without an explicit path, inspecting a port owner or switching from Ports to
+Processes/Locked files scans that process’s working directory (or its executable
+directory if unavailable). Pass a path or `--here` to keep the folder fixed.
+
 Normal termination and force kill use the same confirmation and identity checks
 as file inspection. Unknown owners cannot be terminated. A bound port does not
 prove that it is reachable over the network.

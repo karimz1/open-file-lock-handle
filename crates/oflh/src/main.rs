@@ -78,6 +78,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Argu
         }
         positional = true;
     }
+    result.view.follow_port_folder = result.path.is_none() && !result.view.ports_path_only;
     Ok(result)
 }
 
@@ -95,7 +96,8 @@ Usage: oflh [OPTIONS] [PATH]
   oflh --port 3000        find a TCP listener or UDP binding on port 3000
   oflh --here .           ports of processes referencing this directory
 
-No PATH means the current directory. Put options before PATH.
+No PATH starts in the current directory; inspecting a port follows its owner folder.
+An explicit PATH or --here keeps the folder fixed. Put options before PATH.
 
 Options:
   --ports       start in the Ports tab (TCP listeners and bound UDP)
@@ -142,6 +144,15 @@ mod tests {
         let parse = |args: &[&str]| parse_arguments(args.iter().map(OsString::from));
         let args = parse(&["--port", "3000", "--here", "."]).unwrap();
         assert!(args.view.ports && args.view.ports_path_only);
+        assert!(!args.view.follow_port_folder);
+        assert!(parse(&["--port", "5040"]).unwrap().view.follow_port_folder);
+        assert!(
+            !parse(&["--port", "5040", "."])
+                .unwrap()
+                .view
+                .follow_port_folder
+        );
+        assert!(!parse(&["--here"]).unwrap().view.follow_port_folder);
         assert_eq!(args.view.port, Some(3000));
         assert_eq!(args.path, Some(OsString::from(".")));
         for args in [

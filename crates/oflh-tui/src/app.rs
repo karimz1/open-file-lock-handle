@@ -43,11 +43,13 @@ pub enum Effect {
     None,
     Quit,
     Scan,
+    FollowPort(Identity, std::path::PathBuf),
     Kill(Vec<Identity>, bool),
     Link(&'static str),
 }
 pub struct App {
     pub target: Target,
+    pub follow_port_folder: bool,
     pub version: String,
     pub snapshot: Snapshot,
     indices: Vec<ProcessIndex>,
@@ -95,6 +97,7 @@ impl App {
     pub fn new(target: Target, version: String) -> Self {
         Self {
             target,
+            follow_port_folder: false,
             version,
             snapshot: Snapshot::default(),
             indices: Vec::new(),
@@ -609,6 +612,9 @@ impl App {
                     self.detail_query.clear();
                     self.usage_cursor = 0;
                     self.filter_details();
+                    if !self.detail_ports && self.ports {
+                        return self.port_folder_effect(self.detail());
+                    }
                     if self.detail_ports && !self.ports_requested {
                         self.ports_requested = true;
                         if !self.stopping {
@@ -624,7 +630,12 @@ impl App {
                 K::Right => self.path_page = self.path_page.saturating_add(1),
                 _ => {}
             },
-            K::Enter => self.open_details(),
+            K::Enter => {
+                self.open_details();
+                if self.ports {
+                    return self.port_folder_effect(self.detail());
+                }
+            }
             K::Char('1' | '2' | '3') => return self.switch_tab(key.code),
             K::Char('s') if self.ports => {
                 self.ports_path_only = !self.ports_path_only;
@@ -671,12 +682,50 @@ impl App {
         }
         Effect::None
     }
+    fn port_folder_effect(&self, process: Option<&Process>) -> Effect {
+        if !self.follow_port_folder || self.ports_path_only || self.stopping {
+            return Effect::None;
+        }
+        let Some(process) = process else {
+            return Effect::None;
+        };
+        if process.identity.pid == 0 || process.identity.started == 0 {
+            return Effect::None;
+        }
+        let folder = if process.cwd.is_absolute() {
+            Some(process.cwd.as_path())
+        } else {
+            process
+                .executable
+                .parent()
+                .filter(|path| path.is_absolute())
+        };
+        match folder {
+            Some(folder) if folder != self.target.path => {
+                Effect::FollowPort(process.identity, folder.to_owned())
+            }
+            _ => Effect::None,
+        }
+    }
+
     fn switch_tab(&mut self, key: K) -> Effect {
+        let folder_effect = if self.ports && key != K::Char('3') {
+            self.port_folder_effect(
+                self.rows
+                    .get(self.cursor)
+                    .map(|row| &self.snapshot.processes[row.process]),
+            )
+        } else {
+            Effect::None
+        };
         self.tree = None;
         self.locked = key == K::Char('2');
         self.ports = key == K::Char('3');
         self.cursor = 0;
         self.refilter();
+        if !matches!(folder_effect, Effect::None) {
+            return folder_effect;
+        }
         if self.ports && !self.ports_requested {
             self.ports_requested = true;
             if self.stopping {

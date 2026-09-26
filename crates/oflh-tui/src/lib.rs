@@ -17,6 +17,7 @@ use worker::{Work, Worker};
 enum Event {
     Input(std::io::Result<TerminalEvent>),
     Scan(u64, Result<Snapshot>),
+    ScopedScan(u64, Box<Result<(Target, Snapshot)>>),
     Metrics(u64, Result<Vec<(Identity, Metrics)>>),
     Killed(usize, Vec<String>),
 }
@@ -32,6 +33,8 @@ impl Drop for TerminalGuard {
 /// Initial view requested by the CLI. Refresh and process actions remain interactive.
 #[derive(Clone, Debug, Default)]
 pub struct StartOptions {
+    /// Follow a selected port owner’s folder when no explicit path was supplied.
+    pub follow_port_folder: bool,
     /// Start in the Ports tab and collect network bindings.
     pub ports: bool,
     /// Restrict Ports to processes referencing the target path.
@@ -52,6 +55,7 @@ pub fn run(
     crossterm::execute!(std::io::stdout(), event::EnableBracketedPaste)?;
     let mut app = App::new(target, version);
     app.ports = options.ports;
+    app.follow_port_folder = options.follow_port_folder;
     app.ports_requested = true;
     app.ports_path_only = options.ports_path_only;
     app.port_query = options
@@ -132,6 +136,23 @@ pub fn run(
                 }
                 dirty = true
             }
+            Ok(Event::ScopedScan(result_generation, result)) if result_generation == generation => {
+                app.scanning = false;
+                sampling = false;
+                match *result {
+                    Ok((target, snapshot)) => {
+                        app.target = target;
+                        app.replace(snapshot);
+                        sample = Some(Instant::now() + Duration::from_secs(1));
+                    }
+                    Err(Error::Cancelled) => {}
+                    Err(error) => {
+                        app.status = format!("Process folder scan failed: {error}");
+                        app.error = true;
+                    }
+                }
+                dirty = true;
+            }
             Ok(Event::Metrics(result_generation, result)) if result_generation == generation => {
                 sampling = false;
                 if let Ok(metrics) = result {
@@ -170,6 +191,15 @@ pub fn run(
                 worker.request(generation, scan_work(&app));
                 pulse = Instant::now() + PULSE;
                 dirty = true
+            }
+            Effect::FollowPort(identity, path) => {
+                generation += 1;
+                sample = None;
+                sampling = false;
+                app.scanning = true;
+                worker.request(generation, Work::FollowPort(identity, path));
+                pulse = Instant::now() + PULSE;
+                dirty = true;
             }
             Effect::Kill(ids, force) => {
                 generation += 1;

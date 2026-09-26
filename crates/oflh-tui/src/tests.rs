@@ -653,3 +653,61 @@ fn detail_shortcuts_select_ports_and_files_without_toggling() {
     key(&mut application, K::Char('f'));
     assert!(!application.detail_ports);
 }
+
+#[test]
+fn port_inspection_follows_owner_folder_only_for_implicit_targets() {
+    for enter_details in [false, true] {
+        let mut application = ports_app();
+        application.target = Target::new(std::env::temp_dir()).unwrap();
+        application.follow_port_folder = true;
+        let folder = application.target.path.join("port-owner-project");
+        let mut snapshot = application.snapshot.clone();
+        snapshot.processes[0].cwd = folder.clone();
+        application.replace(snapshot);
+        key(&mut application, K::Char('3'));
+        let effect = key(
+            &mut application,
+            if enter_details {
+                K::Enter
+            } else {
+                K::Char('1')
+            },
+        );
+        assert!(matches!(effect, Effect::FollowPort(identity, path)
+            if identity.pid == 424242 && path == folder));
+        assert_ne!(
+            application.target.path, folder,
+            "target changes only after the worker returns a verified snapshot"
+        );
+    }
+    for (follow, scoped) in [(false, false), (true, true)] {
+        let mut application = ports_app();
+        application.target = Target::new(std::env::temp_dir()).unwrap();
+        application.follow_port_folder = follow;
+        application.ports_path_only = scoped;
+        key(&mut application, K::Char('3'));
+        assert!(matches!(key(&mut application, K::Enter), Effect::None));
+    }
+}
+
+#[test]
+fn port_folder_fallback_and_unknown_owner() {
+    let mut application = ports_app();
+    application.follow_port_folder = true;
+    let mut snapshot = application.snapshot.clone();
+    snapshot.processes[0].cwd.clear();
+    let folder = Target::new(std::env::temp_dir())
+        .unwrap()
+        .path
+        .join("owner-bin");
+    snapshot.processes[0].executable = folder.join("server");
+    application.replace(snapshot);
+    key(&mut application, K::Char('3'));
+    assert!(
+        matches!(key(&mut application, K::Enter), Effect::FollowPort(_, path)
+        if path == folder)
+    );
+    key(&mut application, K::Esc);
+    key(&mut application, K::End);
+    assert!(matches!(key(&mut application, K::Enter), Effect::None));
+}
