@@ -103,10 +103,12 @@ fn native_terminal_workflow() {
         })
         .unwrap();
     parser.lock().unwrap().screen_mut().set_size(24, 80);
-    send(b"\x1b?");
+    send(b"\x1b");
+    wait("1 Processes");
+    send(b"?");
     wait("SCAN DETAILS");
     send(b"\x1b");
-    wait("Processes");
+    wait("1 Processes");
     send(format!("3/{port}\r").as_bytes());
     wait("ALL PORTS");
     wait(&std::process::id().to_string());
