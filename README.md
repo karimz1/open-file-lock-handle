@@ -15,9 +15,9 @@
 [![Listed on AlternativeTo](https://img.shields.io/badge/AlternativeTo-listed-64748b?style=flat)](https://alternativeto.net/software/oflh-open-file-lock-handle/about/)
 
 **Open File Lock Handle (`oflh`) finds processes using a file or directory on
-Windows, Linux, and macOS.** It is a command-line tool with an interactive
-terminal UI (TUI) for investigating locked files, open file handles, and mapped
-files. It also finds **TCP listening ports and bound UDP sockets**, shows their
+Windows, Linux, and macOS.** Choose the graphical **OFLH Desktop** or the
+**CLI with interactive terminal UI (TUI)** to investigate locked files, open
+handles, and mapped files. Both use the same Rust inspection engine. It also finds **TCP listening ports and bound UDP sockets**, shows their
 processes, and links them to file usage in your project. Start with a path to see which processes reference it and what they have open.
 
 ```sh
@@ -29,7 +29,25 @@ oflh --port 3000         # Find the process using a local port
 
 [Install](#installation) · [Quick start](#getting-started) ·
 [Keyboard shortcuts](#keyboard-reference) · [Platform support](#platform-behavior) ·
-[User guide](docs/usage.md)
+[User guide](docs/usage.md) · [Desktop](docs/desktop.md)
+
+## Two interfaces, one inspection engine
+
+| | OFLH Desktop · release candidate | CLI / TUI |
+|---|---|---|
+| Start with | Drag a file or folder into the window | `oflh ./build` or `oflh --port 3000` |
+| Investigate | Resizable tables, column filters, process details and ancestry | Keyboard navigation, fuzzy search and ancestry |
+| Customize | Light, Rider Dark, VS Code Dark and OFLH Purple; adjustable font size | Compact terminal interface |
+| Get started | [Build and run Desktop](docs/desktop.md) · [RC validation](docs/desktop-rc.md) | [Install the CLI](#installation) · [Quick start](#getting-started) |
+
+### Desktop
+
+![OFLH Desktop showing a searchable process table and a process details panel with ancestry](images/desktop.png)
+
+Desktop preview rendered from synthetic test data. Desktop is an RC: see the
+[validation checklist](docs/desktop-rc.md) for coverage and remaining native checks.
+
+### Terminal
 
 <a href="images/demo.gif">
   <img src="images/demo.gif" alt="oflh terminal UI showing processes using a target path, file access modes, and process ancestry" width="100%">
@@ -58,7 +76,7 @@ path and investigate interactively, without knowing a process name or PID.
 
 - **Search quickly:** filter process names and file paths with fragments, CamelCase abbreviations, and wildcards.
 - **Inspect the context:** view individual file usages, access modes, parent processes, CPU, and memory.
-- **Follow changes:** sort results, rescan on demand, or enable five-second auto-refresh.
+- **Follow changes:** sort results, rescan on demand, or enable five-second auto-refresh in the TUI.
 - **Act from the same interface:** request termination with confirmation and process identity checks.
 
 Written in Rust, `oflh` uses native OS interfaces. See [platform behavior](#platform-behavior)
@@ -128,6 +146,26 @@ On Windows:
 cargo build --release --locked --bin oflh
 .\target\release\oflh.exe .
 ```
+
+### OFLH Desktop from source
+
+OFLH Desktop provides a graphical file-inspection workspace using the same Rust
+engine as the CLI/TUI. Choose or drop a file/folder, inspect process details,
+search local TCP/UDP ports, copy results, and confirm termination of captured
+process identities.
+The existing terminal interface remains available independently.
+
+Install Node.js 24 and the [desktop build prerequisites](docs/desktop.md#build-prerequisites),
+then, from the repository root:
+
+```sh
+npm --prefix crates/oflh-desktop/ui ci
+npm --prefix crates/oflh-desktop/ui run tauri -- dev
+```
+
+Open-file usage is not proof of a lock; Windows resource users are not proven lock
+owners. Desktop packages require native validation before release. See the
+[desktop guide](docs/desktop.md) for shortcuts, coverage and packaging status.
 
 ## Getting started
 

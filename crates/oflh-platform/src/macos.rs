@@ -402,6 +402,17 @@ impl Backend for Native {
         );
         Ok(self.sampler.sample(raw, total))
     }
+    fn is_running(&mut self, identity: Identity) -> Result<bool> {
+        match info::<libc::proc_bsdinfo>(identity.pid, 0) {
+            Ok(info) => Ok(info.pbi_start_tvsec == identity.started
+                && info.pbi_start_tvusec == identity.started_sub
+                && info.pbi_status != libc::SZOMB),
+            Err(Error::Io { source, .. }) if source.raw_os_error() == Some(libc::ESRCH) => {
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
+    }
     fn terminate(&mut self, identity: Identity, force: bool, cancel: &Cancellation) -> Result<()> {
         identity.validate()?;
         cancel.check()?;

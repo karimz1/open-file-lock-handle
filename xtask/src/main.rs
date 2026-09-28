@@ -1,6 +1,7 @@
 //! Developer/release executable. Never linked into the installed application.
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+mod desktop;
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -173,6 +174,7 @@ fn run() -> Result<()> {
             "--output",
             "--formula",
             "--base-url",
+            "--bundle-dir",
         ]
         .contains(&key.as_str())
         {
@@ -203,6 +205,15 @@ fn run() -> Result<()> {
                 required("--arch")?,
             )?;
         }
+        "package-desktop" => desktop::package(
+            Path::new(required("--bundle-dir")?),
+            Path::new(required("--binary")?),
+            output,
+            tag,
+            required("--os")?,
+            required("--arch")?,
+        )?,
+        "assemble-desktop" => desktop::assemble(output, tag)?,
         "assemble" => {
             let formula_text =
                 assemble(output, tag, options.get("--base-url").map(String::as_str))?;

@@ -10,6 +10,7 @@ TUI through the `Backend` trait.
 | `oflh-platform` | Native discovery, resource sampling, termination | `oflh-core`, target-specific OS bindings |
 | `oflh-tui` | Input, application state, rendering, background work | `oflh-core`, `Backend`, Ratatui/Crossterm |
 | `oflh` | Arguments, terminal requirements, application composition | Core, platform, TUI |
+| `oflh-desktop` | Snapshot IPC, desktop actions, Tauri shell and React workspace | Core, platform; optional Tauri desktop dependencies |
 | `xtask` | Validation and release packaging | Independent developer executable |
 
 ## Data flow
@@ -90,3 +91,14 @@ benchmarks, and developer tools are separate from the installed executable.
 - [Apple process records](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/proc_info.h)
 - [Windows Restart Manager](https://learn.microsoft.com/en-us/windows/win32/rstmgr/restart-manager-portal)
 - [Windows Toolhelp snapshots](https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/nf-tlhelp32-createtoolhelp32snapshot)
+
+## Desktop frontend
+
+The desktop uses the same core file/port search and native backend APIs, with no dependency
+on the TUI. Its bounded scan worker keeps native paths and immutable snapshots in
+Rust. IPC pages carry string lifetime keys and revision-scoped path references.
+File-plus-port composition and identity-checked owner-folder inspection are shared
+with the TUI through `oflh-platform`. Confirmation tickets capture the original
+identities and action mode; native
+backends still validate them immediately before signaling. See the
+[desktop architecture and validation guide](desktop.md).

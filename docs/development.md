@@ -54,8 +54,9 @@ these previews for documentation instead of captures containing real process
 names or private paths. Rendering can still vary between terminal emulators.
 
 Unit tests live in `#[cfg(test)]` modules; Cargo integration tests are separate
-executables. Release packaging builds only `oflh`, so test harnesses, C fixtures,
-benchmarks, and developer tooling are absent from the distributed application.
+executables. CLI release packaging builds only `oflh`; desktop packaging builds the separate
+`oflh-desktop` executable. Test harnesses, C fixtures, benchmarks, and developer
+tooling are absent from both distributed applications.
 
 ## Documentation and performance
 
@@ -65,3 +66,9 @@ Use [Performance](performance.md) when measuring a scanner or startup change.
 
 For pull-request expectations, see [Contributing](../CONTRIBUTING.md). Release
 maintainers should follow [Releasing](releasing.md).
+
+## Desktop development
+
+See [OFLH Desktop](desktop.md) for WebView prerequisites, frontend checks and
+native packaging. Ordinary CLI builds and `cargo xtask check` do not require a
+GUI toolchain. Desktop shell validation additionally enables the `desktop` feature.

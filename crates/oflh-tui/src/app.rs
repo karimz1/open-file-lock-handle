@@ -689,17 +689,7 @@ impl App {
         let Some(process) = process else {
             return Effect::None;
         };
-        if process.identity.pid == 0 || process.identity.started == 0 {
-            return Effect::None;
-        }
-        let folder = if process.cwd.is_absolute() {
-            Some(process.cwd.as_path())
-        } else {
-            process
-                .executable
-                .parent()
-                .filter(|path| path.is_absolute())
-        };
+        let folder = process.inspection_folder();
         match folder {
             Some(folder) if folder != self.target.path => {
                 Effect::FollowPort(process.identity, folder.to_owned())

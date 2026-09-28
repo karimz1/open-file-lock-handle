@@ -259,6 +259,21 @@ pub struct Process {
     pub cpu: Option<f64>,
 }
 
+impl Process {
+    /// Choose a native inspection folder: captured working directory first, then
+    /// executable parent. Unknown owners cannot supply an actionable folder.
+    pub fn inspection_folder(&self) -> Option<&std::path::Path> {
+        if self.identity.pid == 0 || self.identity.started == 0 {
+            return None;
+        }
+        if self.cwd.is_absolute() {
+            Some(&self.cwd)
+        } else {
+            self.executable.parent().filter(|path| path.is_absolute())
+        }
+    }
+}
+
 /// A complete scan result published atomically to the UI.
 #[derive(Clone, Debug, Default)]
 pub struct Snapshot {
@@ -318,4 +333,34 @@ pub fn safe(value: &str) -> String {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod inspection_folder_tests {
+    use super::*;
+    #[test]
+    fn owner_folder_prefers_native_cwd_then_executable_parent() {
+        let root = std::env::temp_dir().join("oflh-fixture");
+        let mut process = Process {
+            identity: Identity {
+                pid: 42,
+                started: 1,
+                started_sub: 0,
+            },
+            cwd: root.join("work"),
+            executable: root.join("bin/worker"),
+            ..Process::default()
+        };
+        assert_eq!(
+            process.inspection_folder(),
+            Some(root.join("work").as_path())
+        );
+        process.cwd = "relative".into();
+        assert_eq!(
+            process.inspection_folder(),
+            Some(root.join("bin").as_path())
+        );
+        process.identity.started = 0;
+        assert!(process.inspection_folder().is_none());
+    }
 }

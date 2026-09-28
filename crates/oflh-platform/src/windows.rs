@@ -575,6 +575,26 @@ impl Backend for Native {
         );
         Ok(self.sampler.sample(raw, total))
     }
+    fn is_running(&mut self, identity: Identity) -> Result<bool> {
+        let handle = match open(identity.pid, PROCESS_QUERY_LIMITED_INFORMATION | 0x00100000) {
+            Ok(handle) => handle,
+            Err(Error::Io { source, .. })
+                if source.raw_os_error() == Some(ERROR_INVALID_PARAMETER as i32) =>
+            {
+                return Ok(false);
+            }
+            Err(error) => return Err(error),
+        };
+        if times(&handle, identity.pid)?.0 != identity {
+            return Ok(false);
+        }
+        // SAFETY: the owned handle pins the process and grants SYNCHRONIZE access; zero timeout never blocks.
+        match unsafe { WaitForSingleObject(handle.0, 0) } {
+            WAIT_OBJECT_0 => Ok(false),
+            WAIT_TIMEOUT => Ok(true),
+            _ => Err(io("verify process exit", std::io::Error::last_os_error())),
+        }
+    }
     fn terminate(&mut self, identity: Identity, force: bool, cancel: &Cancellation) -> Result<()> {
         identity.validate()?;
         cancel.check()?;

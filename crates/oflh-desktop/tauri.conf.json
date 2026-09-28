@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OFLH Desktop",
+  "identifier": "io.github.karimz1.oflh",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "ui/dist",
+    "features": [
+      "desktop"
+    ]
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "OFLH Desktop",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 860,
+        "minHeight": 560,
+        "visible": true,
+        "backgroundColor": "#1e1e1e"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "Find processes using files and folders",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
