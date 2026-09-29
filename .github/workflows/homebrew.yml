@@ -7,7 +7,6 @@ permissions:
   contents: read
 jobs:
   dispatch:
-    if: github.event_name == 'workflow_dispatch' || github.event.release.action == 'published'
     runs-on: ubuntu-24.04
     steps:
       - name: Trigger the tap updater immediately
