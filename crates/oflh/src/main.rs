@@ -1,10 +1,7 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+use oflh_core::VERSION;
 use std::{ffi::OsString, io::IsTerminal, process::ExitCode};
-const VERSION: &str = match option_env!("OFLH_VERSION") {
-    Some(v) => v,
-    None => env!("CARGO_PKG_VERSION"),
-};
 #[derive(Debug, thiserror::Error)]
 enum CliError {
     #[error("{0}")]

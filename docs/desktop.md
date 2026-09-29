@@ -1,4 +1,7 @@
-# OFLH Desktop
+# OFLH Desktop — developer reference
+
+For using the application, start with the [Desktop user guide](desktop-usage.md).
+For source builds, see [development](development.md#desktop-development).
 
 OFLH Desktop is a separate graphical frontend to the existing Rust inspection
 engine. The CLI and Ratatui interface retain their current entry points.
@@ -70,14 +73,9 @@ On Ubuntu 24.04, install:
 sudo apt-get install build-essential libwebkit2gtk-4.1-dev libssl-dev libxdo-dev librsvg2-dev libappindicator3-dev patchelf
 ```
 
-The [README desktop quick start](../README.md#oflh-desktop-from-source) launches
-the development app. For a production frontend and embedded-assets executable:
+See [Desktop source builds](development.md#desktop-development) for development
+and release executable commands.
 
-```sh
-npm --prefix crates/oflh-desktop/ui ci
-npm --prefix crates/oflh-desktop/ui run tauri -- build --no-bundle -- --locked
-./target/release/oflh-desktop
-```
 
 On Windows, run `target\release\oflh-desktop.exe`. The Tauri CLI and Rust crates
 are locked; the JavaScript API uses the matching 2.11 minor release. Plugin APIs
@@ -167,7 +165,7 @@ Windows and macOS are unaffected.
   project link, and Buy Me a Coffee support link. Donate opens the same support
   page; no payment happens inside OFLH.
 - F5 refreshes and is displayed on the Refresh button; Ctrl/Cmd+R also works.
-- The header’s Star on GitHub link opens the project in your default browser;
+- The sidebar’s Star on GitHub link opens the project in your default browser;
   it does not perform any GitHub account action.
 - Drag the left edge of the process details panel to resize it. Focus the separator
   and use Left/Right (or Home/End) for keyboard resizing; double-click resets its
@@ -265,7 +263,10 @@ sets into `desktop-dist`, verify and generate aggregate checksums with:
 cargo xtask assemble-desktop --version dev --output desktop-dist
 ```
 
-For tagged builds, replace `dev` with the workspace version prefixed by `v`.
+For tagged builds, use the release tag, set `OFLH_VERSION` to its version without
+`v`, and pass that same version through Tauri `--config` to both build and bundle.
+The workflow generates this override automatically. See [release assembly](releasing.md)
+for direct downloads, internal receipts and the single public checksum file.
 The separate desktop CI workflow feeds the existing draft release workflow;
 CLI packages and Homebrew stay independent. Signing, notarization, installer
 execution and native interaction review remain release gates, not implied by a

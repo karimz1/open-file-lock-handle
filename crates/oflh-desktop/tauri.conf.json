@@ -32,6 +32,8 @@
     "active": true,
     "targets": "all",
     "category": "DeveloperTool",
+    "publisher": "Karim Zouine",
+    "homepage": "https://github.com/karimz1/open-file-lock-handle",
     "shortDescription": "Find processes using files and folders",
     "icon": [
       "icons/32x32.png",

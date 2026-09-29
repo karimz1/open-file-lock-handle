@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-fn extensions(os: &str) -> Result<&'static [&'static str]> {
+pub(super) fn extensions(os: &str) -> Result<&'static [&'static str]> {
     match os {
         "linux" => Ok(&["deb", "rpm"]),
         "darwin" => Ok(&["dmg"]),
@@ -15,8 +15,8 @@ fn extensions(os: &str) -> Result<&'static [&'static str]> {
         _ => Err("unsupported desktop OS".into()),
     }
 }
-fn artifact(os: &str, arch: &str, extension: &str) -> String {
-    format!("oflh-desktop-{os}-{arch}-installer.{extension}")
+pub(super) fn artifact(os: &str, arch: &str, extension: &str) -> String {
+    format!("oflh-desktop.{os}.{arch}.{extension}")
 }
 fn collect(
     directory: &Path,
@@ -55,9 +55,6 @@ pub(super) fn package(
     version(tag)?;
     if !TARGETS.contains(&(os, arch)) {
         return Err("unsupported desktop target".into());
-    }
-    if tag != "dev" && tag.strip_prefix('v') != Some(env!("CARGO_PKG_VERSION")) {
-        return Err("desktop tag must match the Cargo workspace version".into());
     }
     if !binary.is_file() || binary.metadata()?.len() == 0 {
         return Err("missing tested desktop executable".into());

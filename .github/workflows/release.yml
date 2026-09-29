@@ -17,7 +17,7 @@ jobs:
   validate:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@v7
       - name: Require the selected tag to match this workflow revision
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
@@ -46,10 +46,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
-          pattern: oflh-*
+          pattern: oflh-cli.*
           merge-multiple: true
           path: dist
       - name: Prepare the real release formula with local executable URLs
@@ -73,10 +73,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
-          pattern: oflh-*
+          pattern: oflh-cli.*
           merge-multiple: true
           path: dist
       - name: Verify all six targets and generate checksums and Homebrew formula
@@ -86,15 +86,23 @@ jobs:
           cargo xtask assemble --version "$TAG" --formula "$RUNNER_TEMP/oflh.rb"
           cd dist
           sha256sum --check checksums.txt
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      - uses: actions/download-artifact@v8
         with:
-          pattern: desktop-*
+          pattern: oflh-desktop.*
           merge-multiple: true
           path: desktop-dist
-      - name: Verify all six desktop package sets
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-receipt-*
+          merge-multiple: true
+          path: desktop-dist
+      - name: Verify both interfaces and assemble direct release downloads
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
-        run: cargo xtask assemble-desktop --version "$TAG" --output desktop-dist
+        run: |
+          cargo xtask assemble-release --version "$TAG" --cli-dir dist --desktop-dir desktop-dist --output release-dist
+          cd release-dist
+          sha256sum --check checksums.txt
       - name: Create or update draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -107,6 +115,6 @@ jobs:
             if [[ "$TAG" == *-* ]]; then PRERELEASE=(--prerelease); fi
             gh release create "$TAG" --verify-tag --draft "${PRERELEASE[@]}" --title "$TAG" --generate-notes
           fi
-          gh release upload "$TAG" dist/* desktop-dist/* --clobber
+          gh release upload "$TAG" release-dist/* --clobber
           echo '### Release ready for review' >> "$GITHUB_STEP_SUMMARY"
           echo 'All platform jobs passed. The release remains a draft until you publish it.' >> "$GITHUB_STEP_SUMMARY"

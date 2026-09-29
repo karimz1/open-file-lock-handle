@@ -102,19 +102,42 @@ service with Tauri on the same six native targets. It collects DEB/RPM packages
 on Linux, DMGs on macOS, and NSIS installers on Windows. These jobs are separate
 from the existing CLI artifacts and Homebrew formula generation.
 
-The desktop version is inherited from `workspace.package.version`. Build with
+Both frontends use `oflh_core::VERSION`: release CI sets `OFLH_VERSION` to
+the tag without `v`, and supplies the same version through a Tauri config override
+for both build and bundle. Local builds display `development`; the workspace
+package version is the internal Cargo version. Build with
 `tauri build --no-bundle -- --locked`, then use `tauri bundle --no-binary-patching`
 to package that executable without rebuilding or patching it. See the
 [desktop build guide](desktop.md#packages) for commands. Signing/notarization is
 not configured; unsigned installers require platform review before distribution.
 
-`cargo xtask package-desktop` records the tested executable hash and collects
-platform packages with checksummed manifests. `cargo xtask assemble-desktop`
-requires all six native sets, matching release versions and checksums; it rejects
-missing, altered and unexpected artifacts. Desktop outputs live in
-`desktop-dist`, never in the CLI assembler's `dist` directory. Both artifact sets
-are uploaded to the same draft only after all jobs pass. Existing published
-releases remain protected from overwrite.
+Public download names distinguish interfaces: `oflh-cli.linux.amd64`,
+`oflh-cli.windows.arm64.exe`, `oflh-desktop.linux.amd64.rpm`,
+`oflh-desktop.linux.amd64.deb`, `oflh-desktop.darwin.arm64.dmg`, and
+`oflh-desktop.windows.arm64.exe`. The installed terminal command remains `oflh`.
+Older releases retain their existing `oflh-linux-amd64` style names.
+
+`cargo xtask package-desktop` records tested executable and installer hashes in
+internal validation receipts. `assemble-desktop` requires all six native sets,
+matching versions and checksums and rejects missing, altered or extra artifacts.
+Receipts are uploaded separately for CI assembly; they are not public release assets.
+
+`cargo xtask assemble-release --version TAG --cli-dir dist --desktop-dir desktop-dist --output release-dist`
+validates both matrices, collects only the six CLI executables and eight native
+installers, and writes **one `checksums.txt`** covering all 14 downloads. It refuses
+to overwrite its output directory. The release workflow uploads these files
+individually, without ZIP wrappers or manifests. Native package Actions artifacts
+also use `archive: false`; diagnostic reports and internal receipts remain grouped.
+
+The Homebrew formula generator uses the new CLI names. The separate tap updater must accept both legacy and new CLI names before a stable
+release is published; land its companion compatibility change first.
+The tap updater also verifies both macOS DMGs and generates the separate
+`oflh-desktop` cask when a stable combined release becomes available. RC users
+download installers directly. Existing published releases remain protected from overwrite.
+
+Installer metadata names Karim Zouine as publisher. Windows verified publisher
+status and macOS notarization still require signing; metadata alone does not remove
+OS warnings. No signing credentials are configured by this change.
 
 The added workflow is configuration, not evidence of six passing native jobs.
 Review the actual CI runs and manually exercise native dialogs, drag-and-drop,

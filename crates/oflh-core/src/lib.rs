@@ -4,6 +4,12 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 mod path;
+/// User-visible build version shared by both frontends. Release CI sets the tag value.
+pub const VERSION: &str = match option_env!("OFLH_VERSION") {
+    Some(version) => version,
+    None => "development",
+};
+
 pub mod ports;
 pub mod search;
 pub use ports::{Port, Protocol};

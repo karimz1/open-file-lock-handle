@@ -78,7 +78,7 @@ test.beforeEach(async ({ page }) => {
         "Some processes could not be inspected because access was denied.",
       ],
       error: null,
-      version: "0.0.10-rc.1",
+      version: "development",
     };
     Object.assign(window, {
       __testCalls: calls,
@@ -784,7 +784,7 @@ test("documentation screenshot uses only synthetic inspection data", async ({
   });
 });
 
-test("utility buttons have persistent borders and fit the minimum window width", async ({
+test("utility actions stay in the sidebar and fit the minimum window", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 860, height: 560 });
@@ -792,12 +792,12 @@ test("utility buttons have persistent borders and fit the minimum window width",
   for (const name of ["Star on GitHub", "Settings", "Donate"]) {
     const button = page.getByRole("button", { name, exact: true });
     await expect(button).toBeVisible();
-    await expect(button).toHaveCSS("border-top-style", "solid");
-    expect(
-      await button.evaluate(
-        (element) => getComputedStyle(element).borderTopColor,
-      ),
-    ).not.toBe("rgba(0, 0, 0, 0)");
+    await expect(
+      page.getByRole("navigation").getByRole("button", { name, exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("banner").getByRole("button", { name, exact: true }),
+    ).toHaveCount(0);
     const box = await button.boundingBox();
     expect(box!.x).toBeGreaterThanOrEqual(0);
     expect(box!.x + box!.width).toBeLessThanOrEqual(860);

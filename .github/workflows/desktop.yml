@@ -15,8 +15,8 @@ jobs:
   frontend:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -25,7 +25,7 @@ jobs:
         working-directory: crates/oflh-desktop/ui
       - run: npm run format:check && npm run build && npm test && npx playwright install --with-deps chrome && npm run test:ui
         working-directory: crates/oflh-desktop/ui
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: desktop-ui-report
@@ -48,12 +48,14 @@ jobs:
           - {os: darwin, arch: arm64, runner: macos-15, bundles: dmg}
           - {os: windows, arch: amd64, runner: windows-2025, bundles: nsis}
           - {os: windows, arch: arm64, runner: windows-11-arm, bundles: nsis}
+    env:
+      RELEASE_TAG: ${{ inputs.version || 'dev' }}
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -61,6 +63,16 @@ jobs:
       - name: Linux WebView build dependencies
         if: matrix.os == 'linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libxdo-dev libssl-dev librsvg2-dev patchelf
+      - name: Set matching application and installer versions
+        run: |
+          cargo xtask validate --version "$RELEASE_TAG"
+          if [ "$RELEASE_TAG" = dev ]; then
+            echo 'OFLH_VERSION=development' >> "$GITHUB_ENV"
+            printf '{"version":"0.0.0-dev"}\n' > "$RUNNER_TEMP/desktop-version.json"
+          else
+            echo "OFLH_VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+            printf '{"version":"%s"}\n' "${RELEASE_TAG#v}" > "$RUNNER_TEMP/desktop-version.json"
+          fi
       - run: rustup show
       - run: npm ci && npm run build
         working-directory: crates/oflh-desktop/ui
@@ -70,20 +82,48 @@ jobs:
           cargo clippy -p oflh-desktop --all-targets --features desktop --locked -- -D warnings
           cargo test -p oflh-desktop --features desktop --locked
       - name: Build desktop release executable
-        run: npm run tauri -- build --no-bundle -- --locked
+        run: npm run tauri -- build --config "$RUNNER_TEMP/desktop-version.json" --no-bundle -- --locked
         working-directory: crates/oflh-desktop/ui
       - name: Verify built desktop version
-        run: ./target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }} --version
+        run: test "$(./target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }} --version)" = "oflh-desktop $OFLH_VERSION"
       - name: Bundle the built executable without rebuilding
-        run: npm run tauri -- bundle --no-binary-patching --bundles '${{ matrix.bundles }}'
+        run: npm run tauri -- bundle --config "$RUNNER_TEMP/desktop-version.json" --no-binary-patching --bundles '${{ matrix.bundles }}'
         working-directory: crates/oflh-desktop/ui
       - name: Collect desktop packages separately from CLI artifacts
         env:
           RELEASE_TAG: ${{ inputs.version || 'dev' }}
         run: cargo xtask package-desktop --version "$RELEASE_TAG" --os '${{ matrix.os }}' --arch '${{ matrix.arch }}' --binary target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }} --bundle-dir target/release/bundle --output desktop-dist
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'linux'
         with:
-          name: desktop-${{ matrix.os }}-${{ matrix.arch }}
-          path: desktop-dist/*
+          archive: false
+          path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.deb
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'linux'
+        with:
+          archive: false
+          path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.rpm
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'darwin'
+        with:
+          archive: false
+          path: desktop-dist/oflh-desktop.darwin.${{ matrix.arch }}.dmg
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'windows'
+        with:
+          archive: false
+          path: desktop-dist/oflh-desktop.windows.${{ matrix.arch }}.exe
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-receipt-${{ matrix.os }}-${{ matrix.arch }}
+          path: desktop-dist/*.manifest
           if-no-files-found: error
           retention-days: 7

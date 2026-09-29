@@ -1,0 +1,102 @@
+# Using OFLH Desktop
+
+Find which processes are using a file, folder or local port without opening a
+terminal. For installation and the first scan, see the [README quick start](../README.md#getting-started).
+The [terminal guide](usage.md) covers the separate CLI/TUI interface.
+
+## Inspect files and processes
+
+Drop a file or folder anywhere in the window, choose **Open file** / **Open folder**,
+or type a path and choose **Inspect**. **Recent targets** lets you revisit targets
+from this session. Folder scans include descendants.
+
+**Processes** groups results by process. **File usages** shows individual matching
+observations. Click a row to open details; the panel button or close button closes
+it. Table paths are shortened for readability; full paths and copy/reveal actions
+are available in details. Drag column dividers or the details panel edge to resize.
+
+The details panel puts **Matching handles**, **Local ports**, and **Process ancestry**
+near the top. Ancestry reads from oldest captured parent down to the highlighted
+current process. Click an ancestor to select its process actions.
+
+An open file is not proof of a lock. **Lock evidence only** restricts results to
+reported evidence; Windows resource users are not proven lock owners. Open
+**coverage notices** below the table for permissions and scan limitations.
+
+## Search and filters
+
+Search checks process names, PIDs and full paths using the Rust matcher. A shared
+folder name can match every row. To search only names, open **Column filters**
+and fill **Process name**. Filters combine with the main search and process scope.
+
+Column filters include exact PID, path, CPU and memory bounds, evidence, and
+access/relation. Numeric bounds are inclusive. Unknown metrics do not match a
+numeric bound; an unavailable CPU sample is not zero. Choose **Apply filters**
+to apply, or **Clear filters** to reset column predicates.
+
+In **Ports**, search `port:3000` for an exact port or `30` for matching fragments.
+You can combine terms such as `port:3000 tcp`, `udp`, `ipv6` or `pid:1234`.
+The view lists local TCP listeners and bound UDP sockets, not network reachability.
+**Target processes only** limits owners to processes seen using the inspected path.
+Opening **Local ports** from details scopes results to that captured process.
+Refresh and termination preserve that scope: an empty result can confirm that the
+process's bindings disappeared. Clear the scope explicitly to see other owners.
+
+## Selection and copying
+
+Click a row for details. Ctrl/Cmd-click adds or removes a process; Shift-click
+selects a range. Selection represents processes, so several file rows belonging
+to one process can highlight together. Select All applies to the filtered results.
+Selections can include processes outside the current view; the action bar and
+confirmation disclose that.
+
+Use the context menu or details actions to copy paths, filenames, process names,
+PIDs or command lines where available. Ctrl/Cmd+C copies selected rows while the
+table is focused. Reveal opens the OS file manager for the selected native path.
+
+## Process actions
+
+Close the owning application normally when possible. **Terminate** requests the
+normal platform action; **Force terminate** is a separate, stronger action.
+Review the named processes and PIDs before confirming. Cancel is the default.
+Stopping a parent process can affect its children or your session.
+
+Rust revalidates captured process identities before acting, checks whether the
+original process exited, and refreshes results. A request is not proof of exit:
+permission failures, still-running processes and unavailable verification are
+reported separately. OFLH never silently escalates to force termination.
+
+## Keyboard shortcuts
+
+Use Cmd on macOS and Ctrl on Windows/Linux where shown.
+
+| Shortcut | Action |
+| --- | --- |
+| `F5` / `Ctrl/Cmd+R` | Refresh |
+| `Ctrl/Cmd+1` / `2` / `3` / `4` | Processes / File usages / Ports / Recent targets |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous workspace tab |
+| `Ctrl/Cmd+F` or `/` | Focus search |
+| `Ctrl/Cmd+A` | Select all filtered rows when the table is focused |
+| `Ctrl/Cmd+C` | Copy selection when the table is focused |
+| Arrow keys, Home, End | Navigate table rows |
+| `Enter` | Open process details |
+| `Ctrl/Cmd+Shift+D` | Toggle details |
+| `Ctrl/Cmd+,` | Settings |
+| `Escape` | Close a menu/dialog or leave search editing |
+
+Text fields retain ordinary editing shortcuts. Refresh stays at the top right;
+it rescans the current workspace and is also available through F5.
+
+## Appearance and project links
+
+**Settings** at the bottom left offers Light, System, Rider Dark, VS Code Dark
+and OFLH Purple, plus font size. Your theme, font size and details width persist.
+The first launch offers a theme choice.
+
+**Star on GitHub** and **Donate** sit below Settings. They open the project and
+Buy Me a Coffee in your browser; OFLH does not star a repository or process a
+payment for you. Settings includes author credit and the same project links.
+
+For OS limitations, see [platform support](platform-support.md). For build,
+testing and packaging details, see [development](development.md) and the
+[RC validation checklist](desktop-rc.md).

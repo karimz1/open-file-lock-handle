@@ -1454,15 +1454,26 @@ kbd.shortcut {
   border-bottom: 1px solid var(--border);
 }
 
-/* Keep persistent utility actions recognizable even without hover. */
-.sidebar-bottom button {
-  border-color: var(--border);
-  background: var(--panel);
-  color: var(--text);
-  margin-top: 6px;
+/* A separated utility group stays discoverable without boxed navigation. */
+.sidebar-bottom {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
 }
-.sidebar-bottom button:hover,
-.github-link:hover {
-  border-color: var(--muted);
+.sidebar-bottom button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text);
+  min-height: 32px;
+  padding: 6px 10px;
+}
+.sidebar-bottom button:hover {
   background: var(--hover);
+}
+.sidebar-bottom p {
+  padding: 8px 11px;
+}
+
+.sidebar-bottom button.active {
+  background: var(--accent-bg);
+  color: var(--accent);
 }

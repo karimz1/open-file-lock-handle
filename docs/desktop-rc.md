@@ -83,5 +83,6 @@ write previews under ignored `test-results/` and never rewrite documentation.
 
 Use the [release procedure](releasing.md) to collect Desktop packages separately
 from CLI artifacts. Bundle the release executable already tested; do not silently
-rebuild it between testing and packaging. Keep the workspace version in sync.
+rebuild it between testing and packaging. Ensure both `--version` outputs and installer metadata match the release tag.
+Local builds display development.
 Local validation does not authorize a tag, upload, or published release.

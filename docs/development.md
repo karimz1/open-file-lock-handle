@@ -1,4 +1,4 @@
-# Rust development
+# Development and source builds
 
 Install Rust through rustup; `rust-toolchain.toml` pins the toolchain used by CI.
 Run the repository gates with:
@@ -68,6 +68,27 @@ For pull-request expectations, see [Contributing](../CONTRIBUTING.md). Release
 maintainers should follow [Releasing](releasing.md).
 
 ## Desktop development
+
+Install Node.js 24 and the [native WebView prerequisites](desktop.md#build-prerequisites).
+From the repository root:
+
+```sh
+npm --prefix crates/oflh-desktop/ui ci
+npm --prefix crates/oflh-desktop/ui run tauri -- dev
+```
+
+To build a standalone Desktop executable:
+
+```sh
+npm --prefix crates/oflh-desktop/ui run tauri -- build --no-bundle -- --locked
+./target/release/oflh-desktop
+```
+
+On Windows the executables are `target\release\oflh.exe` and
+`target\release\oflh-desktop.exe`. Local builds display **development**. Release
+CI sets `OFLH_VERSION` from the validated tag for both frontends and passes the
+same semantic version to Tauri installer configuration. `Cargo.toml` holds the
+workspace package version; it is not presented as the local build's release version.
 
 See [OFLH Desktop](desktop.md) for WebView prerequisites, frontend checks and
 native packaging. Ordinary CLI builds and `cargo xtask check` do not require a

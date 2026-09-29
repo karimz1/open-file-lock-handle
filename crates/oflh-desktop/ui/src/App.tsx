@@ -430,12 +430,6 @@ export function App() {
         </div>
         <div className="header-actions">
           <button
-            className="github-link"
-            onClick={() => void api.openProject().catch(report)}
-          >
-            <Star size={14} /> Star on GitHub <ExternalLink size={12} />
-          </button>
-          <button
             disabled={!status.revision}
             onClick={refresh}
             title={`Refresh (${modifier}+R or F5)`}
@@ -510,6 +504,12 @@ export function App() {
               Settings
             </button>
             <button
+              className="github-link"
+              onClick={() => void api.openProject().catch(report)}
+            >
+              <Star size={14} /> Star on GitHub <ExternalLink size={12} />
+            </button>
+            <button
               onClick={() => void api.donate().catch(report)}
               title="Support OFLH on Buy Me a Coffee"
             >
@@ -517,7 +517,11 @@ export function App() {
               <ExternalLink size={12} />
             </button>
             <span className="version">
-              {status.version ? `v${status.version}` : "OFLH Desktop"}
+              {status.version === "development"
+                ? "Development"
+                : status.version
+                  ? `v${status.version}`
+                  : "OFLH Desktop"}
             </span>
           </div>
         </nav>

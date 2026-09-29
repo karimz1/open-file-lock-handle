@@ -479,7 +479,7 @@ fn status(state: &State) -> Status {
             .map(|warning| oflh_core::safe(warning))
             .collect(),
         error: state.error.clone(),
-        version: env!("CARGO_PKG_VERSION"),
+        version: oflh_core::VERSION,
     }
 }
 

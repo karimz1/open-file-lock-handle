@@ -34,7 +34,15 @@ jobs:
       RUST_BACKTRACE: '1'
       RELEASE_TAG: ${{ inputs.version || 'dev' }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/checkout@v7
+      - name: Set the shared display version
+        run: |
+          cargo xtask validate --version "$RELEASE_TAG"
+          if [ "$RELEASE_TAG" = dev ]; then
+            echo 'OFLH_VERSION=development' >> "$GITHUB_ENV"
+          else
+            echo "OFLH_VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+          fi
       - name: Install pinned Rust toolchain
         run: rustup show
       - name: Format and lint
@@ -51,18 +59,14 @@ jobs:
           cargo test -p oflh --test terminal --locked
       - name: Build release executable only
         run: |
-          if [ "$RELEASE_TAG" = dev ]; then
-            cargo build --release --locked --bin oflh
-          else
-            OFLH_VERSION="${RELEASE_TAG#v}" cargo build --release --locked --bin oflh
-          fi
-          ./target/release/oflh${{ matrix.os == 'windows' && '.exe' || '' }} --version
+          cargo build --release --locked --bin oflh
+          test "$(./target/release/oflh${{ matrix.os == 'windows' && '.exe' || '' }} --version)" = "oflh $OFLH_VERSION"
           ./target/release/oflh${{ matrix.os == 'windows' && '.exe' || '' }} --help
       - name: Package tested executable
         run: cargo xtask package --version "$RELEASE_TAG" --os '${{ matrix.os }}' --arch '${{ matrix.arch }}' --binary target/release/oflh${{ matrix.os == 'windows' && '.exe' || '' }}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@v7
         with:
-          name: oflh-${{ matrix.os }}-${{ matrix.arch }}
-          path: dist/*
+          archive: false
+          path: dist/oflh-cli.*
           if-no-files-found: error
           retention-days: 7

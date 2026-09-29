@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 mod desktop;
+mod release;
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -33,7 +34,7 @@ fn name(os: &str, arch: &str) -> Result<String> {
         return Err("unsupported target".into());
     }
     Ok(format!(
-        "oflh-{os}-{arch}{}",
+        "oflh-cli.{os}.{arch}{}",
         if os == "windows" { ".exe" } else { "" }
     ))
 }
@@ -97,7 +98,7 @@ fn formula(tag: &str, sums: &BTreeMap<String, String>, base: Option<&str>) -> Re
         }
         out.push_str("  end\n\n");
     }
-    out.push_str("  def install\n    bin.install Dir[\"oflh-*\"][0] => \"oflh\"\n  end\n\n  test do\n    assert_match \"oflh #{version}\", shell_output(\"#{bin}/oflh --version\")\n  end\nend\n");
+    out.push_str("  def install\n    bin.install Dir[\"oflh-cli.*\"][0] => \"oflh\"\n  end\n\n  test do\n    assert_match \"oflh #{version}\", shell_output(\"#{bin}/oflh --version\")\n  end\nend\n");
     Ok(out)
 }
 fn assemble(output: &Path, tag: &str, base: Option<&str>) -> Result<String> {
@@ -175,6 +176,8 @@ fn run() -> Result<()> {
             "--formula",
             "--base-url",
             "--bundle-dir",
+            "--cli-dir",
+            "--desktop-dir",
         ]
         .contains(&key.as_str())
         {
@@ -212,6 +215,12 @@ fn run() -> Result<()> {
             tag,
             required("--os")?,
             required("--arch")?,
+        )?,
+        "assemble-release" => release::assemble(
+            Path::new(required("--cli-dir")?),
+            Path::new(required("--desktop-dir")?),
+            output,
+            tag,
         )?,
         "assemble-desktop" => desktop::assemble(output, tag)?,
         "assemble" => {
@@ -262,7 +271,7 @@ mod tests {
         }
         let formula_text = assemble(&output, "v0.0.10-rc.1", None).unwrap();
         assert_eq!(formula_text.matches("sha256").count(), 4);
-        assert!(formula_text.contains("releases/download/v0.0.10-rc.1/oflh-darwin-arm64"));
+        assert!(formula_text.contains("releases/download/v0.0.10-rc.1/oflh-cli.darwin.arm64"));
         assert_eq!(
             fs::read_to_string(output.join("checksums.txt"))
                 .unwrap()
@@ -273,7 +282,7 @@ mod tests {
         fs::write(output.join("unexpected"), b"bad").unwrap();
         assert!(assemble(&output, "v0.0.10-rc.1", None).is_err());
         fs::remove_file(output.join("unexpected")).unwrap();
-        fs::remove_file(output.join("oflh-linux-arm64")).unwrap();
+        fs::remove_file(output.join("oflh-cli.linux.arm64")).unwrap();
         assert!(assemble(&output, "v0.0.10-rc.1", None).is_err());
         fs::remove_dir_all(root).unwrap();
     }
