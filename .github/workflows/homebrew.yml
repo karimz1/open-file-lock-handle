@@ -15,8 +15,6 @@ jobs:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name || '' }}
-          EVENT_NAME: ${{ github.event_name }}
-          RELEASE_TAG: ${{ github.event.release.tag_name || '' }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
             echo '::error::Set HOMEBREW_TAP_TOKEN to a fine-grained token with Actions write access to karimz1/homebrew-tap. You can also run Update oflh manually in that repository.'
@@ -25,9 +23,5 @@ jobs:
           if [ "$EVENT_NAME" = release ]; then
             gh workflow run update-oflh.yml --repo karimz1/homebrew-tap --ref main -f tag="$RELEASE_TAG"
           else
-            if [ "$EVENT_NAME" = release ]; then
-              gh workflow run update-oflh.yml --repo karimz1/homebrew-tap --ref main -f tag="$RELEASE_TAG"
-            else
-              gh workflow run update-oflh.yml --repo karimz1/homebrew-tap --ref main
-            fi
+            gh workflow run update-oflh.yml --repo karimz1/homebrew-tap --ref main
           fi
