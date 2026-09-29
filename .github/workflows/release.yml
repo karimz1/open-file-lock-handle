@@ -17,7 +17,7 @@ jobs:
   validate:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@v7
       - name: Require the selected tag to match this workflow revision
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
@@ -31,6 +31,11 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       version: ${{ inputs.tag || github.ref_name }}
+  desktop:
+    needs: validate
+    uses: ./.github/workflows/desktop.yml
+    with:
+      version: ${{ inputs.tag || github.ref_name }}
   homebrew:
     needs: test
     name: Homebrew / ${{ matrix.runner }}
@@ -41,10 +46,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
-          pattern: oflh-*
+          pattern: oflh-cli.*
           merge-multiple: true
           path: dist
       - name: Prepare the real release formula with local executable URLs
@@ -63,15 +68,15 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE=1 brew install --formula karimz1/open-file-lock-handle-ci/oflh
           HOMEBREW_NO_AUTO_UPDATE=1 brew test karimz1/open-file-lock-handle-ci/oflh
   draft:
-    needs: [test, homebrew]
+    needs: [test, homebrew, desktop]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
-          pattern: oflh-*
+          pattern: oflh-cli.*
           merge-multiple: true
           path: dist
       - name: Verify all six targets and generate checksums and Homebrew formula
@@ -80,6 +85,23 @@ jobs:
         run: |
           cargo xtask assemble --version "$TAG" --formula "$RUNNER_TEMP/oflh.rb"
           cd dist
+          sha256sum --check checksums.txt
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: oflh-desktop.*
+          merge-multiple: true
+          path: desktop-dist
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-receipt-*
+          merge-multiple: true
+          path: desktop-dist
+      - name: Verify both interfaces and assemble direct release downloads
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          cargo xtask assemble-release --version "$TAG" --cli-dir dist --desktop-dir desktop-dist --output release-dist
+          cd release-dist
           sha256sum --check checksums.txt
       - name: Create or update draft release
         env:
@@ -91,8 +113,8 @@ jobs:
           else
             PRERELEASE=()
             if [[ "$TAG" == *-* ]]; then PRERELEASE=(--prerelease); fi
-            gh release create "$TAG" --verify-tag --draft "${PRERELEASE[@]}" --title "$TAG" --generate-notes
+            gh release create "$TAG" --verify-tag --draft "${PRERELEASE[@]}" --title "OFLH $TAG" --generate-notes
           fi
-          gh release upload "$TAG" dist/* --clobber
+          gh release upload "$TAG" release-dist/* --clobber
           echo '### Release ready for review' >> "$GITHUB_STEP_SUMMARY"
           echo 'All platform jobs passed. The release remains a draft until you publish it.' >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,125 @@
+name: Desktop
+on:
+  pull_request:
+  push:
+    branches: [main, feature/oflh-desktop-rc]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        default: dev
+permissions:
+  contents: read
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: crates/oflh-desktop/ui/package-lock.json
+      - run: npm ci
+        working-directory: crates/oflh-desktop/ui
+      - run: npm run format:check && npm run build && npm test && npx playwright install --with-deps chrome && npm run test:ui
+        working-directory: crates/oflh-desktop/ui
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: desktop-ui-report
+          path: |
+            crates/oflh-desktop/ui/playwright-report/
+            crates/oflh-desktop/ui/test-results/
+          retention-days: 7
+  native:
+    needs: frontend
+    name: Desktop / ${{ matrix.os }} / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: linux, arch: amd64, runner: ubuntu-24.04, bundles: 'deb,rpm'}
+          - {os: linux, arch: arm64, runner: ubuntu-24.04-arm, bundles: 'deb,rpm'}
+          - {os: darwin, arch: amd64, runner: macos-15-intel, bundles: dmg}
+          - {os: darwin, arch: arm64, runner: macos-15, bundles: dmg}
+          - {os: windows, arch: amd64, runner: windows-2025, bundles: nsis}
+          - {os: windows, arch: arm64, runner: windows-11-arm, bundles: nsis}
+    env:
+      RELEASE_TAG: ${{ inputs.version || 'dev' }}
+      BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: crates/oflh-desktop/ui/package-lock.json
+      - name: Linux WebView build dependencies
+        if: matrix.os == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libxdo-dev libssl-dev librsvg2-dev patchelf
+      - run: rustup show
+      - run: npm ci && npm run build
+        working-directory: crates/oflh-desktop/ui
+      - name: Native desktop lint and regression tests
+        run: |
+          cargo fmt --all --check
+          cargo clippy -p oflh-desktop --all-targets --features desktop --locked -- -D warnings
+          cargo test -p oflh-desktop --features desktop --locked
+      - name: Set traceable build identity and matching installer version
+        run: |
+          OFLH_VERSION=$(cargo xtask ci-version --version "$RELEASE_TAG" --commit "$BUILD_COMMIT" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" --repository "$GITHUB_REPOSITORY" --server-url "$GITHUB_SERVER_URL" --pr-number "$PR_NUMBER" --github-env "$GITHUB_ENV")
+          printf '{"version":"%s"}\n' "$OFLH_VERSION" > "$RUNNER_TEMP/desktop-version.json"
+      - name: Build desktop release executable
+        run: npm run tauri -- build --config "$RUNNER_TEMP/desktop-version.json" --no-bundle -- --locked
+        working-directory: crates/oflh-desktop/ui
+      - name: Verify built desktop version
+        run: test "$(./target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }} --version | head -n 1)" = "oflh-desktop $OFLH_VERSION"
+      - name: Bundle the built executable without rebuilding
+        run: npm run tauri -- bundle --config "$RUNNER_TEMP/desktop-version.json" --no-binary-patching --bundles '${{ matrix.bundles }}'
+        working-directory: crates/oflh-desktop/ui
+      - name: Collect desktop packages separately from CLI artifacts
+        env:
+          RELEASE_TAG: ${{ inputs.version || 'dev' }}
+        run: cargo xtask package-desktop --version "$RELEASE_TAG" --os '${{ matrix.os }}' --arch '${{ matrix.arch }}' --binary target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }} --bundle-dir target/release/bundle --output desktop-dist
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'linux'
+        with:
+          archive: false
+          path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.deb
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'linux'
+        with:
+          archive: false
+          path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.rpm
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'darwin'
+        with:
+          archive: false
+          path: desktop-dist/oflh-desktop.darwin.${{ matrix.arch }}.dmg
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'windows'
+        with:
+          archive: false
+          path: desktop-dist/oflh-desktop.windows.${{ matrix.arch }}.exe
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-receipt-${{ matrix.os }}-${{ matrix.arch }}
+          path: desktop-dist/*.manifest
+          if-no-files-found: error
+          retention-days: 7

@@ -12,6 +12,7 @@ pub struct Native {
 }
 #[derive(Debug)]
 struct Stat {
+    exited: bool,
     identity: Identity,
     name: String,
     parent: u32,
@@ -40,6 +41,7 @@ fn parse_stat(pid: u32, bytes: &[u8]) -> Option<Stat> {
     // SAFETY: sysconf takes a constant selector and no pointers.
     let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
     Some(Stat {
+        exited: matches!(fields[0], b"Z" | b"X" | b"x"),
         identity: Identity {
             pid,
             started: parse_number(19)?,
@@ -364,6 +366,15 @@ impl Backend for Native {
                 .collect());
         }
         Ok(self.sampler.sample(raw, total))
+    }
+    fn is_running(&mut self, identity: Identity) -> Result<bool> {
+        match stat(identity.pid) {
+            Ok(stats) => Ok(stats.identity == identity && !stats.exited),
+            Err(Error::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
     }
     fn terminate(&mut self, identity: Identity, force: bool, cancel: &Cancellation) -> Result<()> {
         identity.validate()?;

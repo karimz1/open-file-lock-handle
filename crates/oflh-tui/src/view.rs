@@ -1091,6 +1091,26 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
             lines.push(Line::raw(safe(warning)))
         }
         lines.push(Line::raw(""));
+        lines.push(Line::styled(
+            format!("VERSION {}", oflh_core::VERSION),
+            accent(),
+        ));
+        if !oflh_core::BUILD_COMMIT.is_empty() {
+            lines.push(Line::raw(format!("Commit {}", oflh_core::BUILD_COMMIT)));
+        }
+        if !oflh_core::BUILD_URL.is_empty() {
+            lines.push(Line::raw(format!("Build {}", oflh_core::BUILD_URL)));
+        }
+        if !oflh_core::PULL_REQUEST_URL.is_empty() {
+            lines.push(Line::raw(format!(
+                "Pull request {}",
+                oflh_core::PULL_REQUEST_URL
+            )));
+        }
+        lines.push(Line::raw(
+            "Run `oflh --version` to copy the full build report.",
+        ));
+        lines.push(Line::raw(""));
         lines.extend(HELP.lines().map(|s| Line::raw(s.to_owned())));
     }
     let footer_height = (footer_lines(area.width, app).len() as u16).min(area.height);

@@ -1,10 +1,13 @@
 //! Developer/release executable. Never linked into the installed application.
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+mod desktop;
+mod release;
+use semver::{BuildMetadata, Prerelease, Version};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
-    fs::{self, File},
+    fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
 };
@@ -27,12 +30,76 @@ fn version(value: &str) -> Result<()> {
     semver::Version::parse(version_text)?;
     Ok(())
 }
+fn validate_workspace_version(release_tag: &str) -> Result<()> {
+    version(release_tag)?;
+    if release_tag == "dev" {
+        return Ok(());
+    }
+    let release_version = Version::parse(
+        release_tag
+            .strip_prefix('v')
+            .ok_or("release version must start with v")?,
+    )?;
+    let workspace_version = Version::parse(env!("CARGO_PKG_VERSION"))?;
+    if release_version != workspace_version {
+        return Err(format!(
+            "release tag {release_tag} does not match workspace version {workspace_version}"
+        )
+        .into());
+    }
+    Ok(())
+}
+fn ci_version(
+    release_tag: &str,
+    base_version: &str,
+    pr_number: Option<&str>,
+    run_id: &str,
+    run_attempt: &str,
+    commit: &str,
+) -> Result<String> {
+    if release_tag != "dev" {
+        return Ok(Version::parse(
+            release_tag
+                .strip_prefix('v')
+                .ok_or("release version must start with v")?,
+        )?
+        .to_string());
+    }
+    let run_id = run_id.parse::<u64>()?;
+    let run_attempt = run_attempt.parse::<u32>()?;
+    if commit.len() < 12 || !commit.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("commit must be a full hexadecimal SHA".into());
+    }
+    if pr_number.is_some_and(|number| {
+        number.is_empty() || !number.bytes().all(|byte| byte.is_ascii_digit())
+    }) {
+        return Err("pull request number must contain only digits".into());
+    }
+    let mut version = Version::parse(base_version)?;
+    let prerelease = pr_number.map_or_else(|| "dev".to_owned(), |number| format!("dev.pr{number}"));
+    version.pre = Prerelease::new(&prerelease)?;
+    version.build = BuildMetadata::new(&format!(
+        "run.{run_id}.attempt.{run_attempt}.sha.{}",
+        &commit[..12]
+    ))?;
+    Ok(version.to_string())
+}
+fn append_github_env(path: &Path, entries: &[(&str, &str)]) -> Result<()> {
+    let mut file = OpenOptions::new().append(true).open(path)?;
+    for (name, value) in entries {
+        if value.contains(['\n', '\r']) {
+            return Err("build metadata cannot contain newlines".into());
+        }
+        writeln!(file, "{name}={value}")?;
+    }
+    Ok(())
+}
 fn name(os: &str, arch: &str) -> Result<String> {
     if !TARGETS.contains(&(os, arch)) {
         return Err("unsupported target".into());
     }
     Ok(format!(
-        "oflh-{os}-{arch}{}",
+        "oflh-cli.{os}.{arch}{}",
         if os == "windows" { ".exe" } else { "" }
     ))
 }
@@ -96,7 +163,7 @@ fn formula(tag: &str, sums: &BTreeMap<String, String>, base: Option<&str>) -> Re
         }
         out.push_str("  end\n\n");
     }
-    out.push_str("  def install\n    bin.install Dir[\"oflh-*\"][0] => \"oflh\"\n  end\n\n  test do\n    assert_match \"oflh #{version}\", shell_output(\"#{bin}/oflh --version\")\n  end\nend\n");
+    out.push_str("  def install\n    bin.install Dir[\"oflh-cli.*\"][0] => \"oflh\"\n  end\n\n  test do\n    assert_match \"oflh #{version}\", shell_output(\"#{bin}/oflh --version\")\n  end\nend\n");
     Ok(out)
 }
 fn assemble(output: &Path, tag: &str, base: Option<&str>) -> Result<String> {
@@ -173,6 +240,16 @@ fn run() -> Result<()> {
             "--output",
             "--formula",
             "--base-url",
+            "--bundle-dir",
+            "--cli-dir",
+            "--desktop-dir",
+            "--commit",
+            "--run-id",
+            "--run-attempt",
+            "--repository",
+            "--server-url",
+            "--pr-number",
+            "--github-env",
         ]
         .contains(&key.as_str())
         {
@@ -193,7 +270,41 @@ fn run() -> Result<()> {
     version(tag)?;
     let output = Path::new(options.get("--output").map_or("dist", String::as_str));
     match action.as_str() {
-        "validate" => {}
+        "validate" => validate_workspace_version(tag)?,
+        "ci-version" => {
+            validate_workspace_version(tag)?;
+            let commit = required("--commit")?;
+            let run_id = required("--run-id")?;
+            let run_attempt = required("--run-attempt")?;
+            let repository = required("--repository")?;
+            let server_url = required("--server-url")?;
+            let pr_number = options
+                .get("--pr-number")
+                .map(String::as_str)
+                .filter(|value| !value.is_empty());
+            let build_version = ci_version(
+                tag,
+                env!("CARGO_PKG_VERSION"),
+                pr_number,
+                run_id,
+                run_attempt,
+                commit,
+            )?;
+            let build_url = format!("{server_url}/{repository}/actions/runs/{run_id}");
+            let pr_url = pr_number.map_or_else(String::new, |number| {
+                format!("{server_url}/{repository}/pull/{number}")
+            });
+            append_github_env(
+                Path::new(required("--github-env")?),
+                &[
+                    ("OFLH_VERSION", &build_version),
+                    ("OFLH_BUILD_COMMIT", commit),
+                    ("OFLH_BUILD_URL", &build_url),
+                    ("OFLH_PULL_REQUEST_URL", &pr_url),
+                ],
+            )?;
+            println!("{build_version}");
+        }
         "package" => {
             package(
                 Path::new(required("--binary")?),
@@ -203,6 +314,21 @@ fn run() -> Result<()> {
                 required("--arch")?,
             )?;
         }
+        "package-desktop" => desktop::package(
+            Path::new(required("--bundle-dir")?),
+            Path::new(required("--binary")?),
+            output,
+            tag,
+            required("--os")?,
+            required("--arch")?,
+        )?,
+        "assemble-release" => release::assemble(
+            Path::new(required("--cli-dir")?),
+            Path::new(required("--desktop-dir")?),
+            output,
+            tag,
+        )?,
+        "assemble-desktop" => desktop::assemble(output, tag)?,
         "assemble" => {
             let formula_text =
                 assemble(output, tag, options.get("--base-url").map(String::as_str))?;
@@ -238,6 +364,53 @@ mod tests {
         }
     }
     #[test]
+    fn release_tags_must_match_the_workspace_version() {
+        let workspace_version = env!("CARGO_PKG_VERSION");
+        assert!(validate_workspace_version("dev").is_ok());
+        assert!(validate_workspace_version(&format!("v{workspace_version}")).is_ok());
+        assert!(validate_workspace_version("v99.99.99").is_err());
+    }
+    #[test]
+    fn ci_versions_include_traceable_pr_metadata_and_preserve_release_semver() {
+        assert_eq!(
+            ci_version(
+                "dev",
+                "0.0.10-rc.1",
+                Some("42"),
+                "1234567890",
+                "2",
+                "0123456789abcdef0123456789abcdef01234567",
+            )
+            .unwrap(),
+            "0.0.10-dev.pr42+run.1234567890.attempt.2.sha.0123456789ab"
+        );
+        assert_eq!(
+            ci_version(
+                "dev",
+                "0.0.10-rc.1",
+                None,
+                "1234567890",
+                "1",
+                "0123456789abcdef0123456789abcdef01234567",
+            )
+            .unwrap(),
+            "0.0.10-dev+run.1234567890.attempt.1.sha.0123456789ab"
+        );
+        assert_eq!(
+            ci_version(
+                "v1.2.3-rc.1",
+                "0.0.10-rc.1",
+                None,
+                "1234567890",
+                "1",
+                "0123456789abcdef0123456789abcdef01234567",
+            )
+            .unwrap(),
+            "1.2.3-rc.1"
+        );
+        assert!(ci_version("dev", "0.0.10", None, "id", "1", "not-a-sha").is_err());
+    }
+    #[test]
     fn artifacts() {
         let root = std::env::temp_dir().join(format!("oflh-package-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
@@ -251,7 +424,7 @@ mod tests {
         }
         let formula_text = assemble(&output, "v0.0.10-rc.1", None).unwrap();
         assert_eq!(formula_text.matches("sha256").count(), 4);
-        assert!(formula_text.contains("releases/download/v0.0.10-rc.1/oflh-darwin-arm64"));
+        assert!(formula_text.contains("releases/download/v0.0.10-rc.1/oflh-cli.darwin.arm64"));
         assert_eq!(
             fs::read_to_string(output.join("checksums.txt"))
                 .unwrap()
@@ -262,7 +435,7 @@ mod tests {
         fs::write(output.join("unexpected"), b"bad").unwrap();
         assert!(assemble(&output, "v0.0.10-rc.1", None).is_err());
         fs::remove_file(output.join("unexpected")).unwrap();
-        fs::remove_file(output.join("oflh-linux-arm64")).unwrap();
+        fs::remove_file(output.join("oflh-cli.linux.arm64")).unwrap();
         assert!(assemble(&output, "v0.0.10-rc.1", None).is_err());
         fs::remove_dir_all(root).unwrap();
     }

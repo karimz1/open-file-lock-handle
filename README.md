@@ -1,291 +1,134 @@
 <p align="center">
-  <img src="images/oflh-logo.svg" alt="Open File Lock Handle (oflh)" width="760">
+  <img src="crates/oflh-desktop/app-icon.svg" alt="Open File Lock Handle Desktop app icon" width="88">
 </p>
 
-<a id="oflh--find-locked-files-and-the-processes-using-them"></a>
+# Open File Lock Handle (oflh)
 
-# oflh — Find which process is using a file
-
-[![Platforms](https://img.shields.io/badge/platforms-Linux_%C2%B7_macOS_%C2%B7_Windows-64748b?style=flat)](#platform-behavior)
-[![GitHub Downloads](https://img.shields.io/github/downloads/karimz1/open-file-lock-handle/total.svg)](https://github.com/karimz1/open-file-lock-handle/releases)
+[![GitHub downloads](https://img.shields.io/github/downloads/karimz1/open-file-lock-handle/total?label=downloads)](https://github.com/karimz1/open-file-lock-handle/releases)
 [![CI](https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml/badge.svg)](https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-64748b)](#platforms)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Listed on AwesomeTUI](https://img.shields.io/badge/AwesomeTUI-listed-64748b)](https://awesometui.com/open-file-lock-handle)
+[![Listed on AlternativeTo](https://img.shields.io/badge/AlternativeTo-listed-64748b)](https://alternativeto.net/software/oflh-open-file-lock-handle/about/)
 
-[![Listed on AwesomeTUI](https://img.shields.io/badge/AwesomeTUI-listed-64748b?style=flat)](https://awesometui.com/open-file-lock-handle)
-[![Listed on AlternativeTo](https://img.shields.io/badge/AlternativeTo-listed-64748b?style=flat)](https://alternativeto.net/software/oflh-open-file-lock-handle/about/)
+Find which processes are using a file or directory, and which processes own local
+TCP listeners or bound UDP sockets. Choose OFLH Desktop or the interactive
+terminal app (CLI/TUI). Both use the same native Rust inspection engine on Linux,
+macOS, and Windows.
 
-**Open File Lock Handle (`oflh`) finds processes using a file or directory on
-Windows, Linux, and macOS.** It is a command-line tool with an interactive
-terminal UI (TUI) for investigating locked files, open file handles, and mapped
-files. It also finds **TCP listening ports and bound UDP sockets**, shows their
-processes, and links them to file usage in your project. Start with a path to see which processes reference it and what they have open.
+## Choose an interface
 
-```sh
-oflh ./build             # Find processes using files in a directory
-oflh ./build/plugin.dll  # Investigate a file or DLL in use
-oflh .                   # Inspect the current directory
-oflh --port 3000         # Find the process using a local port
-```
-
-[Install](#installation) · [Quick start](#getting-started) ·
-[Keyboard shortcuts](#keyboard-reference) · [Platform support](#platform-behavior) ·
-[User guide](docs/usage.md)
-
-<a href="images/demo.gif">
-  <img src="images/demo.gif" alt="oflh terminal UI showing processes using a target path, file access modes, and process ancestry" width="100%">
-</a>
-
-Demo with sample processes and paths.
-[Watch the terminal recording](https://asciinema.org/a/HVwfkoVJfOi5ckDa).
-
-## When to use oflh
-
-- **A file is “in use by another process.”** Find processes referencing it before retrying a rename, move, or delete.
-- **A build cannot replace a DLL or executable.** Inspect the output directory to find a running application or development tool still using its files.
-- **You want to clean up a directory.** See which visible processes reference files beneath it, then inspect their file usages and parent processes.
-- **You are troubleshooting a file lock.** Switch to the Locked files view to examine the lock or sharing-conflict evidence available on your OS.
-
-An open file is **not necessarily locked**. `oflh` separates file usage from lock
-evidence and does not directly unlock files. Stopping a process may release its
-resources; it can also interrupt work in that application.
-
-<a id="what-makes-it-different"></a>
-
-## Why oflh?
-
-Use it alongside `lsof`, `fuser`, or Task Manager when you want to start with a
-path and investigate interactively, without knowing a process name or PID.
-
-- **Search quickly:** filter process names and file paths with fragments, CamelCase abbreviations, and wildcards.
-- **Inspect the context:** view individual file usages, access modes, parent processes, CPU, and memory.
-- **Follow changes:** sort results, rescan on demand, or enable five-second auto-refresh.
-- **Act from the same interface:** request termination with confirmation and process identity checks.
-
-Written in Rust, `oflh` uses native OS interfaces. See [platform behavior](#platform-behavior)
-for discovery coverage and lock-detection limits.
-
-## Installation
-
-### Homebrew
-
-On macOS or Linux:
-
-```sh
-brew install karimz1/tap/oflh
-```
-
-To update:
-
-```sh
-brew update
-brew upgrade oflh
-```
-
-### Standalone binaries
-
-Download the executable for your operating system and CPU from the
-[latest release](https://github.com/karimz1/open-file-lock-handle/releases/latest):
-
-| Platform | x86-64 (Intel / AMD) | ARM64 |
+| | OFLH Desktop | oflh CLI/TUI |
 | --- | --- | --- |
-| Linux | `oflh-linux-amd64` | `oflh-linux-arm64` |
-| macOS | `oflh-darwin-amd64` | `oflh-darwin-arm64` (Apple Silicon) |
-| Windows | `oflh-windows-amd64.exe` | `oflh-windows-arm64.exe` |
+| Best for | Exploring results in a graphical workspace | Working from a terminal with keyboard navigation |
+| Includes | File and folder scans, ports, filters, process details and ancestry | File and folder scans, ports, process details and ancestry |
+| Start with | Open the app, then choose or drop a file or folder | `oflh [PATH]` or `oflh --port PORT` |
+| Install | [Desktop options](#desktop-install) | [CLI/TUI options](#cli-tui-install) |
 
-Open a terminal in the download folder. On **Linux or macOS**, rename the downloaded
-file to `oflh`, then make it executable and run it against the folder you want to inspect:
+### Desktop
 
-```sh
-chmod +x ./oflh
-./oflh "/path/to/project"
-```
+![OFLH Desktop showing process results and process details](images/desktop.png)
 
-On **Windows**, rename the downloaded file to `oflh.exe` and run it in PowerShell:
+### Terminal
 
-```powershell
-.\oflh.exe "C:\projects\example"
-```
+[![asciicast](https://asciinema.org/a/1266562.svg)](https://asciinema.org/a/1266562)
 
-You can run it this way without changing `PATH`. To use the shorter `oflh` command
-from any folder, put the executable in a directory listed in your `PATH` environment
-variable. Otherwise, keep using its full path or `./oflh` (`.\oflh.exe` in PowerShell)
-from the download folder.
+## Install
 
-Releases include `checksums.txt` for SHA-256 verification.
+<a id="cli-tui-install"></a>
 
-### Build from source
+### CLI/TUI
 
-Install Rust with rustup. The repository pins its toolchain. From a checkout:
+On macOS or Linux, install with Homebrew:
 
 ```sh
-cargo build --release --locked --bin oflh
-./target/release/oflh .
+brew install karimz1/tap/oflh-cli
 ```
 
-On Windows:
+The existing `brew install karimz1/tap/oflh` name remains available as a
+compatibility alias. Homebrew installs the terminal app. It does not install
+OFLH Desktop.
 
-```powershell
-cargo build --release --locked --bin oflh
-.\target\release\oflh.exe .
-```
+For a standalone CLI, download the executable for your operating system and CPU
+from [GitHub Releases](https://github.com/karimz1/open-file-lock-handle/releases).
+Release names include the platform and architecture. Rename the file to `oflh`
+if you want a shorter command, then run it in a terminal with a file, directory,
+or port as its target.
 
-## Getting started
+For options and keyboard controls, see the [Terminal user guide](docs/usage.md).
 
-Run `oflh [PATH]` in an interactive terminal. With no path, it inspects the current
-directory. A directory target includes its descendants.
+<a id="desktop-install"></a>
 
-```sh
-oflh
-oflh "/path/with spaces"
-oflh --help
-oflh --version
-```
+### Desktop
 
-Windows PowerShell example:
+Download an installer from [GitHub Releases](https://github.com/karimz1/open-file-lock-handle/releases):
 
-```powershell
-oflh "C:\projects\example\build\plugin.dll"
-```
-
-1. Open a file or directory with `oflh` and select a process in **Processes** (`1`).
-2. Press `/` to search and `Enter` to finish typing. For example, `dll` finds a fragment; `micro*dll` matches chunks in order.
-3. Press `Enter` on a process to inspect its file usages, or `2` to open **Locked files**.
-4. Close the application normally if possible. If needed, `k` requests termination and `x` requests force kill; both require confirmation.
-5. Press `r` to rescan and check whether the file is still in use.
-
-<a id="search"></a>
-
-Use `?` for help. See the user guide for [search syntax](docs/usage.md#search),
-[process actions](docs/usage.md#process-actions), and the
-[full keyboard reference](docs/usage.md#keyboard-reference).
-
-## Find processes using ports
-
-Open **Ports** (`3`) to inspect local TCP listeners and bound UDP sockets. Search
-with `/` for a port number, process name, protocol, or address. Results update
-as you type: `50` matches `5040`; `port:5040` matches only that port. Press `s`
-to switch between **ALL PORTS** and **THIS PATH**, which shows ports belonging to
-processes observed using the target file or directory.
-
-```sh
-oflh --ports             # All visible local port bindings
-oflh --port 3000         # Exact local port, TCP or UDP
-oflh --ports ./project   # Ports of processes using this project
-```
-
-The Processes table shows a port binding count, and the side panel previews
-ports for the selected process. From Processes, press `Enter`, then `p` to inspect
-its ports. In Ports, `Enter` opens port details directly. Within details, `p` opens
-ports and `f` opens file usages. `Esc` returns to the view you came from: opening details
-from Ports returns directly to Ports, with your search preserved.
-Without an explicit path, inspecting a port owner or switching from Ports to
-Processes/Locked files scans that process’s working directory (or its executable
-directory if unavailable). An explicit path scopes Ports to that folder and keeps
-the file-inspection folder fixed. Press `s` to switch to all ports.
-
-Normal termination and force kill use the same confirmation and identity checks
-as file inspection. Unknown owners cannot be terminated. A bound port does not
-prove that it is reachable over the network.
-
-See [port search and scope](docs/usage.md#ports) for examples and
-[platform limitations](docs/platform-support.md#ports).
-
-## Keyboard reference
-
-| Key | Action |
+| Operating system | Install method |
 | --- | --- |
-| `1` / `2` / `3` | Processes / Locked files / Ports |
-| `s` in Ports | Switch all ports / this path |
-| `p` / `f` in details | Inspect ports / file usages |
-| `↑` / `↓` | Move through results |
-| `/` | Search |
-| `Enter` | Finish search editing / open process details |
-| `r` / `a` | Refresh / toggle five-second auto-refresh |
-| `Space` | Select or deselect a process |
-| `k` / `x` | Request termination / force kill |
-| `Tab` | Switch focus between results and ancestry tree |
-| `?` | Show help and scan limitations |
-| `Esc` | Clear search, cancel, or go back |
-| `q` / `Ctrl+C` | Quit (while typing a search, use `Ctrl+C`) |
+| macOS | Homebrew Cask for stable releases, or the DMG from GitHub Releases |
+| Linux | DEB or RPM package for x86-64 or ARM64 |
+| Windows | Download the installer from the Releases page |
 
-<a id="process-actions"></a>
+The Desktop Cask is published for stable releases. Linux Desktop users install
+native DEB/RPM packages. Homebrew Cask is for macOS.
 
-Process actions use the selection, or the current process if nothing is selected.
-Selections survive filtering; confirmation lists hidden selections too, and
-**Cancel** is the default. When the ancestry tree has focus, actions apply only
-to the highlighted ancestor. See [process actions](docs/usage.md#process-actions)
-before stopping a parent application.
+For search, filters, and process actions, see the
+[Desktop user guide](docs/desktop-usage.md).
 
-<a id="file-discovery-and-termination"></a>
-<a id="lock-evidence"></a>
-<a id="access-modes"></a>
-<a id="cpu-memory-and-ancestry"></a>
+Release downloads are individual files, not ZIP bundles. Each release includes
+one `checksums.txt` with SHA-256 hashes for every CLI executable and Desktop
+installer in that release.
 
-## Platform behavior
+<a id="getting-started"></a>
 
-Binaries are available for **Linux, macOS, and Windows on x86-64 and ARM64**.
-The interface is shared, but file discovery and lock detection depend on the OS.
+## Quick start
 
-| Platform | File usage discovery | Lock evidence |
-| --- | --- | --- |
-| Linux | Open descriptors, working directories, executables, mapped files, deleted-but-open files via `/proc` | Held FLOCK, POSIX, and OFD locks |
-| macOS | Vnode descriptors, working directories, executables, mapped files via `libproc` | POSIX byte-range conflicts; flock-only locks may be missed |
-| Windows | Restart Manager resource users, modules and executables via Toolhelp | Read, write, or delete sharing conflicts; reported owners are unverified |
+### Desktop
 
-On Windows, a sharing conflict does not prove which reported process caused it.
-Discovery does not cover working directories, directory handles, or deleted files,
-and byte-range locks are not enumerated.
+1. Open a file or folder, or drop it into the window.
+2. Select a process to inspect its matching file usages, ports, and ancestry.
+3. Search or filter the results, then refresh to take a new snapshot.
+4. Close the owning application normally when possible. Termination is an
+   explicit, confirmed action and can interrupt work.
 
-Results are a snapshot limited by permissions, process exits, and concurrent file
-activity. When the footer says **“Results may be incomplete,”** press `?` for
-details. See [platform support and limitations](docs/platform-support.md) for the
-full detection scope, termination behavior, and metric definitions.
+### CLI/TUI
 
-## Common questions
+Run `oflh` in an interactive terminal. With no argument, it scans the current
+directory. A directory target includes descendants.
 
-### Can oflh unlock a file?
+```sh
+oflh ./build
+oflh ./build/plugin.dll
+oflh --port 3000
+```
 
-It can help you find and stop a process using the file. It does not remove locks
-directly or bypass OS permissions. Close the application normally first when
-possible; force killing can lose unsaved work.
+Use `1`, `2`, and `3` to switch between Processes, Locked files, and Ports. Press
+Enter to inspect a selected process, `/` to search, `r` to refresh, and `?` for
+help.
 
-### Why is a process listed but the Locked files view is empty?
+## What the results mean
 
-File usage and file locks are different. A process can have an open descriptor
-or mapped file without holding a detectable lock. The Locked files view requires
-additional evidence, and each platform has detection limits.
+An open file is not necessarily locked. OFLH separates file usage from lock
+evidence and does not unlock files. Detection depends on operating-system APIs,
+permissions, and concurrent system activity. Windows resource users are not
+verified lock owners. See [platform coverage and limitations](docs/platform-support.md).
 
-### Why are some processes or locks missing?
+## Platforms
 
-Permissions and platform coverage limit what can be inspected. Elevated
-privileges may improve visibility, but cannot guarantee complete results. On
-Linux, inspecting another container may require running `oflh` inside its mount
-namespace. Check `?` for scan warnings and the [platform reference](docs/platform-support.md).
+CLI and Desktop releases target Linux, macOS, and Windows on x86-64 and ARM64.
+Desktop installers are DEB/RPM on Linux, DMG on macOS, and EXE on Windows. The
+release page is the source of truth for available builds.
 
-### Does oflh support scripts or JSON output?
+## Project references
 
-File inspection requires an interactive terminal; `oflh` currently has no JSON
-or non-interactive scan output. `--help` and `--version` work without a TTY.
+- [Platform support and limitations](docs/platform-support.md)
 
-<a id="performance"></a>
-<a id="testing-and-development"></a>
-<a id="terminal-recommendation"></a>
+For contributors and maintainers:
 
-## Documentation and development
+- [Architecture](docs/architecture.md)
+- [Development and testing](docs/development.md)
+- [Performance measurements](docs/performance.md)
+- [Release process](docs/releasing.md)
 
-- [User guide](docs/usage.md): search syntax, keyboard shortcuts, process actions, and terminal support.
-- [Platform reference](docs/platform-support.md): discovery, lock evidence, and permissions.
-- [Contributing](CONTRIBUTING.md) and [development](docs/development.md): build and test instructions.
-- [Architecture](docs/architecture.md): native backends and safety boundaries.
-- [Performance measurements](docs/performance.md): benchmark methodology, results, and the historical Go-to-Rust comparison.
-- [Releasing](docs/releasing.md): maintainer packaging instructions.
-
-Run `cargo xtask check` for formatting, Clippy, and workspace tests. CI covers
-native Linux, macOS, and Windows on x86-64 and ARM64.
-
-<a id="project-information"></a>
-
-`oflh` is in beta. [Report a bug](https://github.com/karimz1/open-file-lock-handle/issues)
-with the version, operating system, and steps to reproduce it.
-
-Licensed under [MIT](LICENSE). [Support development](https://buymeacoffee.com/karimz1).
+Report a reproducible problem in [GitHub Issues](https://github.com/karimz1/open-file-lock-handle/issues).
+OFLH is licensed under [MIT](LICENSE).

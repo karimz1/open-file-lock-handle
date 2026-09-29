@@ -4,6 +4,48 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 mod path;
+/// Full SemVer version shared by both frontends.
+pub const VERSION: &str = match option_env!("OFLH_VERSION") {
+    Some(version) => version,
+    None => "development",
+};
+/// Compact version for persistent, space-constrained UI labels.
+pub fn display_version() -> &'static str {
+    VERSION
+        .split_once('+')
+        .map_or(VERSION, |(version, _)| version)
+}
+/// Full source commit used to build this application, when supplied by CI.
+pub const BUILD_COMMIT: &str = match option_env!("OFLH_BUILD_COMMIT") {
+    Some(commit) => commit,
+    None => "",
+};
+/// GitHub Actions run for this build, when built in CI.
+pub const BUILD_URL: &str = match option_env!("OFLH_BUILD_URL") {
+    Some(url) => url,
+    None => "",
+};
+/// Pull request that produced this build, when built from a pull request.
+pub const PULL_REQUEST_URL: &str = match option_env!("OFLH_PULL_REQUEST_URL") {
+    Some(url) => url,
+    None => "",
+};
+
+/// Format the version and available source-control provenance for CLI output.
+pub fn version_report(application: &str) -> String {
+    let mut report = format!("{application} {VERSION}");
+    if !BUILD_COMMIT.is_empty() {
+        report.push_str(&format!("\ncommit {BUILD_COMMIT}"));
+    }
+    if !BUILD_URL.is_empty() {
+        report.push_str(&format!("\nbuild {BUILD_URL}"));
+    }
+    if !PULL_REQUEST_URL.is_empty() {
+        report.push_str(&format!("\npull request {PULL_REQUEST_URL}"));
+    }
+    report
+}
+
 pub mod ports;
 pub mod search;
 pub use ports::{Port, Protocol};
@@ -259,6 +301,21 @@ pub struct Process {
     pub cpu: Option<f64>,
 }
 
+impl Process {
+    /// Choose a native inspection folder: captured working directory first, then
+    /// executable parent. Unknown owners cannot supply an actionable folder.
+    pub fn inspection_folder(&self) -> Option<&std::path::Path> {
+        if self.identity.pid == 0 || self.identity.started == 0 {
+            return None;
+        }
+        if self.cwd.is_absolute() {
+            Some(&self.cwd)
+        } else {
+            self.executable.parent().filter(|path| path.is_absolute())
+        }
+    }
+}
+
 /// A complete scan result published atomically to the UI.
 #[derive(Clone, Debug, Default)]
 pub struct Snapshot {
@@ -318,4 +375,60 @@ pub fn safe(value: &str) -> String {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod inspection_folder_tests {
+    use super::*;
+    #[test]
+    fn owner_folder_prefers_native_cwd_then_executable_parent() {
+        let root = std::env::temp_dir().join("oflh-fixture");
+        let mut process = Process {
+            identity: Identity {
+                pid: 42,
+                started: 1,
+                started_sub: 0,
+            },
+            cwd: root.join("work"),
+            executable: root.join("bin/worker"),
+            ..Process::default()
+        };
+        assert_eq!(
+            process.inspection_folder(),
+            Some(root.join("work").as_path())
+        );
+        process.cwd = "relative".into();
+        assert_eq!(
+            process.inspection_folder(),
+            Some(root.join("bin").as_path())
+        );
+        process.identity.started = 0;
+        assert!(process.inspection_folder().is_none());
+    }
+}
+
+#[cfg(test)]
+mod build_info_tests {
+    use super::*;
+
+    #[test]
+    fn version_report_includes_configured_build_provenance() {
+        let report = version_report("oflh");
+        assert!(report.starts_with(&format!("oflh {VERSION}")));
+        for (label, value) in [
+            ("commit", BUILD_COMMIT),
+            ("build", BUILD_URL),
+            ("pull request", PULL_REQUEST_URL),
+        ] {
+            if !value.is_empty() {
+                assert!(report.contains(&format!("{label} {value}")));
+            }
+        }
+        assert_eq!(
+            display_version(),
+            VERSION
+                .split_once('+')
+                .map_or(VERSION, |(version, _)| version)
+        );
+    }
 }

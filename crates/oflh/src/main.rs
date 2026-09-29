@@ -1,10 +1,6 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 use std::{ffi::OsString, io::IsTerminal, process::ExitCode};
-const VERSION: &str = match option_env!("OFLH_VERSION") {
-    Some(v) => v,
-    None => env!("CARGO_PKG_VERSION"),
-};
 #[derive(Debug, thiserror::Error)]
 enum CliError {
     #[error("{0}")]
@@ -105,7 +101,7 @@ Options:
         return Ok(());
     }
     if arguments.version {
-        println!("oflh {VERSION}");
+        println!("{}", oflh_core::version_report("oflh"));
         return Ok(());
     }
     let path = arguments.path;
@@ -114,7 +110,12 @@ Options:
         return Err(CliError::NotInteractive);
     }
     let backend = oflh_platform::native()?;
-    oflh_tui::run(target, VERSION.into(), backend, arguments.view)?;
+    oflh_tui::run(
+        target,
+        oflh_core::display_version().into(),
+        backend,
+        arguments.view,
+    )?;
     Ok(())
 }
 fn main() -> ExitCode {

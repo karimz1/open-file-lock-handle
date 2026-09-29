@@ -26,6 +26,13 @@ pub trait Backend: Send + 'static {
         ids: &[Identity],
         cancel: &Cancellation,
     ) -> Result<Vec<(Identity, Metrics)>>;
+    /// Check whether this captured lifetime is still running, without sending a signal.
+    /// Permission failures must remain errors, never evidence of process exit.
+    fn is_running(&mut self, _id: Identity) -> Result<bool> {
+        Err(Error::Unavailable(
+            "process exit verification unavailable".into(),
+        ))
+    }
     /// Request termination after validating identity and protected-process guards.
     fn terminate(&mut self, id: Identity, force: bool, cancel: &Cancellation) -> Result<()>;
 }
@@ -110,5 +117,126 @@ pub fn scan_ports(cancel: &Cancellation) -> Result<Snapshot> {
         Err(Error::Unavailable(
             "port discovery is unavailable on this platform".into(),
         ))
+    }
+}
+
+/// Scan a target and merge global local-port observations by captured identity.
+/// File-scan errors are fatal; port coverage failures remain partial-result warnings.
+pub fn scan_with_ports(
+    backend: &mut dyn Backend,
+    target: &Target,
+    cancel: &Cancellation,
+) -> Result<Snapshot> {
+    let mut snapshot = backend.scan(target, cancel)?;
+    match scan_ports(cancel) {
+        Ok(ports) => {
+            snapshot.processes.extend(ports.processes);
+            snapshot.warnings.extend(ports.warnings);
+            snapshot.normalize();
+        }
+        Err(Error::Cancelled) => return Err(Error::Cancelled),
+        Err(error) => snapshot.warnings.push(format!("Port scan failed: {error}")),
+    }
+    cancel.check()?;
+    Ok(snapshot)
+}
+
+/// Inspect an owner folder only if the originally captured lifetime remains visible.
+/// Resolve on a worker; callers must commit the target and snapshot together.
+pub fn scan_port_folder(
+    backend: &mut dyn Backend,
+    identity: Identity,
+    path: &std::path::Path,
+    cancel: &Cancellation,
+) -> Result<(Target, Snapshot)> {
+    cancel.check()?;
+    let target = Target::new(path)?;
+    if !target.directory {
+        return Err(Error::Unavailable(
+            "Process folder is no longer a directory".into(),
+        ));
+    }
+    let snapshot = scan_with_ports(backend, &target, cancel)?;
+    if !snapshot
+        .processes
+        .iter()
+        .any(|process| process.identity == identity)
+    {
+        return Err(Error::Changed);
+    }
+    Ok((target, snapshot))
+}
+
+#[cfg(test)]
+mod port_folder_tests {
+    use super::*;
+
+    struct FolderBackend {
+        identity: Identity,
+        expected: std::path::PathBuf,
+    }
+    impl Backend for FolderBackend {
+        fn scan(&mut self, target: &Target, _: &Cancellation) -> Result<Snapshot> {
+            assert_eq!(target.path, self.expected);
+            Ok(Snapshot {
+                processes: vec![Process {
+                    identity: self.identity,
+                    usages: vec![Usage {
+                        path: target.path.join("fixture.bin"),
+                        ..Usage::default()
+                    }],
+                    ..Process::default()
+                }],
+                warnings: vec![],
+            })
+        }
+        fn sample(&mut self, _: &[Identity], _: &Cancellation) -> Result<Vec<(Identity, Metrics)>> {
+            unreachable!()
+        }
+        fn terminate(&mut self, _: Identity, _: bool, _: &Cancellation) -> Result<()> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn folder_scan_keeps_file_results_and_rejects_reused_identity() {
+        let target = Target::new(std::env::temp_dir()).unwrap();
+        let identity = Identity {
+            pid: u32::MAX,
+            started: 10,
+            started_sub: 0,
+        };
+        let mut backend = FolderBackend {
+            identity,
+            expected: target.path.clone(),
+        };
+        let (resolved, snapshot) = scan_port_folder(
+            &mut backend,
+            identity,
+            &target.path,
+            &Cancellation::default(),
+        )
+        .unwrap();
+        assert_eq!(resolved.path, target.path);
+        assert!(
+            snapshot
+                .processes
+                .iter()
+                .any(|process| process.identity == identity && process.usages.len() == 1)
+        );
+        let reused = Identity {
+            started: 11,
+            ..identity
+        };
+        assert!(matches!(
+            scan_port_folder(&mut backend, reused, &target.path, &Cancellation::default(),),
+            Err(Error::Changed)
+        ));
+        let cancel = Cancellation::default();
+        cancel.cancel();
+        assert!(matches!(
+            scan_port_folder(&mut backend, identity, &target.path, &cancel,),
+            Err(Error::Cancelled)
+        ));
     }
 }

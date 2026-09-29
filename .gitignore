@@ -8,3 +8,11 @@ __pycache__/
 rec/
 
 /target/
+
+# Desktop frontend dependencies and generated assets
+/crates/oflh-desktop/ui/node_modules/
+/crates/oflh-desktop/ui/dist/
+/crates/oflh-desktop/gen/
+/crates/oflh-desktop/ui/test-results/
+/crates/oflh-desktop/ui/playwright-report/
+/desktop-dist/
