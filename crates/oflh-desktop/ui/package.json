@@ -8,8 +8,9 @@
     "test": "vitest run src",
     "tauri": "cd .. && tauri",
     "test:ui": "playwright test",
-    "format": "prettier --write src tests public *.ts *.json index.html",
-    "format:check": "prettier --check src tests public *.ts *.json index.html"
+    "screenshots:docs": "node scripts/capture-doc-screenshots.mjs",
+    "format": "prettier --write src tests public scripts *.ts *.json index.html",
+    "format:check": "prettier --check src tests public scripts *.ts *.json index.html"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.0.0",

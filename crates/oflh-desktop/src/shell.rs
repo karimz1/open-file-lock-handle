@@ -305,6 +305,13 @@ fn open_issue(app: tauri::AppHandle, title: String, body: String) -> Result<(), 
         .map_err(integration)
 }
 
+fn single_drop_target(paths: &[PathBuf]) -> Result<&Path, Failure> {
+    match paths {
+        [path] => Ok(path.as_path()),
+        _ => Err(Failure::invalid("Drop one file or folder at a time")),
+    }
+}
+
 /// Launch the desktop shell. No terminal UI code is linked into this binary.
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
@@ -338,9 +345,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                     tauri::DragDropEvent::Drop { paths, .. } => {
                         let _ = window.emit("drag-active", false);
                         // Keep the OS PathBuf in Rust, including non-Unicode filenames.
-                        if paths.len() == 1 {
-                            if let Some(path) = paths.first() {
-                                match window.state::<Arc<Service>>().inspect(path.clone()) {
+                        match single_drop_target(paths) {
+                            Ok(path) => {
+                                match window.state::<Arc<Service>>().inspect(path.to_path_buf()) {
                                     Ok(status) => {
                                         let _ = window.emit("target-dropped", ());
                                         let _ = window.emit("scan-status", status);
@@ -350,11 +357,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                        } else {
-                            let _ = window.emit(
-                                "desktop-error",
-                                Failure::invalid("Drop one file or folder at a time"),
-                            );
+                            Err(error) => {
+                                let _ = window.emit("desktop-error", error);
+                            }
                         }
                     }
                     _ => {}
@@ -453,5 +458,31 @@ mod reveal_tests {
         assert!(details.contains("D-Bus unavailable"));
         assert!(details.contains("xdg-open failed"));
         assert!(details.contains("Rust backtrace"));
+    }
+}
+
+#[cfg(test)]
+mod drop_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_a_single_folder_drop_target() {
+        let folder = PathBuf::from("/workspace/project");
+
+        assert_eq!(
+            single_drop_target(std::slice::from_ref(&folder)).unwrap(),
+            folder.as_path()
+        );
+    }
+
+    #[test]
+    fn rejects_empty_or_multiple_drop_targets() {
+        let folders = [
+            PathBuf::from("/workspace/project"),
+            PathBuf::from("/tmp/other"),
+        ];
+
+        assert!(single_drop_target(&[]).is_err());
+        assert!(single_drop_target(&folders).is_err());
     }
 }

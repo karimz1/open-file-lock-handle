@@ -12,6 +12,8 @@ Drop a file or folder anywhere in the window, choose **Open file** / **Open fold
 or type a path and choose **Inspect**. **Recent targets** lets you revisit targets
 from previous launches. Folder scans include descendants.
 
+![Desktop showing process results for a folder after it is dropped](../images/desktop-folder.png)
+
 **Processes** groups results by process. **File usages** shows individual matching
 observations. Click a row to open details. Use the panel button or close button to
 close it. Table paths are shortened for readability. Full paths and copy/reveal
@@ -37,6 +39,10 @@ access/relation. Numeric bounds are inclusive. Unknown metrics do not match a
 numeric bound. An unavailable CPU sample is not zero. Choose **Apply filters**
 to apply, or **Clear filters** to reset column predicates.
 
+![Desktop results narrowed by a process-name search](../images/desktop-search.png)
+
+![Desktop results with an applied process-name column filter](../images/desktop-filters.png)
+
 In **Ports**, search `port:3000` for an exact port or `30` for matching fragments.
 You can combine terms such as `port:3000 tcp`, `udp`, `ipv6` or `pid:1234`.
 The view lists local TCP listeners and bound UDP sockets, not network reachability.
@@ -44,6 +50,8 @@ The view lists local TCP listeners and bound UDP sockets, not network reachabili
 Opening **Local ports** from details scopes results to that captured process.
 Refresh and termination preserve that scope: an empty result can confirm that the
 process's bindings disappeared. Clear the scope explicitly to see other owners.
+
+![Desktop local ports showing a TCP listener and UDP binding](../images/desktop-ports.png)
 
 ## Selection and copying
 

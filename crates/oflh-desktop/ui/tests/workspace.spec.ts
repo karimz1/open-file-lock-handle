@@ -1,5 +1,10 @@
 import { test, expect } from "@playwright/test";
 // Synthetic IPC fixtures are test-only. The production bundle always invokes Rust.
+const documentationScreenshotPath = (filename: string) =>
+  process.env.OFLH_UPDATE_SCREENSHOTS === "1"
+    ? `../../../images/${filename}`
+    : `test-results/${filename}`;
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     if (!sessionStorage.getItem("theme-test-initialized")) {
@@ -10,6 +15,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     const calls: { command: string; args: Record<string, unknown> }[] = [];
     const callbacks = new Map<number, (payload: unknown) => void>();
+    const callbackEvents = new Map<number, string>();
     let callbackId = 0;
     let terminated = false;
     const processRows = Array.from({ length: 1500 }, (_, index) => ({
@@ -114,10 +120,14 @@ test.beforeEach(async ({ page }) => {
         },
         unregisterCallback(id: number) {
           callbacks.delete(id);
+          callbackEvents.delete(id);
         },
         async invoke(command: string, args: Record<string, any> = {}) {
           calls.push({ command, args });
-          if (command === "plugin:event|listen") return 1;
+          if (command === "plugin:event|listen") {
+            callbackEvents.set(args.handler, args.event);
+            return 1;
+          }
           if (command === "plugin:event|unlisten") return;
           if (command === "status") return status;
           if (command === "recent") return recentTargets;
@@ -285,6 +295,13 @@ test.beforeEach(async ({ page }) => {
             return;
           throw new Error(`Unexpected test IPC command ${command}`);
         },
+      },
+      __emitTestEvent(event: string, payload: unknown) {
+        for (const [id, callback] of callbacks) {
+          if (callbackEvents.get(id) === event) {
+            callback({ event, id, payload });
+          }
+        }
       },
     });
   });
@@ -1213,7 +1230,7 @@ test("column dividers remain visible without hover and resize with keyboard", as
     .toBeGreaterThan(widthBeforeDrag);
 });
 
-test("documentation screenshot uses only synthetic inspection data", async ({
+test("documentation screenshots use only synthetic inspection data", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
@@ -1226,11 +1243,86 @@ test("documentation screenshot uses only synthetic inspection data", async ({
     page.getByRole("complementary", { name: "Process details" }),
   ).toBeVisible();
   await page.mouse.move(0, 0);
+  await page.screenshot({ path: documentationScreenshotPath("desktop.png") });
+
+  await page.goto("/?empty-target");
+  await expect(
+    page.getByRole("heading", { name: "A clear view of files in use." }),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("drag-active", true),
+  );
+  await expect(
+    page.getByRole("heading", { name: "Drop file or folder to inspect" }),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("drag-active", false),
+  );
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("target-dropped", null),
+  );
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 2,
+      revision: 1,
+      scanning: false,
+      target: "/workspace/project",
+      processes: 1500,
+      ports: 2,
+      usages: 18000,
+      warnings: [],
+      error: null,
+      version: "development",
+      commit: "0123456789abcdef0123456789abcdef01234567",
+      build_url:
+        "https://github.com/karimz1/open-file-lock-handle/actions/runs/1234567890",
+      pull_request_url:
+        "https://github.com/karimz1/open-file-lock-handle/pull/42",
+    }),
+  );
+  await expect(
+    page.getByRole("textbox", { name: "Target file or folder path" }),
+  ).toHaveValue("/workspace/project");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await expect(
+    page.getByRole("complementary", { name: "Process details" }),
+  ).toBeVisible();
+  await page.mouse.move(0, 0);
   await page.screenshot({
-    path:
-      process.env.OFLH_UPDATE_SCREENSHOTS === "1"
-        ? "../../../images/desktop.png"
-        : "test-results/desktop-preview.png",
+    path: documentationScreenshotPath("desktop-folder.png"),
+  });
+
+  await page.goto("/");
+  await page
+    .getByRole("textbox", { name: "Search loaded results" })
+    .fill("node");
+  await expect(page.getByText("300 results", { exact: true })).toBeVisible();
+  await page.screenshot({
+    path: documentationScreenshotPath("desktop-search.png"),
+  });
+
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Column filters", exact: true })
+    .click();
+  const filters = page.getByRole("form", { name: "Column filters" });
+  await filters.getByLabel("Process name", { exact: true }).fill("node");
+  await filters.getByRole("button", { name: "Apply filters" }).click();
+  await expect(page.getByText("300 results", { exact: true })).toBeVisible();
+  await page.screenshot({
+    path: documentationScreenshotPath("desktop-filters.png"),
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /^Ports/ }).click();
+  const ports = page.getByRole("grid", {
+    name: "Local TCP listeners and UDP bindings",
+  });
+  await expect(ports.getByText("8080", { exact: true })).toBeVisible();
+  await expect(ports.getByText("BOUND", { exact: true })).toBeVisible();
+  await page.screenshot({
+    path: documentationScreenshotPath("desktop-ports.png"),
   });
 });
 

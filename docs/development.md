@@ -78,6 +78,20 @@ npm --prefix crates/oflh-desktop/ui ci
 npm --prefix crates/oflh-desktop/ui run tauri -- dev
 ```
 
+Regenerate the Desktop screenshots used in the README and user guide with
+Playwright's deterministic synthetic data:
+
+```sh
+npm --prefix crates/oflh-desktop/ui run screenshots:docs
+```
+
+The documentation screenshot test also runs with `test:ui` and checks the
+folder-drop UI flow, search, filters, and port results before capturing them.
+Playwright supplies the Tauri events and synthetic scan response; it does not
+simulate an operating-system drag gesture. Rust unit tests cover acceptance of
+one dropped path and rejection of zero or multiple paths. Normal test runs write
+previews under `test-results`; this command updates the images in `images/`.
+
 To build a standalone Desktop executable:
 
 ```sh
