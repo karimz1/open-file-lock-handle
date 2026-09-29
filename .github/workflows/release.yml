@@ -37,7 +37,7 @@ jobs:
     with:
       version: ${{ inputs.tag || github.ref_name }}
   homebrew:
-    needs: test
+    needs: [test, desktop]
     name: Homebrew / ${{ matrix.runner }}
     strategy:
       fail-fast: false
