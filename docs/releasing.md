@@ -116,11 +116,14 @@ published releases, and allows updating an existing draft. Do not move a publish
 7. Publishing triggers **Update Homebrew tap**, which immediately dispatches
 	**Update oflh** in `homebrew-tap`.
 
-The tap updater only follows stable **published** releases. It verifies every
-download against the shared checksums and generates `Formula/oflh-cli.rb` plus
-the macOS `Casks/oflh-desktop.rb` when Desktop packages are available. The next
-`brew update` makes the CLI available with `brew install karimz1/tap/oflh-cli` on
-Linux or macOS, Intel or ARM. `brew install karimz1/tap/oflh` remains an alias.
+Published stable releases update `oflh-cli` and, when Desktop packages are
+available, `oflh-desktop`. Published prereleases update the separate
+`oflh-cli-rc` formula and `oflh-desktop-rc` Cask. The release event passes its
+exact tag to the updater. Scheduled updates still follow the latest stable
+release. Both channels verify every download against that release's shared
+checksums. Existing `oflh` installs migrate to `oflh-cli` through the tap's
+formula rename map. Stable and RC packages use the same command and app, so they
+are alternatives rather than side-by-side installs.
 
 ## Desktop packages
 
@@ -158,9 +161,11 @@ individually, without ZIP wrappers or manifests. Native package Actions artifact
 also use `archive: false`. Diagnostic reports and internal receipts remain grouped.
 
 The tap updater accepts legacy CLI-only releases and combined CLI/Desktop
-releases. It verifies every asset against the release checksums and generates
-the `oflh-desktop` Cask from both macOS DMGs. RC users download installers
-directly. Existing published releases remain protected from overwrite.
+releases. Published stable releases update `oflh-cli` and `oflh-desktop`.
+Published prereleases update `oflh-cli-rc` and `oflh-desktop-rc` instead.
+It verifies every asset against the release checksums before updating either
+channel. Scheduled updates follow stable releases only. Existing published
+releases remain protected from overwrite.
 
 Installer metadata names Karim Zouine as publisher. Windows verified publisher
 status and macOS notarization still require signing. Metadata alone does not remove

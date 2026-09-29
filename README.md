@@ -49,6 +49,9 @@ The existing `brew install karimz1/tap/oflh` name remains available as a
 compatibility alias. Homebrew installs the terminal app. It does not install
 OFLH Desktop.
 
+For a published prerelease, use `brew install karimz1/tap/oflh-cli-rc`. The
+stable and RC formulae both provide `oflh`, so install only one at a time.
+
 For a standalone CLI, download the executable for your operating system and CPU
 from [GitHub Releases](https://github.com/karimz1/open-file-lock-handle/releases).
 Release names include the platform and architecture. Rename the file to `oflh`
@@ -65,12 +68,14 @@ Download an installer from [GitHub Releases](https://github.com/karimz1/open-fil
 
 | Operating system | Install method |
 | --- | --- |
-| macOS | Homebrew Cask for stable releases, or the DMG from GitHub Releases |
+| macOS | Homebrew Cask for stable or prerelease builds, or the DMG from GitHub Releases |
 | Linux | DEB or RPM package for x86-64 or ARM64 |
 | Windows | Download the installer from the Releases page |
 
-The Desktop Cask is published for stable releases. Linux Desktop users install
-native DEB/RPM packages. Homebrew Cask is for macOS.
+Install stable Desktop with `brew install --cask karimz1/tap/oflh-desktop` or a
+published RC with `brew install --cask karimz1/tap/oflh-desktop-rc`. The stable
+and RC Casks install the same app and cannot be installed side by side. Linux
+Desktop users install native DEB/RPM packages. Homebrew Cask is for macOS.
 
 For search, filters, and process actions, see the
 [Desktop user guide](docs/desktop-usage.md).
