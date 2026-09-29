@@ -68,7 +68,7 @@ jobs:
           cache-dependency-path: crates/oflh-desktop/ui/package-lock.json
       - name: Linux WebView build dependencies
         if: matrix.os == 'linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libxdo-dev libssl-dev librsvg2-dev patchelf
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libxdo-dev libssl-dev librsvg2-dev patchelf xvfb
       - run: rustup show
       - run: npm ci && npm run build
         working-directory: crates/oflh-desktop/ui
@@ -86,6 +86,38 @@ jobs:
         working-directory: crates/oflh-desktop/ui
       - name: Verify built desktop version
         run: test "$(./target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }} --version | head -n 1)" = "oflh-desktop $OFLH_VERSION"
+      - name: Smoke-test native app startup
+        env:
+          APP_PATH: ./target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }}
+          APP_OS: ${{ matrix.os }}
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+
+          app_path = os.environ["APP_PATH"]
+          if os.environ["APP_OS"] == "linux":
+              command = ["timeout", "--signal=TERM", "--kill-after=5s", "15s", "xvfb-run", "-a", app_path]
+              result = subprocess.run(command, check=False, timeout=25)
+              if result.returncode != 124:
+                  raise SystemExit(f"Desktop app exited during startup with status {result.returncode}")
+          else:
+              process = subprocess.Popen([app_path])
+              try:
+                  process.wait(timeout=15)
+              except subprocess.TimeoutExpired:
+                  pass
+              else:
+                  raise SystemExit(f"Desktop app exited during startup with status {process.returncode}")
+              finally:
+                  if process.poll() is None:
+                      process.terminate()
+                      try:
+                          process.wait(timeout=5)
+                      except subprocess.TimeoutExpired:
+                          process.kill()
+                          process.wait()
+          PY
       - name: Bundle the built executable without rebuilding
         run: npm run tauri -- bundle --config "$RUNNER_TEMP/desktop-version.json" --no-binary-patching --bundles '${{ matrix.bundles }}'
         working-directory: crates/oflh-desktop/ui
