@@ -80,6 +80,15 @@ test.beforeEach(async ({ page }) => {
       error: null,
       version: "development",
     };
+    let recentTargets = [
+      { id: 1, display: "/workspace/project" },
+      { id: 2, display: "/workspace/another-project" },
+      { id: 3, display: "/tmp/fixture" },
+      ...Array.from({ length: 9 }, (_, index) => ({
+        id: index + 4,
+        display: `/workspace/generated-${index}`,
+      })),
+    ];
     Object.assign(window, {
       __testCalls: calls,
       __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
@@ -96,13 +105,42 @@ test.beforeEach(async ({ page }) => {
           if (command === "plugin:event|listen") return 1;
           if (command === "plugin:event|unlisten") return;
           if (command === "status") return status;
-          if (command === "recent")
-            return [{ id: 1, display: "/workspace/project" }];
+          if (command === "recent") return recentTargets;
+          if (command === "remove_recent") {
+            recentTargets = recentTargets.filter(
+              (target) => target.id !== args.id,
+            );
+            return;
+          }
+          if (command === "clear_recent") {
+            recentTargets = [];
+            return;
+          }
+          if (command === "refresh" && (window as any).__holdRefreshForTest) {
+            return (status = {
+              ...status,
+              generation: status.generation + 1,
+              scanning: true,
+            });
+          }
+          if (command === "reveal" && (window as any).__failReveal) {
+            throw {
+              kind: "desktop_integration",
+              message:
+                "Could not reveal target; the fallback action also failed",
+              os_code: null,
+              details:
+                "Primary action failed: FileManager1 is unavailable\nFallback action failed: xdg-open failed\nRust backtrace: fixture stack",
+            };
+          }
           if (["refresh", "inspect", "revisit", "choose"].includes(command))
             return (status = {
               ...status,
               generation: status.generation + 1,
-              revision: terminated ? status.revision + 1 : status.revision,
+              revision:
+                terminated || (window as any).__advanceRevisionForTest
+                  ? status.revision + 1
+                  : status.revision,
             });
           if (command === "page" && args.query.ports) {
             const rows = portRows.filter(
@@ -220,9 +258,13 @@ test.beforeEach(async ({ page }) => {
             [
               "dismiss",
               "copy",
+              "copy_diagnostic",
               "reveal",
               "open_project",
+              "open_profile",
               "open_donation",
+              "open_sponsors",
+              "open_issue",
             ].includes(command)
           )
             return;
@@ -303,6 +345,49 @@ test("whole sortable headers work and optional columns persist", async ({
     page.getByRole("grid").getByRole("columnheader", { name: "CPU" }),
   ).toBeVisible();
 });
+test("dark themes keep UI text and surface boundaries distinct", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Settings", exact: true })
+    .first()
+    .click();
+  const contrast = (foreground: string, background: string) => {
+    const luminance = (color: string) => {
+      const channels = color
+        .match(/[\da-f]{2}/gi)!
+        .map((channel) => parseInt(channel, 16) / 255)
+        .map((channel) =>
+          channel <= 0.04045
+            ? channel / 12.92
+            : ((channel + 0.055) / 1.055) ** 2.4,
+        );
+      return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+    };
+    const values = [luminance(foreground), luminance(background)].sort(
+      (left, right) => right - left,
+    );
+    return (values[0] + 0.05) / (values[1] + 0.05);
+  };
+  for (const theme of ["Rider Dark", "VS Code Dark"]) {
+    await page.getByRole("button", { name: theme, exact: true }).click();
+    const colors = await page.locator("html").evaluate((element) => {
+      const style = getComputedStyle(element);
+      return Object.fromEntries(
+        ["bg", "panel", "sidebar", "text", "muted", "border"].map((name) => [
+          name,
+          style.getPropertyValue(`--${name}`).trim(),
+        ]),
+      ) as Record<string, string>;
+    });
+    expect(contrast(colors.text, colors.panel)).toBeGreaterThan(10);
+    expect(contrast(colors.muted, colors.panel)).toBeGreaterThan(7);
+    expect(contrast(colors.border, colors.panel)).toBeGreaterThan(2.5);
+    expect(contrast(colors.panel, colors.bg)).toBeGreaterThan(1.1);
+    expect(contrast(colors.sidebar, colors.panel)).toBeGreaterThan(1.1);
+  }
+});
 test("file usage cells show the complete path", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: /^File usages/ }).click();
@@ -314,6 +399,180 @@ test("file usage cells show the complete path", async ({ page }) => {
     "white-space",
     "normal",
   );
+});
+test("reveal errors expose diagnostics and a reproducible issue draft", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    (window as any).__failReveal = true;
+  });
+  const firstRow = page.getByRole("grid").getByRole("row").nth(1);
+  const reportCalls: { command: string; args: Record<string, any> }[] = [];
+
+  for (const action of ["Reveal in file manager", "Open containing folder"]) {
+    await firstRow.click({ button: "right" });
+    await page.getByRole("button", { name: action, exact: true }).click();
+    const errorBanner = page.getByRole("alert");
+    await expect(errorBanner).toContainText("Operation could not complete");
+    await expect(errorBanner).toContainText(action);
+    await errorBanner.getByRole("button", { name: "Details" }).click();
+    const detailsDialog = page.getByRole("dialog", {
+      name: "Operation details",
+    });
+    const details = detailsDialog.locator(".error-details-modal");
+    await expect(details).toContainText("FileManager1 is unavailable");
+    await expect(details).toContainText("xdg-open failed");
+    await expect(details).toContainText("Rust backtrace: fixture stack");
+    await detailsDialog.getByRole("button", { name: "Copy details" }).click();
+    await expect(page.getByText("Error details copied")).toBeVisible();
+    await detailsDialog
+      .getByRole("button", { name: "Close", exact: true })
+      .click();
+    await errorBanner.getByRole("button", { name: "Open issue" }).click();
+    const calls = await page.evaluate(() => (window as any).__testCalls);
+    expect(
+      calls.find((call: any) => call.command === "copy_diagnostic").args.text,
+    ).toContain("Rust backtrace: fixture stack");
+    reportCalls.push(
+      calls.filter((call: any) => call.command === "open_issue").at(-1),
+    );
+    await errorBanner.getByRole("button", { name: "Dismiss error" }).click();
+  }
+
+  const revealCalls = await page.evaluate(() =>
+    (window as any).__testCalls.filter(
+      (call: any) => call.command === "reveal",
+    ),
+  );
+  expect(revealCalls.map((call: any) => call.args.containing)).toEqual([
+    false,
+    true,
+  ]);
+  expect(reportCalls).toHaveLength(2);
+  for (const call of reportCalls) {
+    expect(call.args.body).toContain("Steps to reproduce");
+    expect(call.args.body).toContain("OFLH version: development");
+    expect(call.args.body).toContain("Rust backtrace: fixture stack");
+    expect(call.args.body).toContain("remove any private paths");
+  }
+  expect(reportCalls[0].args.body).toContain("Choose Reveal in file manager");
+  expect(reportCalls[1].args.body).toContain("Choose Open containing folder");
+});
+test("auto refresh pauses while context actions are open", async ({ page }) => {
+  await page.clock.install();
+  await page.goto("/");
+  await page.getByLabel("Automatic refresh interval").selectOption("5");
+  const row = page.getByRole("grid").getByRole("row").nth(1);
+  await row.click({ button: "right" });
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__advanceRevisionForTest = true;
+  });
+  await page.clock.fastForward(5000);
+  await expect(page.getByRole("dialog")).toBeVisible();
+  let refreshCalls = await page.evaluate(
+    () =>
+      (window as any).__testCalls.filter(
+        (call: any) => call.command === "refresh",
+      ).length,
+  );
+  expect(refreshCalls).toBe(0);
+  await page
+    .getByRole("button", { name: "Reveal in file manager", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.clock.fastForward(5000);
+  await expect
+    .poll(async () => {
+      refreshCalls = await page.evaluate(
+        () =>
+          (window as any).__testCalls.filter(
+            (call: any) => call.command === "refresh",
+          ).length,
+      );
+      return refreshCalls;
+    })
+    .toBeGreaterThan(0);
+  await expect(page.getByText("Operation could not complete")).toHaveCount(0);
+  const revealCalls = await page.evaluate(() =>
+    (window as any).__testCalls.filter(
+      (call: any) => call.command === "reveal",
+    ),
+  );
+  expect(revealCalls).toHaveLength(1);
+});
+test("recent targets can be searched, removed, and cleared", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: /Recent targets/ })
+    .click();
+  const recentList = page.locator('.recent-list[aria-label="Recent targets"]');
+  await expect(recentList.locator(".recent-entry")).toHaveCount(12);
+  const dimensions = await recentList.evaluate((element: HTMLElement) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(dimensions.scrollHeight).toBeGreaterThan(dimensions.clientHeight);
+
+  const search = page.getByRole("searchbox", { name: "Search recent targets" });
+  await search.fill("another-project");
+  await expect(page.getByText("1 of 12", { exact: true })).toBeVisible();
+  await expect(
+    recentList.getByRole("button", {
+      name: "/workspace/another-project",
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  await search.fill("");
+  await recentList
+    .getByRole("button", { name: "Remove /workspace/another-project" })
+    .click();
+  await expect(recentList.locator(".recent-entry")).toHaveCount(11);
+  await page.getByRole("button", { name: "Clear all", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "No recent targets" }),
+  ).toBeVisible();
+});
+test("automatic refresh repeats at the selected interval", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Automatic refresh interval").selectOption("5");
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem("oflh-auto-reload-seconds")),
+    )
+    .toBe("5");
+  await expect
+    .poll(
+      async () => {
+        const calls = await page.evaluate(() => (window as any).__testCalls);
+        return calls.filter((call: any) => call.command === "refresh").length;
+      },
+      { timeout: 7000 },
+    )
+    .toBeGreaterThan(0);
+});
+test("scan progress does not move the results grid", async ({ page }) => {
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  const before = await grid.boundingBox();
+  await page.evaluate(() => {
+    (window as any).__holdRefreshForTest = true;
+  });
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Scanning" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeVisible();
+  const during = await grid.boundingBox();
+  expect(during!.y).toBe(before!.y);
+  expect(during!.height).toBe(before!.height);
 });
 test("hidden selection confirmation defaults to cancel and preserves force mode", async ({
   page,
@@ -665,7 +924,7 @@ test("single-click rows open details and panel buttons close them", async ({
   ).toBe("1:0:exe");
 });
 
-test("settings credits and donation links use the native opener", async ({
+test("Donate explains both support options and opens the selected destination", async ({
   page,
 }) => {
   await page.goto("/");
@@ -677,20 +936,68 @@ test("settings credits and donation links use the native opener", async ({
       .getByRole("banner")
       .getByRole("button", { name: "Settings", exact: true }),
   ).toHaveCount(0);
-  await page.getByRole("button", { name: "Donate", exact: true }).click();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(
-    page.getByText("Created by Karim Zouine (karimz1)."),
+    page
+      .getByRole("contentinfo")
+      .getByRole("button", { name: "Karim Zouine", exact: true }),
   ).toBeVisible();
+  const footer = page.getByRole("contentinfo");
+  await footer
+    .getByRole("button", { name: "Karim Zouine", exact: true })
+    .click();
+  await footer.getByRole("button", { name: "Donate", exact: true }).click();
+  let support = page.getByRole("dialog", { name: "Support OFLH" });
+  await expect(support).toContainText("Good for");
+  await expect(support).toContainText("Trade-off");
+  await expect(support).toContainText("company support");
+  await support
+    .getByRole("button", { name: "Continue with Buy Me a Coffee" })
+    .click();
+  await footer.getByRole("button", { name: "Donate", exact: true }).click();
+  support = page.getByRole("dialog", { name: "Support OFLH" });
+  await support
+    .getByRole("button", { name: "Continue to GitHub Sponsors" })
+    .click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByText(/There is no company behind it/)).toBeVisible();
   await page.getByRole("button", { name: "View project on GitHub" }).click();
   await page
-    .getByRole("button", { name: "Buy Me a Coffee", exact: true })
+    .getByRole("main")
+    .getByRole("button", { name: "Karim Zouine", exact: true })
     .click();
+  await expect(
+    page.getByRole("navigation").getByRole("button", { name: "Donate" }),
+  ).toHaveCount(0);
   const calls = await page.evaluate(() => (window as any).__testCalls);
   expect(
     calls.filter((call: any) => call.command === "open_donation"),
-  ).toHaveLength(2);
+  ).toHaveLength(1);
   expect(calls.some((call: any) => call.command === "open_project")).toBe(true);
+  expect(
+    calls.filter((call: any) => call.command === "open_sponsors"),
+  ).toHaveLength(1);
+  expect(
+    calls.filter((call: any) => call.command === "open_profile"),
+  ).toHaveLength(2);
+});
+
+test("developer settings can preview the diagnostic lightbox", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Show sample error" }).click();
+  const errorBanner = page.getByRole("alert");
+  await expect(errorBanner).toContainText(
+    "Sample file-manager operation failed",
+  );
+  await errorBanner.getByRole("button", { name: "Details" }).click();
+  const details = page.getByRole("dialog", { name: "Operation details" });
+  await expect(details.locator(".error-details-modal")).toContainText(
+    "development preview",
+  );
+  await details.getByRole("button", { name: "Copy details" }).click();
+  await expect(page.getByText("Error details copied")).toBeVisible();
 });
 
 test("termination preserves the captured owner port filter", async ({
@@ -741,6 +1048,14 @@ test("column filters submit typed predicates and F5 does not outline the entire 
   await filters.getByLabel("Evidence", { exact: true }).selectOption("none");
   await filters.getByRole("button", { name: "Apply filters" }).click();
   await expect(page.getByText("300 results", { exact: true })).toBeVisible();
+  const appliedFilters = page.getByRole("status", {
+    name: "Applied column filters",
+  });
+  await expect(appliedFilters).toContainText("Process: node");
+  await expect(filters.getByRole("button", { name: "Close" })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: /Column filters/ }),
+  ).toBeDisabled();
   await page.screenshot({ path: "test-results/column-filters.png" });
   const calls = await page.evaluate(() => (window as any).__testCalls);
   expect(
@@ -752,7 +1067,14 @@ test("column filters submit typed predicates and F5 does not outline the entire 
     memory_min: 32,
     evidence: "none",
   });
-  await filters.getByRole("button", { name: "Clear filters" }).click();
+  await filters.getByLabel("Process name", { exact: true }).fill("no-match");
+  await filters.getByRole("button", { name: "Apply filters" }).click();
+  await expect(
+    page.getByRole("heading", { name: "No matching processes" }),
+  ).toBeVisible();
+  await expect(appliedFilters).toContainText("Process: no-match");
+  await appliedFilters.getByRole("button", { name: "Clear filters" }).click();
+  await expect(appliedFilters).toHaveCount(0);
   await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
   await filters.getByRole("button", { name: "Close", exact: true }).click();
   const grid = page.getByRole("grid");
@@ -767,7 +1089,7 @@ test("column filters submit typed predicates and F5 does not outline the entire 
 });
 
 for (const [saved, resolved, background] of [
-  ["rider", "rider", "rgb(25, 26, 28)"],
+  ["rider", "rider", "rgb(23, 25, 30)"],
   ["purple", "purple", "rgb(32, 32, 43)"],
   ["light", "light", "rgb(250, 251, 252)"],
   ["dark", "vscode", "rgb(30, 30, 30)"],
@@ -853,12 +1175,22 @@ test("utility actions stay in the sidebar and fit the minimum window", async ({
 }) => {
   await page.setViewportSize({ width: 860, height: 560 });
   await page.goto("/");
+  const footer = page.getByRole("contentinfo");
+  const footerBounds = await footer.evaluate((element: HTMLElement) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(footerBounds.scrollWidth).toBeLessThanOrEqual(
+    footerBounds.clientWidth,
+  );
   await page.getByText("Columns", { exact: true }).click();
   const columnMenu = page.getByRole("group", { name: "Visible columns" });
   const menuBounds = await columnMenu.boundingBox();
   expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(860);
-  for (const name of ["Star on GitHub", "Settings", "Donate"]) {
-    const button = page.getByRole("button", { name, exact: true });
+  for (const name of ["Star on GitHub", "Settings"]) {
+    const button = page
+      .getByRole("navigation")
+      .getByRole("button", { name, exact: true });
     await expect(button).toBeVisible();
     await expect(
       page.getByRole("navigation").getByRole("button", { name, exact: true }),
@@ -870,4 +1202,10 @@ test("utility actions stay in the sidebar and fit the minimum window", async ({
     expect(box!.x).toBeGreaterThanOrEqual(0);
     expect(box!.x + box!.width).toBeLessThanOrEqual(860);
   }
+  await expect(
+    page.getByRole("navigation").getByRole("button", { name: "Donate" }),
+  ).toHaveCount(0);
+  await expect(
+    footer.getByRole("button", { name: "Donate", exact: true }),
+  ).toBeVisible();
 });

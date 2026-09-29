@@ -21,6 +21,7 @@ oflh-platform.workspace = true
 serde = { version = "1", features = ["derive"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
 thiserror.workspace = true
+url = "2"
 tauri = { version = "2", optional = true , features = [] }
 tauri-plugin-dialog = { version = "2", optional = true }
 tauri-plugin-opener = { version = "2", optional = true }

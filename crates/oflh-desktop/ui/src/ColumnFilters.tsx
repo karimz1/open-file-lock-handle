@@ -1,17 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ColumnFilters } from "./api";
 export function ColumnFilterPanel({
   value,
   ports,
   apply,
   close,
+  canClose,
 }: {
   value: ColumnFilters;
   ports: boolean;
   apply: (value: ColumnFilters) => void;
   close: () => void;
+  canClose: boolean;
 }) {
   const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
   const update = (
     key: keyof ColumnFilters,
     value: string | number | undefined,
@@ -112,7 +115,12 @@ export function ColumnFilterPanel({
         >
           Clear filters
         </button>
-        <button type="button" onClick={close}>
+        <button
+          type="button"
+          disabled={!canClose}
+          title={canClose ? "Close filters" : "Clear applied filters to close"}
+          onClick={close}
+        >
           Close
         </button>
         <button className="primary" disabled={invalid}>

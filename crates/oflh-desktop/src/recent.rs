@@ -50,6 +50,19 @@ impl RecentTargets {
         )?;
         transaction.commit()
     }
+
+    pub(crate) fn remove(&mut self, path: &Path) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "DELETE FROM recent_targets WHERE path = ?1",
+            params![encode_path(path)],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn clear(&mut self) -> rusqlite::Result<()> {
+        self.connection.execute("DELETE FROM recent_targets", [])?;
+        Ok(())
+    }
 }
 
 #[cfg(unix)]
@@ -185,5 +198,20 @@ mod tests {
         assert_eq!(loaded[0], paths[4]);
         assert_eq!(loaded[1], paths[12]);
         assert!(!loaded.contains(&paths[0]));
+    }
+
+    #[test]
+    fn recent_targets_can_be_removed_individually_or_cleared() {
+        let database = TestDatabase::new();
+        let first = PathBuf::from("/tmp/oflh-first");
+        let second = PathBuf::from("/tmp/oflh-second");
+        let mut recent = RecentTargets::open(&database.0).unwrap();
+        recent.record(&first).unwrap();
+        recent.record(&second).unwrap();
+
+        recent.remove(&first).unwrap();
+        assert_eq!(recent.load().unwrap(), vec![second]);
+        recent.clear().unwrap();
+        assert!(recent.load().unwrap().is_empty());
     }
 }

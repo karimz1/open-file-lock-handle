@@ -1,18 +1,68 @@
 //! Tauri transport and native desktop integrations. Inspection remains in the service.
 use crate::{contract::*, service::Service};
 use serde::Serialize;
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 type Desktop<'a> = State<'a, Arc<Service>>;
-fn integration(error: impl std::fmt::Display) -> Failure {
+fn integration(error: impl std::error::Error + 'static) -> Failure {
     Failure {
         kind: "desktop_integration".into(),
         message: oflh_core::safe(&error.to_string()),
         os_code: None,
+        details: Some(diagnostic_details(&crate::contract::error_chain(&error))),
+    }
+}
+
+fn diagnostic_details(error: &str) -> String {
+    crate::contract::safe_diagnostic(&format!(
+        "{error}\n\nRust backtrace:\n{}",
+        std::backtrace::Backtrace::force_capture()
+    ))
+}
+
+fn reveal_with_fallback(
+    path: &Path,
+    containing: bool,
+    mut open_path: impl FnMut(&Path) -> Result<(), String>,
+    mut reveal_item: impl FnMut(&Path) -> Result<(), String>,
+) -> Result<(), Failure> {
+    let parent = path.parent();
+    if containing && parent.is_none() {
+        return Err(Failure::invalid("No containing folder is available"));
+    }
+    let (primary, primary_label) = if containing {
+        (open_path(parent.unwrap_or(path)), "open containing folder")
+    } else {
+        (reveal_item(path), "reveal target in file manager")
+    };
+    let primary_error = match primary {
+        Ok(()) => return Ok(()),
+        Err(error) => error,
+    };
+    let fallback = match (containing, parent) {
+        (true, Some(parent)) => reveal_item(parent),
+        (false, Some(parent)) => open_path(parent),
+        (_, None) => Err("The target has no containing folder".into()),
+    };
+    match fallback {
+        Ok(()) => Ok(()),
+        Err(fallback_error) => Err(Failure {
+            kind: "desktop_integration".into(),
+            message: oflh_core::safe(&format!(
+                "Could not {primary_label}; the fallback action also failed"
+            )),
+            os_code: None,
+            details: Some(diagnostic_details(&format!(
+                "Primary action failed: {primary_error}\nFallback action failed: {fallback_error}"
+            ))),
+        }),
     }
 }
 async fn blocking<T: Send + 'static>(
@@ -101,6 +151,10 @@ async fn copy(
     .await
 }
 #[tauri::command]
+fn copy_diagnostic(app: tauri::AppHandle, text: String) -> Result<(), Failure> {
+    app.clipboard().write_text(text).map_err(integration)
+}
+#[tauri::command]
 async fn reveal(
     app: tauri::AppHandle,
     service: Desktop<'_>,
@@ -111,21 +165,20 @@ async fn reveal(
     let dataset = service.dataset(revision)?;
     blocking(move || {
         let path = dataset.path(&reference)?;
-        if containing {
-            let parent = path
-                .parent()
-                .ok_or_else(|| Failure::invalid("No containing folder is available"))?;
-            let text = parent.to_str().ok_or_else(|| {
-                Failure::invalid(
-                    "This native path cannot be passed losslessly to the desktop opener",
-                )
+        let open_path = |path: &Path| {
+            let text = path.to_str().ok_or_else(|| {
+                "This native path cannot be passed losslessly to the desktop opener".to_string()
             })?;
             app.opener()
                 .open_path(text, None::<&str>)
-                .map_err(integration)
-        } else {
-            app.opener().reveal_item_in_dir(path).map_err(integration)
-        }
+                .map_err(|error| format!("{error}\n{error:?}"))
+        };
+        let reveal_item = |path: &Path| {
+            app.opener()
+                .reveal_item_in_dir(path)
+                .map_err(|error| format!("{error}\n{error:?}"))
+        };
+        reveal_with_fallback(&path, containing, open_path, reveal_item)
     })
     .await
 }
@@ -175,6 +228,14 @@ fn recent(service: Desktop<'_>) -> Vec<Recent> {
         .collect()
 }
 #[tauri::command]
+fn remove_recent(service: Desktop<'_>, id: u32) -> Result<(), Failure> {
+    service.remove_recent(id)
+}
+#[tauri::command]
+fn clear_recent(service: Desktop<'_>) -> Result<(), Failure> {
+    service.clear_recent()
+}
+#[tauri::command]
 fn revisit(service: Desktop<'_>, id: u32) -> Result<Status, Failure> {
     service.revisit(id)
 }
@@ -190,9 +251,35 @@ fn open_project(app: tauri::AppHandle) -> Result<(), Failure> {
 }
 
 #[tauri::command]
+fn open_profile(app: tauri::AppHandle) -> Result<(), Failure> {
+    app.opener()
+        .open_url("https://github.com/karimz1", None::<&str>)
+        .map_err(integration)
+}
+
+#[tauri::command]
 fn open_donation(app: tauri::AppHandle) -> Result<(), Failure> {
     app.opener()
         .open_url("https://buymeacoffee.com/karimz1", None::<&str>)
+        .map_err(integration)
+}
+
+#[tauri::command]
+fn open_sponsors(app: tauri::AppHandle) -> Result<(), Failure> {
+    app.opener()
+        .open_url("https://github.com/sponsors/karimz1", None::<&str>)
+        .map_err(integration)
+}
+
+#[tauri::command]
+fn open_issue(app: tauri::AppHandle, title: String, body: String) -> Result<(), Failure> {
+    let mut url = url::Url::parse("https://github.com/karimz1/open-file-lock-handle/issues/new")
+        .map_err(integration)?;
+    url.query_pairs_mut()
+        .append_pair("title", &title)
+        .append_pair("body", &body);
+    app.opener()
+        .open_url(url.as_str(), None::<&str>)
         .map_err(integration)
 }
 
@@ -255,7 +342,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .invoke_handler(tauri::generate_handler![
             status,
             open_project,
+            open_profile,
             open_donation,
+            open_sponsors,
+            open_issue,
             inspect,
             refresh,
             inspect_ports,
@@ -266,14 +356,78 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             details,
             select_all,
             copy,
+            copy_diagnostic,
             reveal,
             prepare,
             prepare_ancestor,
             dismiss,
             terminate,
             recent,
+            remove_recent,
+            clear_recent,
             revisit
         ])
         .run(tauri::generate_context!())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod reveal_tests {
+    use super::*;
+
+    #[test]
+    fn reveal_failure_falls_back_to_opening_the_containing_folder() {
+        let path = Path::new("/workspace/project/bin/app");
+        let mut opened = None;
+        let result = reveal_with_fallback(
+            path,
+            false,
+            |folder| {
+                opened = Some(folder.to_owned());
+                Ok(())
+            },
+            |_| Err("FileManager1 is unavailable".into()),
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(opened.as_deref(), Some(Path::new("/workspace/project/bin")));
+    }
+
+    #[test]
+    fn open_containing_folder_falls_back_to_native_reveal() {
+        let path = Path::new("/workspace/project/bin/app");
+        let mut revealed = None;
+        let result = reveal_with_fallback(
+            path,
+            true,
+            |_| Err("default opener failed".into()),
+            |folder| {
+                revealed = Some(folder.to_owned());
+                Ok(())
+            },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(
+            revealed.as_deref(),
+            Some(Path::new("/workspace/project/bin"))
+        );
+    }
+
+    #[test]
+    fn reveal_failure_keeps_primary_and_fallback_diagnostics() {
+        let result = reveal_with_fallback(
+            Path::new("/workspace/project/bin/app"),
+            false,
+            |_| Err("xdg-open failed".into()),
+            |_| Err("D-Bus unavailable".into()),
+        )
+        .unwrap_err();
+
+        assert!(result.message.contains("fallback action also failed"));
+        let details = result.details.unwrap();
+        assert!(details.contains("D-Bus unavailable"));
+        assert!(details.contains("xdg-open failed"));
+        assert!(details.contains("Rust backtrace"));
+    }
 }

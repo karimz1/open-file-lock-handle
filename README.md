@@ -155,7 +155,8 @@ Building either app yourself? See [development and source builds](docs/developme
 1. Launch **OFLH Desktop** and choose your theme.
 2. Drop a file or folder into the window, or choose **Open file** / **Open folder**.
 3. Click a result to see full paths, matching handles, local ports and process ancestry.
-4. Use search or **Column filters** to narrow results. Press **F5** to refresh.
+4. Use search or **Column filters** to narrow results. Press **F5** to refresh,
+   or choose an automatic refresh interval beside **Refresh**.
 5. Close the owning application normally when possible. If necessary, use **Terminate**
    and review the confirmation; force termination can lose unsaved work.
 
@@ -287,4 +288,10 @@ native Linux, macOS, and Windows on x86-64 and ARM64.
 `oflh` is in beta. [Report a bug](https://github.com/karimz1/open-file-lock-handle/issues)
 with the version, operating system, and steps to reproduce it.
 
-Licensed under [MIT](LICENSE). [Support development](https://buymeacoffee.com/karimz1).
+OFLH is an independent project maintained by [Karim Zouine](https://github.com/karimz1)
+in his spare time; there is no company behind it. If OFLH is useful in your work, you can support
+continued development through [Buy Me a Coffee](https://buymeacoffee.com/karimz1)
+or [GitHub Sponsors](https://github.com/sponsors/karimz1). Company sponsorship
+is welcome through GitHub Sponsors.
+
+Licensed under [MIT](LICENSE).

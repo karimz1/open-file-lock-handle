@@ -20,6 +20,24 @@ pub struct Failure {
     pub message: String,
     /// Original native OS error code, when available.
     pub os_code: Option<i32>,
+    /// Detailed error chain for user-requested diagnostics.
+    pub details: Option<String>,
+}
+pub(crate) fn error_chain(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut lines = Vec::new();
+    let mut source = Some(error);
+    while let Some(error) = source {
+        lines.push(error.to_string());
+        source = error.source();
+    }
+    lines.join("\nCaused by: ")
+}
+pub(crate) fn safe_diagnostic(value: &str) -> String {
+    value
+        .split('\n')
+        .map(oflh_core::safe)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 impl From<Error> for Failure {
     fn from(error: Error) -> Self {
@@ -41,6 +59,7 @@ impl From<Error> for Failure {
             kind: kind.into(),
             message: oflh_core::safe(&error.to_string()),
             os_code,
+            details: Some(safe_diagnostic(&error_chain(&error))),
         }
     }
 }
@@ -50,6 +69,7 @@ impl Failure {
             kind: "invalid_request".into(),
             message: message.into(),
             os_code: None,
+            details: None,
         }
     }
 }

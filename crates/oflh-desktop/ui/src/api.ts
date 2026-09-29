@@ -3,6 +3,7 @@ export interface Failure {
   kind: string;
   message: string;
   os_code: number | null;
+  details?: string | null;
 }
 export interface Status {
   generation: number;
@@ -105,6 +106,10 @@ export interface ActionResult {
 }
 export const api = {
   donate: () => invoke<void>("open_donation"),
+  openSponsors: () => invoke<void>("open_sponsors"),
+  openProfile: () => invoke<void>("open_profile"),
+  openIssue: (title: string, body: string) =>
+    invoke<void>("open_issue", { title, body }),
   openProject: () => invoke<void>("open_project"),
   status: () => invoke<Status>("status"),
   inspect: (path: string) => invoke<Status>("inspect", { path }),
@@ -122,6 +127,7 @@ export const api = {
     invoke<string[]>("select_all", { revision, query }),
   copy: (revision: number, keys: string[], field: string, reference?: string) =>
     invoke<void>("copy", { revision, keys, field, reference }),
+  copyDiagnostic: (text: string) => invoke<void>("copy_diagnostic", { text }),
   reveal: (revision: number, reference: string, containing: boolean) =>
     invoke<void>("reveal", { revision, reference, containing }),
   prepare: (revision: number, keys: string[], force: boolean) =>
@@ -133,6 +139,8 @@ export const api = {
     invoke<ActionResult[]>("terminate", { ticket }),
   recent: () => invoke<{ id: number; display: string }[]>("recent"),
   revisit: (id: number) => invoke<Status>("revisit", { id }),
+  removeRecent: (id: number) => invoke<void>("remove_recent", { id }),
+  clearRecent: () => invoke<void>("clear_recent"),
 };
 export function errorMessage(error: unknown): string {
   if (typeof error === "object" && error !== null && "message" in error)

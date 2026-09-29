@@ -15,14 +15,14 @@ export const themes = [
   {
     id: "rider",
     label: "Rider Dark",
-    description: "Inspired by Rider",
-    colors: ["#191a1c", "#27282c", "#a9b9d0"],
+    description: "Rider-inspired charcoal with crisp contrast",
+    colors: ["#17191e", "#2a2f38", "#86c2ff"],
   },
   {
     id: "vscode",
     label: "VS Code Dark",
     description: "Graphite with blue accents",
-    colors: ["#1e1e1e", "#252526", "#75beff"],
+    colors: ["#1e1e1e", "#30343c", "#75beff"],
   },
   {
     id: "purple",

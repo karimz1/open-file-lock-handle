@@ -39,11 +39,26 @@ struct State {
 }
 struct Shared {
     state: Mutex<State>,
+    recent_targets: Mutex<RecentTargets>,
     ready: Condvar,
 }
 impl Shared {
     fn lock(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|error| error.into_inner())
+    }
+
+    fn lock_recent_targets(&self) -> MutexGuard<'_, RecentTargets> {
+        self.recent_targets
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+    }
+}
+fn storage_failure(error: impl std::fmt::Display) -> Failure {
+    Failure {
+        kind: "desktop_storage".into(),
+        message: oflh_core::safe(&format!("Could not update recent targets: {error}")),
+        os_code: None,
+        details: None,
     }
 }
 /// Long-lived desktop service. One worker and one pending scan bound native work.
@@ -73,7 +88,7 @@ impl Service {
     fn start(
         mut backend: Box<dyn Backend>,
         notify: impl Fn(Status) + Send + 'static,
-        mut recent_targets: RecentTargets,
+        recent_targets: RecentTargets,
     ) -> std::io::Result<Self> {
         let recent_paths = recent_targets.load().map_err(std::io::Error::other)?;
         let generation = recent_paths.len() as u32;
@@ -97,6 +112,7 @@ impl Service {
                 next_ticket: 0,
                 ancestry: None,
             }),
+            recent_targets: Mutex::new(recent_targets),
             ready: Condvar::new(),
         });
         let worker = shared.clone();
@@ -135,14 +151,12 @@ impl Service {
                                     state.recent.insert(0, (job.generation, path.clone()));
                                     state.recent.truncate(12);
                                     state.target = Some(path.clone());
-                                    if let Err(error) = recent_targets.record(&path) {
-                                        state.error = Some(Failure {
-                                            kind: "desktop_storage".into(),
-                                            message: oflh_core::safe(&format!(
-                                                "Could not save recent targets: {error}"
-                                            )),
-                                            os_code: None,
-                                        });
+                                    let storage_result = {
+                                        let mut recent_targets = worker.lock_recent_targets();
+                                        recent_targets.record(&path)
+                                    };
+                                    if let Err(error) = storage_result {
+                                        state.error = Some(storage_failure(error));
                                     }
                                 }
                                 state.dataset = Arc::new(dataset);
@@ -225,6 +239,32 @@ impl Service {
             .iter()
             .map(|(id, path)| (*id, display(path)))
             .collect()
+    }
+    /// Remove one saved target from the persisted recent list.
+    pub fn remove_recent(&self, id: u32) -> Result<(), Failure> {
+        let mut state = self.shared.lock();
+        let path = state
+            .recent
+            .iter()
+            .find(|(key, _)| *key == id)
+            .map(|(_, path)| path.clone())
+            .ok_or_else(|| Failure::invalid("Recent target expired"))?;
+        self.shared
+            .lock_recent_targets()
+            .remove(&path)
+            .map_err(storage_failure)?;
+        state.recent.retain(|(key, _)| *key != id);
+        Ok(())
+    }
+    /// Clear all saved targets without changing the current inspection.
+    pub fn clear_recent(&self) -> Result<(), Failure> {
+        let mut state = self.shared.lock();
+        self.shared
+            .lock_recent_targets()
+            .clear()
+            .map_err(storage_failure)?;
+        state.recent.clear();
+        Ok(())
     }
     /// Reinspect a session target using its retained native path.
     pub fn revisit(&self, id: u32) -> Result<Status, Failure> {
@@ -643,6 +683,36 @@ mod tests {
             },
         ));
         (service, identity)
+    }
+    #[test]
+    fn recent_target_removal_updates_service_and_database_together() {
+        let (service, _) = action_service();
+        let first = PathBuf::from("/tmp/oflh-recent-first");
+        let second = PathBuf::from("/tmp/oflh-recent-second");
+        {
+            let mut recent_targets = service.shared.lock_recent_targets();
+            recent_targets.record(&first).unwrap();
+            recent_targets.record(&second).unwrap();
+        }
+        service.shared.lock().recent = vec![(1, first.clone()), (2, second.clone())];
+
+        service.remove_recent(1).unwrap();
+        assert_eq!(service.recent().len(), 1);
+        assert_eq!(
+            service.shared.lock_recent_targets().load().unwrap(),
+            vec![second.clone()]
+        );
+
+        service.clear_recent().unwrap();
+        assert!(service.recent().is_empty());
+        assert!(
+            service
+                .shared
+                .lock_recent_targets()
+                .load()
+                .unwrap()
+                .is_empty()
+        );
     }
     #[test]
     fn verification_distinguishes_exit_pending_and_unknown_without_resending() {

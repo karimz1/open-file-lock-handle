@@ -23,6 +23,8 @@ import {
   Search,
   Settings,
   ShieldAlert,
+  Timer,
+  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -62,6 +64,30 @@ const columnKeys = new Set<ColumnKey>([
   "port",
   "protocol",
 ]);
+const filterLabels: Record<keyof ColumnFilters, string> = {
+  name: "Process",
+  pid: "PID",
+  path: "Path",
+  access: "Access",
+  cpu_min: "CPU min",
+  cpu_max: "CPU max",
+  memory_min: "Memory min",
+  memory_max: "Memory max",
+  evidence: "Evidence",
+};
+const autoReloadOptions = [0, 5, 10, 15, 30, 60] as const;
+function readAutoReloadSeconds() {
+  try {
+    const saved = Number(localStorage.getItem("oflh-auto-reload-seconds"));
+    return autoReloadOptions.includes(
+      saved as (typeof autoReloadOptions)[number],
+    )
+      ? saved
+      : 0;
+  } catch {
+    return 0;
+  }
+}
 function readHiddenColumns(): Set<ColumnKey> {
   try {
     const saved: unknown = JSON.parse(
@@ -78,6 +104,20 @@ function readHiddenColumns(): Set<ColumnKey> {
   } catch {
     return new Set();
   }
+}
+function formatFailureDetails(failure: unknown): string {
+  if (failure instanceof Error) return failure.stack || failure.message;
+  if (typeof failure === "object" && failure !== null) {
+    const value = failure as { details?: unknown; stack?: unknown };
+    if (typeof value.details === "string") return value.details;
+    if (typeof value.stack === "string") return value.stack;
+    try {
+      return JSON.stringify(failure, null, 2);
+    } catch {
+      return String(failure);
+    }
+  }
+  return String(failure);
 }
 export function App() {
   const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
@@ -96,6 +136,9 @@ export function App() {
       return 14;
     }
   });
+  const [autoReloadSeconds, setAutoReloadSeconds] = useState(
+    readAutoReloadSeconds,
+  );
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontSize}px`;
     try {
@@ -104,6 +147,16 @@ export function App() {
       /* Session setting remains usable. */
     }
   }, [fontSize]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "oflh-auto-reload-seconds",
+        String(autoReloadSeconds),
+      );
+    } catch {
+      /* Auto reload still works for this session. */
+    }
+  }, [autoReloadSeconds]);
   const [status, setStatus] = useState(initialStatus);
   const [view, setView] = useState<View>("processes");
   const [path, setPath] = useState("");
@@ -137,9 +190,15 @@ export function App() {
   const [showColumns, setShowColumns] = useState(false);
   const columns = view === "ports" ? portColumns : fileColumns;
   const setColumns = view === "ports" ? setPortColumns : setFileColumns;
-  const columnCount = Object.values(columns).filter(
-    (value) => value !== undefined && value !== "" && value !== "any",
-  ).length;
+  const activeColumnFilters = Object.entries(columns).flatMap(([key, value]) =>
+    value !== undefined && value !== "" && value !== "any"
+      ? [{ key, label: filterLabels[key as keyof ColumnFilters], value }]
+      : [],
+  );
+  const columnCount = activeColumnFilters.length;
+  useEffect(() => {
+    if (columnCount > 0) setShowColumns(true);
+  }, [columnCount]);
   const [locks, setLocks] = useState(false);
   const [scope, setScope] = useState<{ key: string; name: string } | null>(
     null,
@@ -153,13 +212,23 @@ export function App() {
   const [details, setDetails] = useState<Details | null>(null);
   const [context, setContext] = useState<Row | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const [showSupport, setShowSupport] = useState(false);
   const [results, setResults] = useState<ActionResult[] | null>(null);
   const [acting, setActing] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
+  const [errorContext, setErrorContext] = useState("Desktop operation");
   const [toast, setToast] = useState("");
   const [total, setTotal] = useState(0);
   const [recent, setRecent] = useState<{ id: number; display: string }[]>([]);
+  const [recentQuery, setRecentQuery] = useState("");
+  const filteredRecent = recent.filter((target) =>
+    target.display
+      .toLocaleLowerCase()
+      .includes(recentQuery.toLocaleLowerCase()),
+  );
   const [initialTheme] = useState(readTheme);
   const [theme, setTheme] = useState(initialTheme.theme);
   const [showThemeWelcome, setShowThemeWelcome] = useState(
@@ -172,9 +241,41 @@ export function App() {
     [],
   );
   const report = useCallback(
-    (failure: unknown) => setError(errorMessage(failure)),
+    (failure: unknown, context = "Desktop operation") => {
+      const message = errorMessage(failure);
+      setError(
+        context === "Desktop operation" ? message : `${context}: ${message}`,
+      );
+      setErrorDetails(formatFailureDetails(failure));
+      setShowErrorDetails(false);
+      setErrorContext(context);
+    },
     [],
   );
+  useEffect(() => {
+    if (!autoReloadSeconds || !status.revision) return;
+    const interval = window.setInterval(() => {
+      if (
+        !status.scanning &&
+        !confirmation &&
+        !acting &&
+        !showErrorDetails &&
+        !context
+      )
+        void api.refresh().then(apply).catch(report);
+    }, autoReloadSeconds * 1000);
+    return () => window.clearInterval(interval);
+  }, [
+    acting,
+    apply,
+    autoReloadSeconds,
+    confirmation,
+    context,
+    report,
+    showErrorDetails,
+    status.revision,
+    status.scanning,
+  ]);
   const tableQuery: TableQuery = {
     columns,
     text: query,
@@ -311,6 +412,51 @@ export function App() {
       .catch(report);
   };
   const refresh = () => runScan(api.refresh(), view, false);
+  const openIssueReport = () => {
+    const body = [
+      "## What happened?",
+      `OFLH reported: ${error ?? "an operation could not complete"}`,
+      "",
+      "## Steps to reproduce",
+      "1. Open OFLH Desktop and inspect a file or folder.",
+      "2. Right-click a process row (or open its details).",
+      `3. Choose ${errorContext}.`,
+      "4. Note the result and any OS or file-manager dialog.",
+      "",
+      "## Diagnostics",
+      `OFLH version: ${status.version || "unknown"}`,
+      `Platform: ${navigator.platform || "unknown"}`,
+      "```text",
+      errorDetails || error || "No diagnostic details were provided.",
+      "```",
+      "",
+      "Please review this draft and remove any private paths or process details before submitting.",
+    ].join("\n");
+    void api
+      .openIssue("Desktop operation could not complete", body)
+      .catch(report);
+  };
+  const copyErrorDetails = () => {
+    const text = errorDetails || error || "No diagnostic details available.";
+    void api
+      .copyDiagnostic(text)
+      .then(() => setToast("Error details copied"))
+      .catch(report);
+  };
+  const removeRecent = (id: number) => {
+    void api
+      .removeRecent(id)
+      .then(() =>
+        setRecent((current) => current.filter((item) => item.id !== id)),
+      )
+      .catch(report);
+  };
+  const clearRecent = () => {
+    void api
+      .clearRecent()
+      .then(() => setRecent([]))
+      .catch(report);
+  };
   const copy = (field = "rows", reference?: string, keys = [...selected]) => {
     void api
       .copy(status.revision, keys, field, reference)
@@ -326,7 +472,12 @@ export function App() {
       .catch(report);
   };
   const reveal = (reference: string, containing = false) => {
-    void api.reveal(status.revision, reference, containing).catch(report);
+    const operation = containing
+      ? "Open containing folder"
+      : "Reveal in file manager";
+    void api
+      .reveal(status.revision, reference, containing)
+      .catch((failure) => report(failure, operation));
   };
   const selectAll = () => {
     void api
@@ -350,6 +501,12 @@ export function App() {
     if (acting) return;
     setConfirmation(null);
     void api.dismiss().catch(report);
+  };
+  const chooseSupport = (destination: "coffee" | "sponsors") => {
+    setShowSupport(false);
+    void (destination === "coffee" ? api.donate() : api.openSponsors()).catch(
+      report,
+    );
   };
   const terminate = () => {
     if (!confirmation || acting) return;
@@ -483,6 +640,26 @@ export function App() {
           <span className="rc-badge">RC</span>
         </div>
         <div className="header-actions">
+          <label
+            className="auto-refresh-control"
+            title="Automatically refresh while the app is open"
+          >
+            <Timer size={14} />
+            <span>Auto</span>
+            <select
+              aria-label="Automatic refresh interval"
+              value={autoReloadSeconds}
+              onChange={(event) =>
+                setAutoReloadSeconds(Number(event.target.value))
+              }
+            >
+              {autoReloadOptions.map((seconds) => (
+                <option key={seconds} value={seconds}>
+                  {seconds === 0 ? "Off" : `${seconds}s`}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             disabled={!status.revision}
             onClick={refresh}
@@ -563,13 +740,6 @@ export function App() {
             >
               <Star size={14} /> Star on GitHub <ExternalLink size={12} />
             </button>
-            <button
-              onClick={() => void api.donate().catch(report)}
-              title="Support OFLH on Buy Me a Coffee"
-            >
-              <Coffee size={16} /> Donate
-              <ExternalLink size={12} />
-            </button>
             <span className="version">
               {status.version === "development"
                 ? "Development"
@@ -583,14 +753,34 @@ export function App() {
           {error && (
             <div className="error-banner" role="alert">
               <ShieldAlert size={17} />
-              <div>
-                <strong>Operation could not complete</strong>
-                <p>{error}</p>
+              <div className="error-content">
+                <div className="error-summary">
+                  <strong>Operation could not complete</strong>
+                  <p>{error}</p>
+                </div>
+                <div className="error-actions">
+                  <button
+                    onClick={() => setShowErrorDetails((visible) => !visible)}
+                    aria-expanded={showErrorDetails}
+                  >
+                    {showErrorDetails ? "Hide details" : "Details"}
+                  </button>
+                  <button onClick={openIssueReport}>
+                    <ExternalLink size={13} /> Open issue
+                  </button>
+                  <span>
+                    Review the draft and remove private paths before submitting.
+                  </span>
+                </div>
               </div>
               <button
                 className="icon-button"
                 aria-label="Dismiss error"
-                onClick={() => setError(null)}
+                onClick={() => {
+                  setError(null);
+                  setErrorDetails(null);
+                  setShowErrorDetails(false);
+                }}
               >
                 <X size={16} />
               </button>
@@ -777,7 +967,13 @@ export function App() {
                     </details>
                     <button
                       aria-expanded={showColumns}
-                      onClick={() => setShowColumns(!showColumns)}
+                      disabled={columnCount > 0}
+                      title={
+                        columnCount > 0
+                          ? "Clear applied filters before closing"
+                          : "Open column filters"
+                      }
+                      onClick={() => setShowColumns((visible) => !visible)}
                     >
                       <SlidersHorizontal size={14} />
                       Column filters{columnCount ? ` (${columnCount})` : ""}
@@ -791,7 +987,31 @@ export function App() {
                       ports={view === "ports"}
                       apply={setColumns}
                       close={() => setShowColumns(false)}
+                      canClose={columnCount === 0}
                     />
+                  )}
+                  {columnCount > 0 && (
+                    <div
+                      className="active-filter-banner"
+                      role="status"
+                      aria-label="Applied column filters"
+                    >
+                      <strong>
+                        <SlidersHorizontal size={14} />
+                        Filters active
+                      </strong>
+                      <div className="active-filter-values">
+                        {activeColumnFilters.map((filter) => (
+                          <span key={filter.key}>
+                            {filter.label}: {String(filter.value)}
+                          </span>
+                        ))}
+                      </div>
+                      <button onClick={() => setColumns({})}>
+                        <X size={13} />
+                        Clear filters
+                      </button>
+                    </div>
                   )}
                   {query && view !== "ports" && (
                     <div className="search-explanation">
@@ -807,21 +1027,6 @@ export function App() {
                       <button onClick={() => setScope(null)}>
                         <X size={12} />
                         Clear process filter
-                      </button>
-                    </div>
-                  )}
-                  {status.scanning && (
-                    <div className="scan-bar" role="status">
-                      <RefreshCw size={13} className="spin" />
-                      {status.revision
-                        ? "Scanning… Previous results remain available."
-                        : "Inspecting visible processes…"}
-                      <button
-                        onClick={() =>
-                          void api.cancel().then(apply).catch(report)
-                        }
-                      >
-                        Cancel scan
                       </button>
                     </div>
                   )}
@@ -898,6 +1103,12 @@ export function App() {
                         setFocused(row.process_key);
                       }}
                       onContext={(row) => {
+                        if (status.scanning) {
+                          setToast(
+                            "Wait for the current scan to finish before opening row actions.",
+                          );
+                          return;
+                        }
                         setContext(row);
                         setActiveRow({ row, revision: status.revision });
                         setFocused(row.process_key);
@@ -999,18 +1210,64 @@ export function App() {
                 OFLH.
               </p>
               {recent.length ? (
-                <div className="recent-list">
-                  {recent.map((target) => (
+                <>
+                  <div className="recent-toolbar">
+                    <label className="recent-search">
+                      <Search size={15} />
+                      <input
+                        type="search"
+                        aria-label="Search recent targets"
+                        placeholder="Filter recent targets"
+                        value={recentQuery}
+                        onChange={(event) => setRecentQuery(event.target.value)}
+                      />
+                    </label>
+                    <span className="muted recent-count">
+                      {filteredRecent.length} of {recent.length}
+                    </span>
                     <button
-                      key={target.id}
-                      onClick={() => runScan(api.revisit(target.id))}
+                      className="danger-text"
+                      disabled={!recent.length}
+                      onClick={clearRecent}
                     >
-                      <FolderOpen size={18} />
-                      <span className="mono">{target.display}</span>
-                      <ArrowRight size={15} />
+                      <Trash2 size={14} />
+                      Clear all
                     </button>
-                  ))}
-                </div>
+                  </div>
+                  {filteredRecent.length ? (
+                    <div className="recent-list" aria-label="Recent targets">
+                      {filteredRecent.map((target) => (
+                        <div className="recent-entry" key={target.id}>
+                          <button
+                            className="recent-target"
+                            title={target.display}
+                            onClick={() => runScan(api.revisit(target.id))}
+                          >
+                            <FolderOpen size={18} />
+                            <span className="mono">{target.display}</span>
+                            <ArrowRight size={15} />
+                          </button>
+                          <button
+                            className="icon-button recent-remove"
+                            aria-label={`Remove ${target.display}`}
+                            title="Remove from recent targets"
+                            onClick={() => removeRecent(target.id)}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="empty recent-empty">
+                      <Search size={26} />
+                      <h3>No matching recent targets</h3>
+                      <button onClick={() => setRecentQuery("")}>
+                        Clear search
+                      </button>
+                    </div>
+                  )}
+                </>
               ) : (
                 <div className="empty">
                   <History size={30} />
@@ -1061,19 +1318,29 @@ export function App() {
               <section className="setting-section">
                 <div>
                   <h3>About OFLH</h3>
-                  <p>Created by Karim Zouine (karimz1).</p>
+                  <p>
+                    OFLH is an independent project by{" "}
+                    <button
+                      className="inline-link"
+                      onClick={() => void api.openProfile().catch(report)}
+                    >
+                      Karim Zouine
+                    </button>
+                    , built in spare time. There is no company behind it.
+                  </p>
                   <p className="muted">
-                    OFLH Desktop {status.version} · MIT license
+                    If OFLH helps your work, you can support its ongoing
+                    development.
                   </p>
                 </div>
                 <div className="inline-actions about-links">
                   <button onClick={() => void api.openProject().catch(report)}>
                     <ExternalLink size={14} /> View project on GitHub
                   </button>
-                  <button onClick={() => void api.donate().catch(report)}>
-                    <Coffee size={14} /> Buy Me a Coffee
-                  </button>
                 </div>
+                <p className="muted about-version">
+                  OFLH Desktop {status.version} · MIT license
+                </p>
               </section>
               <section className="setting-section shortcuts">
                 <h3>
@@ -1107,6 +1374,32 @@ export function App() {
                   <dd>Escape</dd>
                 </dl>
               </section>
+              {import.meta.env.DEV && (
+                <section className="setting-section developer-tools">
+                  <div>
+                    <h3>Developer options</h3>
+                    <p className="muted">
+                      Preview the operation-error details and issue-report flow.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() =>
+                      report(
+                        {
+                          kind: "desktop_integration",
+                          message: "Sample file-manager operation failed",
+                          os_code: 2,
+                          details:
+                            "Sample reveal request\nCaused by: File manager is unavailable\nRust backtrace: development preview",
+                        },
+                        "Reveal in file manager",
+                      )
+                    }
+                  >
+                    <ShieldAlert size={14} /> Show sample error
+                  </button>
+                </section>
+              )}
               <section className="setting-section">
                 <h3>Search and inspection</h3>
                 <p>
@@ -1128,21 +1421,46 @@ export function App() {
         </main>
       </div>
       <footer className="statusbar">
-        <span>
+        <span className="status-current" role="status">
           {status.scanning && <LoaderCircle size={13} className="spin" />}
           {status.scanning
             ? "Scanning"
             : status.revision
               ? "Inspection complete"
               : "Ready to inspect"}
+          {status.scanning && (
+            <button
+              className="status-cancel"
+              onClick={() => void api.cancel().then(apply).catch(report)}
+            >
+              Cancel
+            </button>
+          )}
         </span>
-        <span>
+        <span className="status-metrics">
           {status.processes} file users · {status.usages} file usages ·{" "}
           {status.ports} ports
         </span>
         <span className="footer-end">
-          {selected.size ? `${selected.size} selected · ` : ""}Rust inspection
-          engine
+          <span className="footer-attribution">
+            {selected.size ? `${selected.size} selected · ` : ""}
+            Independent project by{" "}
+            <button
+              className="footer-profile"
+              title="Open Karim Zouine's GitHub profile"
+              onClick={() => void api.openProfile().catch(report)}
+            >
+              Karim Zouine
+            </button>
+            , built in spare time
+          </span>
+          <button
+            className="footer-link"
+            title="Choose how to support OFLH"
+            onClick={() => setShowSupport(true)}
+          >
+            Donate
+          </button>
         </span>
       </footer>
       {dragging && (
@@ -1159,6 +1477,74 @@ export function App() {
           <Check size={15} />
           {toast}
         </div>
+      )}
+      {showErrorDetails && error && (
+        <Modal
+          title="Operation details"
+          close={() => setShowErrorDetails(false)}
+        >
+          <p className="muted">
+            Diagnostic details can contain local paths or other private
+            information. Review them before sharing.
+          </p>
+          <pre className="error-details-modal">{errorDetails || error}</pre>
+          <div className="modal-actions">
+            <button onClick={copyErrorDetails}>
+              <Copy size={14} /> Copy details
+            </button>
+            <button onClick={() => setShowErrorDetails(false)}>Close</button>
+          </div>
+        </Modal>
+      )}
+      {showSupport && (
+        <Modal title="Support OFLH" close={() => setShowSupport(false)}>
+          <p className="support-intro">
+            Support is optional. Choose the route that best fits how you would
+            like to help this independent project.
+          </p>
+          <div className="support-options">
+            <section className="support-option">
+              <h3>
+                <Coffee size={17} /> Buy Me a Coffee
+              </h3>
+              <p>
+                <strong>Good for:</strong> a simple contribution from an
+                individual.
+              </p>
+              <p className="muted">
+                <strong>Trade-off:</strong> checkout is handled by a separate
+                service.
+              </p>
+              <button
+                className="primary"
+                onClick={() => chooseSupport("coffee")}
+              >
+                Continue with Buy Me a Coffee
+                <ExternalLink size={13} />
+              </button>
+            </section>
+            <section className="support-option">
+              <h3>
+                <Star size={17} /> GitHub Sponsors
+              </h3>
+              <p>
+                <strong>Good for:</strong> ongoing sponsorship and company
+                support.
+              </p>
+              <p className="muted">
+                <strong>Trade-off:</strong> sponsorship uses GitHub’s checkout
+                flow.
+              </p>
+              <button
+                className="primary"
+                onClick={() => chooseSupport("sponsors")}
+              >
+                Continue to GitHub Sponsors
+                <ExternalLink size={13} />
+              </button>
+            </section>
+          </div>
+        </Modal>
       )}
       {context && (
         <Modal

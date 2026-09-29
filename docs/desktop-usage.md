@@ -85,7 +85,10 @@ Use Cmd on macOS and Ctrl on Windows/Linux where shown.
 | `Escape` | Close a menu/dialog or leave search editing |
 
 Text fields retain ordinary editing shortcuts. Refresh stays at the top right;
-it rescans the current workspace and is also available through F5.
+it rescans the current workspace and is also available through F5. Choose an
+automatic refresh interval beside it; automatic scans pause during active scans
+and process-action confirmations. Scan progress and Cancel stay in the footer
+without moving the results table.
 
 ## Appearance and project links
 
@@ -93,9 +96,10 @@ it rescans the current workspace and is also available through F5.
 and OFLH Purple, plus font size. Your theme, font size and details width persist.
 The first launch offers a theme choice.
 
-**Star on GitHub** and **Donate** sit below Settings. They open the project and
-Buy Me a Coffee in your browser; OFLH does not star a repository or process a
-payment for you. Settings includes author credit and the same project links.
+**Support** and **Sponsor** are available in the app footer. Support opens Buy
+Me a Coffee; Sponsor opens GitHub Sponsors for company sponsorship. **Star on
+GitHub** and **Donate** remain in the sidebar. Settings includes the
+independent-project attribution and the same support links.
 
 For OS limitations, see [platform support](platform-support.md). For build,
 testing and packaging details, see [development](development.md) and the
