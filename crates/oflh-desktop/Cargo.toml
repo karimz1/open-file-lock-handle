@@ -19,6 +19,7 @@ desktop = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog", "dep:tauri
 oflh-core.workspace = true
 oflh-platform.workspace = true
 serde = { version = "1", features = ["derive"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
 thiserror.workspace = true
 tauri = { version = "2", optional = true , features = [] }
 tauri-plugin-dialog = { version = "2", optional = true }

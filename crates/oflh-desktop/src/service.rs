@@ -2,12 +2,13 @@
 use crate::{
     contract::*,
     dataset::{Dataset, display},
+    recent::RecentTargets,
 };
 use oflh_core::{Ancestor, Cancellation, Identity, Snapshot, Target};
 use oflh_platform::Backend;
 use std::{
     collections::HashSet,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Condvar, Mutex, MutexGuard},
 };
 
@@ -52,19 +53,45 @@ pub struct Service {
 impl Service {
     /// Start a worker-owned native scanner and a completion callback.
     pub fn new(
-        mut backend: Box<dyn Backend>,
+        backend: Box<dyn Backend>,
         notify: impl Fn(Status) + Send + 'static,
     ) -> std::io::Result<Self> {
+        let recent = RecentTargets::in_memory().map_err(std::io::Error::other)?;
+        Self::start(backend, notify, recent)
+    }
+
+    /// Start the scanner and restore recent targets from a SQLite database.
+    pub fn with_recent_database(
+        backend: Box<dyn Backend>,
+        notify: impl Fn(Status) + Send + 'static,
+        database: impl AsRef<Path>,
+    ) -> std::io::Result<Self> {
+        let recent = RecentTargets::open(database).map_err(std::io::Error::other)?;
+        Self::start(backend, notify, recent)
+    }
+
+    fn start(
+        mut backend: Box<dyn Backend>,
+        notify: impl Fn(Status) + Send + 'static,
+        mut recent_targets: RecentTargets,
+    ) -> std::io::Result<Self> {
+        let recent_paths = recent_targets.load().map_err(std::io::Error::other)?;
+        let generation = recent_paths.len() as u32;
+        let recent = recent_paths
+            .into_iter()
+            .enumerate()
+            .map(|(index, path)| (generation - index as u32, path))
+            .collect();
         let shared = Arc::new(Shared {
             state: Mutex::new(State {
-                generation: 0,
+                generation,
                 dataset: Arc::new(Dataset::new(0, Snapshot::default())),
                 pending: None,
                 cancellation: Cancellation::default(),
                 scanning: false,
                 shutdown: false,
                 target: None,
-                recent: Vec::new(),
+                recent,
                 error: None,
                 action: None,
                 next_ticket: 0,
@@ -102,14 +129,23 @@ impl Service {
                         state.scanning = false;
                         match result {
                             Ok((path, dataset)) => {
+                                state.error = None;
                                 if let Some(path) = path {
                                     state.recent.retain(|(_, previous)| *previous != path);
                                     state.recent.insert(0, (job.generation, path.clone()));
                                     state.recent.truncate(12);
-                                    state.target = Some(path);
+                                    state.target = Some(path.clone());
+                                    if let Err(error) = recent_targets.record(&path) {
+                                        state.error = Some(Failure {
+                                            kind: "desktop_storage".into(),
+                                            message: oflh_core::safe(&format!(
+                                                "Could not save recent targets: {error}"
+                                            )),
+                                            os_code: None,
+                                        });
+                                    }
                                 }
                                 state.dataset = Arc::new(dataset);
-                                state.error = None;
                             }
                             Err(error) => state.error = Some(error),
                         }
@@ -181,7 +217,7 @@ impl Service {
         state.scanning = false;
         status(&state)
     }
-    /// List at most twelve session-only native targets as opaque IDs and display text.
+    /// List at most twelve persisted native targets as opaque IDs and display text.
     pub fn recent(&self) -> Vec<(u32, String)> {
         self.shared
             .lock()

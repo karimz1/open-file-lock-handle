@@ -204,10 +204,16 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             let handle = app.handle().clone();
-            let service = Service::new(oflh_platform::native()?, move |status| {
-                // A closing WebView may no longer receive notifications.
-                let _ = handle.emit("scan-status", status);
-            })?;
+            let app_data = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&app_data)?;
+            let service = Service::with_recent_database(
+                oflh_platform::native()?,
+                move |status| {
+                    // A closing WebView may no longer receive notifications.
+                    let _ = handle.emit("scan-status", status);
+                },
+                app_data.join("oflh.sqlite3"),
+            )?;
             app.manage(Arc::new(service));
             Ok(())
         })

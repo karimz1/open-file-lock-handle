@@ -417,7 +417,7 @@ export function App() {
   const inspecting =
     view === "processes" || view === "handles" || view === "ports";
   return (
-    <div className="app-shell">
+    <div className="app-shell" onContextMenu={(event) => event.preventDefault()}>
       <header className="app-header">
         <div className="brand">
           <span className="brand-symbol">
@@ -907,10 +907,10 @@ export function App() {
             </>
           ) : view === "history" ? (
             <div className="content-page">
-              <span className="eyebrow">THIS SESSION</span>
+              <span className="eyebrow">SAVED HISTORY</span>
               <h1>Recent targets</h1>
               <p className="muted">
-                Reinspect a recent target. Paths are kept only until you close
+                Reinspect targets saved on this device, even after reopening
                 OFLH.
               </p>
               {recent.length ? (
