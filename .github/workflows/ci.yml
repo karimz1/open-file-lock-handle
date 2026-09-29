@@ -23,19 +23,19 @@ jobs:
         run: cargo check --workspace --locked
   test:
     needs: lockfile
-    name: Native Rust TUI + scanner / ${{ matrix.os }} / ${{ matrix.arch }}
+    name: Native Rust TUI + scanner / ${{ matrix.label }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {os: linux, arch: amd64, runner: ubuntu-24.04}
-          - {os: linux, arch: arm64, runner: ubuntu-24.04-arm}
-          - {os: darwin, arch: amd64, runner: macos-15-intel}
-          - {os: darwin, arch: arm64, runner: macos-15}
-          - {os: windows, arch: amd64, runner: windows-2025}
-          - {os: windows, arch: arm64, runner: windows-11-arm}
+          - {os: linux, arch: amd64, label: 'Linux x86-64 (linux/amd64)', runner: ubuntu-24.04}
+          - {os: linux, arch: arm64, label: 'Linux ARM64 (linux/arm64)', runner: ubuntu-24.04-arm}
+          - {os: darwin, arch: amd64, label: 'macOS Intel (darwin/amd64)', runner: macos-15-intel}
+          - {os: darwin, arch: arm64, label: 'macOS Apple Silicon (darwin/arm64)', runner: macos-15}
+          - {os: windows, arch: amd64, label: 'Windows x86-64 (windows/amd64)', runner: windows-2025}
+          - {os: windows, arch: arm64, label: 'Windows ARM64 (windows/arm64)', runner: windows-11-arm}
     defaults:
       run:
         shell: bash

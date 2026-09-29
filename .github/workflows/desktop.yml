@@ -39,19 +39,19 @@ jobs:
           retention-days: 7
   native:
     needs: frontend
-    name: Desktop / ${{ matrix.os }} / ${{ matrix.arch }}
+    name: Desktop / ${{ matrix.label }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {os: linux, arch: amd64, runner: ubuntu-24.04, bundles: 'deb,rpm'}
-          - {os: linux, arch: arm64, runner: ubuntu-24.04-arm, bundles: 'deb,rpm'}
-          - {os: darwin, arch: amd64, runner: macos-15-intel, bundles: dmg}
-          - {os: darwin, arch: arm64, runner: macos-15, bundles: dmg}
-          - {os: windows, arch: amd64, runner: windows-2025, bundles: nsis}
-          - {os: windows, arch: arm64, runner: windows-11-arm, bundles: nsis}
+          - {os: linux, arch: amd64, label: 'Linux x86-64 (linux/amd64)', runner: ubuntu-24.04, bundles: 'deb,rpm'}
+          - {os: linux, arch: arm64, label: 'Linux ARM64 (linux/arm64)', runner: ubuntu-24.04-arm, bundles: 'deb,rpm'}
+          - {os: darwin, arch: amd64, label: 'macOS Intel (darwin/amd64)', runner: macos-15-intel, bundles: dmg}
+          - {os: darwin, arch: arm64, label: 'macOS Apple Silicon (darwin/arm64)', runner: macos-15, bundles: dmg}
+          - {os: windows, arch: amd64, label: 'Windows x86-64 (windows/amd64)', runner: windows-2025, bundles: nsis}
+          - {os: windows, arch: arm64, label: 'Windows ARM64 (windows/arm64)', runner: windows-11-arm, bundles: nsis}
     env:
       RELEASE_TAG: ${{ inputs.version || 'dev' }}
       BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
