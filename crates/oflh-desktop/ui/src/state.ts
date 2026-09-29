@@ -10,6 +10,9 @@ export const initialStatus: Status = {
   warnings: [],
   error: null,
   version: "",
+  commit: "",
+  build_url: "",
+  pull_request_url: "",
 };
 // Completion may arrive before the command acknowledgment. Never resurrect a finished scan.
 export function acceptStatus(current: Status, incoming: Status): Status {

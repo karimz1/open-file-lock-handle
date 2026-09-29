@@ -26,23 +26,42 @@ Tests and developer tools are separate executables and dev-dependencies. The
 application needs no Go or Python runtime. Release builds use thin LTO, one
 codegen unit, stripped symbols, and unwinding for RAII terminal cleanup.
 
+## Build versions
+
+Release builds use the validated tag without its leading `v`. Other CI builds
+derive a SemVer prerelease from `workspace.package.version`. A pull request
+build looks like `0.2.0-dev.pr42+run.1234567890.attempt.1.sha.0123456789ab`.
+The run ID identifies the Actions workflow, the attempt distinguishes reruns,
+and the short SHA identifies the source commit. `cargo xtask ci-version` creates
+this value for both frontends. It does not query the latest GitHub release. No
+separate version file needs to be maintained.
+
+Both executables print the full version, commit, Actions run, and pull request
+from `--version`. The TUI help screen shows the build details. Desktop Settings
+links directly to the PR and Actions run. The TUI header and Desktop sidebar use
+a compact version label so long build metadata does not crowd the workspace.
+
 ## Prepare a version
 
 Update `workspace.package.version` in `Cargo.toml` and refresh `Cargo.lock` with
-`cargo check`. Use semantic versions: `0.1.0-rc.1` for a candidate or `0.1.0` for a
+`cargo check`. Use semantic versions: `0.2.0-rc.1` for a candidate or `0.2.0` for a
 stable release. Record user-visible changes in the release notes, not in temporary
 README status messages.
 
+The version in `Cargo.toml` is the next release line. Before an RC, update it to
+the chosen candidate version and commit that change. Release tags must exactly
+match this workspace version. CI rejects a mismatch rather than guessing from the
+latest published release or writing a generated version file back to the repo.
+
 Run `cargo xtask check`, review all six native CI jobs, and commit the version
-change before tagging. The commands below use `v0.1.0` as an example.
+change before tagging. The commands below use `v0.2.0-rc.1` as an example.
 Substitute the intended version consistently.
-the intended version consistently.
 
 ## Package locally
 
 ```sh
 cargo build --release --locked --bin oflh
-cargo xtask package --version v0.1.0 --os linux --arch amd64 --binary target/release/oflh
+cargo xtask package --version v0.2.0-rc.1 --os linux --arch amd64 --binary target/release/oflh
 ```
 
 Use the appropriate OS/architecture and `.exe` suffix on Windows. `package`
@@ -54,7 +73,7 @@ CI revision into `dist`, then run:
 
 ```sh
 mkdir -p bin
-cargo xtask assemble --version v0.1.0 --output dist --formula bin/oflh-cli.rb
+cargo xtask assemble --version v0.2.0-rc.1 --output dist --formula bin/oflh-cli.rb
 (cd dist && sha256sum --check checksums.txt)
 ```
 
@@ -67,8 +86,8 @@ release workflow below. Formula URLs refer to the corresponding GitHub release.
 From a reviewed commit:
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0-rc.1
+git push origin v0.2.0-rc.1
 ```
 
 The Release workflow reruns the full matrix for that tag and installs/tests the generated Homebrew formula on Linux and macOS. If any target fails, no draft
@@ -78,7 +97,7 @@ To retry an existing tag, use the workflow UI and select **that tag** as the wor
 ref, or run:
 
 ```sh
-gh workflow run release.yml --ref v0.1.0 -f tag=v0.1.0
+gh workflow run release.yml --ref v0.2.0-rc.1 -f tag=v0.2.0-rc.1
 ```
 
 The workflow verifies that the tag resolves to the workflow commit, refuses to overwrite
@@ -110,10 +129,11 @@ service with Tauri on the same six native targets. It collects DEB/RPM packages
 on Linux, DMGs on macOS, and NSIS installers on Windows. These jobs are separate
 from the existing CLI artifacts and Homebrew formula generation.
 
-Both frontends use `oflh_core::VERSION`: release CI sets `OFLH_VERSION` to
-the tag without `v`, and supplies the same version through a Tauri config override
-for both build and bundle. Local builds display `development`. The workspace
-package version is the internal Cargo version. Build with
+Both frontends use `oflh_core::VERSION`. Release CI uses the validated tag without
+`v`, and supplies the same version through a Tauri config override for both build
+and bundle. PR and branch CI builds use the version scheme above. Local builds
+display `development`. The workspace package version is the base for CI prereleases.
+Build with
 `tauri build --no-bundle -- --locked`, then use `tauri bundle --no-binary-patching`
 to package that executable without rebuilding or patching it. See the
 [desktop build guide](desktop.md#packages) for commands. Signing/notarization is

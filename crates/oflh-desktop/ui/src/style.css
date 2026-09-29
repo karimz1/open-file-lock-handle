@@ -230,6 +230,49 @@ code {
   font-size: 0.82rem;
   cursor: pointer;
 }
+.auto-refresh-control select:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+.auto-refresh-info {
+  position: relative;
+}
+.auto-refresh-info summary {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  border-radius: 5px;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+}
+.auto-refresh-info summary::-webkit-details-marker {
+  display: none;
+}
+.auto-refresh-info summary:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.auto-refresh-info[open] > div {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(320px, calc(100vw - 24px));
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 0.8462rem;
+}
+.auto-refresh-info[open] p {
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.45;
+}
 .engine-label {
   display: flex;
   gap: 7px;

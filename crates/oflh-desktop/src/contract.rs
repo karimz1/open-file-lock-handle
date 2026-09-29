@@ -95,8 +95,14 @@ pub struct Status {
     pub warnings: Vec<String>,
     /// Failure for this operation, if any.
     pub error: Option<Failure>,
-    /// Cargo workspace application version.
+    /// Compact Cargo workspace application version.
     pub version: &'static str,
+    /// Full source commit used to build this application, when available.
+    pub commit: &'static str,
+    /// GitHub Actions run for this build, when available.
+    pub build_url: &'static str,
+    /// Pull request that produced this build, when available.
+    pub pull_request_url: &'static str,
 }
 
 /// A backend query over the loaded snapshot, not a new system scan.

@@ -33,16 +33,10 @@ jobs:
       CARGO_TERM_COLOR: always
       RUST_BACKTRACE: '1'
       RELEASE_TAG: ${{ inputs.version || 'dev' }}
+      BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number || '' }}
     steps:
       - uses: actions/checkout@v7
-      - name: Set the shared display version
-        run: |
-          cargo xtask validate --version "$RELEASE_TAG"
-          if [ "$RELEASE_TAG" = dev ]; then
-            echo 'OFLH_VERSION=development' >> "$GITHUB_ENV"
-          else
-            echo "OFLH_VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
-          fi
       - name: Install pinned Rust toolchain
         run: rustup show
       - name: Format and lint
@@ -57,10 +51,13 @@ jobs:
         run: |
           cargo test -p oflh --test terminal --locked
           cargo test -p oflh --test terminal --locked
+      - name: Set traceable build identity
+        run: |
+          cargo xtask ci-version --version "$RELEASE_TAG" --commit "$BUILD_COMMIT" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" --repository "$GITHUB_REPOSITORY" --server-url "$GITHUB_SERVER_URL" --pr-number "$PR_NUMBER" --github-env "$GITHUB_ENV"
       - name: Build release executable only
         run: |
           cargo build --release --locked --bin oflh
-          test "$(./target/release/oflh${{ matrix.os == 'windows' && '.exe' || '' }} --version)" = "oflh $OFLH_VERSION"
+          test "$(./target/release/oflh${{ matrix.os == 'windows' && '.exe' || '' }} --version | head -n 1)" = "oflh $OFLH_VERSION"
           ./target/release/oflh${{ matrix.os == 'windows' && '.exe' || '' }} --help
       - name: Package tested executable
         run: cargo xtask package --version "$RELEASE_TAG" --os '${{ matrix.os }}' --arch '${{ matrix.arch }}' --binary target/release/oflh${{ matrix.os == 'windows' && '.exe' || '' }}

@@ -251,6 +251,28 @@ fn open_project(app: tauri::AppHandle) -> Result<(), Failure> {
 }
 
 #[tauri::command]
+fn open_build(app: tauri::AppHandle) -> Result<(), Failure> {
+    if oflh_core::BUILD_URL.is_empty() {
+        return Err(Failure::invalid(
+            "This build has no GitHub Actions run link",
+        ));
+    }
+    app.opener()
+        .open_url(oflh_core::BUILD_URL, None::<&str>)
+        .map_err(integration)
+}
+
+#[tauri::command]
+fn open_pull_request(app: tauri::AppHandle) -> Result<(), Failure> {
+    if oflh_core::PULL_REQUEST_URL.is_empty() {
+        return Err(Failure::invalid("This build has no pull request link"));
+    }
+    app.opener()
+        .open_url(oflh_core::PULL_REQUEST_URL, None::<&str>)
+        .map_err(integration)
+}
+
+#[tauri::command]
 fn open_profile(app: tauri::AppHandle) -> Result<(), Failure> {
     app.opener()
         .open_url("https://github.com/karimz1", None::<&str>)
@@ -342,6 +364,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .invoke_handler(tauri::generate_handler![
             status,
             open_project,
+            open_build,
+            open_pull_request,
             open_profile,
             open_donation,
             open_sponsors,

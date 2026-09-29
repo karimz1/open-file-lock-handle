@@ -1,17 +1,20 @@
 <p align="center">
-  <img src="images/oflh-logo.svg" alt="Open File Lock Handle" width="680">
+  <img src="crates/oflh-desktop/app-icon.svg" alt="Open File Lock Handle Desktop app icon" width="88">
 </p>
 
-# oflh: find processes using files and ports
+# Open File Lock Handle (oflh)
 
+[![GitHub downloads](https://img.shields.io/github/downloads/karimz1/open-file-lock-handle/total?label=downloads)](https://github.com/karimz1/open-file-lock-handle/releases)
 [![CI](https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml/badge.svg)](https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml)
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-64748b)](#platforms)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Listed on AwesomeTUI](https://img.shields.io/badge/AwesomeTUI-listed-64748b)](https://awesometui.com/open-file-lock-handle)
+[![Listed on AlternativeTo](https://img.shields.io/badge/AlternativeTo-listed-64748b)](https://alternativeto.net/software/oflh-open-file-lock-handle/about/)
 
-**OFLH shows which processes are using a file or directory, and which processes
-own local TCP listeners or bound UDP sockets.** Use the graphical desktop app or
-the interactive terminal app (CLI/TUI). Both use the same native Rust inspection
-engine on Linux, macOS, and Windows.
+Find which processes are using a file or directory, and which processes own local
+TCP listeners or bound UDP sockets. Choose OFLH Desktop or the interactive
+terminal app (CLI/TUI). Both use the same native Rust inspection engine on Linux,
+macOS, and Windows.
 
 ## Choose an interface
 
@@ -20,6 +23,7 @@ engine on Linux, macOS, and Windows.
 | Best for | Exploring results in a graphical workspace | Working from a terminal with keyboard navigation |
 | Includes | File and folder scans, ports, filters, process details and ancestry | File and folder scans, ports, process details and ancestry |
 | Start with | Open the app, then choose or drop a file or folder | `oflh [PATH]` or `oflh --port PORT` |
+| Install | [Desktop options](#desktop-install) | [CLI/TUI options](#cli-tui-install) |
 
 ### Desktop
 
@@ -30,6 +34,8 @@ engine on Linux, macOS, and Windows.
 [![asciicast](https://asciinema.org/a/1266562.svg)](https://asciinema.org/a/1266562)
 
 ## Install
+
+<a id="cli-tui-install"></a>
 
 ### CLI/TUI
 
@@ -50,6 +56,8 @@ if you want a shorter command, then run it in a terminal with a file, directory,
 or port as its target.
 
 For options and keyboard controls, see the [Terminal user guide](docs/usage.md).
+
+<a id="desktop-install"></a>
 
 ### Desktop
 

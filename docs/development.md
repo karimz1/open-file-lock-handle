@@ -1,6 +1,6 @@
 # Development and source builds
 
-Install Rust through rustup; `rust-toolchain.toml` pins the toolchain used by CI.
+Install Rust through rustup. `rust-toolchain.toml` pins the toolchain used by CI.
 Run the repository gates with:
 
 ```sh
@@ -33,7 +33,8 @@ cargo xtask check
 On Windows, run from a developer shell with the native compiler available. On
 macOS, install Xcode Command Line Tools, including the SDK and libclang needed
 by `netstat2` to generate its libproc bindings. Cross-checking macOS from Linux
-also requires an Apple SDK; installing the Rust target alone is insufficient. On Linux, install a C compiler and the
+also requires an Apple SDK. Installing the Rust target alone is insufficient.
+On Linux, install a C compiler and the
 usual linker/build tools from your distribution.
 
 ## Validation
@@ -41,8 +42,8 @@ usual linker/build tools from your distribution.
 Native CI tests Linux, macOS, and Windows on both x86-64 and ARM64. Checks cover
 real locks and release, sharing modes, cancellation, stale/protected identities,
 resource sampling, parent termination, Unicode paths, and independent C fixtures.
-Unix additionally covers mappings and working directories; Linux
-covers deleted files and hard links.
+Unix additionally covers mappings and working directories. Linux covers deleted
+files and hard links.
 
 A real PTY/ConPTY test exercises startup, input, resizing, and quit on each native
 target. State tests cover confirmation and identity safety. Text golden snapshots
@@ -53,15 +54,15 @@ For visual review, set `OFLH_VISUAL_DIR` to a temporary directory when running
 these previews for documentation instead of captures containing real process
 names or private paths. Rendering can still vary between terminal emulators.
 
-Unit tests live in `#[cfg(test)]` modules; Cargo integration tests are separate
-executables. CLI release packaging builds only `oflh`; desktop packaging builds the separate
-`oflh-desktop` executable. Test harnesses, C fixtures, benchmarks, and developer
-tooling are absent from both distributed applications.
+Unit tests live in `#[cfg(test)]` modules. Cargo integration tests are separate
+executables. CLI release packaging builds only `oflh`. Desktop packaging builds
+the separate `oflh-desktop` executable. Test harnesses, C fixtures, benchmarks,
+and developer tooling are absent from both distributed applications.
 
 ## Documentation and performance
 
 Build API documentation with `cargo doc --workspace --no-deps`. Public APIs should
-explain their contract; native wrappers should document buffer and lifetime rules.
+explain their contract. Native wrappers should document buffer and lifetime rules.
 Use [Performance](performance.md) when measuring a scanner or startup change.
 
 For pull-request expectations, see [Contributing](../CONTRIBUTING.md). Release
@@ -86,9 +87,12 @@ npm --prefix crates/oflh-desktop/ui run tauri -- build --no-bundle -- --locked
 
 On Windows the executables are `target\release\oflh.exe` and
 `target\release\oflh-desktop.exe`. Local builds display **development**. Release
-CI sets `OFLH_VERSION` from the validated tag for both frontends and passes the
-same semantic version to Tauri installer configuration. `Cargo.toml` holds the
-workspace package version; it is not presented as the local build's release version.
+CI uses the validated tag for both frontends and passes the same version to Tauri
+installer configuration. Pull request builds use a SemVer prerelease containing
+the PR number, Actions run ID and attempt, and source commit. `cargo xtask
+ci-version` generates that identity from the workspace package version. Run
+`oflh --version` or `oflh-desktop --version` to print the full commit and links.
+Desktop Settings and the TUI help screen also show the build provenance.
 
 See [OFLH Desktop](desktop.md) for WebView prerequisites, frontend checks and
 native packaging. Ordinary CLI builds and `cargo xtask check` do not require a

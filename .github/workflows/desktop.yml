@@ -50,6 +50,8 @@ jobs:
           - {os: windows, arch: arm64, runner: windows-11-arm, bundles: nsis}
     env:
       RELEASE_TAG: ${{ inputs.version || 'dev' }}
+      BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number || '' }}
     defaults:
       run:
         shell: bash
@@ -63,16 +65,6 @@ jobs:
       - name: Linux WebView build dependencies
         if: matrix.os == 'linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libxdo-dev libssl-dev librsvg2-dev patchelf
-      - name: Set matching application and installer versions
-        run: |
-          cargo xtask validate --version "$RELEASE_TAG"
-          if [ "$RELEASE_TAG" = dev ]; then
-            echo 'OFLH_VERSION=development' >> "$GITHUB_ENV"
-            printf '{"version":"0.0.0-dev"}\n' > "$RUNNER_TEMP/desktop-version.json"
-          else
-            echo "OFLH_VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
-            printf '{"version":"%s"}\n' "${RELEASE_TAG#v}" > "$RUNNER_TEMP/desktop-version.json"
-          fi
       - run: rustup show
       - run: npm ci && npm run build
         working-directory: crates/oflh-desktop/ui
@@ -81,11 +73,15 @@ jobs:
           cargo fmt --all --check
           cargo clippy -p oflh-desktop --all-targets --features desktop --locked -- -D warnings
           cargo test -p oflh-desktop --features desktop --locked
+      - name: Set traceable build identity and matching installer version
+        run: |
+          OFLH_VERSION=$(cargo xtask ci-version --version "$RELEASE_TAG" --commit "$BUILD_COMMIT" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" --repository "$GITHUB_REPOSITORY" --server-url "$GITHUB_SERVER_URL" --pr-number "$PR_NUMBER" --github-env "$GITHUB_ENV")
+          printf '{"version":"%s"}\n' "$OFLH_VERSION" > "$RUNNER_TEMP/desktop-version.json"
       - name: Build desktop release executable
         run: npm run tauri -- build --config "$RUNNER_TEMP/desktop-version.json" --no-bundle -- --locked
         working-directory: crates/oflh-desktop/ui
       - name: Verify built desktop version
-        run: test "$(./target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }} --version)" = "oflh-desktop $OFLH_VERSION"
+        run: test "$(./target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }} --version | head -n 1)" = "oflh-desktop $OFLH_VERSION"
       - name: Bundle the built executable without rebuilding
         run: npm run tauri -- bundle --config "$RUNNER_TEMP/desktop-version.json" --no-binary-patching --bundles '${{ matrix.bundles }}'
         working-directory: crates/oflh-desktop/ui

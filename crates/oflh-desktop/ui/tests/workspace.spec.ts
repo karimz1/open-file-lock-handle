@@ -79,7 +79,22 @@ test.beforeEach(async ({ page }) => {
       ],
       error: null,
       version: "development",
+      commit: "0123456789abcdef0123456789abcdef01234567",
+      build_url:
+        "https://github.com/karimz1/open-file-lock-handle/actions/runs/1234567890",
+      pull_request_url:
+        "https://github.com/karimz1/open-file-lock-handle/pull/42",
     };
+    if (new URL(location.href).searchParams.has("empty-target")) {
+      status = {
+        ...status,
+        revision: 0,
+        target: "",
+        processes: 0,
+        ports: 0,
+        usages: 0,
+      };
+    }
     let recentTargets = [
       { id: 1, display: "/workspace/project" },
       { id: 2, display: "/workspace/another-project" },
@@ -542,11 +557,6 @@ test("automatic refresh repeats at the selected interval", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Automatic refresh interval").selectOption("5");
   await expect
-    .poll(() =>
-      page.evaluate(() => localStorage.getItem("oflh-auto-reload-seconds")),
-    )
-    .toBe("5");
-  await expect
     .poll(
       async () => {
         const calls = await page.evaluate(() => (window as any).__testCalls);
@@ -555,6 +565,44 @@ test("automatic refresh repeats at the selected interval", async ({ page }) => {
       { timeout: 7000 },
     )
     .toBeGreaterThan(0);
+});
+test("automatic refresh is session-only and waits for a completed scan", async ({
+  page,
+}) => {
+  await page.goto("/?empty-target");
+  await expect(page.getByLabel("Automatic refresh interval")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Refresh", exact: true }),
+  ).toBeDisabled();
+
+  await page
+    .getByRole("textbox", { name: "Target file or folder path" })
+    .fill("/workspace/project");
+  await page.evaluate(() => {
+    (window as any).__advanceRevisionForTest = true;
+  });
+  await page.getByRole("button", { name: "Inspect", exact: true }).click();
+  const interval = page.getByLabel("Automatic refresh interval");
+  await expect(interval).toBeEnabled();
+  await page
+    .locator('summary[aria-label="Automatic refresh information"]')
+    .click();
+  await expect(page.getByRole("note")).toContainText("Off by default");
+  await expect(page.getByRole("note")).toContainText(
+    "manual refresh is often better for a focused check",
+  );
+  await interval.selectOption("5");
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem("oflh-auto-reload-seconds")),
+    )
+    .toBeNull();
+
+  await page.reload();
+  await expect(page.getByLabel("Automatic refresh interval")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Refresh", exact: true }),
+  ).toBeDisabled();
 });
 test("scan progress does not move the results grid", async ({ page }) => {
   await page.goto("/");
@@ -979,6 +1027,22 @@ test("Donate explains both support options and opens the selected destination", 
   expect(
     calls.filter((call: any) => call.command === "open_profile"),
   ).toHaveLength(2);
+});
+
+test("Settings opens the exact PR and Actions run for this build", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByText("Commit 0123456789ab")).toBeVisible();
+  await page.getByRole("button", { name: "View pull request" }).click();
+  await page.getByRole("button", { name: "View Actions run" }).click();
+
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(calls.some((call: any) => call.command === "open_pull_request")).toBe(
+    true,
+  );
+  expect(calls.some((call: any) => call.command === "open_build")).toBe(true);
 });
 
 test("developer settings can preview the diagnostic lightbox", async ({

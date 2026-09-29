@@ -17,6 +17,7 @@ import {
   Files,
   FolderOpen,
   History,
+  Info,
   Keyboard,
   Network,
   RefreshCw,
@@ -76,18 +77,6 @@ const filterLabels: Record<keyof ColumnFilters, string> = {
   evidence: "Evidence",
 };
 const autoReloadOptions = [0, 5, 10, 15, 30, 60] as const;
-function readAutoReloadSeconds() {
-  try {
-    const saved = Number(localStorage.getItem("oflh-auto-reload-seconds"));
-    return autoReloadOptions.includes(
-      saved as (typeof autoReloadOptions)[number],
-    )
-      ? saved
-      : 0;
-  } catch {
-    return 0;
-  }
-}
 function readHiddenColumns(): Set<ColumnKey> {
   try {
     const saved: unknown = JSON.parse(
@@ -136,9 +125,7 @@ export function App() {
       return 14;
     }
   });
-  const [autoReloadSeconds, setAutoReloadSeconds] = useState(
-    readAutoReloadSeconds,
-  );
+  const [autoReloadSeconds, setAutoReloadSeconds] = useState(0);
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontSize}px`;
     try {
@@ -149,14 +136,11 @@ export function App() {
   }, [fontSize]);
   useEffect(() => {
     try {
-      localStorage.setItem(
-        "oflh-auto-reload-seconds",
-        String(autoReloadSeconds),
-      );
+      localStorage.removeItem("oflh-auto-reload-seconds");
     } catch {
-      /* Auto reload still works for this session. */
+      // Automatic refresh remains session-only.
     }
-  }, [autoReloadSeconds]);
+  }, []);
   const [status, setStatus] = useState(initialStatus);
   const [view, setView] = useState<View>("processes");
   const [path, setPath] = useState("");
@@ -259,6 +243,7 @@ export function App() {
         !status.scanning &&
         !confirmation &&
         !acting &&
+        !pathEdited &&
         !showErrorDetails &&
         !context
       )
@@ -271,6 +256,7 @@ export function App() {
     autoReloadSeconds,
     confirmation,
     context,
+    pathEdited,
     report,
     showErrorDetails,
     status.revision,
@@ -640,26 +626,47 @@ export function App() {
           <span className="rc-badge">RC</span>
         </div>
         <div className="header-actions">
-          <label
-            className="auto-refresh-control"
-            title="Automatically refresh while the app is open"
-          >
-            <Timer size={14} />
-            <span>Auto</span>
-            <select
-              aria-label="Automatic refresh interval"
-              value={autoReloadSeconds}
-              onChange={(event) =>
-                setAutoReloadSeconds(Number(event.target.value))
-              }
-            >
-              {autoReloadOptions.map((seconds) => (
-                <option key={seconds} value={seconds}>
-                  {seconds === 0 ? "Off" : `${seconds}s`}
-                </option>
-              ))}
-            </select>
-          </label>
+          {status.revision > 0 && (
+            <>
+              <label className="auto-refresh-control">
+                <Timer size={14} />
+                <span>Auto</span>
+                <select
+                  aria-label="Automatic refresh interval"
+                  value={autoReloadSeconds}
+                  onChange={(event) =>
+                    setAutoReloadSeconds(Number(event.target.value))
+                  }
+                >
+                  {autoReloadOptions.map((seconds) => (
+                    <option key={seconds} value={seconds}>
+                      {seconds === 0 ? "Off" : `${seconds}s`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <details className="auto-refresh-info">
+                <summary
+                  aria-label="Automatic refresh information"
+                  title="About automatic refresh"
+                >
+                  <Info size={15} />
+                </summary>
+                <div role="note">
+                  <strong>Automatic refresh</strong>
+                  <p>
+                    Off by default. Choose an interval to repeat the current
+                    scan while OFLH is open.
+                  </p>
+                  <p>
+                    It can help with changing processes or ports. Results may
+                    change while you inspect, so manual refresh is often better
+                    for a focused check.
+                  </p>
+                </div>
+              </details>
+            </>
+          )}
           <button
             disabled={!status.revision}
             onClick={refresh}
@@ -1337,10 +1344,27 @@ export function App() {
                   <button onClick={() => void api.openProject().catch(report)}>
                     <ExternalLink size={14} /> View project on GitHub
                   </button>
+                  {status.pull_request_url && (
+                    <button
+                      onClick={() => void api.openPullRequest().catch(report)}
+                    >
+                      <ExternalLink size={14} /> View pull request
+                    </button>
+                  )}
+                  {status.build_url && (
+                    <button onClick={() => void api.openBuild().catch(report)}>
+                      <ExternalLink size={14} /> View Actions run
+                    </button>
+                  )}
                 </div>
                 <p className="muted about-version">
                   OFLH Desktop {status.version} · MIT license
                 </p>
+                {status.commit && (
+                  <p className="muted about-version">
+                    Commit <code>{status.commit.slice(0, 12)}</code>
+                  </p>
+                )}
               </section>
               <section className="setting-section shortcuts">
                 <h3>

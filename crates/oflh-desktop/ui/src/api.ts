@@ -16,6 +16,9 @@ export interface Status {
   warnings: string[];
   error: Failure | null;
   version: string;
+  commit: string;
+  build_url: string;
+  pull_request_url: string;
 }
 export interface Row {
   key: string;
@@ -105,6 +108,8 @@ export interface ActionResult {
   error: Failure | null;
 }
 export const api = {
+  openBuild: () => invoke<void>("open_build"),
+  openPullRequest: () => invoke<void>("open_pull_request"),
   donate: () => invoke<void>("open_donation"),
   openSponsors: () => invoke<void>("open_sponsors"),
   openProfile: () => invoke<void>("open_profile"),

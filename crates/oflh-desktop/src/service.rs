@@ -555,7 +555,10 @@ fn status(state: &State) -> Status {
             .map(|warning| oflh_core::safe(warning))
             .collect(),
         error: state.error.clone(),
-        version: oflh_core::VERSION,
+        version: oflh_core::display_version(),
+        commit: oflh_core::BUILD_COMMIT,
+        build_url: oflh_core::BUILD_URL,
+        pull_request_url: oflh_core::PULL_REQUEST_URL,
     }
 }
 

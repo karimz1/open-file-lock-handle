@@ -4,11 +4,47 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 mod path;
-/// User-visible build version shared by both frontends. Release CI sets the tag value.
+/// Full SemVer version shared by both frontends.
 pub const VERSION: &str = match option_env!("OFLH_VERSION") {
     Some(version) => version,
     None => "development",
 };
+/// Compact version for persistent, space-constrained UI labels.
+pub fn display_version() -> &'static str {
+    VERSION
+        .split_once('+')
+        .map_or(VERSION, |(version, _)| version)
+}
+/// Full source commit used to build this application, when supplied by CI.
+pub const BUILD_COMMIT: &str = match option_env!("OFLH_BUILD_COMMIT") {
+    Some(commit) => commit,
+    None => "",
+};
+/// GitHub Actions run for this build, when built in CI.
+pub const BUILD_URL: &str = match option_env!("OFLH_BUILD_URL") {
+    Some(url) => url,
+    None => "",
+};
+/// Pull request that produced this build, when built from a pull request.
+pub const PULL_REQUEST_URL: &str = match option_env!("OFLH_PULL_REQUEST_URL") {
+    Some(url) => url,
+    None => "",
+};
+
+/// Format the version and available source-control provenance for CLI output.
+pub fn version_report(application: &str) -> String {
+    let mut report = format!("{application} {VERSION}");
+    if !BUILD_COMMIT.is_empty() {
+        report.push_str(&format!("\ncommit {BUILD_COMMIT}"));
+    }
+    if !BUILD_URL.is_empty() {
+        report.push_str(&format!("\nbuild {BUILD_URL}"));
+    }
+    if !PULL_REQUEST_URL.is_empty() {
+        report.push_str(&format!("\npull request {PULL_REQUEST_URL}"));
+    }
+    report
+}
 
 pub mod ports;
 pub mod search;
@@ -368,5 +404,31 @@ mod inspection_folder_tests {
         );
         process.identity.started = 0;
         assert!(process.inspection_folder().is_none());
+    }
+}
+
+#[cfg(test)]
+mod build_info_tests {
+    use super::*;
+
+    #[test]
+    fn version_report_includes_configured_build_provenance() {
+        let report = version_report("oflh");
+        assert!(report.starts_with(&format!("oflh {VERSION}")));
+        for (label, value) in [
+            ("commit", BUILD_COMMIT),
+            ("build", BUILD_URL),
+            ("pull request", PULL_REQUEST_URL),
+        ] {
+            if !value.is_empty() {
+                assert!(report.contains(&format!("{label} {value}")));
+            }
+        }
+        assert_eq!(
+            display_version(),
+            VERSION
+                .split_once('+')
+                .map_or(VERSION, |(version, _)| version)
+        );
     }
 }
