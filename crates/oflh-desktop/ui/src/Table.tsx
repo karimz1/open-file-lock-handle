@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowDown,
@@ -17,6 +11,22 @@ import {
 } from "lucide-react";
 import { api, type Page, type Row, type Sort, type TableQuery } from "./api";
 import { memory, compactPath } from "./state";
+export type ColumnKey =
+  | "process"
+  | "pid"
+  | "path"
+  | "evidence"
+  | "memory"
+  | "cpu"
+  | "address"
+  | "port"
+  | "protocol";
+export interface ColumnDefinition {
+  key: ColumnKey;
+  label: string;
+  sort?: Sort;
+  width: number;
+}
 interface Props {
   fontSize: number;
   target: string;
@@ -24,6 +34,7 @@ interface Props {
   onToggle: (row: Row) => void;
   revision: number;
   query: TableQuery;
+  hiddenColumns: Set<ColumnKey>;
   selected: Set<string>;
   focused: string | null;
   onSelect: (row: Row, additive: boolean) => void;
@@ -33,41 +44,66 @@ interface Props {
   onTotal: (total: number) => void;
   onError: (error: unknown) => void;
 }
-const fileColumns: { label: string; sort?: Sort; width: number }[] = [
-  { label: "Process", sort: "name", width: 220 },
-  { label: "PID", sort: "pid", width: 84 },
-  { label: "Path", sort: "path", width: 350 },
-  { label: "Evidence / access", width: 170 },
-  { label: "Memory", sort: "memory", width: 104 },
-  { label: "CPU", sort: "cpu", width: 80 },
+export const fileColumns: ColumnDefinition[] = [
+  { key: "process", label: "Process", sort: "name", width: 220 },
+  { key: "pid", label: "PID", sort: "pid", width: 84 },
+  { key: "path", label: "Path", sort: "path", width: 380 },
+  { key: "evidence", label: "Evidence / access", width: 170 },
+  { key: "memory", label: "Memory", sort: "memory", width: 104 },
+  { key: "cpu", label: "CPU", sort: "cpu", width: 80 },
 ];
-const portColumns: { label: string; sort?: Sort; width: number }[] = [
-  { label: "Process", sort: "name", width: 220 },
-  { label: "PID", sort: "pid", width: 84 },
-  { label: "Local address", sort: "address", width: 230 },
-  { label: "Port", sort: "port", width: 90 },
-  { label: "Protocol / state", sort: "protocol", width: 170 },
-  { label: "Memory", sort: "memory", width: 104 },
-  { label: "CPU", sort: "cpu", width: 80 },
+export const portColumns: ColumnDefinition[] = [
+  { key: "process", label: "Process", sort: "name", width: 220 },
+  { key: "pid", label: "PID", sort: "pid", width: 84 },
+  { key: "address", label: "Local address", sort: "address", width: 230 },
+  { key: "port", label: "Port", sort: "port", width: 90 },
+  { key: "protocol", label: "Protocol / state", sort: "protocol", width: 170 },
+  { key: "memory", label: "Memory", sort: "memory", width: 104 },
+  { key: "cpu", label: "CPU", sort: "cpu", width: 80 },
 ];
 export function Table(props: Props) {
-  const columns = props.query.ports ? portColumns : fileColumns;
+  const allColumns = props.query.ports ? portColumns : fileColumns;
+  const columns = allColumns.filter(
+    (column) =>
+      column.key === "process" || !props.hiddenColumns.has(column.key),
+  );
   const scroll = useRef<HTMLDivElement>(null);
+  const resizing = useRef<{
+    key: ColumnKey;
+    pointerId: number;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
   const [page, setPage] = useState<(Page & { offset: number }) | null>(null);
   const [cursor, setCursor] = useState(0);
   const pendingNavigation = useRef<{ index: number; additive: boolean } | null>(
     null,
   );
-  const [widths, setWidths] = useState(columns.map((column) => column.width));
+  const [widths, setWidths] = useState<Record<ColumnKey, number>>({
+    process: 220,
+    pid: 84,
+    path: 380,
+    evidence: 170,
+    memory: 104,
+    cpu: 80,
+    address: 230,
+    port: 90,
+    protocol: 170,
+  });
+  const widthFor = (column: ColumnDefinition) =>
+    widths[column.key] ?? column.width;
+  const template = columns.map((column) => `${widthFor(column)}px`).join(" ");
+  const minWidth = columns.reduce((sum, column) => sum + widthFor(column), 0);
+  const rowHeight = Math.round((38 * props.fontSize) / 13);
   const virtual = useVirtualizer({
     count: page?.total ?? 0,
     getScrollElement: () => scroll.current,
-    estimateSize: () => Math.round((38 * props.fontSize) / 13),
+    estimateSize: () => rowHeight,
     overscan: 10,
   });
   useEffect(() => {
     virtual.measure();
-  }, [props.fontSize]);
+  }, [props.fontSize, props.query.handles]);
   const items = virtual.getVirtualItems();
   const offset = Math.floor((items[0]?.index ?? 0) / 100) * 100;
   const queryKey = JSON.stringify({ ...props.query, offset: 0 });
@@ -104,10 +140,6 @@ export function Table(props: Props) {
       props.onSelect(row, pending.additive);
     }
   }, [page]);
-  const template = useMemo(
-    () => widths.map((width) => `${width}px`).join(" "),
-    [widths],
-  );
   const rowAt = (index: number) => page?.rows[index - page.offset];
   const navigate = (event: KeyboardEvent<HTMLDivElement>) => {
     let index = cursor;
@@ -167,13 +199,14 @@ export function Table(props: Props) {
         role="row"
         style={{
           gridTemplateColumns: template,
-          minWidth: widths.reduce((sum, width) => sum + width, 0),
+          minWidth,
         }}
       >
-        {columns.map((column, index) => (
+        {columns.map((column) => (
           <div
             role="columnheader"
-            key={column.label}
+            className="table-header-cell"
+            key={column.key}
             aria-sort={
               column.sort && props.query.sort === column.sort
                 ? props.query.descending
@@ -183,59 +216,75 @@ export function Table(props: Props) {
             }
           >
             {column.sort ? (
-              <button onClick={() => props.onSort(column.sort!)}>
-                {column.label}
-                {props.query.sort === column.sort &&
-                  (props.query.descending ? (
-                    <ArrowDown size={12} />
-                  ) : (
-                    <ArrowUp size={12} />
-                  ))}
+              <button
+                className="sort-header"
+                type="button"
+                aria-label={`Sort by ${column.label}`}
+                onClick={() => props.onSort(column.sort!)}
+              >
+                <span>{column.label}</span>
+                {props.query.sort === column.sort && (
+                  <span className="sort-indicator" aria-hidden="true">
+                    {props.query.descending ? (
+                      <ArrowDown size={13} />
+                    ) : (
+                      <ArrowUp size={13} />
+                    )}
+                  </span>
+                )}
               </button>
             ) : (
-              <span>{column.label}</span>
+              <span className="table-header-label">{column.label}</span>
             )}
             <span
               role="separator"
               aria-label={`Resize ${column.label} column`}
               aria-orientation="vertical"
-              aria-valuenow={widths[index]}
+              aria-valuenow={widthFor(column)}
+              aria-valuemin={70}
               tabIndex={0}
               className="resize-handle"
               onKeyDown={(event) => {
                 if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
                   event.preventDefault();
                   event.stopPropagation();
-                  setWidths((current) =>
-                    current.map((width, position) =>
-                      position === index
-                        ? Math.max(
-                            70,
-                            width + (event.key === "ArrowRight" ? 16 : -16),
-                          )
-                        : width,
+                  setWidths((current) => ({
+                    ...current,
+                    [column.key]: Math.max(
+                      70,
+                      widthFor(column) +
+                        (event.key === "ArrowRight" ? 16 : -16),
                     ),
-                  );
+                  }));
                 }
               }}
               onPointerDown={(event) => {
                 event.preventDefault();
-                const handle = event.currentTarget;
-                handle.setPointerCapture(event.pointerId);
-                const start = event.clientX;
-                const initial = widths[index];
-                handle.onpointermove = (move) =>
-                  setWidths((current) =>
-                    current.map((width, position) =>
-                      position === index
-                        ? Math.max(70, initial + move.clientX - start)
-                        : width,
-                    ),
-                  );
-                handle.onpointerup = () => {
-                  handle.onpointermove = null;
-                  handle.onpointerup = null;
+                event.stopPropagation();
+                event.currentTarget.setPointerCapture(event.pointerId);
+                resizing.current = {
+                  key: column.key,
+                  pointerId: event.pointerId,
+                  startX: event.clientX,
+                  startWidth: widthFor(column),
                 };
+              }}
+              onPointerMove={(event) => {
+                const active = resizing.current;
+                if (!active || active.pointerId !== event.pointerId) return;
+                setWidths((current) => ({
+                  ...current,
+                  [active.key]: Math.max(
+                    70,
+                    active.startWidth + event.clientX - active.startX,
+                  ),
+                }));
+              }}
+              onPointerUp={() => {
+                resizing.current = null;
+              }}
+              onPointerCancel={() => {
+                resizing.current = null;
               }}
             />
           </div>
@@ -269,7 +318,7 @@ export function Table(props: Props) {
         <div
           style={{
             height: virtual.getTotalSize(),
-            minWidth: widths.reduce((sum, width) => sum + width, 0),
+            minWidth,
             position: "relative",
           }}
         >
@@ -284,10 +333,12 @@ export function Table(props: Props) {
                 aria-rowindex={item.index + 2}
                 aria-selected={!!row && props.selected.has(row.process_key)}
                 className={`data-row ${row && props.selected.has(row.process_key) ? "selected" : ""} ${row?.process_key === props.focused ? "focused" : ""}`}
+                data-index={item.index}
+                ref={virtual.measureElement}
                 style={{
                   position: "absolute",
                   top: item.start,
-                  height: item.size,
+                  minHeight: rowHeight,
                   gridTemplateColumns: template,
                   width: "100%",
                 }}
@@ -338,60 +389,82 @@ export function Table(props: Props) {
                         <span className="selection-mark" />
                       )}
                     </div>
-                    <div role="gridcell" className="mono muted">
-                      {row.pid || "—"}
-                    </div>
+                    {!props.hiddenColumns.has("pid") && (
+                      <div role="gridcell" className="mono muted">
+                        {row.pid || "—"}
+                      </div>
+                    )}
                     {props.query.ports ? (
                       <>
-                        <div
-                          role="gridcell"
-                          className="mono"
-                          title={row.port?.endpoint}
-                        >
-                          {row.port?.address ?? "—"}
-                        </div>
-                        <div role="gridcell" className="mono">
-                          {row.port?.number ?? "—"}
-                        </div>
-                        <div role="gridcell">
-                          <span className="badge">{row.port?.protocol}</span>{" "}
-                          <span className="muted">{row.port?.state}</span>
-                        </div>
+                        {!props.hiddenColumns.has("address") && (
+                          <div
+                            role="gridcell"
+                            className="mono"
+                            title={row.port?.endpoint}
+                          >
+                            {row.port?.address ?? "—"}
+                          </div>
+                        )}
+                        {!props.hiddenColumns.has("port") && (
+                          <div role="gridcell" className="mono">
+                            {row.port?.number ?? "—"}
+                          </div>
+                        )}
+                        {!props.hiddenColumns.has("protocol") && (
+                          <div role="gridcell">
+                            <span className="badge">{row.port?.protocol}</span>{" "}
+                            <span className="muted">{row.port?.state}</span>
+                          </div>
+                        )}
                       </>
                     ) : (
                       <>
-                        <div
-                          role="gridcell"
-                          className="mono path-cell"
-                          title={row.path}
-                        >
-                          {compactPath(row.path, props.target) || "Unavailable"}
-                          {row.deleted && (
-                            <span className="badge">deleted</span>
-                          )}
-                        </div>
-                        <div role="gridcell" title={row.evidence ?? undefined}>
-                          {row.evidence ? (
-                            <span className="evidence">
-                              <ShieldCheck size={13} />
-                              {row.evidence_label}
-                            </span>
-                          ) : (
-                            <span className="muted">
-                              {props.query.handles
-                                ? `${row.relation} · ${row.access}`
-                                : `${row.usages} file usages`}
-                            </span>
-                          )}
-                        </div>
+                        {!props.hiddenColumns.has("path") && (
+                          <div
+                            role="gridcell"
+                            className={`mono path-cell ${props.query.handles ? "full-path-cell" : ""}`}
+                            title={row.path}
+                          >
+                            {(props.query.handles
+                              ? row.path
+                              : compactPath(row.path, props.target)) ||
+                              "Unavailable"}
+                            {row.deleted && (
+                              <span className="badge">deleted</span>
+                            )}
+                          </div>
+                        )}
+                        {!props.hiddenColumns.has("evidence") && (
+                          <div
+                            role="gridcell"
+                            title={row.evidence ?? undefined}
+                          >
+                            {row.evidence ? (
+                              <span className="evidence">
+                                <ShieldCheck size={13} />
+                                {row.evidence_label}
+                              </span>
+                            ) : (
+                              <span className="muted">
+                                {props.query.handles
+                                  ? `${row.relation} · ${row.access}`
+                                  : `${row.usages} file usages`}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </>
                     )}
-                    <div role="gridcell" className="mono numeric">
-                      {memory(row.memory)}
-                    </div>
-                    <div role="gridcell" className="mono numeric">
-                      {row.cpu === null ? "—" : `${row.cpu.toFixed(1)}%`}
-                    </div>
+                    {!props.hiddenColumns.has("memory") && (
+                      <div role="gridcell" className="mono numeric">
+                        {memory(row.memory)}
+                      </div>
+                    )}
+                    {!props.hiddenColumns.has("cpu") && (
+                      <div role="gridcell" className="mono numeric">
+                        {row.cpu === null ? "—" : `${row.cpu.toFixed(1)}%`}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div role="gridcell" className="muted">

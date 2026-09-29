@@ -265,6 +265,56 @@ test("virtualized workspace, theme, process details, keyboard and copy", async (
   await expect(grid.getByText("5499", { exact: true })).toBeVisible();
   expect(await grid.getByRole("row").count()).toBeLessThan(60);
 });
+test("whole sortable headers work and optional columns persist", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  const pidHeader = grid
+    .getByRole("columnheader")
+    .filter({ has: page.getByRole("button", { name: "Sort by PID" }) });
+  const sortButton = pidHeader.getByRole("button");
+  const sortBounds = await sortButton.boundingBox();
+  await sortButton.click({
+    position: { x: sortBounds!.width - 20, y: sortBounds!.height / 2 },
+  });
+  await expect
+    .poll(async () => {
+      const calls = await page.evaluate(() => (window as any).__testCalls);
+      return calls.filter((call: any) => call.command === "page").at(-1).args
+        .query.sort;
+    })
+    .toBe("pid");
+
+  await page.getByText("Columns", { exact: true }).click();
+  const columns = page.getByRole("group", { name: "Visible columns" });
+  await columns.getByLabel("CPU", { exact: true }).uncheck();
+  await expect(grid.getByRole("columnheader", { name: "CPU" })).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page.getByRole("grid").getByRole("columnheader", { name: "CPU" }),
+  ).toHaveCount(0);
+  await page.getByText("Columns", { exact: true }).click();
+  await page
+    .getByRole("group", { name: "Visible columns" })
+    .getByLabel("CPU", { exact: true })
+    .check();
+  await expect(
+    page.getByRole("grid").getByRole("columnheader", { name: "CPU" }),
+  ).toBeVisible();
+});
+test("file usage cells show the complete path", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /^File usages/ }).click();
+  const firstRow = page.getByRole("grid").getByRole("row").nth(1);
+  await expect(firstRow.getByRole("gridcell").nth(2)).toHaveText(
+    "/workspace/project/target/debug/fixture",
+  );
+  await expect(firstRow.getByRole("gridcell").nth(2)).toHaveCSS(
+    "white-space",
+    "normal",
+  );
+});
 test("hidden selection confirmation defaults to cancel and preserves force mode", async ({
   page,
 }) => {
@@ -749,11 +799,10 @@ test("column dividers remain visible without hover and resize with keyboard", as
     name: "Resize Process column",
     exact: true,
   });
-  await expect(divider).toHaveCSS("border-right-style", "solid");
-  await expect(divider).toHaveCSS("border-right-width", "1px");
+  await expect(divider).toHaveCSS("width", "12px");
   expect(
     await divider.evaluate(
-      (element) => getComputedStyle(element).borderRightColor,
+      (element) => getComputedStyle(element, "::after").backgroundColor,
     ),
   ).not.toBe("rgba(0, 0, 0, 0)");
   const before = await divider.boundingBox();
@@ -761,6 +810,21 @@ test("column dividers remain visible without hover and resize with keyboard", as
   await page.keyboard.press("ArrowRight");
   const after = await divider.boundingBox();
   expect(after!.x).toBeGreaterThan(before!.x);
+  const widthBeforeDrag = Number(await divider.getAttribute("aria-valuenow"));
+  const dragBounds = await divider.boundingBox();
+  await page.mouse.move(
+    dragBounds!.x + dragBounds!.width / 2,
+    dragBounds!.y + dragBounds!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    dragBounds!.x + dragBounds!.width / 2 + 36,
+    dragBounds!.y + dragBounds!.height / 2,
+  );
+  await page.mouse.up();
+  await expect
+    .poll(async () => Number(await divider.getAttribute("aria-valuenow")))
+    .toBeGreaterThan(widthBeforeDrag);
 });
 
 test("documentation screenshot uses only synthetic inspection data", async ({
@@ -789,6 +853,10 @@ test("utility actions stay in the sidebar and fit the minimum window", async ({
 }) => {
   await page.setViewportSize({ width: 860, height: 560 });
   await page.goto("/");
+  await page.getByText("Columns", { exact: true }).click();
+  const columnMenu = page.getByRole("group", { name: "Visible columns" });
+  const menuBounds = await columnMenu.boundingBox();
+  expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(860);
   for (const name of ["Star on GitHub", "Settings", "Donate"]) {
     const button = page.getByRole("button", { name, exact: true });
     await expect(button).toBeVisible();

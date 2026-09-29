@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   Activity,
+  ChevronDown,
+  Columns3,
   SlidersHorizontal,
   Star,
   LoaderCircle,
@@ -40,10 +42,43 @@ import { acceptStatus, initialStatus, selectKey } from "./state";
 import { Inspector } from "./Inspector";
 import { Modal } from "./Modal";
 import { readTheme, ThemePicker } from "./Themes";
-import { Table } from "./Table";
+import {
+  Table,
+  fileColumns as fileColumnDefinitions,
+  portColumns as portColumnDefinitions,
+  type ColumnKey,
+} from "./Table";
 import { ColumnFilterPanel } from "./ColumnFilters";
 
 type View = "ports" | "processes" | "handles" | "history" | "settings";
+const columnKeys = new Set<ColumnKey>([
+  "process",
+  "pid",
+  "path",
+  "evidence",
+  "memory",
+  "cpu",
+  "address",
+  "port",
+  "protocol",
+]);
+function readHiddenColumns(): Set<ColumnKey> {
+  try {
+    const saved: unknown = JSON.parse(
+      localStorage.getItem("oflh-hidden-columns") ?? "[]",
+    );
+    return new Set(
+      Array.isArray(saved)
+        ? saved.filter(
+            (value: unknown): value is ColumnKey =>
+              typeof value === "string" && columnKeys.has(value as ColumnKey),
+          )
+        : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
 export function App() {
   const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
   const shortcut = (keys: string) => (
@@ -83,6 +118,22 @@ export function App() {
   const [descending, setDescending] = useState(false);
   const [fileColumns, setFileColumns] = useState<ColumnFilters>({});
   const [portColumns, setPortColumns] = useState<ColumnFilters>({});
+  const [hiddenColumns, setHiddenColumns] = useState(readHiddenColumns);
+  const tableColumns =
+    view === "ports" ? portColumnDefinitions : fileColumnDefinitions;
+  const toggleHiddenColumn = (column: ColumnKey) => {
+    setHiddenColumns((current) => {
+      const next = new Set(current);
+      if (next.has(column)) next.delete(column);
+      else next.add(column);
+      try {
+        localStorage.setItem("oflh-hidden-columns", JSON.stringify([...next]));
+      } catch {
+        // The current session can still use the changed column set.
+      }
+      return next;
+    });
+  };
   const [showColumns, setShowColumns] = useState(false);
   const columns = view === "ports" ? portColumns : fileColumns;
   const setColumns = view === "ports" ? setPortColumns : setFileColumns;
@@ -417,7 +468,10 @@ export function App() {
   const inspecting =
     view === "processes" || view === "handles" || view === "ports";
   return (
-    <div className="app-shell" onContextMenu={(event) => event.preventDefault()}>
+    <div
+      className="app-shell"
+      onContextMenu={(event) => event.preventDefault()}
+    >
       <header className="app-header">
         <div className="brand">
           <span className="brand-symbol">
@@ -691,6 +745,36 @@ export function App() {
                     <button className="select-all" onClick={selectAll}>
                       Select all
                     </button>
+                    <details className="column-picker">
+                      <summary>
+                        <Columns3 size={14} />
+                        Columns
+                        <ChevronDown
+                          size={12}
+                          className="column-picker-caret"
+                        />
+                      </summary>
+                      <div
+                        className="column-picker-menu"
+                        role="group"
+                        aria-label="Visible columns"
+                      >
+                        <span className="column-picker-heading">
+                          SHOW IN GRID
+                        </span>
+                        {tableColumns.map((column) => (
+                          <label key={column.key}>
+                            <input
+                              type="checkbox"
+                              checked={!hiddenColumns.has(column.key)}
+                              disabled={column.key === "process"}
+                              onChange={() => toggleHiddenColumn(column.key)}
+                            />
+                            {column.label}
+                          </label>
+                        ))}
+                      </div>
+                    </details>
                     <button
                       aria-expanded={showColumns}
                       onClick={() => setShowColumns(!showColumns)}
@@ -799,6 +883,7 @@ export function App() {
                       key={view === "ports" ? "ports" : "files"}
                       revision={status.revision}
                       query={tableQuery}
+                      hiddenColumns={hiddenColumns}
                       selected={selected}
                       focused={focused}
                       onSelect={(row, additive) => {
