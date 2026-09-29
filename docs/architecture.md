@@ -10,18 +10,18 @@ TUI through the `Backend` trait.
 | `oflh-platform` | Native discovery, resource sampling, termination | `oflh-core`, target-specific OS bindings |
 | `oflh-tui` | Input, application state, rendering, background work | `oflh-core`, `Backend`, Ratatui/Crossterm |
 | `oflh` | Arguments, terminal requirements, application composition | Core, platform, TUI |
-| `oflh-desktop` | Snapshot IPC, desktop actions, Tauri shell and React workspace | Core, platform; optional Tauri desktop dependencies |
+| `oflh-desktop` | Snapshot IPC, desktop actions, Tauri shell and React workspace | Core and platform, with optional Tauri desktop dependencies |
 | `xtask` | Validation and release packaging | Independent developer executable |
 
 ## Data flow
 
 The UI draws its initial screen before submitting a scan. A worker owns the native
 backend and sends snapshots to the event loop. The UI owns selection, filters,
-focus, and rendering; the backend does not receive terminal state.
+focus, and rendering. The backend does not receive terminal state.
 
 Each request carries a generation number. Refresh cancels obsolete work, and the
 UI ignores results from older generations. A single pending-work slot coalesces
-repeated requests; the event channel has a fixed capacity. Cancellation is
+repeated requests. The event channel has a fixed capacity. Cancellation is
 cooperative between native calls and cannot interrupt every OS operation.
 
 A follow-up metrics request samples CPU and memory without repeating file discovery.
@@ -39,20 +39,20 @@ Port-only processes have no file usages, so they do not enter the file tables.
 Socket discovery runs on the initial scan and subsequent refreshes so the
 Processes table and file details can show each process's ports. It runs in the same bounded, cancellable worker and shares generation
 rejection, refresh scheduling, selection, and action confirmation. Native library
-calls cannot be interrupted internally; cancellation is checked between families,
-protocols, and returned entries. Port search indices are cached per snapshot;
-standalone numeric terms match contiguous port-number fragments; `port:NN` and
+calls cannot be interrupted internally. Cancellation is checked between families,
+protocols, and returned entries. Port search indices are cached per snapshot.
+Standalone numeric terms match contiguous port-number fragments. `port:NN` and
 CLI `--port NN` require the exact local port.
 
 ## Process actions
 
 A process identity combines its PID with its birth time. Actions revalidate that
-identity before signaling; PID reuse must never redirect a captured action.
+identity before signaling. PID reuse must never redirect a captured action.
 Selections and focused ancestry nodes retain identities across refreshes.
 Confirmation defaults to Cancel and includes selected processes hidden by filters.
 
 Linux uses an owned pidfd, and Windows force termination uses a validated owned
-process handle. macOS checks process start time before signaling; its public APIs
+process handle. macOS checks process start time before signaling. Its public APIs
 do not provide a pidfd equivalent, leaving a narrow exit/reuse race. Windows normal
 termination posts a close request to process windows and does not silently escalate
 to force termination.
@@ -68,7 +68,7 @@ forbid unsafe code.
 | --- | --- | --- |
 | Linux | procfs descriptors, working directories, executables, mappings | Held FLOCK, POSIX, and OFD records |
 | macOS | libproc vnode descriptors, working directories, executables, mappings | First accessible POSIX conflict from `F_GETLK` |
-| Windows | Restart Manager users and Toolhelp modules/executables | Read/write/delete sharing conflicts; ownership unverified |
+| Windows | Restart Manager users and Toolhelp modules/executables | Read/write/delete sharing conflicts with unverified ownership |
 
 Open-file observations do not prove a lock. Unknown metrics stay unknown, and
 permission or visibility limits produce partial-result warnings. See
@@ -94,11 +94,21 @@ benchmarks, and developer tools are separate from the installed executable.
 
 ## Desktop frontend
 
-The desktop uses the same core file/port search and native backend APIs, with no dependency
-on the TUI. Its bounded scan worker keeps native paths and immutable snapshots in
-Rust. IPC pages carry string lifetime keys and revision-scoped path references.
-File-plus-port composition and identity-checked owner-folder inspection are shared
-with the TUI through `oflh-platform`. Confirmation tickets capture the original
-identities and action mode; native
-backends still validate them immediately before signaling. See the
-[desktop architecture and validation guide](desktop.md).
+The desktop shares core search and native backend APIs but does not depend on the
+TUI. A bounded worker owns scanning. Cancellation is cooperative, newer requests
+replace pending work, and generation checks reject stale results. Immutable
+snapshots and search indices stay in Rust. The frontend requests bounded pages
+and details on demand rather than copying the full process set into JavaScript.
+
+IPC uses string process-lifetime keys and revision-scoped path references. Native
+paths remain lossless in Rust. Display strings are sanitized separately. Actions
+resolve opaque references rather than trusting displayed paths. Single-use
+confirmation tickets capture process identities and action mode, and the native
+backend revalidates identity immediately before signaling. File-plus-port
+composition and identity-checked folder inspection are shared with the TUI through
+`oflh-platform`.
+
+The desktop service and IPC contracts live in `crates/oflh-desktop/src`. Tauri
+commands are isolated in the optional shell, and the React frontend contains no
+native inspection logic. See the [Desktop developer reference](desktop.md) for
+build prerequisites, checks, and packaging.

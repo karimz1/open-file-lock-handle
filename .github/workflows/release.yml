@@ -113,7 +113,7 @@ jobs:
           else
             PRERELEASE=()
             if [[ "$TAG" == *-* ]]; then PRERELEASE=(--prerelease); fi
-            gh release create "$TAG" --verify-tag --draft "${PRERELEASE[@]}" --title "$TAG" --generate-notes
+            gh release create "$TAG" --verify-tag --draft "${PRERELEASE[@]}" --title "OFLH $TAG" --generate-notes
           fi
           gh release upload "$TAG" release-dist/* --clobber
           echo '### Release ready for review' >> "$GITHUB_STEP_SUMMARY"

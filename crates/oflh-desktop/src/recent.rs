@@ -95,7 +95,7 @@ fn decode_path(bytes: Vec<u8>) -> rusqlite::Result<PathBuf> {
 fn decode_path(bytes: Vec<u8>) -> rusqlite::Result<PathBuf> {
     use std::io;
     use std::os::windows::ffi::OsStringExt;
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return Err(rusqlite::Error::FromSqlConversionFailure(
             0,
             rusqlite::types::Type::Blob,
@@ -106,7 +106,9 @@ fn decode_path(bytes: Vec<u8>) -> rusqlite::Result<PathBuf> {
         ));
     }
     let wide = bytes
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
         .collect::<Vec<_>>();
     Ok(PathBuf::from(std::ffi::OsString::from_wide(&wide)))
