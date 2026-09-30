@@ -31,9 +31,9 @@ macOS, and Windows.
 
 ### Terminal
 
-[![demo of oflh terminal](./images/demo-thumbnail.jpg)](./images/demo.gif)
+<a href="./images/demo.gif" target="_blank" rel="noopener"><img src="./images/demo-thumbnail.jpg" alt="demo of oflh terminal"></a>
 
-[View the terminal recording on asciinema](https://asciinema.org/a/1266562)
+<a href="https://asciinema.org/a/1266562" target="_blank" rel="noopener">View the terminal recording on asciinema</a>
 
 ## Install
 
