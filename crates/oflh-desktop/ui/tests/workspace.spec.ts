@@ -1365,3 +1365,40 @@ test("utility actions stay in the sidebar and fit the minimum window", async ({
     footer.getByRole("button", { name: "Donate", exact: true }),
   ).toBeVisible();
 });
+
+test("system language selects German and unsupported languages fall back to English", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "language", {
+      configurable: true,
+      value: "de-DE",
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("lang", "de");
+  await expect(
+    page.getByRole("button", { name: "Einstellungen", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("grid", { name: "Prozesse, die dieses Ziel verwenden" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Spaltenfilter" }).click();
+  const germanFilters = page.getByRole("form", { name: "Spaltenfilter" });
+  await expect(germanFilters.getByLabel("Prozessname")).toBeVisible();
+
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "language", {
+      configurable: true,
+      value: "pt-PT",
+    });
+  });
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(
+    page.getByRole("button", { name: "Settings", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("grid", { name: "Processes using this target" }),
+  ).toBeVisible();
+});

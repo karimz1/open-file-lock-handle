@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import { t } from "./i18n";
 export const themes = [
   {
     id: "system",
@@ -56,7 +57,7 @@ export function ThemePicker({
       {themes.map(({ id, label, description, colors }) => (
         <button
           key={id}
-          aria-label={label}
+          aria-label={t(label)}
           aria-pressed={theme === id}
           className={theme === id ? "theme-choice active" : "theme-choice"}
           onClick={() => onChange(id)}
@@ -73,8 +74,8 @@ export function ThemePicker({
             <i style={{ background: colors[2] }} />
           </span>
           <span className="theme-caption">
-            <strong>{label}</strong>
-            <small>{description}</small>
+            <strong>{t(label)}</strong>
+            <small>{t(description)}</small>
           </span>
           {theme === id && <Check size={16} aria-hidden="true" />}
         </button>

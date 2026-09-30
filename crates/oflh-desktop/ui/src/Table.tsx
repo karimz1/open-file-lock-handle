@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { api, type Page, type Row, type Sort, type TableQuery } from "./api";
 import { memory, compactPath } from "./state";
+import { t } from "./i18n";
 export type ColumnKey =
   | "process"
   | "pid"
@@ -178,10 +179,10 @@ export function Table(props: Props) {
       role="grid"
       aria-label={
         props.query.ports
-          ? "Local TCP listeners and UDP bindings"
+          ? t("Local TCP listeners and UDP bindings")
           : props.query.handles
-            ? "Matching file usages; selection applies to processes"
-            : "Processes using this target"
+            ? t("Matching file usages; selection applies to processes")
+            : t("Processes using this target")
       }
       aria-rowcount={(page?.total ?? 0) + 1}
       aria-colcount={columns.length}
@@ -219,10 +220,10 @@ export function Table(props: Props) {
               <button
                 className="sort-header"
                 type="button"
-                aria-label={`Sort by ${column.label}`}
+                aria-label={`${t("Sort by")} ${t(column.label)}`}
                 onClick={() => props.onSort(column.sort!)}
               >
-                <span>{column.label}</span>
+                <span>{t(column.label)}</span>
                 {props.query.sort === column.sort && (
                   <span className="sort-indicator" aria-hidden="true">
                     {props.query.descending ? (
@@ -234,11 +235,14 @@ export function Table(props: Props) {
                 )}
               </button>
             ) : (
-              <span className="table-header-label">{column.label}</span>
+              <span className="table-header-label">{t(column.label)}</span>
             )}
             <span
               role="separator"
-              aria-label={`Resize ${column.label} column`}
+              aria-label={t("Resize {column} column").replace(
+                "{column}",
+                t(column.label),
+              )}
               aria-orientation="vertical"
               aria-valuenow={widthFor(column)}
               aria-valuemin={70}
@@ -293,15 +297,15 @@ export function Table(props: Props) {
       {!page ? (
         <div className="empty">
           <Search size={28} />
-          <h3>Loading results</h3>
+          <h3>{t("Loading results")}</h3>
         </div>
       ) : page.total === 0 ? (
         <div className="empty">
           <FileSearch size={32} />
           <h3>
             {props.query.ports
-              ? "No matching local ports"
-              : "No matching processes"}
+              ? t("No matching local ports")
+              : t("No matching processes")}
           </h3>
           <p>
             {props.query.text ||
@@ -310,8 +314,12 @@ export function Table(props: Props) {
               (value) => value !== undefined && value !== "" && value !== "any",
             ) ||
             props.query.process_key
-              ? "No rows match the current filters. Clear a filter to broaden the view."
-              : "No visible process references this target. Permission limits may hide some usage."}
+              ? t(
+                  "No rows match the current filters. Clear a filter to broaden the view.",
+                )
+              : t(
+                  "No visible process references this target. Permission limits may hide some usage.",
+                )}
           </p>
         </div>
       ) : (
@@ -365,11 +373,11 @@ export function Table(props: Props) {
                       <button
                         type="button"
                         className="process-icon row-details-toggle"
-                        aria-label={`${props.expandedKey === row.key ? "Close" : "Open"} details for ${row.name || "process"}${row.port ? ` ${row.port.endpoint}` : ` ${compactPath(row.path, props.target)}`}`}
+                        aria-label={`${t(props.expandedKey === row.key ? "Close details" : "Open details")} ${t("details for")} ${row.name || t("process")}${row.port ? ` ${row.port.endpoint}` : ` ${compactPath(row.path, props.target)}`}`}
                         title={
                           props.expandedKey === row.key
-                            ? "Close details panel"
-                            : "Open details panel"
+                            ? t("Close details panel")
+                            : t("Open details panel")
                         }
                         aria-expanded={props.expandedKey === row.key}
                         onClick={(event) => {
@@ -384,7 +392,7 @@ export function Table(props: Props) {
                           <PanelRightOpen size={14} />
                         )}
                       </button>
-                      <span title={row.name}>{row.name || "(unnamed)"}</span>
+                      <span title={row.name}>{row.name || t("(unnamed)")}</span>
                       {props.selected.has(row.process_key) && (
                         <span className="selection-mark" />
                       )}
@@ -413,7 +421,9 @@ export function Table(props: Props) {
                         {!props.hiddenColumns.has("protocol") && (
                           <div role="gridcell">
                             <span className="badge">{row.port?.protocol}</span>{" "}
-                            <span className="muted">{row.port?.state}</span>
+                            <span className="muted">
+                              {t(row.port?.state ?? "")}
+                            </span>
                           </div>
                         )}
                       </>
@@ -428,9 +438,9 @@ export function Table(props: Props) {
                             {(props.query.handles
                               ? row.path
                               : compactPath(row.path, props.target)) ||
-                              "Unavailable"}
+                              t("Unavailable")}
                             {row.deleted && (
-                              <span className="badge">deleted</span>
+                              <span className="badge">{t("deleted")}</span>
                             )}
                           </div>
                         )}
@@ -442,13 +452,13 @@ export function Table(props: Props) {
                             {row.evidence ? (
                               <span className="evidence">
                                 <ShieldCheck size={13} />
-                                {row.evidence_label}
+                                {t(row.evidence_label ?? "")}
                               </span>
                             ) : (
                               <span className="muted">
                                 {props.query.handles
-                                  ? `${row.relation} · ${row.access}`
-                                  : `${row.usages} file usages`}
+                                  ? `${t(row.relation)} · ${t(row.access)}`
+                                  : `${row.usages} ${t("file usages")}`}
                               </span>
                             )}
                           </div>
@@ -468,7 +478,7 @@ export function Table(props: Props) {
                   </>
                 ) : (
                   <div role="gridcell" className="muted">
-                    Loading…
+                    {t("Loading")}…
                   </div>
                 )}
               </div>

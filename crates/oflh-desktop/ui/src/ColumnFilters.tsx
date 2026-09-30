@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ColumnFilters } from "./api";
+import { t } from "./i18n";
 export function ColumnFilterPanel({
   value,
   ports,
@@ -21,11 +22,11 @@ export function ColumnFilterPanel({
   ) => setDraft((current) => ({ ...current, [key]: value }));
   const text = (key: "name" | "path" | "access", label: string) => (
     <label>
-      {label}
+      {t(label)}
       <input
         value={draft[key] || ""}
         onChange={(event) => update(key, event.target.value)}
-        placeholder="Any · wildcards supported"
+        placeholder={t("Any · wildcards supported")}
       />
     </label>
   );
@@ -34,7 +35,7 @@ export function ColumnFilterPanel({
     label: string,
   ) => (
     <label>
-      {label}
+      {t(label)}
       <input
         type="number"
         min="0"
@@ -46,7 +47,7 @@ export function ColumnFilterPanel({
             event.target.value === "" ? undefined : event.target.valueAsNumber,
           )
         }
-        placeholder="Any"
+        placeholder={t("Any")}
       />
     </label>
   );
@@ -66,36 +67,36 @@ export function ColumnFilterPanel({
   return (
     <form
       className="column-filters"
-      aria-label="Column filters"
+      aria-label={t("Column filters")}
       onSubmit={(event) => {
         event.preventDefault();
         if (!invalid) apply(draft);
       }}
     >
       <div className="column-filter-fields">
-        {text("name", "Process name")}
-        {number("pid", "Exact PID")}
-        {text("path", ports ? "Local address" : "Full path")}
-        {text("access", ports ? "Protocol / state" : "Access / relation")}
-        {number("cpu_min", "CPU minimum (%)")}
-        {number("cpu_max", "CPU maximum (%)")}
-        {number("memory_min", "Memory minimum (MiB)")}
-        {number("memory_max", "Memory maximum (MiB)")}
+        {text("name", t("Process name"))}
+        {number("pid", t("Exact PID"))}
+        {text("path", ports ? t("Local address") : t("Full path"))}
+        {text("access", ports ? t("Protocol / state") : t("Access / relation"))}
+        {number("cpu_min", t("CPU minimum (%)"))}
+        {number("cpu_max", t("CPU maximum (%)"))}
+        {number("memory_min", t("Memory minimum (MiB)"))}
+        {number("memory_max", t("Memory maximum (MiB)"))}
         {!ports && (
           <label>
-            Evidence
+            {t("Evidence")}
             <select
-              aria-label="Evidence"
+              aria-label={t("Evidence")}
               value={draft.evidence || "any"}
               onChange={(event) => update("evidence", event.target.value)}
             >
-              <option value="any">Any evidence</option>
-              <option value="present">Evidence present</option>
-              <option value="kernel">Kernel lock</option>
+              <option value="any">{t("Any evidence")}</option>
+              <option value="present">{t("Evidence present")}</option>
+              <option value="kernel">{t("Kernel lock")}</option>
               <option value="sharing">
-                Sharing conflict · owner unverified
+                {t("Sharing conflict · owner unverified")}
               </option>
-              <option value="none">No observed evidence</option>
+              <option value="none">{t("No observed evidence")}</option>
             </select>
           </label>
         )}
@@ -103,8 +104,12 @@ export function ColumnFilterPanel({
       <div className="filter-actions">
         <span className="hint">
           {invalid
-            ? "Use valid non-negative bounds; minimum must not exceed maximum."
-            : "Filters combine with search. Unknown metrics do not match numeric bounds."}
+            ? t(
+                "Use valid non-negative bounds; minimum must not exceed maximum.",
+              )
+            : t(
+                "Filters combine with search. Unknown metrics do not match numeric bounds.",
+              )}
         </span>
         <button
           type="button"
@@ -113,18 +118,20 @@ export function ColumnFilterPanel({
             apply({});
           }}
         >
-          Clear filters
+          {t("Clear filters")}
         </button>
         <button
           type="button"
           disabled={!canClose}
-          title={canClose ? "Close filters" : "Clear applied filters to close"}
+          title={t(
+            canClose ? "Close filters" : "Clear applied filters to close",
+          )}
           onClick={close}
         >
-          Close
+          {t("Close")}
         </button>
         <button className="primary" disabled={invalid}>
-          Apply filters
+          {t("Apply filters")}
         </button>
       </div>
     </form>

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { type Details, type PathValue, type Row } from "./api";
 import { memory } from "./state";
+import { t } from "./i18n";
 export function Inspector({
   details,
   row,
@@ -75,17 +76,17 @@ export function Inspector({
   const currentSelected = ancestorKey === details.process.process_key;
   const path = (label: string, value: PathValue) => (
     <section>
-      <h4>{label}</h4>
-      <p className="detail-path mono">{value.display || "Unavailable"}</p>
+      <h4>{t(label)}</h4>
+      <p className="detail-path mono">{value.display || t("Unavailable")}</p>
       {value.display && (
         <div className="inline-actions">
           <button onClick={() => copy("path", value.reference)}>
             <Copy size={13} />
-            Copy path
+            {t("Copy path")}
           </button>
           <button onClick={() => reveal(value.reference)}>
             <ExternalLink size={13} />
-            Reveal
+            {t("Reveal")}
           </button>
         </div>
       )}
@@ -99,7 +100,7 @@ export function Inspector({
     >
       <div
         role="separator"
-        aria-label="Resize process details"
+        aria-label={t("Resize process details")}
         aria-orientation="vertical"
         aria-valuemin={260}
         aria-valuemax={maximum}
@@ -140,12 +141,12 @@ export function Inspector({
           }
         }}
       />
-      <aside className="inspector" aria-label="Process details">
+      <aside className="inspector" aria-label={t("Process details")}>
         <header>
-          <span className="eyebrow">PROCESS DETAILS</span>
+          <span className="eyebrow">{t("PROCESS DETAILS")}</span>
           <button
             className="icon-button"
-            aria-label="Close process details"
+            aria-label={t("Close process details")}
             onClick={close}
           >
             <X size={16} />
@@ -160,25 +161,26 @@ export function Inspector({
         </div>
         <div
           className="detail-navigation"
-          aria-label="Process inspection views"
+          aria-label={t("Process inspection views")}
         >
           <button onClick={handles}>
-            <Files size={14} /> Matching handles{" "}
+            <Files size={14} /> {t("Matching handles")}{" "}
             <span>{details.process.usages}</span>
             <ChevronRight size={14} />
           </button>
           <button onClick={ports}>
-            Local ports <span>{details.ports}</span>
+            {t("Local ports")} <span>{details.ports}</span>
             <ChevronRight size={14} />
           </button>
         </div>
         <section>
-          <h4>Process ancestry</h4>
+          <h4>{t("Process ancestry")}</h4>
           <p className="hint">
-            Oldest captured parent → current process. Click a row to select its
-            actions.
+            {t(
+              "Oldest captured parent → current process. Click a row to select its actions.",
+            )}
           </p>
-          <ol className="ancestry" aria-label="Process ancestry">
+          <ol className="ancestry" aria-label={t("Process ancestry")}>
             {nodes.map((node, index) => {
               const current = node.key === details.process.process_key;
               return (
@@ -199,8 +201,8 @@ export function Inspector({
                     onClick={() => setAncestorKey(node.key)}
                   >
                     <span className="ancestry-name">
-                      {node.name || "(unavailable)"}
-                      {current && <small>Current process</small>}
+                      {node.name || t("(unavailable)")}
+                      {current && <small>{t("Current process")}</small>}
                     </span>
                     <code>{node.pid}</code>
                     <ChevronRight size={14} aria-hidden="true" />
@@ -210,17 +212,20 @@ export function Inspector({
             })}
           </ol>
           {!details.ancestors.length && (
-            <p className="hint">No parent information available.</p>
+            <p className="hint">{t("No parent information available.")}</p>
           )}
           {ancestor && (
             <div className="ancestor-actions">
               <p className="hint">
-                Selected: <strong>{ancestor.name || "(unavailable)"}</strong> ·
-                PID {ancestor.pid}
+                {t("Selected")}:{" "}
+                <strong>{ancestor.name || t("(unavailable)")}</strong> · PID{" "}
+                {ancestor.pid}
               </p>
               {!currentSelected && (
                 <p className="hint">
-                  Stopping a parent may close its children or your session.
+                  {t(
+                    "Stopping a parent may close its children or your session.",
+                  )}
                 </p>
               )}
               {ancestor.actionable ? (
@@ -233,8 +238,8 @@ export function Inspector({
                     }
                   >
                     {currentSelected
-                      ? "Terminate process…"
-                      : "Terminate parent…"}
+                      ? t("Terminate process…")
+                      : t("Terminate parent…")}
                   </button>
                   <button
                     className="danger-text"
@@ -245,13 +250,13 @@ export function Inspector({
                     }
                   >
                     {currentSelected
-                      ? "Force terminate process…"
-                      : "Force terminate parent…"}
+                      ? t("Force terminate process…")
+                      : t("Force terminate parent…")}
                   </button>
                 </div>
               ) : (
                 <p className="hint">
-                  Protected process or unavailable identity.
+                  {t("Protected process or unavailable identity.")}
                 </p>
               )}
             </div>
@@ -259,36 +264,36 @@ export function Inspector({
         </section>
         <div className="detail-metrics">
           <div>
-            <span>Memory</span>
+            <span>{t("Memory")}</span>
             <strong>{memory(details.process.memory)}</strong>
           </div>
           <div>
-            <span>CPU · total capacity</span>
+            <span>{t("CPU · total capacity")}</span>
             <strong>
               {details.process.cpu === null
-                ? "Unavailable"
+                ? t("Unavailable")
                 : `${details.process.cpu.toFixed(1)}%`}
             </strong>
           </div>
         </div>
         <section>
-          <h4>Account</h4>
+          <h4>{t("Account")}</h4>
           <p>{details.process.user}</p>
           <div className="inline-actions">
             <button onClick={() => copy("pid")}>
               <Copy size={13} />
-              Copy PID
+              {t("Copy PID")}
             </button>
             <button onClick={() => copy("name")}>
               <Copy size={13} />
-              Copy name
+              {t("Copy name")}
             </button>
           </div>
         </section>
         {row &&
           (row.port ? (
             <section>
-              <h4>Selected port</h4>
+              <h4>{t("Selected port")}</h4>
               <p className="mono detail-path">{row.port.endpoint}</p>
               <p>
                 {row.port.protocol} · {row.port.state}
@@ -303,11 +308,13 @@ export function Inspector({
               <section>
                 <h4>File observation</h4>
                 <p>
-                  {row.relation} · {row.access}
+                  {t(row.relation)} · {t(row.access)}
                 </p>
-                {row.evidence_label && <p>{row.evidence_label}</p>}
+                {row.evidence_label && <p>{t(row.evidence_label)}</p>}
                 {row.evidence && <p className="detail-path">{row.evidence}</p>}
-                {row.deleted && <p className="danger-text">File was deleted</p>}
+                {row.deleted && (
+                  <p className="danger-text">{t("File was deleted")}</p>
+                )}
               </section>
             </>
           ))}
@@ -315,12 +322,13 @@ export function Inspector({
         {path("Working directory", details.cwd)}
         {details.can_inspect_folder && (
           <section>
-            <button onClick={inspectFolder}>Inspect owner folder</button>
+            <button onClick={inspectFolder}>{t("Inspect owner folder")}</button>
           </section>
         )}
         <p className="hint detail-footnote">
-          Matching handles are target observations, not all handles of this
-          process. Local ports include TCP listeners and UDP bindings.
+          {t(
+            "Matching handles are target observations, not all handles of this process. Local ports include TCP listeners and UDP bindings.",
+          )}
         </p>
       </aside>
     </div>

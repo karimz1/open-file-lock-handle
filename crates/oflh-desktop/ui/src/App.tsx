@@ -52,6 +52,7 @@ import {
   type ColumnKey,
 } from "./Table";
 import { ColumnFilterPanel } from "./ColumnFilters";
+import { t } from "./i18n";
 
 type View = "ports" | "processes" | "handles" | "history" | "settings";
 const columnKeys = new Set<ColumnKey>([
@@ -203,7 +204,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
-  const [errorContext, setErrorContext] = useState("Desktop operation");
+  const [errorContext, setErrorContext] = useState(t("Desktop operation"));
   const [toast, setToast] = useState("");
   const [total, setTotal] = useState(0);
   const [recent, setRecent] = useState<{ id: number; display: string }[]>([]);
@@ -225,10 +226,10 @@ export function App() {
     [],
   );
   const report = useCallback(
-    (failure: unknown, context = "Desktop operation") => {
+    (failure: unknown, context: string = t("Desktop operation")) => {
       const message = errorMessage(failure);
       setError(
-        context === "Desktop operation" ? message : `${context}: ${message}`,
+        context === t("Desktop operation") ? message : `${context}: ${message}`,
       );
       setErrorDetails(formatFailureDetails(failure));
       setShowErrorDetails(false);
@@ -400,33 +401,35 @@ export function App() {
   const refresh = () => runScan(api.refresh(), view, false);
   const openIssueReport = () => {
     const body = [
-      "## What happened?",
-      `OFLH reported: ${error ?? "an operation could not complete"}`,
+      t("## What happened?"),
+      `${t("OFLH reported:")} ${error ?? t("an operation could not complete")}`,
       "",
-      "## Steps to reproduce",
-      "1. Open OFLH Desktop and inspect a file or folder.",
-      "2. Right-click a process row (or open its details).",
-      `3. Choose ${errorContext}.`,
-      "4. Note the result and any OS or file-manager dialog.",
+      t("## Steps to reproduce"),
+      t("1. Open OFLH Desktop and inspect a file or folder."),
+      t("2. Right-click a process row (or open its details)."),
+      `${t("3. Choose")} ${errorContext}.`,
+      t("4. Note the result and any OS or file-manager dialog."),
       "",
-      "## Diagnostics",
-      `OFLH version: ${status.version || "unknown"}`,
-      `Platform: ${navigator.platform || "unknown"}`,
+      t("## Diagnostics"),
+      `${t("OFLH version:")} ${status.version || t("unknown")}`,
+      `${t("Platform:")} ${navigator.platform || t("unknown")}`,
       "```text",
-      errorDetails || error || "No diagnostic details were provided.",
+      errorDetails || error || t("No diagnostic details were provided."),
       "```",
       "",
-      "Please review this draft and remove any private paths or process details before submitting.",
+      t(
+        "Please review this draft and remove any private paths or process details before submitting.",
+      ),
     ].join("\n");
     void api
-      .openIssue("Desktop operation could not complete", body)
+      .openIssue(t("Desktop operation could not complete"), body)
       .catch(report);
   };
   const copyErrorDetails = () => {
-    const text = errorDetails || error || "No diagnostic details available.";
+    const text = errorDetails || error || t("No diagnostic details available.");
     void api
       .copyDiagnostic(text)
-      .then(() => setToast("Error details copied"))
+      .then(() => setToast(t("Error details copied")))
       .catch(report);
   };
   const removeRecent = (id: number) => {
@@ -449,18 +452,18 @@ export function App() {
       .then(() =>
         setToast(
           field === "path"
-            ? "Path copied"
+            ? t("Path copied")
             : field === "filename"
-              ? "Filename copied"
-              : "Selection copied",
+              ? t("Filename copied")
+              : t("Selection copied"),
         ),
       )
       .catch(report);
   };
   const reveal = (reference: string, containing = false) => {
     const operation = containing
-      ? "Open containing folder"
-      : "Reveal in file manager";
+      ? t("Open containing folder")
+      : t("Reveal in file manager");
     void api
       .reveal(status.revision, reference, containing)
       .catch((failure) => report(failure, operation));
@@ -630,9 +633,9 @@ export function App() {
             <>
               <label className="auto-refresh-control">
                 <Timer size={14} />
-                <span>Auto</span>
+                <span>{t("Auto")}</span>
                 <select
-                  aria-label="Automatic refresh interval"
+                  aria-label={t("Automatic refresh interval")}
                   value={autoReloadSeconds}
                   onChange={(event) =>
                     setAutoReloadSeconds(Number(event.target.value))
@@ -640,28 +643,29 @@ export function App() {
                 >
                   {autoReloadOptions.map((seconds) => (
                     <option key={seconds} value={seconds}>
-                      {seconds === 0 ? "Off" : `${seconds}s`}
+                      {seconds === 0 ? t("Off") : `${seconds}s`}
                     </option>
                   ))}
                 </select>
               </label>
               <details className="auto-refresh-info">
                 <summary
-                  aria-label="Automatic refresh information"
-                  title="About automatic refresh"
+                  aria-label={t("Automatic refresh information")}
+                  title={t("About automatic refresh")}
                 >
                   <Info size={15} />
                 </summary>
                 <div role="note">
-                  <strong>Automatic refresh</strong>
+                  <strong>{t("Automatic refresh")}</strong>
                   <p>
-                    Off by default. Choose an interval to repeat the current
-                    scan while OFLH is open.
+                    {t(
+                      "Off by default. Choose an interval to repeat the current scan while OFLH is open.",
+                    )}
                   </p>
                   <p>
-                    It can help with changing processes or ports. Results may
-                    change while you inspect, so manual refresh is often better
-                    for a focused check.
+                    {t(
+                      "It can help with changing processes or ports. Results may change while you inspect, so manual refresh is often better for a focused check.",
+                    )}
                   </p>
                 </div>
               </details>
@@ -670,10 +674,10 @@ export function App() {
           <button
             disabled={!status.revision}
             onClick={refresh}
-            title={`Refresh (${modifier}+R or F5)`}
+            title={`${t("Refresh")} (${modifier}+R ${t("or")} F5)`}
           >
             <RefreshCw size={14} className={status.scanning ? "spin" : ""} />
-            Refresh
+            {t("Refresh")}
             <kbd className="shortcut" aria-hidden="true">
               F5
             </kbd>
@@ -681,75 +685,80 @@ export function App() {
         </div>
       </header>
       <div className="app-body">
-        <nav className="sidebar" aria-label="Workspace">
-          <div className="nav-section">WORKSPACE</div>
+        <nav className="sidebar" aria-label={t("Workspace")}>
+          <div className="nav-section">{t("WORKSPACE")}</div>
           <button
-            title={`Processes (${modifier}+1)`}
+            title={`${t("Processes")} (${modifier}+1)`}
             className={view === "processes" ? "active" : ""}
             onClick={() => changeView("processes")}
           >
             <Activity size={17} />
-            Processes<span>{status.processes || ""}</span>
+            {t("Processes")}
+            <span>{status.processes || ""}</span>
             {shortcut("1")}
           </button>
           <button
-            title={`File usages (${modifier}+2)`}
+            title={`${t("File usages")} (${modifier}+2)`}
             className={view === "handles" ? "active" : ""}
             onClick={() => changeView("handles")}
           >
             <Files size={17} />
-            File usages<span>{status.usages || ""}</span>
+            {t("File usages")}
+            <span>{status.usages || ""}</span>
             {shortcut("2")}
           </button>
           <button
-            title={`Ports (${modifier}+3)`}
+            title={`${t("Ports")} (${modifier}+3)`}
             className={view === "ports" ? "active" : ""}
             onClick={() => changeView("ports")}
           >
             <Network size={17} />
-            Ports<span>{status.ports || ""}</span>
+            {t("Ports")}
+            <span>{status.ports || ""}</span>
             {shortcut("3")}
           </button>
           <button
-            title={`Recent targets (${modifier}+4)`}
+            title={`${t("Recent targets")} (${modifier}+4)`}
             className={view === "history" ? "active" : ""}
             onClick={() => changeView("history")}
           >
             <History size={17} />
-            Recent targets{shortcut("4")}
+            {t("Recent targets")}
+            {shortcut("4")}
           </button>
           <div className="sidebar-rule" />
-          <div className="nav-section">INSPECT TARGET</div>
+          <div className="nav-section">{t("INSPECT TARGET")}</div>
           <button onClick={() => runScan(api.choose(false))}>
             <File size={16} />
-            Open file
+            {t("Open file")}
           </button>
           <button onClick={() => runScan(api.choose(true))}>
             <FolderOpen size={17} />
-            Open folder
+            {t("Open folder")}
           </button>
           <div className="sidebar-bottom">
             <p>
-              Know what’s using
+              {t("Know what’s using")}
               <br />
-              your files.
+              {t("your files.")}
             </p>
             <button
               className={view === "settings" ? "active" : ""}
               onClick={() => changeView("settings")}
             >
               <Settings size={17} />
-              Settings
+              {t("Settings")}
             </button>
             <button
               className="github-link"
               onClick={() => void api.openProject().catch(report)}
             >
-              <Star size={14} /> Star on GitHub <ExternalLink size={12} />
+              <Star size={14} /> {t("Star on GitHub")}{" "}
+              <ExternalLink size={12} />
             </button>
             <span className="version">
               {status.version === "development"
-                ? "Development"
+                ? t("Development")
                 : status.version
                   ? `v${status.version}`
                   : "OFLH Desktop"}
@@ -762,7 +771,7 @@ export function App() {
               <ShieldAlert size={17} />
               <div className="error-content">
                 <div className="error-summary">
-                  <strong>Operation could not complete</strong>
+                  <strong>{t("Operation could not complete")}</strong>
                   <p>{error}</p>
                 </div>
                 <div className="error-actions">
@@ -770,19 +779,21 @@ export function App() {
                     onClick={() => setShowErrorDetails((visible) => !visible)}
                     aria-expanded={showErrorDetails}
                   >
-                    {showErrorDetails ? "Hide details" : "Details"}
+                    {showErrorDetails ? t("Hide details") : t("Details")}
                   </button>
                   <button onClick={openIssueReport}>
-                    <ExternalLink size={13} /> Open issue
+                    <ExternalLink size={13} /> {t("Open issue")}
                   </button>
                   <span>
-                    Review the draft and remove private paths before submitting.
+                    {t(
+                      "Review the draft and remove private paths before submitting.",
+                    )}
                   </span>
                 </div>
               </div>
               <button
                 className="icon-button"
-                aria-label="Dismiss error"
+                aria-label={t("Dismiss error")}
                 onClick={() => {
                   setError(null);
                   setErrorDetails(null);
@@ -799,22 +810,28 @@ export function App() {
                 <div>
                   <div className="eyebrow">
                     {view === "ports"
-                      ? "NETWORK INSPECTION"
-                      : "FILE INSPECTION"}
+                      ? t("NETWORK INSPECTION")
+                      : t("FILE INSPECTION")}
                   </div>
                   <h1>
                     {view === "ports"
-                      ? "Local ports"
+                      ? t("Local ports")
                       : view === "handles"
-                        ? "File usages"
-                        : "Processes"}
+                        ? t("File usages")
+                        : t("Processes")}
                   </h1>
                   <p>
                     {view === "ports"
-                      ? "Find local TCP listeners, bound UDP sockets and their captured owners."
+                      ? t(
+                          "Find local TCP listeners, bound UDP sockets and their captured owners.",
+                        )
                       : status.target
-                        ? "Processes referencing your target and its contents."
-                        : "Find out which processes are using a file or folder."}
+                        ? t(
+                            "Processes referencing your target and its contents.",
+                          )
+                        : t(
+                            "Find out which processes are using a file or folder.",
+                          )}
                   </p>
                 </div>
                 <button
@@ -822,7 +839,7 @@ export function App() {
                   onClick={() => runScan(api.choose(true))}
                 >
                   <FolderOpen size={15} />
-                  Open folder
+                  {t("Open folder")}
                 </button>
               </div>
               {view !== "ports" && (
@@ -839,8 +856,8 @@ export function App() {
                 >
                   <FolderOpen size={17} />
                   <input
-                    aria-label="Target file or folder path"
-                    placeholder="Paste a file or folder path…"
+                    aria-label={t("Target file or folder path")}
+                    placeholder={t("Paste a file or folder path…")}
                     value={path}
                     onChange={(event) => {
                       setPath(event.target.value);
@@ -849,7 +866,7 @@ export function App() {
                     spellCheck={false}
                   />
                   <button type="submit" disabled={!path.trim()}>
-                    Inspect
+                    {t("Inspect")}
                     <ArrowRight size={14} />
                   </button>
                 </form>
@@ -859,11 +876,11 @@ export function App() {
                   <div className="welcome-icon">
                     <FileSearch size={36} />
                   </div>
-                  <h2>A clear view of files in use.</h2>
+                  <h2>{t("A clear view of files in use.")}</h2>
                   <p>
-                    Drop a file or folder anywhere in this window.
+                    {t("Drop a file or folder anywhere in this window.")}
                     <br />
-                    OFLH will find the processes referencing it.
+                    {t("OFLH will find the processes referencing it.")}
                   </p>
                   <div className="welcome-actions">
                     <button
@@ -871,20 +888,21 @@ export function App() {
                       onClick={() => runScan(api.choose(false))}
                     >
                       <File size={15} />
-                      Choose file
+                      {t("Choose file")}
                     </button>
                     <button onClick={() => runScan(api.choose(true))}>
                       <FolderOpen size={15} />
-                      Choose folder
+                      {t("Choose folder")}
                     </button>
                   </div>
                   <div className="welcome-note">
                     <ShieldAlert size={15} />
                     <span>
-                      Open files do not necessarily mean locked files.
+                      {t("Open files do not necessarily mean locked files.")}
                       <br />
-                      OFLH shows lock evidence when the operating system
-                      provides it.
+                      {t(
+                        "OFLH shows lock evidence when the operating system provides it.",
+                      )}
                     </span>
                   </div>
                 </div>
@@ -895,12 +913,14 @@ export function App() {
                       <Search size={15} />
                       <input
                         ref={searchRef}
-                        aria-label="Search loaded results"
-                        title={`Search (${modifier}+F or /); Escape returns to the workspace`}
+                        aria-label={t("Search loaded results")}
+                        title={t(
+                          "Search ({shortcut}+F or /); Escape returns to the workspace",
+                        ).replace("{shortcut}", modifier)}
                         placeholder={
                           view === "ports"
-                            ? "Search ports… e.g. 80, port:8080, tcp"
-                            : "Search names, PIDs, paths…"
+                            ? t("Search ports… e.g. 80, port:8080, tcp")
+                            : t("Search names, PIDs, paths…")
                         }
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
@@ -909,7 +929,7 @@ export function App() {
                       {query && (
                         <button
                           className="icon-button"
-                          aria-label="Clear search"
+                          aria-label={t("Clear search")}
                           onClick={() => setQuery("")}
                         >
                           <X size={13} />
@@ -926,7 +946,7 @@ export function App() {
                             setPortsPathOnly(event.target.checked)
                           }
                         />
-                        Target processes only
+                        {t("Target processes only")}
                       </label>
                     ) : (
                       <label className="checkbox-label">
@@ -935,17 +955,17 @@ export function App() {
                           checked={locks}
                           onChange={(event) => setLocks(event.target.checked)}
                         />
-                        Lock evidence only
+                        {t("Lock evidence only")}
                       </label>
                     )}
 
                     <button className="select-all" onClick={selectAll}>
-                      Select all
+                      {t("Select all")}
                     </button>
                     <details className="column-picker">
                       <summary>
                         <Columns3 size={14} />
-                        Columns
+                        {t("Columns")}
                         <ChevronDown
                           size={12}
                           className="column-picker-caret"
@@ -954,10 +974,10 @@ export function App() {
                       <div
                         className="column-picker-menu"
                         role="group"
-                        aria-label="Visible columns"
+                        aria-label={t("Visible columns")}
                       >
                         <span className="column-picker-heading">
-                          SHOW IN GRID
+                          {t("SHOW IN GRID")}
                         </span>
                         {tableColumns.map((column) => (
                           <label key={column.key}>
@@ -967,7 +987,7 @@ export function App() {
                               disabled={column.key === "process"}
                               onChange={() => toggleHiddenColumn(column.key)}
                             />
-                            {column.label}
+                            {t(column.label)}
                           </label>
                         ))}
                       </div>
@@ -977,15 +997,18 @@ export function App() {
                       disabled={columnCount > 0}
                       title={
                         columnCount > 0
-                          ? "Clear applied filters before closing"
-                          : "Open column filters"
+                          ? t("Clear applied filters before closing")
+                          : t("Open column filters")
                       }
                       onClick={() => setShowColumns((visible) => !visible)}
                     >
                       <SlidersHorizontal size={14} />
-                      Column filters{columnCount ? ` (${columnCount})` : ""}
+                      {t("Column filters")}
+                      {columnCount ? ` (${columnCount})` : ""}
                     </button>
-                    <span className="muted result-count">{total} results</span>
+                    <span className="muted result-count">
+                      {total} {t("results")}
+                    </span>
                   </div>
                   {showColumns && (
                     <ColumnFilterPanel
@@ -1001,39 +1024,40 @@ export function App() {
                     <div
                       className="active-filter-banner"
                       role="status"
-                      aria-label="Applied column filters"
+                      aria-label={t("Applied column filters")}
                     >
                       <strong>
                         <SlidersHorizontal size={14} />
-                        Filters active
+                        {t("Filters active")}
                       </strong>
                       <div className="active-filter-values">
                         {activeColumnFilters.map((filter) => (
                           <span key={filter.key}>
-                            {filter.label}: {String(filter.value)}
+                            {t(filter.label)}: {String(filter.value)}
                           </span>
                         ))}
                       </div>
                       <button onClick={() => setColumns({})}>
                         <X size={13} />
-                        Clear filters
+                        {t("Clear filters")}
                       </button>
                     </div>
                   )}
                   {query && view !== "ports" && (
                     <div className="search-explanation">
-                      Search includes full paths. A shared folder name can match
-                      every row; use the Process name column filter to narrow by
-                      name.
+                      {t(
+                        "Search includes full paths. A shared folder name can match every row; use the Process name column filter to narrow by name.",
+                      )}
                     </div>
                   )}
                   {scope && (
                     <div className="scope-bar">
-                      Showing {view === "ports" ? "local ports" : "file usages"}{" "}
+                      {t("Showing")}{" "}
+                      {view === "ports" ? t("local ports") : t("file usages")}{" "}
                       for <strong>{scope.name}</strong>
                       <button onClick={() => setScope(null)}>
                         <X size={12} />
-                        Clear process filter
+                        {t("Clear process filter")}
                       </button>
                     </div>
                   )}
@@ -1041,28 +1065,29 @@ export function App() {
                     <div className="selection-toolbar">
                       <strong>
                         {selected.size}{" "}
-                        {selected.size === 1 ? "process" : "processes"} selected
+                        {selected.size === 1 ? t("process") : t("processes")}{" "}
+                        {t("selected")}
                       </strong>
                       <span className="muted">
-                        May include processes outside this view
+                        {t("May include processes outside this view")}
                       </span>
                       <button onClick={() => copy()}>
                         <Copy size={13} />
-                        Copy
+                        {t("Copy")}
                       </button>
                       <button disabled={acting} onClick={() => prepare(false)}>
-                        Terminate…
+                        {t("Terminate…")}
                       </button>
                       <button
                         className="danger-text"
                         disabled={acting}
                         onClick={() => prepare(true)}
                       >
-                        Force terminate…
+                        {t("Force terminate…")}
                       </button>
                       <button
                         className="icon-button"
-                        aria-label="Clear selection"
+                        aria-label={t("Clear selection")}
                         onClick={() => setSelected(new Set())}
                       >
                         <X size={14} />
@@ -1070,8 +1095,9 @@ export function App() {
                     </div>
                   ) : (
                     <div className="selection-toolbar selection-hint">
-                      Click a row to inspect · Use the panel button to close
-                      details
+                      {t(
+                        "Click a row to inspect · Use the panel button to close details",
+                      )}
                     </div>
                   )}
                   <div className="results-workspace">
@@ -1112,7 +1138,9 @@ export function App() {
                       onContext={(row) => {
                         if (status.scanning) {
                           setToast(
-                            "Wait for the current scan to finish before opening row actions.",
+                            t(
+                              "Wait for the current scan to finish before opening row actions.",
+                            ),
                           );
                           return;
                         }
@@ -1199,7 +1227,7 @@ export function App() {
                         </summary>
                         <ul>
                           {status.warnings.map((warning, index) => (
-                            <li key={index}>{warning}</li>
+                            <li key={index}>{t(warning)}</li>
                           ))}
                         </ul>
                       </details>
@@ -1210,11 +1238,12 @@ export function App() {
             </>
           ) : view === "history" ? (
             <div className="content-page">
-              <span className="eyebrow">SAVED HISTORY</span>
-              <h1>Recent targets</h1>
+              <span className="eyebrow">{t("SAVED HISTORY")}</span>
+              <h1>{t("Recent targets")}</h1>
               <p className="muted">
-                Reinspect targets saved on this device, even after reopening
-                OFLH.
+                {t(
+                  "Reinspect targets saved on this device, even after reopening OFLH.",
+                )}
               </p>
               {recent.length ? (
                 <>
@@ -1223,14 +1252,14 @@ export function App() {
                       <Search size={15} />
                       <input
                         type="search"
-                        aria-label="Search recent targets"
-                        placeholder="Filter recent targets"
+                        aria-label={t("Search recent targets")}
+                        placeholder={t("Filter recent targets")}
                         value={recentQuery}
                         onChange={(event) => setRecentQuery(event.target.value)}
                       />
                     </label>
                     <span className="muted recent-count">
-                      {filteredRecent.length} of {recent.length}
+                      {filteredRecent.length} {t("of")} {recent.length}
                     </span>
                     <button
                       className="danger-text"
@@ -1238,11 +1267,14 @@ export function App() {
                       onClick={clearRecent}
                     >
                       <Trash2 size={14} />
-                      Clear all
+                      {t("Clear all")}
                     </button>
                   </div>
                   {filteredRecent.length ? (
-                    <div className="recent-list" aria-label="Recent targets">
+                    <div
+                      className="recent-list"
+                      aria-label={t("Recent targets")}
+                    >
                       {filteredRecent.map((target) => (
                         <div className="recent-entry" key={target.id}>
                           <button
@@ -1256,8 +1288,8 @@ export function App() {
                           </button>
                           <button
                             className="icon-button recent-remove"
-                            aria-label={`Remove ${target.display}`}
-                            title="Remove from recent targets"
+                            aria-label={`${t("Remove")} ${target.display}`}
+                            title={t("Remove from recent targets")}
                             onClick={() => removeRecent(target.id)}
                           >
                             <Trash2 size={15} />
@@ -1268,9 +1300,9 @@ export function App() {
                   ) : (
                     <div className="empty recent-empty">
                       <Search size={26} />
-                      <h3>No matching recent targets</h3>
+                      <h3>{t("No matching recent targets")}</h3>
                       <button onClick={() => setRecentQuery("")}>
-                        Clear search
+                        {t("Clear search")}
                       </button>
                     </div>
                   )}
@@ -1278,32 +1310,35 @@ export function App() {
               ) : (
                 <div className="empty">
                   <History size={30} />
-                  <h3>No recent targets</h3>
-                  <p>Choose a file or folder to start an inspection.</p>
+                  <h3>{t("No recent targets")}</h3>
+                  <p>{t("Choose a file or folder to start an inspection.")}</p>
                 </div>
               )}
             </div>
           ) : (
             <div className="content-page">
-              <span className="eyebrow">PREFERENCES</span>
-              <h1>Settings</h1>
+              <span className="eyebrow">{t("PREFERENCES")}</span>
+              <h1>{t("Settings")}</h1>
               <section className="setting-section">
                 <div>
-                  <h3>Appearance</h3>
-                  <p className="muted">Choose a theme or follow your system.</p>
+                  <h3>{t("Appearance")}</h3>
+                  <p className="muted">
+                    {t("Choose a theme or follow your system.")}
+                  </p>
                 </div>
                 <ThemePicker theme={theme} onChange={setTheme} />
               </section>
               <section className="setting-section">
                 <div>
-                  <h3>Interface font size</h3>
+                  <h3>{t("Interface font size")}</h3>
                   <p className="muted">
-                    Scale text throughout the workspace, including tables and
-                    process details.
+                    {t(
+                      "Scale text throughout the workspace, including tables and process details.",
+                    )}
                   </p>
                 </div>
                 <div className="font-setting">
-                  <label htmlFor="font-size">Size</label>
+                  <label htmlFor="font-size">{t("Size")}</label>
                   <select
                     id="font-size"
                     value={fontSize}
@@ -1318,47 +1353,48 @@ export function App() {
                     ))}
                   </select>
                   <button onClick={() => setFontSize(14)}>
-                    Reset to default
+                    {t("Reset to default")}
                   </button>
                 </div>
               </section>
               <section className="setting-section">
                 <div>
-                  <h3>About OFLH</h3>
+                  <h3>{t("About OFLH")}</h3>
                   <p>
-                    OFLH is an independent project by{" "}
+                    {t("OFLH is an independent project by")}{" "}
                     <button
                       className="inline-link"
                       onClick={() => void api.openProfile().catch(report)}
                     >
                       Karim Zouine
                     </button>
-                    , built in spare time. There is no company behind it.
+                    {t(", built in spare time. There is no company behind it.")}
                   </p>
                   <p className="muted">
-                    If OFLH helps your work, you can support its ongoing
-                    development.
+                    {t(
+                      "If OFLH helps your work, you can support its ongoing development.",
+                    )}
                   </p>
                 </div>
                 <div className="inline-actions about-links">
                   <button onClick={() => void api.openProject().catch(report)}>
-                    <ExternalLink size={14} /> View project on GitHub
+                    <ExternalLink size={14} /> {t("View project on GitHub")}
                   </button>
                   {status.pull_request_url && (
                     <button
                       onClick={() => void api.openPullRequest().catch(report)}
                     >
-                      <ExternalLink size={14} /> View pull request
+                      <ExternalLink size={14} /> {t("View pull request")}
                     </button>
                   )}
                   {status.build_url && (
                     <button onClick={() => void api.openBuild().catch(report)}>
-                      <ExternalLink size={14} /> View Actions run
+                      <ExternalLink size={14} /> {t("View Actions run")}
                     </button>
                   )}
                 </div>
                 <p className="muted about-version">
-                  OFLH Desktop {status.version} · MIT license
+                  OFLH Desktop {status.version} · {t("MIT license")}
                 </p>
                 {status.commit && (
                   <p className="muted about-version">
@@ -1369,41 +1405,47 @@ export function App() {
               <section className="setting-section shortcuts">
                 <h3>
                   <Keyboard size={17} />
-                  Keyboard shortcuts
+                  {t("Keyboard shortcuts")}
                 </h3>
                 <dl>
-                  <dt>Processes / File usages / Ports / Recent targets</dt>
+                  <dt>
+                    {t("Processes / File usages / Ports / Recent targets")}
+                  </dt>
                   <dd>{modifier}+1 / 2 / 3 / 4</dd>
-                  <dt>Next / previous workspace</dt>
+                  <dt>{t("Next / previous workspace")}</dt>
                   <dd>Ctrl+Tab / Ctrl+Shift+Tab</dd>
-                  <dt>Toggle selected process details</dt>
+                  <dt>{t("Toggle selected process details")}</dt>
                   <dd>{modifier}+Shift+D</dd>
-                  <dt>Settings</dt>
+                  <dt>{t("Settings")}</dt>
                   <dd>{modifier}+,</dd>
-                  <dt>Open file / folder</dt>
-                  <dd>Ctrl / ⌘ O · Shift for folder</dd>
-                  <dt>Search results</dt>
-                  <dd>{modifier}+F or / · Escape leaves search</dd>
-                  <dt>Refresh target</dt>
+                  <dt>{t("Open file / folder")}</dt>
+                  <dd>Ctrl / ⌘ O · {t("Shift for folder")}</dd>
+                  <dt>{t("Search results")}</dt>
+                  <dd>
+                    {modifier}+F {t("or")} / · {t("Escape leaves search")}
+                  </dd>
+                  <dt>{t("Refresh target")}</dt>
                   <dd>Ctrl / ⌘ R or F5</dd>
-                  <dt>Select all matching processes</dt>
+                  <dt>{t("Select all matching processes")}</dt>
                   <dd>Ctrl / ⌘ A</dd>
-                  <dt>Copy selected processes</dt>
+                  <dt>{t("Copy selected processes")}</dt>
                   <dd>Ctrl / ⌘ C</dd>
-                  <dt>Navigate / toggle selection</dt>
+                  <dt>{t("Navigate / toggle selection")}</dt>
                   <dd>↑ ↓ / Space</dd>
-                  <dt>Context actions</dt>
+                  <dt>{t("Context actions")}</dt>
                   <dd>Shift F10</dd>
-                  <dt>Clear selection and details</dt>
+                  <dt>{t("Clear selection and details")}</dt>
                   <dd>Escape</dd>
                 </dl>
               </section>
               {import.meta.env.DEV && (
                 <section className="setting-section developer-tools">
                   <div>
-                    <h3>Developer options</h3>
+                    <h3>{t("Developer options")}</h3>
                     <p className="muted">
-                      Preview the operation-error details and issue-report flow.
+                      {t(
+                        "Preview the operation-error details and issue-report flow.",
+                      )}
                     </p>
                   </div>
                   <button
@@ -1420,24 +1462,21 @@ export function App() {
                       )
                     }
                   >
-                    <ShieldAlert size={14} /> Show sample error
+                    <ShieldAlert size={14} /> {t("Show sample error")}
                   </button>
                 </section>
               )}
               <section className="setting-section">
-                <h3>Search and inspection</h3>
+                <h3>{t("Search and inspection")}</h3>
                 <p>
-                  Search runs over the loaded Rust snapshot and supports
-                  substrings, wildcards (*) and word-boundary abbreviations. In
-                  Ports, bare digits match port fragments; port:8080 matches
-                  exactly 8080. Combine port queries with tcp, udp, ipv4, ipv6
-                  or pid:1234. Refresh performs a new system scan.
+                  {t(
+                    "Search runs over the loaded Rust snapshot and supports substrings, wildcards (*) and word-boundary abbreviations. In Ports, bare digits match port fragments; port:8080 matches exactly 8080. Combine port queries with tcp, udp, ipv4, ipv6 or pid:1234. Refresh performs a new system scan.",
+                  )}
                 </p>
                 <p className="muted">
-                  Unknown CPU and memory stay unavailable. Access permissions
-                  may hide processes. Normal termination never escalates to
-                  force termination. Unsaved work can be lost when stopping a
-                  process.
+                  {t(
+                    "Unknown CPU and memory stay unavailable. Access permissions may hide processes. Normal termination never escalates to force termination. Unsaved work can be lost when stopping a process.",
+                  )}
                 </p>
               </section>
             </div>
@@ -1448,42 +1487,42 @@ export function App() {
         <span className="status-current" role="status">
           {status.scanning && <LoaderCircle size={13} className="spin" />}
           {status.scanning
-            ? "Scanning"
+            ? t("Scanning")
             : status.revision
-              ? "Inspection complete"
-              : "Ready to inspect"}
+              ? t("Inspection complete")
+              : t("Ready to inspect")}
           {status.scanning && (
             <button
               className="status-cancel"
               onClick={() => void api.cancel().then(apply).catch(report)}
             >
-              Cancel
+              {t("Cancel")}
             </button>
           )}
         </span>
         <span className="status-metrics">
-          {status.processes} file users · {status.usages} file usages ·{" "}
-          {status.ports} ports
+          {status.processes} {t("file users")} · {status.usages}{" "}
+          {t("file usages")} · {status.ports} {t("Ports").toLocaleLowerCase()}
         </span>
         <span className="footer-end">
           <span className="footer-attribution">
-            {selected.size ? `${selected.size} selected · ` : ""}
-            Independent project by{" "}
+            {selected.size ? `${selected.size} ${t("selected")} · ` : ""}
+            {t("Independent project by")}{" "}
             <button
               className="footer-profile"
-              title="Open Karim Zouine's GitHub profile"
+              title={`${t("Open")} Karim Zouine ${t("GitHub profile")}`}
               onClick={() => void api.openProfile().catch(report)}
             >
               Karim Zouine
             </button>
-            , built in spare time
+            , {t("built in spare time")}
           </span>
           <button
             className="footer-link"
-            title="Choose how to support OFLH"
+            title={t("Choose how to support OFLH")}
             onClick={() => setShowSupport(true)}
           >
-            Donate
+            {t("Donate")}
           </button>
         </span>
       </footer>
@@ -1491,8 +1530,8 @@ export function App() {
         <div className="drop-overlay">
           <div>
             <FolderOpen size={42} />
-            <h2>Drop file or folder to inspect</h2>
-            <p>One target at a time</p>
+            <h2>{t("Drop file or folder to inspect")}</h2>
+            <p>{t("One target at a time")}</p>
           </div>
         </div>
       )}
@@ -1504,66 +1543,70 @@ export function App() {
       )}
       {showErrorDetails && error && (
         <Modal
-          title="Operation details"
+          title={t("Operation details")}
           close={() => setShowErrorDetails(false)}
         >
           <p className="muted">
-            Diagnostic details can contain local paths or other private
-            information. Review them before sharing.
+            {t(
+              "Diagnostic details can contain local paths or other private information. Review them before sharing.",
+            )}
           </p>
           <pre className="error-details-modal">{errorDetails || error}</pre>
           <div className="modal-actions">
             <button onClick={copyErrorDetails}>
-              <Copy size={14} /> Copy details
+              <Copy size={14} /> {t("Copy details")}
             </button>
-            <button onClick={() => setShowErrorDetails(false)}>Close</button>
+            <button onClick={() => setShowErrorDetails(false)}>
+              {t("Close")}
+            </button>
           </div>
         </Modal>
       )}
       {showSupport && (
-        <Modal title="Support OFLH" close={() => setShowSupport(false)}>
+        <Modal title={t("Support OFLH")} close={() => setShowSupport(false)}>
           <p className="support-intro">
-            Support is optional. Choose the route that best fits how you would
-            like to help this independent project.
+            {t(
+              "Support is optional. Choose the route that best fits how you would like to help this independent project.",
+            )}
           </p>
           <div className="support-options">
             <section className="support-option">
               <h3>
-                <Coffee size={17} /> Buy Me a Coffee
+                <Coffee size={17} /> {t("Buy Me a Coffee")}
               </h3>
               <p>
-                <strong>Good for:</strong> a simple contribution from an
-                individual.
+                <strong>{t("Good for:")}</strong>{" "}
+                {t("a simple contribution from an individual.")}
               </p>
               <p className="muted">
-                <strong>Trade-off:</strong> checkout is handled by a separate
-                service.
+                <strong>{t("Trade-off:")}</strong>{" "}
+                {t("checkout is handled by a separate service.")}
               </p>
               <button
                 className="primary"
                 onClick={() => chooseSupport("coffee")}
               >
-                Continue with Buy Me a Coffee
+                {t("Continue with Buy Me a Coffee")}
                 <ExternalLink size={13} />
               </button>
             </section>
             <section className="support-option">
               <h3>
-                <Star size={17} /> GitHub Sponsors
+                <Star size={17} /> {t("GitHub Sponsors")}
               </h3>
               <p>
-                <strong>Good for:</strong> ongoing sponsorship and company
-                support.
+                <strong>{t("Good for:")}</strong>{" "}
+                {t("ongoing sponsorship and company support.")}
               </p>
               <p className="muted">
-                <strong>Trade-off:</strong> sponsorship uses GitHub’s checkout
-                flow.
+                <strong>{t("Trade-off:")}</strong>{" "}
+                {t("sponsorship uses GitHub’s checkout flow.")}
               </p>
               <button
                 className="primary"
                 onClick={() => chooseSupport("sponsors")}
               >
-                Continue to GitHub Sponsors
+                {t("Continue to GitHub Sponsors")}
                 <ExternalLink size={13} />
               </button>
             </section>
@@ -1575,7 +1618,9 @@ export function App() {
           title={context.name || `PID ${context.pid}`}
           close={() => setContext(null)}
         >
-          <p className="muted">Actions for PID {context.pid}</p>
+          <p className="muted">
+            {t("Actions for PID")} {context.pid}
+          </p>
           <div className="context-actions">
             {context.port && (
               <>
@@ -1585,7 +1630,7 @@ export function App() {
                     setContext(null);
                   }}
                 >
-                  Copy port
+                  {t("Copy port")}
                 </button>
                 <button
                   onClick={() => {
@@ -1593,7 +1638,7 @@ export function App() {
                     setContext(null);
                   }}
                 >
-                  Copy local endpoint
+                  {t("Copy local endpoint")}
                 </button>
                 <hr />
               </>
@@ -1606,7 +1651,7 @@ export function App() {
               disabled={!context.path}
             >
               <Copy size={15} />
-              Copy path
+              {t("Copy path")}
             </button>
             <button
               onClick={() => {
@@ -1615,7 +1660,7 @@ export function App() {
               }}
               disabled={!context.path}
             >
-              Copy filename
+              {t("Copy filename")}
             </button>
             {context.pid > 0 && (
               <button
@@ -1624,7 +1669,7 @@ export function App() {
                   setContext(null);
                 }}
               >
-                Copy PID
+                {t("Copy PID")}
               </button>
             )}
             <button
@@ -1633,7 +1678,7 @@ export function App() {
                 setContext(null);
               }}
             >
-              Copy process name
+              {t("Copy process name")}
             </button>
             <button
               onClick={() => {
@@ -1643,7 +1688,7 @@ export function App() {
               disabled={!context.path}
             >
               <ExternalLink size={15} />
-              Reveal in file manager
+              {t("Reveal in file manager")}
             </button>
             <button
               onClick={() => {
@@ -1652,7 +1697,7 @@ export function App() {
               }}
               disabled={!context.path}
             >
-              Open containing folder
+              {t("Open containing folder")}
             </button>
             <hr />
             <button
@@ -1661,7 +1706,7 @@ export function App() {
                 setContext(null);
               }}
             >
-              View process details
+              {t("View process details")}
             </button>
             <button
               onClick={() => {
@@ -1671,7 +1716,7 @@ export function App() {
                 setContext(null);
               }}
             >
-              View matching handles
+              {t("View matching handles")}
             </button>
             {details?.process.process_key === context.process_key &&
               details.can_inspect_folder && (
@@ -1683,20 +1728,20 @@ export function App() {
                     setContext(null);
                   }}
                 >
-                  Inspect owner folder
+                  {t("Inspect owner folder")}
                 </button>
               )}
             {context.actionable && (
               <>
                 <hr />
                 <button onClick={() => prepare(false, [context.process_key])}>
-                  Terminate…
+                  {t("Terminate…")}
                 </button>
                 <button
                   className="danger-text"
                   onClick={() => prepare(true, [context.process_key])}
                 >
-                  Force terminate…
+                  {t("Force terminate…")}
                 </button>
               </>
             )}
@@ -1704,10 +1749,14 @@ export function App() {
         </Modal>
       )}
       {showThemeWelcome && (
-        <Modal title="Make OFLH yours" close={() => setShowThemeWelcome(false)}>
+        <Modal
+          title={t("Make OFLH yours")}
+          close={() => setShowThemeWelcome(false)}
+        >
           <p>
-            Choose your workspace theme. Preview it now; you can change it
-            anytime in Settings.
+            {t(
+              "Choose your workspace theme. Preview it now; you can change it anytime in Settings.",
+            )}
           </p>
           <ThemePicker theme={theme} onChange={setTheme} />
           <div className="modal-actions">
@@ -1716,7 +1765,7 @@ export function App() {
               data-default-focus
               onClick={() => setShowThemeWelcome(false)}
             >
-              Start inspecting
+              {t("Start inspecting")}
             </button>
           </div>
         </Modal>
@@ -1725,8 +1774,8 @@ export function App() {
         <Modal
           title={
             confirmation.force
-              ? "Force terminate processes?"
-              : "Terminate processes?"
+              ? t("Force terminate processes?")
+              : t("Terminate processes?")
           }
           danger={confirmation.force}
           close={dismiss}
@@ -1735,28 +1784,38 @@ export function App() {
             <ShieldAlert size={22} />
             <p>
               {confirmation.force
-                ? "Force termination stops these processes without allowing normal cleanup. Unsaved work may be lost."
-                : "Request these processes to stop. Unsaved work may be lost. This will not escalate to force termination."}
+                ? t(
+                    "Force termination stops these processes without allowing normal cleanup. Unsaved work may be lost.",
+                  )
+                : t(
+                    "Request these processes to stop. Unsaved work may be lost. This will not escalate to force termination.",
+                  )}
             </p>
           </div>
           <p>
             <strong>
               {confirmation.targets.length}{" "}
-              {confirmation.targets.length === 1 ? "process" : "processes"}
+              {confirmation.targets.length === 1
+                ? t("process")
+                : t("processes")}
             </strong>{" "}
-            — all targets are listed below, including any hidden by filters.
+            —{" "}
+            {t(
+              "all targets are listed below, including any hidden by filters.",
+            )}
           </p>
           <ul className="confirmation-list">
             {confirmation.targets.map((target) => (
               <li key={target.key}>
-                <strong>{target.name || "(unnamed)"}</strong>
+                <strong>{target.name || t("(unnamed)")}</strong>
                 <code>PID {target.pid}</code>
               </li>
             ))}
           </ul>
           <p className="hint">
-            OFLH validates each captured process identity again before sending
-            the request.
+            {t(
+              "OFLH validates each captured process identity again before sending the request.",
+            )}
           </p>
           <div className="modal-actions">
             <button
@@ -1765,28 +1824,31 @@ export function App() {
               disabled={acting}
               onClick={dismiss}
             >
-              Cancel
+              {t("Cancel")}
             </button>
             <button className="danger" disabled={acting} onClick={terminate}>
               {acting && <LoaderCircle size={14} className="spin" />}
               {acting
-                ? "Waiting for process exit…"
+                ? t("Waiting for process exit…")
                 : confirmation.force
-                  ? "Force terminate"
-                  : "Terminate"}
+                  ? t("Force terminate")
+                  : t("Terminate")}
             </button>
           </div>
         </Modal>
       )}
       {results && (
-        <Modal title="Termination results" close={() => setResults(null)}>
+        <Modal title={t("Termination results")} close={() => setResults(null)}>
           <p role="status">
             {status.scanning ? (
               <>
-                <LoaderCircle size={14} className="spin" /> Updating results…
+                <LoaderCircle size={14} className="spin" />{" "}
+                {t("Updating results…")}
               </>
             ) : (
-              "Results refreshed. Exit checks use the original process identity."
+              t(
+                "Results refreshed. Exit checks use the original process identity.",
+              )
             )}
           </p>
           <ul className="action-results">
@@ -1796,16 +1858,18 @@ export function App() {
                 <span className={result.error ? "danger-text" : ""}>
                   {result.outcome === "exited" ? (
                     <>
-                      <Check size={15} /> Process exited
+                      <Check size={15} /> {t("Process exited")}
                     </>
                   ) : result.outcome === "still_running" ? (
-                    "Request sent · still running after 1.5 seconds"
+                    t("Request sent · still running after 1.5 seconds")
                   ) : result.outcome === "unverified" ? (
-                    "Request sent · couldn’t verify exit"
+                    t("Request sent · couldn’t verify exit")
                   ) : result.error?.kind === "identity_changed" ? (
-                    "Process changed or already exited. No termination was sent."
+                    t(
+                      "Process changed or already exited. No termination was sent.",
+                    )
                   ) : (
-                    result.error?.message || "Termination request failed"
+                    result.error?.message || t("Termination request failed")
                   )}
                   {result.outcome === "unverified" && result.error && (
                     <small>{result.error.message}</small>
@@ -1816,10 +1880,10 @@ export function App() {
           </ul>
           <div className="modal-actions">
             <button onClick={refresh} disabled={status.scanning}>
-              <RefreshCw size={14} /> Refresh again
+              <RefreshCw size={14} /> {t("Refresh again")}
             </button>
             <button data-default-focus onClick={() => setResults(null)}>
-              Done
+              {t("Done")}
             </button>
           </div>
         </Modal>
