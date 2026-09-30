@@ -149,6 +149,16 @@ execution and native interaction review remain release gates, not implied by a
 successful local compile. AppImage generation is not part of the current package
 matrix. Linux currently uses DEB and RPM.
 
+### Arch Linux AUR
+
+`packaging/arch/PKGBUILD` contains a source-built AUR recipe pinned to the
+`v0.2.0` release. It builds against the host's WebKitGTK rather than extracting a
+DEB or RPM. This recipe is not an official Arch repository package or a published
+AUR entry. For a new upstream release, update `pkgver`, the release archive
+checksum, and `pkgrel` as needed. Validate on Arch with
+`makepkg --syncdeps --cleanbuild` and regenerate `.SRCINFO` before publishing to
+the AUR.
+
 ## Release candidate validation
 
 See [Desktop RC validation](desktop-rc.md) for automated coverage, test reports,

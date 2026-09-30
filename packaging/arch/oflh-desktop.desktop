@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=OFLH Desktop
+Comment=Find processes using files and folders
+Exec=oflh-desktop
+Icon=io.github.karimz1.oflh
+Terminal=false
+Categories=Development;Utility;
+StartupNotify=true

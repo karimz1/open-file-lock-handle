@@ -1,0 +1,41 @@
+pkgname=oflh-desktop
+pkgver=0.2.0
+pkgrel=1
+pkgdesc='Desktop app for finding processes using files and folders'
+arch=('x86_64' 'aarch64')
+url='https://github.com/karimz1/open-file-lock-handle'
+license=('MIT')
+depends=('gtk3' 'webkit2gtk-4.1' 'openssl' 'libappindicator-gtk3' 'librsvg' 'libxdo')
+makedepends=('clang' 'cmake' 'npm' 'rust')
+source=(
+  "$pkgname-$pkgver.tar.gz::https://github.com/karimz1/open-file-lock-handle/archive/refs/tags/v$pkgver.tar.gz"
+  'oflh-desktop.desktop'
+)
+sha256sums=(
+  'cf7d2e51586e427b902f063b53162f24ae61523555ab1403ca034d00aa8e856d'
+  'f724679ce22ea8df95caea76d4dedc8ee9b1ee19992e0b32c2ec5c1b367f135d'
+)
+
+_srcdir="$srcdir/open-file-lock-handle-$pkgver"
+
+prepare() {
+  cd "$_srcdir"
+  npm --prefix crates/oflh-desktop/ui ci
+  cargo fetch --locked
+}
+
+build() {
+  cd "$_srcdir"
+  export CARGO_NET_OFFLINE=true
+  npm --prefix crates/oflh-desktop/ui run tauri -- build --no-bundle -- --locked
+}
+
+package() {
+  cd "$_srcdir"
+  install -Dm755 target/release/oflh-desktop "$pkgdir/usr/bin/oflh-desktop"
+  install -Dm644 crates/oflh-desktop/icons/128x128.png \
+    "$pkgdir/usr/share/icons/hicolor/128x128/apps/io.github.karimz1.oflh.png"
+  install -Dm644 "$srcdir/oflh-desktop.desktop" \
+    "$pkgdir/usr/share/applications/io.github.karimz1.oflh.desktop"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
