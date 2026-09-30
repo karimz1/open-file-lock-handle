@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveLocale, translate } from "./i18n";
+import { resolveLocale, resolvePreferredLocale, translate } from "./i18n";
 
 describe("desktop locale selection", () => {
   it.each(["de", "de-DE", "de-AT", "de_CH"])(
@@ -22,5 +22,12 @@ describe("desktop locale selection", () => {
     expect(translate("de", "An untranslated diagnostic")).toBe(
       "An untranslated diagnostic",
     );
+  });
+
+  it("honors an explicit language and follows system language when requested", () => {
+    expect(resolvePreferredLocale("de", "pt-PT")).toBe("de");
+    expect(resolvePreferredLocale("en", "de-DE")).toBe("en");
+    expect(resolvePreferredLocale("system", "de-DE")).toBe("de");
+    expect(resolvePreferredLocale("system", "pt-PT")).toBe("en");
   });
 });

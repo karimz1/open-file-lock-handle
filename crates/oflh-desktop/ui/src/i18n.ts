@@ -1,8 +1,28 @@
 export type Locale = "en" | "de";
+export type LocalePreference = "system" | Locale;
+
+const localeStorageKey = "oflh-language";
 
 export function resolveLocale(language: string | null | undefined): Locale {
   const primaryLanguage = language?.trim().split(/[-_]/, 1)[0].toLowerCase();
   return primaryLanguage === "de" ? "de" : "en";
+}
+
+export function resolvePreferredLocale(
+  preference: LocalePreference,
+  systemLanguage: string | null | undefined,
+): Locale {
+  return preference === "system" ? resolveLocale(systemLanguage) : preference;
+}
+
+export function readLocalePreference(): LocalePreference {
+  try {
+    const saved = localStorage.getItem(localeStorageKey);
+    if (saved === "en" || saved === "de" || saved === "system") return saved;
+  } catch {
+    // Locale selection remains available for the current system language.
+  }
+  return "system";
 }
 
 const german: Record<string, string> = {
@@ -21,6 +41,12 @@ const german: Record<string, string> = {
   "Open file": "Datei öffnen",
   "Open folder": "Ordner öffnen",
   Settings: "Einstellungen",
+  Language: "Sprache",
+  "Choose a language or follow your system setting.":
+    "Wähle eine Sprache oder übernimm die Systemeinstellung.",
+  "System default": "Systemstandard",
+  English: "Englisch",
+  German: "Deutsch",
   Auto: "Automatisch",
   Off: "Aus",
   "Automatic refresh interval": "Intervall für automatische Aktualisierung",
@@ -402,7 +428,9 @@ const german: Record<string, string> = {
     "Desktop-Vorgang konnte nicht abgeschlossen werden",
 };
 
-export const locale = resolveLocale(
+export const localePreference = readLocalePreference();
+export const locale = resolvePreferredLocale(
+  localePreference,
   typeof navigator === "undefined" ? undefined : navigator.language,
 );
 

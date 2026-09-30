@@ -52,7 +52,7 @@ import {
   type ColumnKey,
 } from "./Table";
 import { ColumnFilterPanel } from "./ColumnFilters";
-import { t } from "./i18n";
+import { localePreference, t } from "./i18n";
 
 type View = "ports" | "processes" | "handles" | "history" | "settings";
 const columnKeys = new Set<ColumnKey>([
@@ -1327,6 +1327,36 @@ export function App() {
                   </p>
                 </div>
                 <ThemePicker theme={theme} onChange={setTheme} />
+              </section>
+              <section className="setting-section">
+                <div>
+                  <h3>{t("Language")}</h3>
+                  <p className="muted">
+                    {t("Choose a language or follow your system setting.")}
+                  </p>
+                </div>
+                <div className="font-setting">
+                  <label htmlFor="language">{t("Language")}</label>
+                  <select
+                    id="language"
+                    value={localePreference}
+                    onChange={(event) => {
+                      try {
+                        localStorage.setItem(
+                          "oflh-language",
+                          event.target.value,
+                        );
+                      } catch {
+                        // Apply the language for this session even without storage.
+                      }
+                      window.location.reload();
+                    }}
+                  >
+                    <option value="system">{t("System default")}</option>
+                    <option value="en">{t("English")}</option>
+                    <option value="de">{t("German")}</option>
+                  </select>
+                </div>
               </section>
               <section className="setting-section">
                 <div>
