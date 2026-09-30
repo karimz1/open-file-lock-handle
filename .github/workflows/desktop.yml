@@ -128,6 +128,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'linux'
         with:
+          name: oflh-desktop.linux.${{ matrix.arch }}.deb
           archive: false
           path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.deb
           if-no-files-found: error
@@ -135,6 +136,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'linux'
         with:
+          name: oflh-desktop.linux.${{ matrix.arch }}.rpm
           archive: false
           path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.rpm
           if-no-files-found: error
@@ -159,3 +161,83 @@ jobs:
           path: desktop-dist/*.manifest
           if-no-files-found: error
           retention-days: 7
+
+  package-smoke:
+    needs: native
+    name: Install ${{ matrix.format }} on ${{ matrix.distribution }} / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distribution: Ubuntu 24.04
+            format: DEB
+            arch: amd64
+            runner: ubuntu-24.04
+            container: ubuntu:24.04
+            artifact: oflh-desktop.linux.amd64.deb
+          - distribution: Ubuntu 24.04
+            format: DEB
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            container: ubuntu:24.04
+            artifact: oflh-desktop.linux.arm64.deb
+          - distribution: Fedora
+            format: RPM
+            arch: amd64
+            runner: ubuntu-24.04
+            container: fedora:latest
+            artifact: oflh-desktop.linux.amd64.rpm
+          - distribution: Fedora
+            format: RPM
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            container: fedora:latest
+            artifact: oflh-desktop.linux.arm64.rpm
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.artifact }}
+          path: package
+      - name: Install DEB package
+        if: matrix.format == 'DEB'
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y xvfb xauth
+          apt-get install -y ./package/*.deb
+          dpkg-query --show oflh-desktop
+      - name: Install RPM package
+        if: matrix.format == 'RPM'
+        run: |
+          dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth
+          dnf install -y ./package/*.rpm
+          rpm --query oflh-desktop
+      - name: Verify installed app and desktop icon
+        run: |
+          oflh-desktop --version
+          desktop_file=$(grep -rl 'OFLH Desktop' /usr/share/applications --include='*.desktop' | head -n 1)
+          test -n "$desktop_file"
+          icon_name=$(sed -n 's/^Icon=//p' "$desktop_file" | head -n 1)
+          test -n "$icon_name"
+          if [[ "$icon_name" = /* ]]; then
+            test -s "$icon_name"
+          else
+            find /usr/share/icons /usr/share/pixmaps -type f \
+              \( -name "$icon_name.png" -o -name "$icon_name.svg" -o -name "$icon_name.xpm" \) \
+              -print -quit | grep -q .
+          fi
+      - name: Smoke-test installed app as unprivileged user
+        run: |
+          useradd --create-home smoke
+          set +e
+          su -s /bin/bash smoke -c 'timeout --signal=TERM --kill-after=5s 15s xvfb-run -a oflh-desktop'
+          result=$?
+          set -e
+          test "$result" -eq 124
