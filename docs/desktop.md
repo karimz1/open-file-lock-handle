@@ -155,9 +155,13 @@ matrix. Linux currently uses DEB and RPM.
 `v0.2.0` release. It builds against the host's WebKitGTK rather than extracting a
 DEB or RPM. This recipe is not an official Arch repository package or a published
 AUR entry. For a new upstream release, update `pkgver`, the release archive
-checksum, and `pkgrel` as needed. Validate on Arch with
-`makepkg --syncdeps --cleanbuild` and regenerate `.SRCINFO` before publishing to
-the AUR.
+checksum, and `pkgrel` as needed. Run `makepkg -g` after changing any source to
+calculate its checksums, then commit those values in `PKGBUILD`; keeping them
+pinned lets `makepkg` verify downloads instead of trusting build-time hashes.
+Regenerate `.SRCINFO` with `makepkg --printsrcinfo` and validate on Arch with
+`makepkg --syncdeps --cleanbuild` before publishing to the AUR. CI builds and
+installs the package on Arch, Ubuntu, and Fedora to check the native package
+formats and launch the installed app under a virtual display.
 
 ## Release candidate validation
 

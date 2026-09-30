@@ -128,6 +128,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'linux'
         with:
+          name: oflh-desktop.linux.${{ matrix.arch }}.deb
           archive: false
           path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.deb
           if-no-files-found: error
@@ -135,6 +136,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'linux'
         with:
+          name: oflh-desktop.linux.${{ matrix.arch }}.rpm
           archive: false
           path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.rpm
           if-no-files-found: error
@@ -159,3 +161,97 @@ jobs:
           path: desktop-dist/*.manifest
           if-no-files-found: error
           retention-days: 7
+
+  package-smoke:
+    needs: native
+    name: Install ${{ matrix.format }} on ${{ matrix.distribution }}
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.container }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distribution: Ubuntu 24.04
+            container: ubuntu:24.04
+            format: DEB
+            artifact: oflh-desktop.linux.amd64.deb
+          - distribution: Fedora
+            container: fedora:latest
+            format: RPM
+            artifact: oflh-desktop.linux.amd64.rpm
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.artifact }}
+          path: package
+      - name: Install DEB and test the installed app
+        if: matrix.format == 'DEB'
+        run: |
+          apt-get update
+          apt-get install -y xvfb xauth
+          apt-get install -y ./package/*.deb
+          dpkg-query --show oflh-desktop
+          oflh-desktop --version
+          useradd --create-home smoke
+          set +e
+          su -s /bin/bash smoke -c 'timeout --signal=TERM --kill-after=5s 15s xvfb-run -a oflh-desktop'
+          result=$?
+          set -e
+          test "$result" -eq 124
+      - name: Install RPM and test the installed app
+        if: matrix.format == 'RPM'
+        run: |
+          dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth
+          dnf install -y ./package/*.rpm
+          rpm --query oflh-desktop
+          oflh-desktop --version
+          useradd --create-home smoke
+          set +e
+          su -s /bin/bash smoke -c 'timeout --signal=TERM --kill-after=5s 15s xvfb-run -a oflh-desktop'
+          result=$?
+          set -e
+          test "$result" -eq 124
+
+  arch-package:
+    needs: frontend
+    name: Build and install AUR package / Arch Linux x86-64
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Bootstrap Arch image
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --needed --noconfirm sudo git clang cmake npm rustup gtk3 webkit2gtk-4.1 openssl libappindicator-gtk3 librsvg libxdo xorg-server-xvfb xorg-xauth
+      - uses: actions/checkout@v7
+      - name: Create unprivileged package builder
+        run: |
+          useradd --create-home builder
+          printf 'builder ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/builder
+          chmod 0440 /etc/sudoers.d/builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+      - name: Verify AUR metadata matches PKGBUILD
+        run: |
+          su -s /bin/bash builder -c 'cd "$1/packaging/arch" && makepkg --printsrcinfo' bash "$GITHUB_WORKSPACE" | diff -u packaging/arch/.SRCINFO -
+      - name: Build Arch package and test installation
+        run: |
+          su -s /bin/bash builder -c 'cd "$1/packaging/arch" && makepkg --syncdeps --cleanbuild --noconfirm' bash "$GITHUB_WORKSPACE"
+          pacman -U --noconfirm packaging/arch/*.pkg.tar.zst
+          pacman -Q oflh-desktop
+          oflh-desktop --version
+          test -s /usr/share/applications/io.github.karimz1.oflh.desktop
+          test -s /usr/share/icons/hicolor/128x128/apps/io.github.karimz1.oflh.png
+          grep -Fx 'Icon=io.github.karimz1.oflh' /usr/share/applications/io.github.karimz1.oflh.desktop
+          useradd --create-home smoke
+          set +e
+          su -s /bin/bash smoke -c 'timeout --signal=TERM --kill-after=5s 15s xvfb-run -a oflh-desktop'
+          result=$?
+          set -e
+          test "$result" -eq 124

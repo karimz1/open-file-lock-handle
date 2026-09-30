@@ -6,7 +6,7 @@ arch=('x86_64' 'aarch64')
 url='https://github.com/karimz1/open-file-lock-handle'
 license=('MIT')
 depends=('gtk3' 'webkit2gtk-4.1' 'openssl' 'libappindicator-gtk3' 'librsvg' 'libxdo')
-makedepends=('clang' 'cmake' 'npm' 'rust')
+makedepends=('clang' 'cmake' 'npm' 'rustup')
 source=(
   "$pkgname-$pkgver.tar.gz::https://github.com/karimz1/open-file-lock-handle/archive/refs/tags/v$pkgver.tar.gz"
   'oflh-desktop.desktop'
@@ -18,14 +18,27 @@ sha256sums=(
 
 _srcdir="$srcdir/open-file-lock-handle-$pkgver"
 
+_rust_toolchain() {
+  sed -n 's/^channel = "\(.*\)"/\1/p' "$_srcdir/rust-toolchain.toml"
+}
+
 prepare() {
   cd "$_srcdir"
+  local toolchain
+  toolchain="$(_rust_toolchain)"
+  test -n "$toolchain"
+  rustup toolchain install "$toolchain" --profile minimal
+  export PATH="$(dirname "$(rustup which cargo --toolchain "$toolchain")"):$PATH"
   npm --prefix crates/oflh-desktop/ui ci
   cargo fetch --locked
 }
 
 build() {
   cd "$_srcdir"
+  local toolchain
+  toolchain="$(_rust_toolchain)"
+  test -n "$toolchain"
+  export PATH="$(dirname "$(rustup which cargo --toolchain "$toolchain")"):$PATH"
   export CARGO_NET_OFFLINE=true
   npm --prefix crates/oflh-desktop/ui run tauri -- build --no-bundle -- --locked
 }
