@@ -4,6 +4,7 @@
 
 # Open File Lock Handle (oflh)
 
+[![Website](https://img.shields.io/badge/website-oflh-8B5CF6)](https://oflh.karimzouine.com/)
 [![GitHub downloads](https://img.shields.io/github/downloads/karimz1/open-file-lock-handle/total?label=downloads)](https://github.com/karimz1/open-file-lock-handle/releases)
 [![CI](https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml/badge.svg)](https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml)
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-64748b)](#platforms)
@@ -15,6 +16,15 @@ Find which processes are using a file or directory, and which processes own loca
 TCP listeners or bound UDP sockets. Choose OFLH Desktop or the interactive
 terminal app (CLI/TUI). Both use the same native Rust inspection engine on Linux,
 macOS, and Windows.
+
+Ever tried to delete, move, or replace a file and gotten a vague "it's in use"
+error with no explanation? Or started a server and hit "port already in use"
+with no idea what's already using it? oflh shows you exactly which app or
+process is holding that file, folder, or port &mdash; and lets you terminate it
+directly if you choose to.
+
+Visit the [oflh website](https://oflh.karimzouine.com/) for
+screenshots and one-click downloads for Linux, macOS, and Windows.
 
 ## Choose an interface
 
