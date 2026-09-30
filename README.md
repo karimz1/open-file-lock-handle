@@ -94,6 +94,24 @@ Release downloads are individual files, not ZIP bundles. Each release includes
 one `checksums.txt` with SHA-256 hashes for every CLI executable and Desktop
 installer in that release.
 
+#### Known limitation: unsigned builds
+
+oflh is free and open source and does not have an Apple Developer ID or a
+Windows code-signing certificate yet, so Desktop installers are unsigned.
+
+- **macOS**: Gatekeeper reports the app as "damaged." It is not corrupted;
+  clear the quarantine flag with `xattr -cr "/Applications/OFLH Desktop.app"`
+  (adjust the path if installed elsewhere), then reopen the app.
+- **Windows**: SmartScreen flags the installer as from an "unknown publisher."
+  Click **More info**, then **Run anyway** to continue the installer.
+- **Linux**: DEB/RPM packages have no GPG signature yet. If your package
+  manager warns about a missing signature, verify the download against
+  `checksums.txt` in the release instead.
+
+If you would like to help fund a code-signing certificate, consider
+[sponsoring on GitHub](https://github.com/sponsors/karimz1) or
+[Buy Me a Coffee](https://www.buymeacoffee.com/karimz1).
+
 <a id="getting-started"></a>
 
 ## Quick start
