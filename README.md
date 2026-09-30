@@ -31,7 +31,9 @@ macOS, and Windows.
 
 ### Terminal
 
-[![asciicast](https://asciinema.org/a/1266562.svg)](https://asciinema.org/a/1266562)
+[![demo of oflh terminal](./images/demo-thumbnail.jpg)](./images/demo.gif)
+
+[View the terminal recording on asciinema](https://asciinema.org/a/1266562)
 
 ## Install
 
