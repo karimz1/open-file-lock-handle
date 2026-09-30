@@ -61,6 +61,8 @@ mod tests {
         assert_eq!(fs::read_dir(&output).unwrap().count(), 15);
         assert!(sums.contains("oflh-cli.windows.arm64.exe"));
         assert!(sums.contains("oflh-desktop.linux.amd64.rpm"));
+        assert!(sums.contains("oflh-desktop.windows.amd64-installer.exe"));
+        assert!(!sums.contains("oflh-desktop.windows.amd64.exe"));
         assert!(!sums.contains("manifest"));
         assert!(!sums.contains(".zip"));
         for line in sums.lines() {

@@ -150,7 +150,7 @@ jobs:
         if: matrix.os == 'windows'
         with:
           archive: false
-          path: desktop-dist/oflh-desktop.windows.${{ matrix.arch }}.exe
+          path: desktop-dist/oflh-desktop.windows.${{ matrix.arch }}-installer.exe
           if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@v7
