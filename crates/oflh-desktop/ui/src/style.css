@@ -1993,3 +1993,56 @@ kbd.shortcut {
     display: none;
   }
 }
+
+/* The workspace heading and target bar can shrink so the grid gets the
+   vertical space back on laptop-height screens. */
+.workspace-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.workspace-heading.collapsed {
+  padding-bottom: 12px;
+}
+.workspace-heading.collapsed p {
+  display: none;
+}
+.target-bar.collapsed {
+  display: none;
+}
+
+/* The toolbar and filters above the grid can be dragged shorter (or resized
+   back) so a tall filter stack does not eat into the grid on small windows. */
+.top-panel {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  overflow-y: auto;
+  min-height: 0;
+}
+.top-resize-handle {
+  flex: none;
+  height: 9px;
+  margin: -4px 0;
+  cursor: row-resize;
+  touch-action: none;
+  position: relative;
+  z-index: 3;
+}
+.top-resize-handle::after {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 4px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--muted);
+  content: "";
+  opacity: 0.5;
+}
+.top-resize-handle:hover::after,
+.top-resize-handle:focus-visible::after {
+  background: var(--accent);
+  opacity: 1;
+}

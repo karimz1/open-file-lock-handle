@@ -1423,3 +1423,54 @@ test("narrow windows collapse the sidebar automatically and let details overlay 
   await page.reload();
   await expect(nav.getByText("Processes", { exact: true })).toBeVisible();
 });
+
+test("the workspace controls above the grid can be collapsed and dragged shorter", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const table = page.getByRole("grid");
+  const description = page.getByText(
+    "Processes referencing your target and its contents.",
+    { exact: true },
+  );
+  const targetBar = page.getByRole("textbox", {
+    name: "Target file or folder path",
+  });
+  await expect(description).toBeVisible();
+  await expect(targetBar).toBeVisible();
+  const expandedTableHeight = (await table.boundingBox())!.height;
+
+  const collapseToggle = page.getByRole("button", {
+    name: "Collapse workspace controls",
+  });
+  await collapseToggle.click();
+  await expect(description).not.toBeVisible();
+  await expect(targetBar).not.toBeVisible();
+  const collapsedTableHeight = (await table.boundingBox())!.height;
+  expect(collapsedTableHeight).toBeGreaterThan(expandedTableHeight);
+
+  await page.getByRole("button", { name: "Expand workspace controls" }).click();
+  await expect(description).toBeVisible();
+  await expect(targetBar).toBeVisible();
+
+  const handle = page.getByRole("separator", {
+    name: "Resize workspace controls",
+  });
+  const before = (await table.boundingBox())!.height;
+  const box = (await handle.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y - 20);
+  await page.mouse.up();
+  const afterDrag = (await table.boundingBox())!.height;
+  expect(afterDrag).toBeGreaterThan(before);
+
+  await handle.focus();
+  await page.keyboard.press("Home");
+  const afterHome = (await table.boundingBox())!.height;
+  expect(afterHome).toBeGreaterThan(afterDrag);
+
+  await page.reload();
+  const afterReload = (await table.boundingBox())!.height;
+  expect(afterReload).toBeGreaterThan(expandedTableHeight);
+});

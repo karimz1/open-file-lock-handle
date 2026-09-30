@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   ChevronDown,
+  ChevronUp,
   Columns3,
   SlidersHorizontal,
   LoaderCircle,
@@ -50,6 +51,10 @@ import {
 import { ColumnFilterPanel } from "./ColumnFilters";
 import { Sidebar, type View } from "./Sidebar";
 import { useResponsiveSidebar } from "./useResponsiveSidebar";
+import {
+  useResizableTopPanel,
+  topPanelMinHeight,
+} from "./useResizableTopPanel";
 
 const columnKeys = new Set<ColumnKey>([
   "process",
@@ -116,6 +121,7 @@ export function App() {
   );
   const { collapsed: sidebarCollapsed, toggle: toggleSidebar } =
     useResponsiveSidebar();
+  const topPanel = useResizableTopPanel();
   const [fontSize, setFontSize] = useState(() => {
     try {
       const saved = Number(localStorage.getItem("oflh-font-size"));
@@ -609,6 +615,7 @@ export function App() {
   };
   const inspecting =
     view === "processes" || view === "handles" || view === "ports";
+  const hasResults = !(view !== "ports" && !status.target && !status.scanning);
   return (
     <div
       className="app-shell"
@@ -731,7 +738,12 @@ export function App() {
           )}
           {inspecting ? (
             <>
-              <div className="workspace-heading">
+              <div
+                className={
+                  "workspace-heading" +
+                  (hasResults && topPanel.collapsed ? " collapsed" : "")
+                }
+              >
                 <div>
                   <div className="eyebrow">
                     {view === "ports"
@@ -753,17 +765,45 @@ export function App() {
                         : "Find out which processes are using a file or folder."}
                   </p>
                 </div>
-                <button
-                  className="primary"
-                  onClick={() => runScan(api.choose(true))}
-                >
-                  <FolderOpen size={15} />
-                  Open folder
-                </button>
+                <div className="workspace-heading-actions">
+                  <button
+                    className="primary"
+                    onClick={() => runScan(api.choose(true))}
+                  >
+                    <FolderOpen size={15} />
+                    Open folder
+                  </button>
+                  {hasResults && (
+                    <button
+                      className="icon-button"
+                      aria-label={
+                        topPanel.collapsed
+                          ? "Expand workspace controls"
+                          : "Collapse workspace controls"
+                      }
+                      title={
+                        topPanel.collapsed
+                          ? "Expand workspace controls"
+                          : "Collapse workspace controls"
+                      }
+                      aria-expanded={!topPanel.collapsed}
+                      onClick={topPanel.toggleCollapsed}
+                    >
+                      {topPanel.collapsed ? (
+                        <ChevronDown size={16} />
+                      ) : (
+                        <ChevronUp size={16} />
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
               {view !== "ports" && (
                 <form
-                  className="target-bar"
+                  className={
+                    "target-bar" +
+                    (hasResults && topPanel.collapsed ? " collapsed" : "")
+                  }
                   onSubmit={(event) => {
                     event.preventDefault();
                     runScan(
@@ -826,321 +866,399 @@ export function App() {
                 </div>
               ) : (
                 <>
-                  <div className="search-toolbar">
-                    <div className="search-box">
-                      <Search size={15} />
-                      <input
-                        ref={searchRef}
-                        aria-label="Search loaded results"
-                        title={`Search (${modifier}+F or /); Escape returns to the workspace`}
-                        placeholder={
-                          view === "ports"
-                            ? "Search ports… e.g. 80, port:8080, tcp"
-                            : "Search names, PIDs, paths…"
+                  <div
+                    ref={topPanel.panelRef}
+                    className="top-panel"
+                    style={
+                      topPanel.height != null
+                        ? { height: topPanel.height }
+                        : undefined
+                    }
+                  >
+                    <div className="search-toolbar">
+                      <div className="search-box">
+                        <Search size={15} />
+                        <input
+                          ref={searchRef}
+                          aria-label="Search loaded results"
+                          title={`Search (${modifier}+F or /); Escape returns to the workspace`}
+                          placeholder={
+                            view === "ports"
+                              ? "Search ports… e.g. 80, port:8080, tcp"
+                              : "Search names, PIDs, paths…"
+                          }
+                          value={query}
+                          onChange={(event) => setQuery(event.target.value)}
+                        />
+                        {!query && shortcut("F")}
+                        {query && (
+                          <button
+                            className="icon-button"
+                            aria-label="Clear search"
+                            onClick={() => setQuery("")}
+                          >
+                            <X size={13} />
+                          </button>
+                        )}
+                      </div>
+                      {view === "ports" ? (
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            disabled={!status.target}
+                            checked={!!status.target && portsPathOnly}
+                            onChange={(event) =>
+                              setPortsPathOnly(event.target.checked)
+                            }
+                          />
+                          Target processes only
+                        </label>
+                      ) : (
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={locks}
+                            onChange={(event) => setLocks(event.target.checked)}
+                          />
+                          Lock evidence only
+                        </label>
+                      )}
+
+                      <button className="select-all" onClick={selectAll}>
+                        Select all
+                      </button>
+                      <details className="column-picker">
+                        <summary>
+                          <Columns3 size={14} />
+                          Columns
+                          <ChevronDown
+                            size={12}
+                            className="column-picker-caret"
+                          />
+                        </summary>
+                        <div
+                          className="column-picker-menu"
+                          role="group"
+                          aria-label="Visible columns"
+                        >
+                          <span className="column-picker-heading">
+                            SHOW IN GRID
+                          </span>
+                          {tableColumns.map((column) => (
+                            <label key={column.key}>
+                              <input
+                                type="checkbox"
+                                checked={!hiddenColumns.has(column.key)}
+                                disabled={column.key === "process"}
+                                onChange={() => toggleHiddenColumn(column.key)}
+                              />
+                              {column.label}
+                            </label>
+                          ))}
+                        </div>
+                      </details>
+                      <button
+                        aria-expanded={showColumns}
+                        disabled={columnCount > 0}
+                        title={
+                          columnCount > 0
+                            ? "Clear applied filters before closing"
+                            : "Open column filters"
                         }
-                        value={query}
-                        onChange={(event) => setQuery(event.target.value)}
+                        onClick={() => setShowColumns((visible) => !visible)}
+                      >
+                        <SlidersHorizontal size={14} />
+                        Column filters{columnCount ? ` (${columnCount})` : ""}
+                      </button>
+                      <span className="muted result-count">
+                        {total} results
+                      </span>
+                    </div>
+                    {showColumns && (
+                      <ColumnFilterPanel
+                        key={view === "ports" ? "port-filters" : "file-filters"}
+                        value={columns}
+                        ports={view === "ports"}
+                        apply={setColumns}
+                        close={() => setShowColumns(false)}
+                        canClose={columnCount === 0}
                       />
-                      {!query && shortcut("F")}
-                      {query && (
+                    )}
+                    {columnCount > 0 && (
+                      <div
+                        className="active-filter-banner"
+                        role="status"
+                        aria-label="Applied column filters"
+                      >
+                        <strong>
+                          <SlidersHorizontal size={14} />
+                          Filters active
+                        </strong>
+                        <div className="active-filter-values">
+                          {activeColumnFilters.map((filter) => (
+                            <span key={filter.key}>
+                              {filter.label}: {String(filter.value)}
+                            </span>
+                          ))}
+                        </div>
+                        <button onClick={() => setColumns({})}>
+                          <X size={13} />
+                          Clear filters
+                        </button>
+                      </div>
+                    )}
+                    {query && view !== "ports" && (
+                      <div className="search-explanation">
+                        Search includes full paths. A shared folder name can
+                        match every row; use the Process name column filter to
+                        narrow by name.
+                      </div>
+                    )}
+                    {scope && (
+                      <div className="scope-bar">
+                        Showing{" "}
+                        {view === "ports" ? "local ports" : "file usages"} for{" "}
+                        <strong>{scope.name}</strong>
+                        <button onClick={() => setScope(null)}>
+                          <X size={12} />
+                          Clear process filter
+                        </button>
+                      </div>
+                    )}
+                    {selected.size > 0 ? (
+                      <div className="selection-toolbar">
+                        <strong>
+                          {selected.size}{" "}
+                          {selected.size === 1 ? "process" : "processes"}{" "}
+                          selected
+                        </strong>
+                        <span className="muted">
+                          May include processes outside this view
+                        </span>
+                        <button onClick={() => copy()}>
+                          <Copy size={13} />
+                          Copy
+                        </button>
+                        <button
+                          disabled={acting}
+                          onClick={() => prepare(false)}
+                        >
+                          Terminate…
+                        </button>
+                        <button
+                          className="danger-text"
+                          disabled={acting}
+                          onClick={() => prepare(true)}
+                        >
+                          Force terminate…
+                        </button>
                         <button
                           className="icon-button"
-                          aria-label="Clear search"
-                          onClick={() => setQuery("")}
+                          aria-label="Clear selection"
+                          onClick={() => setSelected(new Set())}
                         >
-                          <X size={13} />
+                          <X size={14} />
                         </button>
-                      )}
-                    </div>
-                    {view === "ports" ? (
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          disabled={!status.target}
-                          checked={!!status.target && portsPathOnly}
-                          onChange={(event) =>
-                            setPortsPathOnly(event.target.checked)
-                          }
-                        />
-                        Target processes only
-                      </label>
+                      </div>
                     ) : (
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={locks}
-                          onChange={(event) => setLocks(event.target.checked)}
-                        />
-                        Lock evidence only
-                      </label>
+                      <div className="selection-toolbar selection-hint">
+                        Click a row to inspect · Use the panel button to close
+                        details
+                      </div>
                     )}
-
-                    <button className="select-all" onClick={selectAll}>
-                      Select all
-                    </button>
-                    <details className="column-picker">
-                      <summary>
-                        <Columns3 size={14} />
-                        Columns
-                        <ChevronDown
-                          size={12}
-                          className="column-picker-caret"
-                        />
-                      </summary>
-                      <div
-                        className="column-picker-menu"
-                        role="group"
-                        aria-label="Visible columns"
-                      >
-                        <span className="column-picker-heading">
-                          SHOW IN GRID
-                        </span>
-                        {tableColumns.map((column) => (
-                          <label key={column.key}>
-                            <input
-                              type="checkbox"
-                              checked={!hiddenColumns.has(column.key)}
-                              disabled={column.key === "process"}
-                              onChange={() => toggleHiddenColumn(column.key)}
-                            />
-                            {column.label}
-                          </label>
-                        ))}
-                      </div>
-                    </details>
-                    <button
-                      aria-expanded={showColumns}
-                      disabled={columnCount > 0}
-                      title={
-                        columnCount > 0
-                          ? "Clear applied filters before closing"
-                          : "Open column filters"
-                      }
-                      onClick={() => setShowColumns((visible) => !visible)}
-                    >
-                      <SlidersHorizontal size={14} />
-                      Column filters{columnCount ? ` (${columnCount})` : ""}
-                    </button>
-                    <span className="muted result-count">{total} results</span>
                   </div>
-                  {showColumns && (
-                    <ColumnFilterPanel
-                      key={view === "ports" ? "port-filters" : "file-filters"}
-                      value={columns}
-                      ports={view === "ports"}
-                      apply={setColumns}
-                      close={() => setShowColumns(false)}
-                      canClose={columnCount === 0}
-                    />
-                  )}
-                  {columnCount > 0 && (
-                    <div
-                      className="active-filter-banner"
-                      role="status"
-                      aria-label="Applied column filters"
-                    >
-                      <strong>
-                        <SlidersHorizontal size={14} />
-                        Filters active
-                      </strong>
-                      <div className="active-filter-values">
-                        {activeColumnFilters.map((filter) => (
-                          <span key={filter.key}>
-                            {filter.label}: {String(filter.value)}
-                          </span>
-                        ))}
-                      </div>
-                      <button onClick={() => setColumns({})}>
-                        <X size={13} />
-                        Clear filters
-                      </button>
-                    </div>
-                  )}
-                  {query && view !== "ports" && (
-                    <div className="search-explanation">
-                      Search includes full paths. A shared folder name can match
-                      every row; use the Process name column filter to narrow by
-                      name.
-                    </div>
-                  )}
-                  {scope && (
-                    <div className="scope-bar">
-                      Showing {view === "ports" ? "local ports" : "file usages"}{" "}
-                      for <strong>{scope.name}</strong>
-                      <button onClick={() => setScope(null)}>
-                        <X size={12} />
-                        Clear process filter
-                      </button>
-                    </div>
-                  )}
-                  {selected.size > 0 ? (
-                    <div className="selection-toolbar">
-                      <strong>
-                        {selected.size}{" "}
-                        {selected.size === 1 ? "process" : "processes"} selected
-                      </strong>
-                      <span className="muted">
-                        May include processes outside this view
-                      </span>
-                      <button onClick={() => copy()}>
-                        <Copy size={13} />
-                        Copy
-                      </button>
-                      <button disabled={acting} onClick={() => prepare(false)}>
-                        Terminate…
-                      </button>
-                      <button
-                        className="danger-text"
-                        disabled={acting}
-                        onClick={() => prepare(true)}
-                      >
-                        Force terminate…
-                      </button>
-                      <button
-                        className="icon-button"
-                        aria-label="Clear selection"
-                        onClick={() => setSelected(new Set())}
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="selection-toolbar selection-hint">
-                      Click a row to inspect · Use the panel button to close
-                      details
-                    </div>
-                  )}
-                  <div className="results-workspace">
-                    <Table
-                      fontSize={fontSize}
-                      target={status.target}
-                      expandedKey={
-                        focused &&
-                        activeRow?.revision === status.revision &&
-                        activeRow.row.process_key === focused
-                          ? activeRow.row.key
-                          : null
-                      }
-                      onToggle={(row) => {
-                        const closing =
-                          focused === row.process_key &&
-                          activeRow?.row.key === row.key;
-                        setActiveRow({ row, revision: status.revision });
-                        setFocused(closing ? null : row.process_key);
-                      }}
-                      key={view === "ports" ? "ports" : "files"}
-                      revision={status.revision}
-                      query={tableQuery}
-                      hiddenColumns={hiddenColumns}
-                      selected={selected}
-                      focused={focused}
-                      onSelect={(row, additive) => {
-                        setSelected((current) =>
-                          selectKey(current, row.process_key, additive),
+                  <div
+                    role="separator"
+                    aria-label="Resize workspace controls"
+                    aria-orientation="horizontal"
+                    aria-valuemin={topPanelMinHeight}
+                    aria-valuemax={topPanel.maxHeight}
+                    aria-valuenow={
+                      topPanel.height ??
+                      topPanel.panelRef.current?.getBoundingClientRect()
+                        .height ??
+                      topPanelMinHeight
+                    }
+                    tabIndex={0}
+                    className="top-resize-handle"
+                    onDoubleClick={topPanel.resetHeight}
+                    onPointerDown={(event) => {
+                      if (event.button !== 0) return;
+                      event.preventDefault();
+                      topPanel.beginDrag(event.clientY);
+                      event.currentTarget.setPointerCapture(event.pointerId);
+                    }}
+                    onPointerMove={(event) => topPanel.dragTo(event.clientY)}
+                    onPointerUp={(event) => {
+                      topPanel.endDrag();
+                      if (
+                        event.currentTarget.hasPointerCapture(event.pointerId)
+                      )
+                        event.currentTarget.releasePointerCapture(
+                          event.pointerId,
                         );
-                        setActiveRow({ row, revision: status.revision });
-                        setFocused(row.process_key);
-                      }}
-                      onOpen={(row) => {
-                        setActiveRow({ row, revision: status.revision });
-                        setFocused(row.process_key);
-                      }}
-                      onContext={(row) => {
-                        if (status.scanning) {
-                          setToast(
-                            "Wait for the current scan to finish before opening row actions.",
-                          );
-                          return;
-                        }
-                        setContext(row);
-                        setActiveRow({ row, revision: status.revision });
-                        setFocused(row.process_key);
-                      }}
-                      onSort={changeSort}
-                      onTotal={setTotal}
-                      onError={report}
-                    />
-                    {details && (
-                      <Inspector
-                        key={details.process.process_key}
-                        terminateCurrent={(force) =>
-                          prepare(force, [details.process.process_key])
-                        }
-                        terminateAncestor={(key, force) => {
-                          setActing(true);
-                          void api
-                            .prepareAncestor(
-                              details.process.process_key,
-                              key,
-                              force,
-                            )
-                            .then((value) => {
-                              setActing(false);
-                              setConfirmation(value);
-                            })
-                            .catch(report)
-                            .finally(() => setActing(false));
-                        }}
-                        details={details}
-                        row={
+                    }}
+                    onLostPointerCapture={topPanel.endDrag}
+                    onKeyDown={(event) => {
+                      const current =
+                        topPanel.height ??
+                        topPanel.panelRef.current?.getBoundingClientRect()
+                          .height ??
+                        topPanelMinHeight;
+                      if (
+                        event.key === "ArrowUp" ||
+                        event.key === "ArrowDown"
+                      ) {
+                        event.preventDefault();
+                        topPanel.setHeight(
+                          current + (event.key === "ArrowUp" ? -20 : 20),
+                        );
+                      }
+                      if (event.key === "Home") {
+                        event.preventDefault();
+                        topPanel.setHeight(topPanelMinHeight);
+                      }
+                      if (event.key === "End") {
+                        event.preventDefault();
+                        topPanel.setHeight(topPanel.maxHeight);
+                      }
+                    }}
+                  />
+                  <>
+                    <div className="results-workspace">
+                      <Table
+                        fontSize={fontSize}
+                        target={status.target}
+                        expandedKey={
+                          focused &&
                           activeRow?.revision === status.revision &&
-                          activeRow.row.process_key ===
-                            details.process.process_key
-                            ? activeRow.row
+                          activeRow.row.process_key === focused
+                            ? activeRow.row.key
                             : null
                         }
-                        close={() => setFocused(null)}
-                        copy={(field, reference) =>
-                          copy(field, reference, [details.process.process_key])
-                        }
-                        reveal={reveal}
-                        ports={() => {
-                          setView("ports");
-                          setScope({
-                            key: details.process.process_key,
-                            name: details.process.name,
-                          });
-                          setPortQuery("");
+                        onToggle={(row) => {
+                          const closing =
+                            focused === row.process_key &&
+                            activeRow?.row.key === row.key;
+                          setActiveRow({ row, revision: status.revision });
+                          setFocused(closing ? null : row.process_key);
                         }}
-                        inspectFolder={() =>
-                          runScan(
-                            api.followProcess(
-                              status.revision,
-                              details.process.process_key,
-                            ),
-                          )
-                        }
-                        handles={() => {
-                          setView("handles");
-                          setScope({
-                            key: details.process.process_key,
-                            name: details.process.name,
-                          });
-                          setFileQuery("");
+                        key={view === "ports" ? "ports" : "files"}
+                        revision={status.revision}
+                        query={tableQuery}
+                        hiddenColumns={hiddenColumns}
+                        selected={selected}
+                        focused={focused}
+                        onSelect={(row, additive) => {
+                          setSelected((current) =>
+                            selectKey(current, row.process_key, additive),
+                          );
+                          setActiveRow({ row, revision: status.revision });
+                          setFocused(row.process_key);
                         }}
+                        onOpen={(row) => {
+                          setActiveRow({ row, revision: status.revision });
+                          setFocused(row.process_key);
+                        }}
+                        onContext={(row) => {
+                          if (status.scanning) {
+                            setToast(
+                              "Wait for the current scan to finish before opening row actions.",
+                            );
+                            return;
+                          }
+                          setContext(row);
+                          setActiveRow({ row, revision: status.revision });
+                          setFocused(row.process_key);
+                        }}
+                        onSort={changeSort}
+                        onTotal={setTotal}
+                        onError={report}
                       />
-                    )}
-                  </div>
-                  <div className="evidence-note">
-                    <ShieldAlert size={13} />
-                    <span>
-                      {view === "ports"
-                        ? "Local bindings do not prove external reachability. Unknown owners cannot be terminated."
-                        : "File usage is not proof of a lock. Windows resource users are not proven lock owners."}
-                    </span>
-                    {status.warnings.length > 0 && (
-                      <details>
-                        <summary>
-                          {status.warnings.length} coverage notices
-                        </summary>
-                        <ul>
-                          {status.warnings.map((warning, index) => (
-                            <li key={index}>{warning}</li>
-                          ))}
-                        </ul>
-                      </details>
-                    )}
-                  </div>
+                      {details && (
+                        <Inspector
+                          key={details.process.process_key}
+                          terminateCurrent={(force) =>
+                            prepare(force, [details.process.process_key])
+                          }
+                          terminateAncestor={(key, force) => {
+                            setActing(true);
+                            void api
+                              .prepareAncestor(
+                                details.process.process_key,
+                                key,
+                                force,
+                              )
+                              .then((value) => {
+                                setActing(false);
+                                setConfirmation(value);
+                              })
+                              .catch(report)
+                              .finally(() => setActing(false));
+                          }}
+                          details={details}
+                          row={
+                            activeRow?.revision === status.revision &&
+                            activeRow.row.process_key ===
+                              details.process.process_key
+                              ? activeRow.row
+                              : null
+                          }
+                          close={() => setFocused(null)}
+                          copy={(field, reference) =>
+                            copy(field, reference, [
+                              details.process.process_key,
+                            ])
+                          }
+                          reveal={reveal}
+                          ports={() => {
+                            setView("ports");
+                            setScope({
+                              key: details.process.process_key,
+                              name: details.process.name,
+                            });
+                            setPortQuery("");
+                          }}
+                          inspectFolder={() =>
+                            runScan(
+                              api.followProcess(
+                                status.revision,
+                                details.process.process_key,
+                              ),
+                            )
+                          }
+                          handles={() => {
+                            setView("handles");
+                            setScope({
+                              key: details.process.process_key,
+                              name: details.process.name,
+                            });
+                            setFileQuery("");
+                          }}
+                        />
+                      )}
+                    </div>
+                    <div className="evidence-note">
+                      <ShieldAlert size={13} />
+                      <span>
+                        {view === "ports"
+                          ? "Local bindings do not prove external reachability. Unknown owners cannot be terminated."
+                          : "File usage is not proof of a lock. Windows resource users are not proven lock owners."}
+                      </span>
+                      {status.warnings.length > 0 && (
+                        <details>
+                          <summary>
+                            {status.warnings.length} coverage notices
+                          </summary>
+                          <ul>
+                            {status.warnings.map((warning, index) => (
+                              <li key={index}>{warning}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                  </>
                 </>
               )}
             </>
