@@ -45,18 +45,19 @@ On macOS or Linux, install with Homebrew:
 brew install karimz1/tap/oflh-cli
 ```
 
-The existing `brew install karimz1/tap/oflh` name remains available as a
-compatibility alias. Homebrew installs the terminal app. It does not install
-OFLH Desktop.
+For other platforms, or to install without Homebrew, download the CLI for your
+operating system and CPU from [GitHub Releases](https://github.com/karimz1/open-file-lock-handle/releases).
+On macOS or Linux, make the downloaded file executable and rename it to `oflh`.
+For example, for the macOS ARM64 build:
 
-For a published prerelease, use `brew install karimz1/tap/oflh-cli-rc`. The
-stable and RC formulae both provide `oflh`, so install only one at a time.
+```sh
+chmod +x ./oflh-cli.darwin.arm64
+mv ./oflh-cli.darwin.arm64 ./oflh
+./oflh [PATH]
+```
 
-For a standalone CLI, download the executable for your operating system and CPU
-from [GitHub Releases](https://github.com/karimz1/open-file-lock-handle/releases).
-Release names include the platform and architecture. Rename the file to `oflh`
-if you want a shorter command, then run it in a terminal with a file, directory,
-or port as its target.
+Use the filename that matches your downloaded build. On Windows, rename the
+downloaded `.exe` to `oflh.exe`, then run `.\oflh.exe [PATH]` in PowerShell.
 
 For options and keyboard controls, see the [Terminal user guide](docs/usage.md).
 
@@ -64,18 +65,15 @@ For options and keyboard controls, see the [Terminal user guide](docs/usage.md).
 
 ### Desktop
 
-Download an installer from [GitHub Releases](https://github.com/karimz1/open-file-lock-handle/releases):
+Download the installer for your operating system from
+[GitHub Releases](https://github.com/karimz1/open-file-lock-handle/releases),
+then open it and follow the installation steps.
 
 | Operating system | Install method |
 | --- | --- |
-| macOS | Homebrew Cask for stable or prerelease builds, or the DMG from GitHub Releases |
+| macOS | DMG from GitHub Releases |
 | Linux | DEB or RPM package for x86-64 or ARM64 |
-| Windows | Download the installer from the Releases page |
-
-Install stable Desktop with `brew install --cask karimz1/tap/oflh-desktop` or a
-published RC with `brew install --cask karimz1/tap/oflh-desktop-rc`. The stable
-and RC Casks install the same app and cannot be installed side by side. Linux
-Desktop users install native DEB/RPM packages. Homebrew Cask is for macOS.
+| Windows | Installer from GitHub Releases |
 
 For search, filters, and process actions, see the
 [Desktop user guide](docs/desktop-usage.md).
