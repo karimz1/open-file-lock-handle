@@ -16,7 +16,11 @@ pub(super) fn extensions(os: &str) -> Result<&'static [&'static str]> {
     }
 }
 pub(super) fn artifact(os: &str, arch: &str, extension: &str) -> String {
-    format!("oflh-desktop.{os}.{arch}.{extension}")
+    if os == "windows" {
+        format!("oflh-desktop.{os}.{arch}-installer.{extension}")
+    } else {
+        format!("oflh-desktop.{os}.{arch}.{extension}")
+    }
 }
 fn collect(
     directory: &Path,
@@ -173,5 +177,13 @@ mod tests {
         fs::write(output.join(artifact("linux", "amd64", "rpm")), b"modified").unwrap();
         assert!(assemble(&output, "dev").is_err());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn windows_desktop_artifact_name_identifies_the_installer() {
+        assert_eq!(
+            artifact("windows", "amd64", "exe"),
+            "oflh-desktop.windows.amd64-installer.exe"
+        );
     }
 }
