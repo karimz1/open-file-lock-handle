@@ -37,7 +37,7 @@ export function Modal({
         <h2 id="dialog-title">{title}</h2>
         <button
           className="icon-button"
-          aria-label={t("Close dialog")}
+          aria-label={t("app.k_close_dialog")}
           onClick={close}
         >
           <X size={17} />

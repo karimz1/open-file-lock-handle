@@ -1,37 +1,43 @@
 import { Check } from "lucide-react";
-import { t } from "./i18n";
+import { t, type MessageKey } from "./i18n";
+type ThemeOption = {
+  id: string;
+  label: MessageKey;
+  description: MessageKey;
+  colors: readonly string[];
+};
 export const themes = [
   {
     id: "system",
-    label: "System",
-    description: "Follow your device",
+    label: "themes.k_system",
+    description: "themes.k_follow_your_device",
     colors: ["#f2f4f7", "#242424", "#a3a3a3"],
   },
   {
     id: "light",
-    label: "Light",
-    description: "Bright and clear",
+    label: "themes.k_light",
+    description: "themes.k_bright_and_clear",
     colors: ["#ffffff", "#f2f4f7", "#4264db"],
   },
   {
     id: "rider",
-    label: "Rider Dark",
-    description: "Rider-inspired charcoal with crisp contrast",
+    label: "themes.k_rider_dark",
+    description: "themes.k_rider_inspired_charcoal_with_crisp_contrast",
     colors: ["#17191e", "#2a2f38", "#86c2ff"],
   },
   {
     id: "vscode",
-    label: "VS Code Dark",
-    description: "Graphite with blue accents",
+    label: "themes.k_vs_code_dark",
+    description: "themes.k_graphite_with_blue_accents",
     colors: ["#1e1e1e", "#30343c", "#75beff"],
   },
   {
     id: "purple",
-    label: "OFLH Purple",
-    description: "Colors from the terminal demo",
+    label: "themes.k_oflh_purple",
+    description: "themes.k_colors_from_the_terminal_demo",
     colors: ["#20202b", "#282536", "#b79aff"],
   },
-] as const;
+] as const satisfies readonly ThemeOption[];
 export type Theme = (typeof themes)[number]["id"];
 
 export function readTheme(): { theme: Theme; firstUse: boolean } {
