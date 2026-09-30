@@ -1365,3 +1365,61 @@ test("utility actions stay in the sidebar and fit the minimum window", async ({
     footer.getByRole("button", { name: "Donate", exact: true }),
   ).toBeVisible();
 });
+
+test("the sidebar can be collapsed and expanded to reclaim grid width", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const nav = page.getByRole("navigation");
+  const toggle = nav.getByRole("button", {
+    name: /Collapse sidebar|Expand sidebar/,
+  });
+  const table = page.getByRole("grid");
+  const expandedNavWidth = (await nav.boundingBox())!.width;
+  const expandedTableWidth = (await table.boundingBox())!.width;
+  await expect(nav.getByText("Processes", { exact: true })).toBeVisible();
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  const collapsedNavWidth = (await nav.boundingBox())!.width;
+  const collapsedTableWidth = (await table.boundingBox())!.width;
+  expect(collapsedNavWidth).toBeLessThan(expandedNavWidth - 100);
+  expect(collapsedTableWidth).toBeGreaterThan(expandedTableWidth);
+  await expect(nav.getByText("Processes", { exact: true })).not.toBeVisible();
+  await expect(nav.getByRole("button", { name: /^Processes/ })).toBeVisible();
+
+  await page.reload();
+  await expect(
+    nav.getByRole("button", { name: "Expand sidebar" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(nav.getByText("Processes", { exact: true })).not.toBeVisible();
+
+  await nav.getByRole("button", { name: "Expand sidebar" }).click();
+  await expect(nav.getByText("Processes", { exact: true })).toBeVisible();
+});
+
+test("narrow windows collapse the sidebar automatically and let details overlay the grid", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 600, height: 700 });
+  await page.goto("/");
+  const nav = page.getByRole("navigation");
+  await expect(
+    nav.getByRole("button", { name: "Expand sidebar" }),
+  ).toBeVisible();
+  await expect(nav.getByText("Processes", { exact: true })).not.toBeVisible();
+  const navWidth = (await nav.boundingBox())!.width;
+  expect(navWidth).toBeLessThan(100);
+
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  const panel = page.getByRole("complementary", { name: "Process details" });
+  await expect(panel).toBeVisible();
+  const panelBox = (await panel.boundingBox())!;
+  expect(panelBox.width).toBeGreaterThan(500);
+  await panel.getByRole("button", { name: "Close process details" }).click();
+  await expect(panel).not.toBeVisible();
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.reload();
+  await expect(nav.getByText("Processes", { exact: true })).toBeVisible();
+});

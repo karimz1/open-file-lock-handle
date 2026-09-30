@@ -1916,3 +1916,80 @@ kbd.shortcut {
   background: var(--accent-bg);
   color: var(--accent);
 }
+
+/* Collapsed sidebar keeps icons and tooltips, freeing width for the grid. */
+.sidebar-toggle {
+  align-self: flex-end;
+  margin-bottom: 6px;
+  color: var(--muted);
+}
+.sidebar-toggle:hover {
+  color: var(--text);
+}
+.sidebar.collapsed {
+  width: 56px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.sidebar.collapsed .sidebar-toggle {
+  align-self: center;
+}
+.sidebar.collapsed button {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+.sidebar.collapsed .nav-section,
+.sidebar.collapsed .sidebar-label,
+.sidebar.collapsed .sidebar-count,
+.sidebar.collapsed kbd.shortcut,
+.sidebar.collapsed .sidebar-bottom p,
+.sidebar.collapsed .version,
+.sidebar.collapsed .github-link svg:last-child {
+  display: none;
+}
+
+/* Below this width the sidebar defaults to collapsed and controls wrap
+   instead of squeezing the results grid down to a sliver. */
+@media (max-width: 760px) {
+  .workspace-heading {
+    padding: 14px 16px 10px;
+  }
+  .workspace-heading p {
+    display: none;
+  }
+  .target-bar {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+  .search-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 16px;
+  }
+  .search-box {
+    order: -1;
+    min-width: 100%;
+    max-width: 100%;
+  }
+  .result-count {
+    margin-left: 0;
+  }
+}
+@media (max-width: 640px) {
+  .inspector-container {
+    position: absolute !important;
+    inset: 0;
+    width: auto !important;
+    z-index: 20;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+  .inspector {
+    width: 100%;
+    height: 100%;
+  }
+  .panel-resizer {
+    display: none;
+  }
+}

@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
-  Activity,
   ChevronDown,
   Columns3,
   SlidersHorizontal,
-  Star,
   LoaderCircle,
   ArrowRight,
   Check,
@@ -14,16 +12,14 @@ import {
   ExternalLink,
   File,
   FileSearch,
-  Files,
   FolderOpen,
   History,
   Info,
   Keyboard,
-  Network,
   RefreshCw,
   Search,
-  Settings,
   ShieldAlert,
+  Star,
   Timer,
   Trash2,
   X,
@@ -52,8 +48,9 @@ import {
   type ColumnKey,
 } from "./Table";
 import { ColumnFilterPanel } from "./ColumnFilters";
+import { Sidebar, type View } from "./Sidebar";
+import { useResponsiveSidebar } from "./useResponsiveSidebar";
 
-type View = "ports" | "processes" | "handles" | "history" | "settings";
 const columnKeys = new Set<ColumnKey>([
   "process",
   "pid",
@@ -117,6 +114,8 @@ export function App() {
       {keys}
     </kbd>
   );
+  const { collapsed: sidebarCollapsed, toggle: toggleSidebar } =
+    useResponsiveSidebar();
   const [fontSize, setFontSize] = useState(() => {
     try {
       const saved = Number(localStorage.getItem("oflh-font-size"));
@@ -681,81 +680,18 @@ export function App() {
         </div>
       </header>
       <div className="app-body">
-        <nav className="sidebar" aria-label="Workspace">
-          <div className="nav-section">WORKSPACE</div>
-          <button
-            title={`Processes (${modifier}+1)`}
-            className={view === "processes" ? "active" : ""}
-            onClick={() => changeView("processes")}
-          >
-            <Activity size={17} />
-            Processes<span>{status.processes || ""}</span>
-            {shortcut("1")}
-          </button>
-          <button
-            title={`File usages (${modifier}+2)`}
-            className={view === "handles" ? "active" : ""}
-            onClick={() => changeView("handles")}
-          >
-            <Files size={17} />
-            File usages<span>{status.usages || ""}</span>
-            {shortcut("2")}
-          </button>
-          <button
-            title={`Ports (${modifier}+3)`}
-            className={view === "ports" ? "active" : ""}
-            onClick={() => changeView("ports")}
-          >
-            <Network size={17} />
-            Ports<span>{status.ports || ""}</span>
-            {shortcut("3")}
-          </button>
-          <button
-            title={`Recent targets (${modifier}+4)`}
-            className={view === "history" ? "active" : ""}
-            onClick={() => changeView("history")}
-          >
-            <History size={17} />
-            Recent targets{shortcut("4")}
-          </button>
-          <div className="sidebar-rule" />
-          <div className="nav-section">INSPECT TARGET</div>
-          <button onClick={() => runScan(api.choose(false))}>
-            <File size={16} />
-            Open file
-          </button>
-          <button onClick={() => runScan(api.choose(true))}>
-            <FolderOpen size={17} />
-            Open folder
-          </button>
-          <div className="sidebar-bottom">
-            <p>
-              Know what’s using
-              <br />
-              your files.
-            </p>
-            <button
-              className={view === "settings" ? "active" : ""}
-              onClick={() => changeView("settings")}
-            >
-              <Settings size={17} />
-              Settings
-            </button>
-            <button
-              className="github-link"
-              onClick={() => void api.openProject().catch(report)}
-            >
-              <Star size={14} /> Star on GitHub <ExternalLink size={12} />
-            </button>
-            <span className="version">
-              {status.version === "development"
-                ? "Development"
-                : status.version
-                  ? `v${status.version}`
-                  : "OFLH Desktop"}
-            </span>
-          </div>
-        </nav>
+        <Sidebar
+          view={view}
+          status={status}
+          modifier={modifier}
+          shortcut={shortcut}
+          collapsed={sidebarCollapsed}
+          onToggleCollapsed={toggleSidebar}
+          onChangeView={changeView}
+          onOpenFile={() => runScan(api.choose(false))}
+          onOpenFolder={() => runScan(api.choose(true))}
+          onStarGithub={() => void api.openProject().catch(report)}
+        />
         <main>
           {error && (
             <div className="error-banner" role="alert">
