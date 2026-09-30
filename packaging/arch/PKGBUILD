@@ -16,14 +16,16 @@ sha256sums=(
   'f724679ce22ea8df95caea76d4dedc8ee9b1ee19992e0b32c2ec5c1b367f135d'
 )
 
-_srcdir="$srcdir/open-file-lock-handle-$pkgver"
+_source_dir() {
+  printf '%s\n' "$srcdir/open-file-lock-handle-$pkgver"
+}
 
 _rust_toolchain() {
-  sed -n 's/^channel = "\(.*\)"/\1/p' "$_srcdir/rust-toolchain.toml"
+  sed -n 's/^channel = "\(.*\)"/\1/p' "$(_source_dir)/rust-toolchain.toml"
 }
 
 prepare() {
-  cd "$_srcdir"
+  cd "$(_source_dir)"
   local toolchain
   toolchain="$(_rust_toolchain)"
   test -n "$toolchain"
@@ -34,7 +36,7 @@ prepare() {
 }
 
 build() {
-  cd "$_srcdir"
+  cd "$(_source_dir)"
   local toolchain
   toolchain="$(_rust_toolchain)"
   test -n "$toolchain"
@@ -44,7 +46,7 @@ build() {
 }
 
 package() {
-  cd "$_srcdir"
+  cd "$(_source_dir)"
   install -Dm755 target/release/oflh-desktop "$pkgdir/usr/bin/oflh-desktop"
   install -Dm644 crates/oflh-desktop/icons/128x128.png \
     "$pkgdir/usr/share/icons/hicolor/128x128/apps/io.github.karimz1.oflh.png"
