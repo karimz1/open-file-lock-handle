@@ -148,6 +148,9 @@ CLI packages and Homebrew stay independent. Signing, notarization, installer
 execution and native interaction review remain release gates, not implied by a
 successful local compile. AppImage generation is not part of the current package
 matrix. Linux currently uses DEB and RPM.
+The Desktop CI installs every Linux DEB and RPM artifact on its matching Ubuntu
+or Fedora release, on both x86-64 and ARM64, then checks the installed command,
+launcher icon, and GUI startup under a virtual display.
 
 ## Release candidate validation
 
