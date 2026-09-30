@@ -145,7 +145,9 @@ not configured. Unsigned installers require platform review before distribution.
 Public download names distinguish interfaces: `oflh-cli.linux.amd64`,
 `oflh-cli.windows.arm64.exe`, `oflh-desktop.linux.amd64.rpm`,
 `oflh-desktop.linux.amd64.deb`, `oflh-desktop.darwin.arm64.dmg`, and
-`oflh-desktop.windows.arm64.exe`. The installed terminal command remains `oflh`.
+`oflh-desktop.windows.arm64-installer.exe`. The Windows desktop `.exe` is an
+NSIS installer, not the portable app executable. The installed terminal command
+remains `oflh`.
 Older releases retain their existing `oflh-linux-amd64` style names.
 
 `cargo xtask package-desktop` records tested executable and installer hashes in
