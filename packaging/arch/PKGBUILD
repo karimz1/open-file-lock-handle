@@ -5,7 +5,7 @@ pkgdesc='Desktop app for finding processes using files and folders'
 arch=('x86_64' 'aarch64')
 url='https://github.com/karimz1/open-file-lock-handle'
 license=('MIT')
-depends=('gtk3' 'webkit2gtk-4.1' 'openssl' 'libappindicator-gtk3' 'librsvg' 'libxdo')
+depends=('gtk3' 'webkit2gtk-4.1' 'openssl' 'libappindicator-gtk3' 'librsvg' 'xdotool')
 makedepends=('clang' 'cmake' 'npm' 'rustup')
 source=(
   "$pkgname-$pkgver.tar.gz::https://github.com/karimz1/open-file-lock-handle/archive/refs/tags/v$pkgver.tar.gz"
