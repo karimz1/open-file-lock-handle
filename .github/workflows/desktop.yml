@@ -229,7 +229,7 @@ jobs:
       - name: Bootstrap Arch image
         run: |
           pacman -Syu --noconfirm
-          pacman -S --needed --noconfirm sudo git clang cmake npm rustup gtk3 webkit2gtk-4.1 openssl libappindicator-gtk3 librsvg xdotool xorg-server-xvfb xorg-xauth
+          pacman -S --needed --noconfirm sudo git clang cmake npm rustup pkgconf sqlite gtk3 webkit2gtk-4.1 openssl libappindicator-gtk3 librsvg xdotool xorg-server-xvfb xorg-xauth
       - uses: actions/checkout@v7
       - name: Create unprivileged package builder
         run: |

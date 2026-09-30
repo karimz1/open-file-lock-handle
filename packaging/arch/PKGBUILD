@@ -5,8 +5,8 @@ pkgdesc='Desktop app for finding processes using files and folders'
 arch=('x86_64' 'aarch64')
 url='https://github.com/karimz1/open-file-lock-handle'
 license=('MIT')
-depends=('gtk3' 'webkit2gtk-4.1' 'openssl' 'libappindicator-gtk3' 'librsvg' 'xdotool')
-makedepends=('clang' 'cmake' 'npm' 'rustup')
+depends=('gtk3' 'webkit2gtk-4.1' 'openssl' 'libappindicator-gtk3' 'librsvg' 'xdotool' 'sqlite')
+makedepends=('clang' 'cmake' 'npm' 'rustup' 'pkgconf')
 source=(
   "$pkgname-$pkgver.tar.gz::https://github.com/karimz1/open-file-lock-handle/archive/refs/tags/v$pkgver.tar.gz"
   'oflh-desktop.desktop'
@@ -42,6 +42,7 @@ build() {
   test -n "$toolchain"
   export PATH="$(dirname "$(rustup which cargo --toolchain "$toolchain")"):$PATH"
   export CARGO_NET_OFFLINE=true
+  export LIBSQLITE3_SYS_USE_PKG_CONFIG=1
   npm --prefix crates/oflh-desktop/ui run tauri -- build --no-bundle -- --locked
 }
 
