@@ -129,6 +129,10 @@ test.beforeEach(async ({ page }) => {
             return 1;
           }
           if (command === "plugin:event|unlisten") return;
+          if (command === "plugin:updater|check")
+            return (window as any).__updateMetadata ?? null;
+          if (command === "plugin:updater|download_and_install") return;
+          if (command === "plugin:process|restart") return;
           if (command === "status") return status;
           if (command === "recent") return recentTargets;
           if (command === "remove_recent") {
@@ -289,6 +293,7 @@ test.beforeEach(async ({ page }) => {
               "open_profile",
               "open_donation",
               "open_sponsors",
+              "open_release_notes",
               "open_issue",
             ].includes(command)
           )
@@ -1113,6 +1118,50 @@ test("termination preserves the captured owner port filter", async ({
       .filter((call: any) => call.command === "page" && call.args.query.ports)
       .at(-1).args.query.process_key,
   ).toBe("4000:18446744073709551615:0");
+});
+
+test("Settings reports when no update is available and links to the releases page", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByText("You’re up to date.")).toBeVisible();
+  await page.getByRole("button", { name: "View release notes" }).click();
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(calls.some((call: any) => call.command === "open_release_notes")).toBe(
+    true,
+  );
+});
+
+test("Settings offers to install an announced update and relaunches after install", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__updateMetadata = {
+      rid: 1,
+      currentVersion: "0.1.0",
+      version: "9.9.9",
+      date: "2026-01-01",
+      body: "Fixture release notes",
+      rawJson: {},
+    };
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByText("Update available: v9.9.9")).toBeVisible();
+  await page.getByRole("button", { name: "Install and restart" }).click();
+  await expect(
+    page.getByText("Update installed. Restart OFLH to finish."),
+  ).toBeVisible();
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls.some(
+      (call: any) => call.command === "plugin:updater|download_and_install",
+    ),
+  ).toBe(true);
+  expect(
+    calls.some((call: any) => call.command === "plugin:process|restart"),
+  ).toBe(true);
 });
 
 test("column filters submit typed predicates and F5 does not outline the entire grid", async ({

@@ -92,6 +92,15 @@ and OFLH Purple, plus font size. Your theme, font size and details width persist
 The first launch offers a theme choice. The app remembers these settings between
 launches.
 
+## Updates
+
+Settings also has an **Updates** section. OFLH Desktop checks for a newer
+release on launch. On Windows and macOS installs, "Install and restart" downloads
+and installs the update, then relaunches the app. Other packages (for example
+Linux `.deb`/`.rpm` installs) show "View release notes" instead; use your
+package manager or the [releases page](https://github.com/karimz1/open-file-lock-handle/releases)
+to update.
+
 For OS limitations, see [platform support](platform-support.md). For build,
 testing and packaging details, see [development](development.md) and the
 [RC validation checklist](desktop-rc.md).

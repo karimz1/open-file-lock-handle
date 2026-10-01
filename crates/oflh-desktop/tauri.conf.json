@@ -41,6 +41,18 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlDMTBDODVCMDZGQTc1NDIKUldSQ2Rmb0dXOGdRbkVjTmxXSGhCbW5EUmpJL205ZlQzUzU2WFpSUjRxenZYVGxwQzJHajdmKzEK",
+      "endpoints": [
+        "https://github.com/karimz1/open-file-lock-handle/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

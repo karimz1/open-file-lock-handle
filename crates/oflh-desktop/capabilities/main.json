@@ -3,5 +3,5 @@
   "identifier": "main",
   "description": "Local desktop window; system actions go through snapshot-validated Rust commands.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "updater:default", "process:default"]
 }

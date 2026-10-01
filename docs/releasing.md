@@ -156,8 +156,10 @@ matching versions and checksums and rejects missing, altered or extra artifacts.
 Receipts are uploaded separately for CI assembly. They are not public release assets.
 
 `cargo xtask assemble-release --version TAG --cli-dir dist --desktop-dir desktop-dist --output release-dist`
-validates both matrices, collects only the six CLI executables and eight native
-installers, and writes **one `checksums.txt`** covering all 14 downloads. It refuses
+validates both matrices, collects the six CLI executables and the native installer
+and updater artifacts (14 files; Windows and macOS add a `.sig`, and macOS also
+adds an `.app.tar.gz` updater payload), and writes **one `checksums.txt`**
+covering all 20 downloads, plus `latest.json` for the updater plugin. It refuses
 to overwrite its output directory. The release workflow uploads these files
 individually, without ZIP wrappers or manifests. Native package Actions artifacts
 also use `archive: false`. Diagnostic reports and internal receipts remain grouped.
@@ -172,6 +174,27 @@ releases remain protected from overwrite.
 Installer metadata names Karim Zouine as publisher. Windows verified publisher
 status and macOS notarization still require signing. Metadata alone does not remove
 OS warnings. No signing credentials are configured by this change.
+
+## Desktop auto-update
+
+Desktop builds a self-update banner on the Settings page using
+`tauri-plugin-updater`. It polls the static manifest published at
+`https://github.com/karimz1/open-file-lock-handle/releases/latest/download/latest.json`,
+which `cargo xtask assemble-release` generates from the `.sig` files produced
+during bundling (`createUpdaterArtifacts: true` in `tauri.conf.json`). Windows
+and macOS installs can download and install silently, then relaunch; Linux has
+no AppImage target, so its package managers (.deb/.rpm) fall back to showing
+the releases page link instead.
+
+Signing updater artifacts needs an Ed25519 keypair from `tauri signer generate`.
+The public key is committed in `tauri.conf.json`. The private key must be set as
+the repository secrets `TAURI_SIGNING_PRIVATE_KEY` (and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+if the key has a password) so `desktop.yml` can sign Windows and macOS bundles.
+Builds without that secret (for example fork pull requests) sign with a
+throwaway key generated in CI so the build still succeeds; those artifacts are
+never published. Losing the real private key means existing installs can no
+longer verify future updates, so store it somewhere durable alongside the
+account that owns the repository secrets.
 
 The added workflow is configuration, not evidence of six passing native jobs.
 Review the actual CI runs and manually exercise native dialogs, drag-and-drop,

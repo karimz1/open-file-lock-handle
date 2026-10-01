@@ -451,6 +451,26 @@ const de: TranslationSchema<typeof en> = {
     k_system: "System",
     k_vs_code_dark: "VS Code Dunkel",
   },
+  update: {
+    k_a_newer_version_is_available: "Eine neuere Version ist verfügbar.",
+    k_check_for_updates: "Nach Updates suchen",
+    k_checking_for_updates: "Suche nach Updates…",
+    k_download_from_the_releases_page: "Von der Releases-Seite herunterladen",
+    k_downloading_update: "Update wird heruntergeladen…",
+    k_install_and_restart: "Installieren und neu starten",
+    k_installing_update: "Update wird installiert…",
+    k_restart_to_finish_installing_the_update:
+      "Starte neu, um die Installation des Updates abzuschließen.",
+    k_update_available_version: "Update verfügbar: v{{version}}",
+    k_update_check_failed: "Updates konnten nicht geprüft werden",
+    k_update_installed_restart_oflh_to_finish:
+      "Update installiert. Starte OFLH neu, um fortzufahren.",
+    k_update_not_supported_on_this_package:
+      "Automatische Updates sind für dieses Paket nicht verfügbar. Nutze stattdessen die Releases-Seite.",
+    k_updates: "Updates",
+    k_view_release_notes: "Release-Notes ansehen",
+    k_you_re_up_to_date: "Du bist auf dem neuesten Stand.",
+  },
 };
 
 export default de;

@@ -116,6 +116,7 @@ export const api = {
   openIssue: (title: string, body: string) =>
     invoke<void>("open_issue", { title, body }),
   openProject: () => invoke<void>("open_project"),
+  openReleaseNotes: () => invoke<void>("open_release_notes"),
   status: () => invoke<Status>("status"),
   inspect: (path: string) => invoke<Status>("inspect", { path }),
   ports: () => invoke<Status>("inspect_ports"),
