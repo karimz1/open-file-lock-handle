@@ -22,6 +22,8 @@ import {
   Maximize2,
   Minimize2,
   Network,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCw,
   Search,
   Settings,
@@ -182,6 +184,25 @@ export function App() {
   };
   const [showColumns, setShowColumns] = useState(false);
   const [maximized, setMaximized] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("oflh-sidebar-collapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const sidebarIsCollapsed = sidebarCollapsed || maximized;
+  const toggleSidebarCollapsed = () => {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem("oflh-sidebar-collapsed", next ? "1" : "0");
+      } catch {
+        // The current session can still use the changed preference.
+      }
+      return next;
+    });
+  };
   const columns = view === "ports" ? portColumns : fileColumns;
   const setColumns = view === "ports" ? setPortColumns : setFileColumns;
   const activeColumnFilters = Object.entries(columns).flatMap(([key, value]) =>
@@ -588,6 +609,9 @@ export function App() {
       } else if (command && event.key.toLowerCase() === "o") {
         event.preventDefault();
         runScan(api.choose(event.shiftKey));
+      } else if (!editing && command && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        toggleSidebarCollapsed();
       } else if (
         !editing &&
         command &&
@@ -705,100 +729,135 @@ export function App() {
         </div>
       </header>
       <div className={`app-body${maximized ? " grid-maximized" : ""}`}>
-        {!maximized && (
-          <nav className="sidebar" aria-label={t("navigation.k_workspace")}>
-            <div className="nav-section">
-              {t("navigation.k_workspace_70398828")}
-            </div>
+        <nav
+          className={`sidebar${sidebarIsCollapsed ? " collapsed" : ""}`}
+          aria-label={t("navigation.k_workspace")}
+        >
+          {!maximized && (
             <button
-              title={`${t("navigation.k_processes")} (${modifier}+1)`}
-              className={view === "processes" ? "active" : ""}
-              onClick={() => changeView("processes")}
+              className="sidebar-toggle"
+              aria-expanded={!sidebarCollapsed}
+              title={
+                sidebarCollapsed
+                  ? t("navigation.k_expand_sidebar")
+                  : t("navigation.k_collapse_sidebar")
+              }
+              onClick={toggleSidebarCollapsed}
             >
-              <Activity size={17} />
-              <span className="nav-label">{t("navigation.k_processes")}</span>
-              <span className="nav-badge">{status.processes || ""}</span>
-              {shortcut("1")}
-            </button>
-            <button
-              title={`${t("status.k_file_usages")} (${modifier}+2)`}
-              className={view === "handles" ? "active" : ""}
-              onClick={() => changeView("handles")}
-            >
-              <Files size={17} />
-              <span className="nav-label">{t("status.k_file_usages")}</span>
-              <span className="nav-badge">{status.usages || ""}</span>
-              {shortcut("2")}
-            </button>
-            <button
-              title={`${t("navigation.k_ports")} (${modifier}+3)`}
-              className={view === "ports" ? "active" : ""}
-              onClick={() => changeView("ports")}
-            >
-              <Network size={17} />
-              <span className="nav-label">{t("navigation.k_ports")}</span>
-              <span className="nav-badge">{status.ports || ""}</span>
-              {shortcut("3")}
-            </button>
-            <button
-              title={`${t("history.k_recent_targets")} (${modifier}+4)`}
-              className={view === "history" ? "active" : ""}
-              onClick={() => changeView("history")}
-            >
-              <History size={17} />
-              <span className="nav-label">{t("history.k_recent_targets")}</span>
-              {shortcut("4")}
-            </button>
-            <div className="sidebar-rule" />
-            <div className="nav-section">
-              {t("inspection.k_inspect_target")}
-            </div>
-            <button
-              title={t("inspection.k_open_file")}
-              onClick={() => runScan(api.choose(false))}
-            >
-              <File size={16} />
-              <span className="nav-label">{t("inspection.k_open_file")}</span>
-            </button>
-            <button
-              title={t("inspection.k_open_folder")}
-              onClick={() => runScan(api.choose(true))}
-            >
-              <FolderOpen size={17} />
-              <span className="nav-label">{t("inspection.k_open_folder")}</span>
-            </button>
-            <div className="sidebar-bottom">
-              <p>
-                {t("app.k_know_what_s_using")}
-                <br />
-                {t("app.k_your_files")}
-              </p>
-              <button
-                title={t("navigation.k_settings")}
-                className={view === "settings" ? "active" : ""}
-                onClick={() => changeView("settings")}
-              >
-                <Settings size={17} />
-                <span className="nav-label">{t("navigation.k_settings")}</span>
-              </button>
-              <button
-                className="github-link"
-                onClick={() => void api.openProject().catch(report)}
-              >
-                <Star size={14} /> {t("navigation.k_star_on_github")}{" "}
-                <ExternalLink size={12} />
-              </button>
-              <span className="version">
-                {status.version === "development"
-                  ? t("app.k_development")
-                  : status.version
-                    ? `v${status.version}`
-                    : "OFLH Desktop"}
+              {sidebarCollapsed ? (
+                <PanelLeftOpen size={16} />
+              ) : (
+                <PanelLeftClose size={16} />
+              )}
+              <span className="nav-label">
+                {sidebarCollapsed
+                  ? t("navigation.k_expand_sidebar")
+                  : t("navigation.k_collapse_sidebar")}
               </span>
-            </div>
-          </nav>
-        )}
+            </button>
+          )}
+          <div className="nav-section">
+            {t("navigation.k_workspace_70398828")}
+          </div>
+          <button
+            title={`${t("navigation.k_processes")} (${modifier}+1)`}
+            className={view === "processes" ? "active" : ""}
+            onClick={() => changeView("processes")}
+          >
+            <Activity size={17} />
+            <span className="nav-label">{t("navigation.k_processes")}</span>
+            <span className="nav-badge">{status.processes || ""}</span>
+            {shortcut("1")}
+          </button>
+          <button
+            title={`${t("status.k_file_usages")} (${modifier}+2)`}
+            className={view === "handles" ? "active" : ""}
+            onClick={() => changeView("handles")}
+          >
+            <Files size={17} />
+            <span className="nav-label">{t("status.k_file_usages")}</span>
+            <span className="nav-badge">{status.usages || ""}</span>
+            {shortcut("2")}
+          </button>
+          <button
+            title={`${t("navigation.k_ports")} (${modifier}+3)`}
+            className={view === "ports" ? "active" : ""}
+            onClick={() => changeView("ports")}
+          >
+            <Network size={17} />
+            <span className="nav-label">{t("navigation.k_ports")}</span>
+            <span className="nav-badge">{status.ports || ""}</span>
+            {shortcut("3")}
+          </button>
+          <button
+            title={`${t("history.k_recent_targets")} (${modifier}+4)`}
+            className={view === "history" ? "active" : ""}
+            onClick={() => changeView("history")}
+          >
+            <History size={17} />
+            <span className="nav-label">{t("history.k_recent_targets")}</span>
+            {shortcut("4")}
+          </button>
+          <div className="sidebar-rule" />
+          <div className="nav-section">{t("inspection.k_inspect_target")}</div>
+          <button
+            title={t("inspection.k_open_file")}
+            onClick={() => runScan(api.choose(false))}
+          >
+            <File size={16} />
+            <span className="nav-label">{t("inspection.k_open_file")}</span>
+          </button>
+          <button
+            title={t("inspection.k_open_folder")}
+            onClick={() => runScan(api.choose(true))}
+          >
+            <FolderOpen size={17} />
+            <span className="nav-label">{t("inspection.k_open_folder")}</span>
+          </button>
+          <div className="sidebar-bottom">
+            <p>
+              {t("app.k_know_what_s_using")}
+              <br />
+              {t("app.k_your_files")}
+            </p>
+            <button
+              title={t("navigation.k_settings")}
+              className={view === "settings" ? "active" : ""}
+              onClick={() => changeView("settings")}
+            >
+              <Settings size={17} />
+              <span className="nav-label">{t("navigation.k_settings")}</span>
+            </button>
+            <button
+              className="github-link"
+              title={t("navigation.k_star_on_github")}
+              onClick={() => void api.openProject().catch(report)}
+            >
+              <Star size={14} />
+              <span className="nav-label">
+                {t("navigation.k_star_on_github")}
+              </span>
+              <ExternalLink size={12} className="nav-external-icon" />
+            </button>
+            <span className="version">
+              {status.version === "development"
+                ? t("app.k_development")
+                : status.version
+                  ? `v${status.version}`
+                  : "OFLH Desktop"}
+            </span>
+          </div>
+        </nav>
         <main>
+          {maximized && (
+            <div className="maximize-banner" role="status">
+              <Maximize2 size={14} />
+              <span>{t("table.k_focus_mode_hint", { shortcut: "Esc" })}</span>
+              <button onClick={() => setMaximized(false)}>
+                {t("table.k_restore_layout")}
+              </button>
+            </div>
+          )}
           {error && (
             <div className="error-banner" role="alert">
               <ShieldAlert size={17} />

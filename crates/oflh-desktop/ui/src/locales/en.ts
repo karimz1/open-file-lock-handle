@@ -274,6 +274,8 @@ const en = {
     k_system_default: "System default",
   },
   navigation: {
+    k_collapse_sidebar: "Collapse sidebar",
+    k_expand_sidebar: "Expand sidebar",
     k_next_previous_workspace: "Next / previous workspace",
     k_ports: "Ports",
     k_processes: "Processes",
@@ -375,6 +377,8 @@ const en = {
     k_columns: "Columns",
     k_deleted: "deleted",
     k_file_was_deleted: "File was deleted",
+    k_focus_mode_hint:
+      "Focus mode: the sidebar is collapsed and extra panels are hidden. Press {{shortcut}} to restore the full layout.",
     k_loading_results: "Loading results",
     k_maximize_grid: "Maximize grid",
     k_no_matching_local_ports: "No matching local ports",

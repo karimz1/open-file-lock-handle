@@ -301,6 +301,29 @@ code {
   padding: 23px 10px 12px;
   gap: 5px;
   user-select: none;
+  transition: width 0.15s ease;
+}
+/* Collapsed sidebar keeps icon-only navigation, like VS Code's collapsed activity bar. */
+.sidebar.collapsed {
+  width: 3.5rem;
+  padding: 23px 6px 12px;
+}
+.sidebar.collapsed .nav-section,
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .nav-badge,
+.sidebar.collapsed kbd.shortcut,
+.sidebar.collapsed .sidebar-bottom p,
+.sidebar.collapsed .version,
+.sidebar.collapsed .nav-external-icon {
+  display: none;
+}
+.sidebar.collapsed > button,
+.sidebar.collapsed .sidebar-bottom button {
+  justify-content: center;
+  padding: 9px 6px;
+}
+.sidebar-toggle {
+  margin-bottom: 4px;
 }
 .nav-section {
   font-size: 0.6923rem;
@@ -1126,6 +1149,29 @@ main {
   max-height: 160px;
   overflow: auto;
   font-size: 0.9231rem;
+}
+.maximize-banner {
+  padding: 8px 17px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent), transparent 75%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: none;
+  font-size: 0.8462rem;
+}
+.maximize-banner > span {
+  flex: 1;
+  min-width: 0;
+}
+.maximize-banner > button {
+  min-height: 26px;
+  padding: 3px 8px;
+  border-color: color-mix(in srgb, var(--accent), transparent 65%);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent-bg), var(--panel) 35%);
+  font-size: 0.78rem;
 }
 .error-content {
   display: grid;

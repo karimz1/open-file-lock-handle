@@ -286,6 +286,8 @@ const de: TranslationSchema<typeof en> = {
     k_system_default: "Systemstandard",
   },
   navigation: {
+    k_collapse_sidebar: "Seitenleiste einklappen",
+    k_expand_sidebar: "Seitenleiste ausklappen",
     k_next_previous_workspace: "Nächster / vorheriger Arbeitsbereich",
     k_ports: "Ports",
     k_processes: "Prozesse",
@@ -388,6 +390,8 @@ const de: TranslationSchema<typeof en> = {
     k_columns: "Spalten",
     k_deleted: "gelöscht",
     k_file_was_deleted: "Datei wurde gelöscht",
+    k_focus_mode_hint:
+      "Fokusmodus: Die Seitenleiste ist eingeklappt und zusätzliche Bereiche sind ausgeblendet. {{shortcut}} drücken, um das vollständige Layout wiederherzustellen.",
     k_loading_results: "Ergebnisse werden geladen",
     k_maximize_grid: "Tabelle maximieren",
     k_no_matching_local_ports: "Keine passenden lokalen Ports",
