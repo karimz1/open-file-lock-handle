@@ -1617,6 +1617,11 @@ button {
   color: var(--text);
   padding: 8px 12px;
 }
+.zoom-value {
+  min-width: 3.5ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 .setting-section {
   flex-wrap: wrap;
   gap: 18px;
@@ -1674,7 +1679,7 @@ button {
 }
 .theme-options {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   width: 100%;
   gap: 12px;
 }
@@ -1686,6 +1691,7 @@ button {
   text-transform: none;
   padding: 14px;
   gap: 12px;
+  min-width: 0;
 }
 .theme-choice:hover {
   border-color: var(--accent);
@@ -1717,6 +1723,8 @@ button {
   display: grid;
   gap: 4px;
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .theme-caption small {
   color: var(--muted);

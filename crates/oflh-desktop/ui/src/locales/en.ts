@@ -327,8 +327,14 @@ const en = {
     k_about_oflh: "About OFLH",
     k_appearance: "Appearance",
     k_interface_font_size: "Interface font size",
+    k_interface_zoom: "Interface zoom",
     k_keyboard_shortcuts: "Keyboard shortcuts",
     k_reset_to_default: "Reset to default",
+    k_scale_the_whole_interface_zoom_help:
+      "Scale the whole interface, including icons, buttons and spacing. Useful if you have trouble reading small UI elements.",
+    k_zoom_in: "Zoom in",
+    k_zoom_in_out_reset: "Zoom in / out / reset",
+    k_zoom_out: "Zoom out",
   },
   status: {
     k_about_automatic_refresh: "About automatic refresh",

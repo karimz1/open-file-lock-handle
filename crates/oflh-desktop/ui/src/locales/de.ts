@@ -339,8 +339,14 @@ const de: TranslationSchema<typeof en> = {
     k_about_oflh: "Über OFLH",
     k_appearance: "Darstellung",
     k_interface_font_size: "Schriftgröße der Oberfläche",
+    k_interface_zoom: "Zoomstufe der Oberfläche",
     k_keyboard_shortcuts: "Tastenkürzel",
     k_reset_to_default: "Auf Standard zurücksetzen",
+    k_scale_the_whole_interface_zoom_help:
+      "Skaliert die gesamte Oberfläche, einschließlich Symbole, Schaltflächen und Abstände. Hilfreich, wenn kleine Bedienelemente schwer lesbar sind.",
+    k_zoom_in: "Vergrößern",
+    k_zoom_in_out_reset: "Vergrößern / Verkleinern / Zurücksetzen",
+    k_zoom_out: "Verkleinern",
   },
   status: {
     k_about_automatic_refresh: "Über die automatische Aktualisierung",

@@ -31,6 +31,8 @@ import {
   Timer,
   Trash2,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import {
   api,
@@ -131,7 +133,7 @@ export function App() {
   const [fontSize, setFontSize] = useState(() => {
     try {
       const saved = Number(localStorage.getItem("oflh-font-size"));
-      return saved >= 12 && saved <= 18 ? saved : 14;
+      return saved >= 12 && saved <= 24 ? saved : 14;
     } catch {
       return 14;
     }
@@ -145,6 +147,11 @@ export function App() {
       /* Session setting remains usable. */
     }
   }, [fontSize]);
+  // Font size already scales the whole interface (see the "Scalable controls"
+  // rules in style.css), so zoom in/out just steps the same value.
+  const zoomPercent = Math.round((fontSize / 14) * 100);
+  const adjustZoom = (steps: number) =>
+    setFontSize((current) => Math.min(24, Math.max(12, current + steps * 2)));
   useEffect(() => {
     try {
       localStorage.removeItem("oflh-auto-reload-seconds");
@@ -612,6 +619,15 @@ export function App() {
       } else if (!editing && command && event.key.toLowerCase() === "b") {
         event.preventDefault();
         toggleSidebarCollapsed();
+      } else if (command && (event.key === "+" || event.key === "=")) {
+        event.preventDefault();
+        adjustZoom(1);
+      } else if (command && event.key === "-") {
+        event.preventDefault();
+        adjustZoom(-1);
+      } else if (command && event.key === "0") {
+        event.preventDefault();
+        setFontSize(14);
       } else if (
         !editing &&
         command &&
@@ -1514,12 +1530,44 @@ export function App() {
                       setFontSize(Number(event.target.value))
                     }
                   >
-                    {[12, 13, 14, 15, 16, 17, 18].map((size) => (
+                    {[12, 13, 14, 15, 16, 17, 18, 20, 22, 24].map((size) => (
                       <option key={size} value={size}>
                         {size} px
                       </option>
                     ))}
                   </select>
+                  <button onClick={() => setFontSize(14)}>
+                    {t("settings.k_reset_to_default")}
+                  </button>
+                </div>
+              </section>
+              <section className="setting-section">
+                <div>
+                  <h3>{t("settings.k_interface_zoom")}</h3>
+                  <p className="muted">
+                    {t("settings.k_scale_the_whole_interface_zoom_help")}
+                  </p>
+                </div>
+                <div className="font-setting">
+                  <button
+                    className="icon-button"
+                    aria-label={t("settings.k_zoom_out")}
+                    title={`${t("settings.k_zoom_out")} (${modifier}+-)`}
+                    disabled={fontSize <= 12}
+                    onClick={() => adjustZoom(-1)}
+                  >
+                    <ZoomOut size={16} />
+                  </button>
+                  <span className="zoom-value">{zoomPercent}%</span>
+                  <button
+                    className="icon-button"
+                    aria-label={t("settings.k_zoom_in")}
+                    title={`${t("settings.k_zoom_in")} (${modifier}++)`}
+                    disabled={fontSize >= 24}
+                    onClick={() => adjustZoom(1)}
+                  >
+                    <ZoomIn size={16} />
+                  </button>
                   <button onClick={() => setFontSize(14)}>
                     {t("settings.k_reset_to_default")}
                   </button>
@@ -1608,6 +1656,8 @@ export function App() {
                   <dd>Shift F10</dd>
                   <dt>{t("selection.k_clear_selection_and_details")}</dt>
                   <dd>Escape</dd>
+                  <dt>{t("settings.k_zoom_in_out_reset")}</dt>
+                  <dd>Ctrl / ⌘ + / - / 0</dd>
                 </dl>
               </section>
               {import.meta.env.DEV && (
