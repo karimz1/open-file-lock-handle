@@ -286,6 +286,8 @@ const de: TranslationSchema<typeof en> = {
     k_system_default: "Systemstandard",
   },
   navigation: {
+    k_collapse_sidebar: "Seitenleiste einklappen",
+    k_expand_sidebar: "Seitenleiste ausklappen",
     k_next_previous_workspace: "Nächster / vorheriger Arbeitsbereich",
     k_ports: "Ports",
     k_processes: "Prozesse",
@@ -337,8 +339,14 @@ const de: TranslationSchema<typeof en> = {
     k_about_oflh: "Über OFLH",
     k_appearance: "Darstellung",
     k_interface_font_size: "Schriftgröße der Oberfläche",
+    k_interface_zoom: "Zoomstufe der Oberfläche",
     k_keyboard_shortcuts: "Tastenkürzel",
     k_reset_to_default: "Auf Standard zurücksetzen",
+    k_scale_the_whole_interface_zoom_help:
+      "Skaliert die gesamte Oberfläche, einschließlich Symbole, Schaltflächen und Abstände. Hilfreich, wenn kleine Bedienelemente schwer lesbar sind.",
+    k_zoom_in: "Vergrößern",
+    k_zoom_in_out_reset: "Vergrößern / Verkleinern / Zurücksetzen",
+    k_zoom_out: "Verkleinern",
   },
   status: {
     k_about_automatic_refresh: "Über die automatische Aktualisierung",
@@ -388,13 +396,17 @@ const de: TranslationSchema<typeof en> = {
     k_columns: "Spalten",
     k_deleted: "gelöscht",
     k_file_was_deleted: "Datei wurde gelöscht",
+    k_focus_mode_hint:
+      "Fokusmodus: Die Seitenleiste ist eingeklappt und zusätzliche Bereiche sind ausgeblendet. {{shortcut}} drücken, um das vollständige Layout wiederherzustellen.",
     k_loading_results: "Ergebnisse werden geladen",
+    k_maximize_grid: "Tabelle maximieren",
     k_no_matching_local_ports: "Keine passenden lokalen Ports",
     k_no_matching_processes: "Keine passenden Prozesse",
     k_no_visible_process_references_this_targ_b434e8b6:
       "Kein sichtbarer Prozess greift auf dieses Ziel zu. Fehlende Berechtigungen können Nutzungen verbergen.",
     k_protocol_state: "Protokoll / Status",
     k_resize_column_column: "Größe der Spalte {{column}} ändern",
+    k_restore_layout: "Layout wiederherstellen",
     k_show_in_grid: "IN TABELLE ANZEIGEN",
     k_sort_by: "Sortieren nach",
     k_visible_columns: "Sichtbare Spalten",
