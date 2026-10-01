@@ -88,6 +88,11 @@ summary:focus-visible {
   border-color: transparent;
   background: transparent;
 }
+.icon-button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-bg);
+}
 input {
   color: var(--text);
   background: transparent;

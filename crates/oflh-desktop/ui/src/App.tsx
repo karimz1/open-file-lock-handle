@@ -19,6 +19,8 @@ import {
   History,
   Info,
   Keyboard,
+  Maximize2,
+  Minimize2,
   Network,
   RefreshCw,
   Search,
@@ -179,6 +181,7 @@ export function App() {
     });
   };
   const [showColumns, setShowColumns] = useState(false);
+  const [maximized, setMaximized] = useState(false);
   const columns = view === "ports" ? portColumns : fileColumns;
   const setColumns = view === "ports" ? setPortColumns : setFileColumns;
   const activeColumnFilters = Object.entries(columns).flatMap(([key, value]) =>
@@ -602,8 +605,11 @@ export function App() {
         event.preventDefault();
         copy();
       } else if (!editing && event.key === "Escape") {
-        setSelected(new Set());
-        setFocused(null);
+        if (maximized) setMaximized(false);
+        else {
+          setSelected(new Set());
+          setFocused(null);
+        }
       }
     };
     window.addEventListener("keydown", handle);
@@ -621,6 +627,7 @@ export function App() {
     setScope(null);
     setSort("relevance");
     setDescending(false);
+    if (next === "settings" || next === "history") setMaximized(false);
     if (next === "ports" && !status.revision && !status.scanning)
       runScan(api.ports(), "ports");
   };
@@ -697,96 +704,100 @@ export function App() {
           </button>
         </div>
       </header>
-      <div className="app-body">
-        <nav className="sidebar" aria-label={t("navigation.k_workspace")}>
-          <div className="nav-section">
-            {t("navigation.k_workspace_70398828")}
-          </div>
-          <button
-            title={`${t("navigation.k_processes")} (${modifier}+1)`}
-            className={view === "processes" ? "active" : ""}
-            onClick={() => changeView("processes")}
-          >
-            <Activity size={17} />
-            <span className="nav-label">{t("navigation.k_processes")}</span>
-            <span className="nav-badge">{status.processes || ""}</span>
-            {shortcut("1")}
-          </button>
-          <button
-            title={`${t("status.k_file_usages")} (${modifier}+2)`}
-            className={view === "handles" ? "active" : ""}
-            onClick={() => changeView("handles")}
-          >
-            <Files size={17} />
-            <span className="nav-label">{t("status.k_file_usages")}</span>
-            <span className="nav-badge">{status.usages || ""}</span>
-            {shortcut("2")}
-          </button>
-          <button
-            title={`${t("navigation.k_ports")} (${modifier}+3)`}
-            className={view === "ports" ? "active" : ""}
-            onClick={() => changeView("ports")}
-          >
-            <Network size={17} />
-            <span className="nav-label">{t("navigation.k_ports")}</span>
-            <span className="nav-badge">{status.ports || ""}</span>
-            {shortcut("3")}
-          </button>
-          <button
-            title={`${t("history.k_recent_targets")} (${modifier}+4)`}
-            className={view === "history" ? "active" : ""}
-            onClick={() => changeView("history")}
-          >
-            <History size={17} />
-            <span className="nav-label">{t("history.k_recent_targets")}</span>
-            {shortcut("4")}
-          </button>
-          <div className="sidebar-rule" />
-          <div className="nav-section">{t("inspection.k_inspect_target")}</div>
-          <button
-            title={t("inspection.k_open_file")}
-            onClick={() => runScan(api.choose(false))}
-          >
-            <File size={16} />
-            <span className="nav-label">{t("inspection.k_open_file")}</span>
-          </button>
-          <button
-            title={t("inspection.k_open_folder")}
-            onClick={() => runScan(api.choose(true))}
-          >
-            <FolderOpen size={17} />
-            <span className="nav-label">{t("inspection.k_open_folder")}</span>
-          </button>
-          <div className="sidebar-bottom">
-            <p>
-              {t("app.k_know_what_s_using")}
-              <br />
-              {t("app.k_your_files")}
-            </p>
+      <div className={`app-body${maximized ? " grid-maximized" : ""}`}>
+        {!maximized && (
+          <nav className="sidebar" aria-label={t("navigation.k_workspace")}>
+            <div className="nav-section">
+              {t("navigation.k_workspace_70398828")}
+            </div>
             <button
-              title={t("navigation.k_settings")}
-              className={view === "settings" ? "active" : ""}
-              onClick={() => changeView("settings")}
+              title={`${t("navigation.k_processes")} (${modifier}+1)`}
+              className={view === "processes" ? "active" : ""}
+              onClick={() => changeView("processes")}
             >
-              <Settings size={17} />
-              <span className="nav-label">{t("navigation.k_settings")}</span>
+              <Activity size={17} />
+              <span className="nav-label">{t("navigation.k_processes")}</span>
+              <span className="nav-badge">{status.processes || ""}</span>
+              {shortcut("1")}
             </button>
             <button
-              className="github-link"
-              onClick={() => void api.openProject().catch(report)}
+              title={`${t("status.k_file_usages")} (${modifier}+2)`}
+              className={view === "handles" ? "active" : ""}
+              onClick={() => changeView("handles")}
             >
-              <Star size={14} /> {t("navigation.k_star_on_github")}{" "}
-              <ExternalLink size={12} />
+              <Files size={17} />
+              <span className="nav-label">{t("status.k_file_usages")}</span>
+              <span className="nav-badge">{status.usages || ""}</span>
+              {shortcut("2")}
             </button>
-            <span className="version">
-              {status.version === "development"
-                ? t("app.k_development")
-                : status.version
-                  ? `v${status.version}`
-                  : "OFLH Desktop"}
-            </span>
-          </div>
-        </nav>
+            <button
+              title={`${t("navigation.k_ports")} (${modifier}+3)`}
+              className={view === "ports" ? "active" : ""}
+              onClick={() => changeView("ports")}
+            >
+              <Network size={17} />
+              <span className="nav-label">{t("navigation.k_ports")}</span>
+              <span className="nav-badge">{status.ports || ""}</span>
+              {shortcut("3")}
+            </button>
+            <button
+              title={`${t("history.k_recent_targets")} (${modifier}+4)`}
+              className={view === "history" ? "active" : ""}
+              onClick={() => changeView("history")}
+            >
+              <History size={17} />
+              <span className="nav-label">{t("history.k_recent_targets")}</span>
+              {shortcut("4")}
+            </button>
+            <div className="sidebar-rule" />
+            <div className="nav-section">
+              {t("inspection.k_inspect_target")}
+            </div>
+            <button
+              title={t("inspection.k_open_file")}
+              onClick={() => runScan(api.choose(false))}
+            >
+              <File size={16} />
+              <span className="nav-label">{t("inspection.k_open_file")}</span>
+            </button>
+            <button
+              title={t("inspection.k_open_folder")}
+              onClick={() => runScan(api.choose(true))}
+            >
+              <FolderOpen size={17} />
+              <span className="nav-label">{t("inspection.k_open_folder")}</span>
+            </button>
+            <div className="sidebar-bottom">
+              <p>
+                {t("app.k_know_what_s_using")}
+                <br />
+                {t("app.k_your_files")}
+              </p>
+              <button
+                title={t("navigation.k_settings")}
+                className={view === "settings" ? "active" : ""}
+                onClick={() => changeView("settings")}
+              >
+                <Settings size={17} />
+                <span className="nav-label">{t("navigation.k_settings")}</span>
+              </button>
+              <button
+                className="github-link"
+                onClick={() => void api.openProject().catch(report)}
+              >
+                <Star size={14} /> {t("navigation.k_star_on_github")}{" "}
+                <ExternalLink size={12} />
+              </button>
+              <span className="version">
+                {status.version === "development"
+                  ? t("app.k_development")
+                  : status.version
+                    ? `v${status.version}`
+                    : "OFLH Desktop"}
+              </span>
+            </div>
+          </nav>
+        )}
         <main>
           {error && (
             <div className="error-banner" role="alert">
@@ -832,43 +843,45 @@ export function App() {
           )}
           {inspecting ? (
             <>
-              <div className="workspace-heading">
-                <div>
-                  <div className="eyebrow">
-                    {view === "ports"
-                      ? t("inspection.k_network_inspection")
-                      : t("inspection.k_file_inspection")}
-                  </div>
-                  <h1>
-                    {view === "ports"
-                      ? t("inspection.k_local_ports")
-                      : view === "handles"
-                        ? t("status.k_file_usages")
-                        : t("navigation.k_processes")}
-                  </h1>
-                  <p>
-                    {view === "ports"
-                      ? t(
-                          "inspector.k_find_local_tcp_listeners_bound_udp_sock_7d6edd16",
-                        )
-                      : status.target
+              {!maximized && (
+                <div className="workspace-heading">
+                  <div>
+                    <div className="eyebrow">
+                      {view === "ports"
+                        ? t("inspection.k_network_inspection")
+                        : t("inspection.k_file_inspection")}
+                    </div>
+                    <h1>
+                      {view === "ports"
+                        ? t("inspection.k_local_ports")
+                        : view === "handles"
+                          ? t("status.k_file_usages")
+                          : t("navigation.k_processes")}
+                    </h1>
+                    <p>
+                      {view === "ports"
                         ? t(
-                            "inspection.k_processes_referencing_your_target_and_i_9e70e943",
+                            "inspector.k_find_local_tcp_listeners_bound_udp_sock_7d6edd16",
                           )
-                        : t(
-                            "inspection.k_find_out_which_processes_are_using_a_fi_c1cc0eee",
-                          )}
-                  </p>
+                        : status.target
+                          ? t(
+                              "inspection.k_processes_referencing_your_target_and_i_9e70e943",
+                            )
+                          : t(
+                              "inspection.k_find_out_which_processes_are_using_a_fi_c1cc0eee",
+                            )}
+                    </p>
+                  </div>
+                  <button
+                    className="primary"
+                    onClick={() => runScan(api.choose(true))}
+                  >
+                    <FolderOpen size={15} />
+                    {t("inspection.k_open_folder")}
+                  </button>
                 </div>
-                <button
-                  className="primary"
-                  onClick={() => runScan(api.choose(true))}
-                >
-                  <FolderOpen size={15} />
-                  {t("inspection.k_open_folder")}
-                </button>
-              </div>
-              {view !== "ports" && (
+              )}
+              {!maximized && view !== "ports" && (
                 <form
                   className="target-bar"
                   onSubmit={(event) => {
@@ -1042,6 +1055,27 @@ export function App() {
                     <span className="muted result-count">
                       {total} {t("app.k_results")}
                     </span>
+                    <button
+                      className="icon-button"
+                      aria-pressed={maximized}
+                      aria-label={
+                        maximized
+                          ? t("table.k_restore_layout")
+                          : t("table.k_maximize_grid")
+                      }
+                      title={
+                        maximized
+                          ? t("table.k_restore_layout")
+                          : t("table.k_maximize_grid")
+                      }
+                      onClick={() => setMaximized((value) => !value)}
+                    >
+                      {maximized ? (
+                        <Minimize2 size={14} />
+                      ) : (
+                        <Maximize2 size={14} />
+                      )}
+                    </button>
                   </div>
                   {showColumns && (
                     <ColumnFilterPanel
