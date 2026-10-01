@@ -708,8 +708,8 @@ export function App() {
             onClick={() => changeView("processes")}
           >
             <Activity size={17} />
-            {t("navigation.k_processes")}
-            <span>{status.processes || ""}</span>
+            <span className="nav-label">{t("navigation.k_processes")}</span>
+            <span className="nav-badge">{status.processes || ""}</span>
             {shortcut("1")}
           </button>
           <button
@@ -718,8 +718,8 @@ export function App() {
             onClick={() => changeView("handles")}
           >
             <Files size={17} />
-            {t("status.k_file_usages")}
-            <span>{status.usages || ""}</span>
+            <span className="nav-label">{t("status.k_file_usages")}</span>
+            <span className="nav-badge">{status.usages || ""}</span>
             {shortcut("2")}
           </button>
           <button
@@ -728,8 +728,8 @@ export function App() {
             onClick={() => changeView("ports")}
           >
             <Network size={17} />
-            {t("navigation.k_ports")}
-            <span>{status.ports || ""}</span>
+            <span className="nav-label">{t("navigation.k_ports")}</span>
+            <span className="nav-badge">{status.ports || ""}</span>
             {shortcut("3")}
           </button>
           <button
@@ -738,18 +738,24 @@ export function App() {
             onClick={() => changeView("history")}
           >
             <History size={17} />
-            {t("history.k_recent_targets")}
+            <span className="nav-label">{t("history.k_recent_targets")}</span>
             {shortcut("4")}
           </button>
           <div className="sidebar-rule" />
           <div className="nav-section">{t("inspection.k_inspect_target")}</div>
-          <button onClick={() => runScan(api.choose(false))}>
+          <button
+            title={t("inspection.k_open_file")}
+            onClick={() => runScan(api.choose(false))}
+          >
             <File size={16} />
-            {t("inspection.k_open_file")}
+            <span className="nav-label">{t("inspection.k_open_file")}</span>
           </button>
-          <button onClick={() => runScan(api.choose(true))}>
+          <button
+            title={t("inspection.k_open_folder")}
+            onClick={() => runScan(api.choose(true))}
+          >
             <FolderOpen size={17} />
-            {t("inspection.k_open_folder")}
+            <span className="nav-label">{t("inspection.k_open_folder")}</span>
           </button>
           <div className="sidebar-bottom">
             <p>
@@ -758,11 +764,12 @@ export function App() {
               {t("app.k_your_files")}
             </p>
             <button
+              title={t("navigation.k_settings")}
               className={view === "settings" ? "active" : ""}
               onClick={() => changeView("settings")}
             >
               <Settings size={17} />
-              {t("navigation.k_settings")}
+              <span className="nav-label">{t("navigation.k_settings")}</span>
             </button>
             <button
               className="github-link"

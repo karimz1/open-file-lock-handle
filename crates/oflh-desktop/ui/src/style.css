@@ -313,6 +313,7 @@ code {
   min-height: 36px;
   color: var(--muted);
   font-size: 0.9231rem;
+  overflow: hidden;
 }
 .sidebar button:hover {
   background: var(--hover);
@@ -322,8 +323,17 @@ code {
   background: var(--accent-bg);
   color: var(--accent);
 }
-.sidebar button span:last-child {
-  margin-left: auto;
+/* Longer translations (e.g. German) truncate here instead of overflowing past the sidebar. */
+.nav-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.nav-badge {
+  flex: none;
   font-size: 0.7692rem;
 }
 .sidebar-rule {
