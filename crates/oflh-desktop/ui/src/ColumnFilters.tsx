@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ColumnFilters } from "./api";
+import { t, type MessageKey } from "./i18n";
 export function ColumnFilterPanel({
   value,
   ports,
@@ -19,22 +20,22 @@ export function ColumnFilterPanel({
     key: keyof ColumnFilters,
     value: string | number | undefined,
   ) => setDraft((current) => ({ ...current, [key]: value }));
-  const text = (key: "name" | "path" | "access", label: string) => (
+  const text = (key: "name" | "path" | "access", label: MessageKey) => (
     <label>
-      {label}
+      {t(label)}
       <input
         value={draft[key] || ""}
         onChange={(event) => update(key, event.target.value)}
-        placeholder="Any · wildcards supported"
+        placeholder={t("support.k_any_wildcards_supported")}
       />
     </label>
   );
   const number = (
     key: "pid" | "cpu_min" | "cpu_max" | "memory_min" | "memory_max",
-    label: string,
+    label: MessageKey,
   ) => (
     <label>
-      {label}
+      {t(label)}
       <input
         type="number"
         min="0"
@@ -46,7 +47,7 @@ export function ColumnFilterPanel({
             event.target.value === "" ? undefined : event.target.valueAsNumber,
           )
         }
-        placeholder="Any"
+        placeholder={t("common.k_any")}
       />
     </label>
   );
@@ -66,36 +67,41 @@ export function ColumnFilterPanel({
   return (
     <form
       className="column-filters"
-      aria-label="Column filters"
+      aria-label={t("filters.k_column_filters")}
       onSubmit={(event) => {
         event.preventDefault();
         if (!invalid) apply(draft);
       }}
     >
       <div className="column-filter-fields">
-        {text("name", "Process name")}
-        {number("pid", "Exact PID")}
-        {text("path", ports ? "Local address" : "Full path")}
-        {text("access", ports ? "Protocol / state" : "Access / relation")}
-        {number("cpu_min", "CPU minimum (%)")}
-        {number("cpu_max", "CPU maximum (%)")}
-        {number("memory_min", "Memory minimum (MiB)")}
-        {number("memory_max", "Memory maximum (MiB)")}
+        {text("name", "app.k_process_name")}
+        {number("pid", "app.k_exact_pid")}
+        {text("path", ports ? "app.k_local_address" : "app.k_full_path")}
+        {text(
+          "access",
+          ports ? "table.k_protocol_state" : "filters.k_access_relation",
+        )}
+        {number("cpu_min", "filters.k_cpu_minimum")}
+        {number("cpu_max", "filters.k_cpu_maximum")}
+        {number("memory_min", "filters.k_memory_minimum_mib")}
+        {number("memory_max", "filters.k_memory_maximum_mib")}
         {!ports && (
           <label>
-            Evidence
+            {t("filters.k_evidence")}
             <select
-              aria-label="Evidence"
+              aria-label={t("filters.k_evidence")}
               value={draft.evidence || "any"}
               onChange={(event) => update("evidence", event.target.value)}
             >
-              <option value="any">Any evidence</option>
-              <option value="present">Evidence present</option>
-              <option value="kernel">Kernel lock</option>
+              <option value="any">{t("filters.k_any_evidence")}</option>
+              <option value="present">{t("filters.k_evidence_present")}</option>
+              <option value="kernel">{t("app.k_kernel_lock")}</option>
               <option value="sharing">
-                Sharing conflict · owner unverified
+                {t("app.k_sharing_conflict_owner_unverified")}
               </option>
-              <option value="none">No observed evidence</option>
+              <option value="none">
+                {t("filters.k_no_observed_evidence")}
+              </option>
             </select>
           </label>
         )}
@@ -103,8 +109,8 @@ export function ColumnFilterPanel({
       <div className="filter-actions">
         <span className="hint">
           {invalid
-            ? "Use valid non-negative bounds; minimum must not exceed maximum."
-            : "Filters combine with search. Unknown metrics do not match numeric bounds."}
+            ? t("filters.k_use_valid_non_negative_bounds_minimum_m_0eb65520")
+            : t("filters.k_filters_combine_with_search_unknown_met_4d1f7e8f")}
         </span>
         <button
           type="button"
@@ -113,18 +119,22 @@ export function ColumnFilterPanel({
             apply({});
           }}
         >
-          Clear filters
+          {t("filters.k_clear_filters")}
         </button>
         <button
           type="button"
           disabled={!canClose}
-          title={canClose ? "Close filters" : "Clear applied filters to close"}
+          title={t(
+            canClose
+              ? "filters.k_close_filters"
+              : "filters.k_clear_applied_filters_to_close",
+          )}
           onClick={close}
         >
-          Close
+          {t("common.k_close")}
         </button>
         <button className="primary" disabled={invalid}>
-          Apply filters
+          {t("filters.k_apply_filters")}
         </button>
       </div>
     </form>

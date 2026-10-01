@@ -4,6 +4,7 @@ export default defineConfig({
   reporter: [["list"], ["html", { open: "never" }]],
   forbidOnly: !!process.env.CI,
   use: {
+    locale: "en-US",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     baseURL: "http://127.0.0.1:1420",

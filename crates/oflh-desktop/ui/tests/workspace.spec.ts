@@ -1365,3 +1365,72 @@ test("utility actions stay in the sidebar and fit the minimum window", async ({
     footer.getByRole("button", { name: "Donate", exact: true }),
   ).toBeVisible();
 });
+
+test("system language selects German and unsupported languages fall back to English", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "language", {
+      configurable: true,
+      value: "de-DE",
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("lang", "de");
+  await expect(
+    page.getByRole("button", { name: "Einstellungen", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("grid", { name: "Prozesse, die dieses Ziel verwenden" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Spaltenfilter" }).click();
+  const germanFilters = page.getByRole("form", { name: "Spaltenfilter" });
+  await expect(germanFilters.getByLabel("Prozessname")).toBeVisible();
+
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "language", {
+      configurable: true,
+      value: "pt-PT",
+    });
+  });
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(
+    page.getByRole("button", { name: "Settings", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("grid", { name: "Processes using this target" }),
+  ).toBeVisible();
+});
+
+test("language setting switches languages and persists the preference", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Language", { exact: true }).selectOption("de");
+
+  await expect(page.locator("html")).toHaveAttribute("lang", "de");
+  await expect(
+    page.getByRole("button", { name: "Einstellungen", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Einstellungen", exact: true })
+    .click();
+  const language = page.getByLabel("Sprache", { exact: true });
+  await expect(language).toHaveValue("de");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "de");
+  await page
+    .getByRole("button", { name: "Einstellungen", exact: true })
+    .click();
+  await page.getByLabel("Sprache", { exact: true }).selectOption("system");
+
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(
+    page.getByRole("button", { name: "Settings", exact: true }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("oflh-language"))).toBe(
+    "system",
+  );
+});

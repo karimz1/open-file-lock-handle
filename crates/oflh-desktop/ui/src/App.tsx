@@ -52,6 +52,13 @@ import {
   type ColumnKey,
 } from "./Table";
 import { ColumnFilterPanel } from "./ColumnFilters";
+import {
+  languageOptions,
+  localePreference,
+  t,
+  tValue,
+  type MessageKey,
+} from "./i18n";
 
 type View = "ports" | "processes" | "handles" | "history" | "settings";
 const columnKeys = new Set<ColumnKey>([
@@ -65,16 +72,16 @@ const columnKeys = new Set<ColumnKey>([
   "port",
   "protocol",
 ]);
-const filterLabels: Record<keyof ColumnFilters, string> = {
-  name: "Process",
-  pid: "PID",
-  path: "Path",
-  access: "Access",
-  cpu_min: "CPU min",
-  cpu_max: "CPU max",
-  memory_min: "Memory min",
-  memory_max: "Memory max",
-  evidence: "Evidence",
+const filterLabels: Record<keyof ColumnFilters, MessageKey> = {
+  name: "app.k_process",
+  pid: "app.k_pid",
+  path: "app.k_path",
+  access: "inspector.k_access",
+  cpu_min: "app.k_cpu_min",
+  cpu_max: "app.k_cpu_max",
+  memory_min: "inspector.k_memory_min",
+  memory_max: "inspector.k_memory_max",
+  evidence: "filters.k_evidence",
 };
 const autoReloadOptions = [0, 5, 10, 15, 30, 60] as const;
 function readHiddenColumns(): Set<ColumnKey> {
@@ -203,7 +210,9 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
-  const [errorContext, setErrorContext] = useState("Desktop operation");
+  const [errorContext, setErrorContext] = useState(
+    t("app.k_desktop_operation"),
+  );
   const [toast, setToast] = useState("");
   const [total, setTotal] = useState(0);
   const [recent, setRecent] = useState<{ id: number; display: string }[]>([]);
@@ -225,10 +234,12 @@ export function App() {
     [],
   );
   const report = useCallback(
-    (failure: unknown, context = "Desktop operation") => {
+    (failure: unknown, context: string = t("app.k_desktop_operation")) => {
       const message = errorMessage(failure);
       setError(
-        context === "Desktop operation" ? message : `${context}: ${message}`,
+        context === t("app.k_desktop_operation")
+          ? message
+          : `${context}: ${message}`,
       );
       setErrorDetails(formatFailureDetails(failure));
       setShowErrorDetails(false);
@@ -400,33 +411,38 @@ export function App() {
   const refresh = () => runScan(api.refresh(), view, false);
   const openIssueReport = () => {
     const body = [
-      "## What happened?",
-      `OFLH reported: ${error ?? "an operation could not complete"}`,
+      t("app.k_what_happened"),
+      `${t("app.k_oflh_reported")} ${error ?? t("diagnostics.k_an_operation_could_not_complete")}`,
       "",
-      "## Steps to reproduce",
-      "1. Open OFLH Desktop and inspect a file or folder.",
-      "2. Right-click a process row (or open its details).",
-      `3. Choose ${errorContext}.`,
-      "4. Note the result and any OS or file-manager dialog.",
+      t("diagnostics.k_steps_to_reproduce"),
+      t("inspection.k_1_open_oflh_desktop_and_inspect_a_file_or_folder"),
+      t("app.k_2_right_click_a_process_row_or_open_its_details"),
+      `${t("app.k_3_choose")} ${errorContext}.`,
+      t("diagnostics.k_4_note_the_result_and_any_os_or_file_ma_9ec676ec"),
       "",
-      "## Diagnostics",
-      `OFLH version: ${status.version || "unknown"}`,
-      `Platform: ${navigator.platform || "unknown"}`,
+      t("diagnostics.k_diagnostics"),
+      `${t("diagnostics.k_oflh_version")} ${status.version || t("app.k_unknown")}`,
+      `${t("diagnostics.k_platform")} ${navigator.platform || t("app.k_unknown")}`,
       "```text",
-      errorDetails || error || "No diagnostic details were provided.",
+      errorDetails ||
+        error ||
+        t("diagnostics.k_no_diagnostic_details_were_provided"),
       "```",
       "",
-      "Please review this draft and remove any private paths or process details before submitting.",
+      t("diagnostics.k_please_review_this_draft_and_remove_any_3d3c9702"),
     ].join("\n");
     void api
-      .openIssue("Desktop operation could not complete", body)
+      .openIssue(t("diagnostics.k_desktop_operation_could_not_complete"), body)
       .catch(report);
   };
   const copyErrorDetails = () => {
-    const text = errorDetails || error || "No diagnostic details available.";
+    const text =
+      errorDetails ||
+      error ||
+      t("diagnostics.k_no_diagnostic_details_available");
     void api
       .copyDiagnostic(text)
-      .then(() => setToast("Error details copied"))
+      .then(() => setToast(t("selection.k_error_details_copied")))
       .catch(report);
   };
   const removeRecent = (id: number) => {
@@ -449,18 +465,18 @@ export function App() {
       .then(() =>
         setToast(
           field === "path"
-            ? "Path copied"
+            ? t("selection.k_path_copied")
             : field === "filename"
-              ? "Filename copied"
-              : "Selection copied",
+              ? t("selection.k_filename_copied")
+              : t("selection.k_selection_copied"),
         ),
       )
       .catch(report);
   };
   const reveal = (reference: string, containing = false) => {
     const operation = containing
-      ? "Open containing folder"
-      : "Reveal in file manager";
+      ? t("app.k_open_containing_folder")
+      : t("app.k_reveal_in_file_manager");
     void api
       .reveal(status.revision, reference, containing)
       .catch((failure) => report(failure, operation));
@@ -622,7 +638,7 @@ export function App() {
           </span>
           <strong>OFLH</strong>
           <span className="brand-divider" />
-          <span>Desktop</span>
+          <span>{t("app.k_desktop")}</span>
           <span className="rc-badge">RC</span>
         </div>
         <div className="header-actions">
@@ -630,9 +646,9 @@ export function App() {
             <>
               <label className="auto-refresh-control">
                 <Timer size={14} />
-                <span>Auto</span>
+                <span>{t("app.k_auto")}</span>
                 <select
-                  aria-label="Automatic refresh interval"
+                  aria-label={t("status.k_automatic_refresh_interval")}
                   value={autoReloadSeconds}
                   onChange={(event) =>
                     setAutoReloadSeconds(Number(event.target.value))
@@ -640,28 +656,29 @@ export function App() {
                 >
                   {autoReloadOptions.map((seconds) => (
                     <option key={seconds} value={seconds}>
-                      {seconds === 0 ? "Off" : `${seconds}s`}
+                      {seconds === 0 ? t("common.k_off") : `${seconds}s`}
                     </option>
                   ))}
                 </select>
               </label>
               <details className="auto-refresh-info">
                 <summary
-                  aria-label="Automatic refresh information"
-                  title="About automatic refresh"
+                  aria-label={t("status.k_automatic_refresh_information")}
+                  title={t("status.k_about_automatic_refresh")}
                 >
                   <Info size={15} />
                 </summary>
                 <div role="note">
-                  <strong>Automatic refresh</strong>
+                  <strong>{t("status.k_automatic_refresh")}</strong>
                   <p>
-                    Off by default. Choose an interval to repeat the current
-                    scan while OFLH is open.
+                    {t(
+                      "inspection.k_off_by_default_choose_an_interval_to_re_fb2f1749",
+                    )}
                   </p>
                   <p>
-                    It can help with changing processes or ports. Results may
-                    change while you inspect, so manual refresh is often better
-                    for a focused check.
+                    {t(
+                      "status.k_it_can_help_with_changing_processes_or_f5538b6f",
+                    )}
                   </p>
                 </div>
               </details>
@@ -670,10 +687,10 @@ export function App() {
           <button
             disabled={!status.revision}
             onClick={refresh}
-            title={`Refresh (${modifier}+R or F5)`}
+            title={`${t("status.k_refresh")} (${modifier}+R ${t("common.k_or")} F5)`}
           >
             <RefreshCw size={14} className={status.scanning ? "spin" : ""} />
-            Refresh
+            {t("status.k_refresh")}
             <kbd className="shortcut" aria-hidden="true">
               F5
             </kbd>
@@ -681,75 +698,89 @@ export function App() {
         </div>
       </header>
       <div className="app-body">
-        <nav className="sidebar" aria-label="Workspace">
-          <div className="nav-section">WORKSPACE</div>
+        <nav className="sidebar" aria-label={t("navigation.k_workspace")}>
+          <div className="nav-section">
+            {t("navigation.k_workspace_70398828")}
+          </div>
           <button
-            title={`Processes (${modifier}+1)`}
+            title={`${t("navigation.k_processes")} (${modifier}+1)`}
             className={view === "processes" ? "active" : ""}
             onClick={() => changeView("processes")}
           >
             <Activity size={17} />
-            Processes<span>{status.processes || ""}</span>
+            <span className="nav-label">{t("navigation.k_processes")}</span>
+            <span className="nav-badge">{status.processes || ""}</span>
             {shortcut("1")}
           </button>
           <button
-            title={`File usages (${modifier}+2)`}
+            title={`${t("status.k_file_usages")} (${modifier}+2)`}
             className={view === "handles" ? "active" : ""}
             onClick={() => changeView("handles")}
           >
             <Files size={17} />
-            File usages<span>{status.usages || ""}</span>
+            <span className="nav-label">{t("status.k_file_usages")}</span>
+            <span className="nav-badge">{status.usages || ""}</span>
             {shortcut("2")}
           </button>
           <button
-            title={`Ports (${modifier}+3)`}
+            title={`${t("navigation.k_ports")} (${modifier}+3)`}
             className={view === "ports" ? "active" : ""}
             onClick={() => changeView("ports")}
           >
             <Network size={17} />
-            Ports<span>{status.ports || ""}</span>
+            <span className="nav-label">{t("navigation.k_ports")}</span>
+            <span className="nav-badge">{status.ports || ""}</span>
             {shortcut("3")}
           </button>
           <button
-            title={`Recent targets (${modifier}+4)`}
+            title={`${t("history.k_recent_targets")} (${modifier}+4)`}
             className={view === "history" ? "active" : ""}
             onClick={() => changeView("history")}
           >
             <History size={17} />
-            Recent targets{shortcut("4")}
+            <span className="nav-label">{t("history.k_recent_targets")}</span>
+            {shortcut("4")}
           </button>
           <div className="sidebar-rule" />
-          <div className="nav-section">INSPECT TARGET</div>
-          <button onClick={() => runScan(api.choose(false))}>
+          <div className="nav-section">{t("inspection.k_inspect_target")}</div>
+          <button
+            title={t("inspection.k_open_file")}
+            onClick={() => runScan(api.choose(false))}
+          >
             <File size={16} />
-            Open file
+            <span className="nav-label">{t("inspection.k_open_file")}</span>
           </button>
-          <button onClick={() => runScan(api.choose(true))}>
+          <button
+            title={t("inspection.k_open_folder")}
+            onClick={() => runScan(api.choose(true))}
+          >
             <FolderOpen size={17} />
-            Open folder
+            <span className="nav-label">{t("inspection.k_open_folder")}</span>
           </button>
           <div className="sidebar-bottom">
             <p>
-              Know what’s using
+              {t("app.k_know_what_s_using")}
               <br />
-              your files.
+              {t("app.k_your_files")}
             </p>
             <button
+              title={t("navigation.k_settings")}
               className={view === "settings" ? "active" : ""}
               onClick={() => changeView("settings")}
             >
               <Settings size={17} />
-              Settings
+              <span className="nav-label">{t("navigation.k_settings")}</span>
             </button>
             <button
               className="github-link"
               onClick={() => void api.openProject().catch(report)}
             >
-              <Star size={14} /> Star on GitHub <ExternalLink size={12} />
+              <Star size={14} /> {t("navigation.k_star_on_github")}{" "}
+              <ExternalLink size={12} />
             </button>
             <span className="version">
               {status.version === "development"
-                ? "Development"
+                ? t("app.k_development")
                 : status.version
                   ? `v${status.version}`
                   : "OFLH Desktop"}
@@ -762,7 +793,9 @@ export function App() {
               <ShieldAlert size={17} />
               <div className="error-content">
                 <div className="error-summary">
-                  <strong>Operation could not complete</strong>
+                  <strong>
+                    {t("diagnostics.k_operation_could_not_complete")}
+                  </strong>
                   <p>{error}</p>
                 </div>
                 <div className="error-actions">
@@ -770,19 +803,23 @@ export function App() {
                     onClick={() => setShowErrorDetails((visible) => !visible)}
                     aria-expanded={showErrorDetails}
                   >
-                    {showErrorDetails ? "Hide details" : "Details"}
+                    {showErrorDetails
+                      ? t("common.k_hide_details")
+                      : t("common.k_details")}
                   </button>
                   <button onClick={openIssueReport}>
-                    <ExternalLink size={13} /> Open issue
+                    <ExternalLink size={13} /> {t("diagnostics.k_open_issue")}
                   </button>
                   <span>
-                    Review the draft and remove private paths before submitting.
+                    {t(
+                      "diagnostics.k_review_the_draft_and_remove_private_pat_831914fd",
+                    )}
                   </span>
                 </div>
               </div>
               <button
                 className="icon-button"
-                aria-label="Dismiss error"
+                aria-label={t("app.k_dismiss_error")}
                 onClick={() => {
                   setError(null);
                   setErrorDetails(null);
@@ -799,22 +836,28 @@ export function App() {
                 <div>
                   <div className="eyebrow">
                     {view === "ports"
-                      ? "NETWORK INSPECTION"
-                      : "FILE INSPECTION"}
+                      ? t("inspection.k_network_inspection")
+                      : t("inspection.k_file_inspection")}
                   </div>
                   <h1>
                     {view === "ports"
-                      ? "Local ports"
+                      ? t("inspection.k_local_ports")
                       : view === "handles"
-                        ? "File usages"
-                        : "Processes"}
+                        ? t("status.k_file_usages")
+                        : t("navigation.k_processes")}
                   </h1>
                   <p>
                     {view === "ports"
-                      ? "Find local TCP listeners, bound UDP sockets and their captured owners."
+                      ? t(
+                          "inspector.k_find_local_tcp_listeners_bound_udp_sock_7d6edd16",
+                        )
                       : status.target
-                        ? "Processes referencing your target and its contents."
-                        : "Find out which processes are using a file or folder."}
+                        ? t(
+                            "inspection.k_processes_referencing_your_target_and_i_9e70e943",
+                          )
+                        : t(
+                            "inspection.k_find_out_which_processes_are_using_a_fi_c1cc0eee",
+                          )}
                   </p>
                 </div>
                 <button
@@ -822,7 +865,7 @@ export function App() {
                   onClick={() => runScan(api.choose(true))}
                 >
                   <FolderOpen size={15} />
-                  Open folder
+                  {t("inspection.k_open_folder")}
                 </button>
               </div>
               {view !== "ports" && (
@@ -839,8 +882,8 @@ export function App() {
                 >
                   <FolderOpen size={17} />
                   <input
-                    aria-label="Target file or folder path"
-                    placeholder="Paste a file or folder path…"
+                    aria-label={t("inspection.k_target_file_or_folder_path")}
+                    placeholder={t("inspection.k_paste_a_file_or_folder_path")}
                     value={path}
                     onChange={(event) => {
                       setPath(event.target.value);
@@ -849,7 +892,7 @@ export function App() {
                     spellCheck={false}
                   />
                   <button type="submit" disabled={!path.trim()}>
-                    Inspect
+                    {t("inspection.k_inspect")}
                     <ArrowRight size={14} />
                   </button>
                 </form>
@@ -859,11 +902,15 @@ export function App() {
                   <div className="welcome-icon">
                     <FileSearch size={36} />
                   </div>
-                  <h2>A clear view of files in use.</h2>
+                  <h2>{t("inspection.k_a_clear_view_of_files_in_use")}</h2>
                   <p>
-                    Drop a file or folder anywhere in this window.
+                    {t(
+                      "inspection.k_drop_a_file_or_folder_anywhere_in_this_window",
+                    )}
                     <br />
-                    OFLH will find the processes referencing it.
+                    {t(
+                      "inspection.k_oflh_will_find_the_processes_referencing_it",
+                    )}
                   </p>
                   <div className="welcome-actions">
                     <button
@@ -871,20 +918,23 @@ export function App() {
                       onClick={() => runScan(api.choose(false))}
                     >
                       <File size={15} />
-                      Choose file
+                      {t("inspection.k_choose_file")}
                     </button>
                     <button onClick={() => runScan(api.choose(true))}>
                       <FolderOpen size={15} />
-                      Choose folder
+                      {t("inspection.k_choose_folder")}
                     </button>
                   </div>
                   <div className="welcome-note">
                     <ShieldAlert size={15} />
                     <span>
-                      Open files do not necessarily mean locked files.
+                      {t(
+                        "inspection.k_open_files_do_not_necessarily_mean_locked_files",
+                      )}
                       <br />
-                      OFLH shows lock evidence when the operating system
-                      provides it.
+                      {t(
+                        "filters.k_oflh_shows_lock_evidence_when_the_opera_adfdf7ef",
+                      )}
                     </span>
                   </div>
                 </div>
@@ -895,12 +945,15 @@ export function App() {
                       <Search size={15} />
                       <input
                         ref={searchRef}
-                        aria-label="Search loaded results"
-                        title={`Search (${modifier}+F or /); Escape returns to the workspace`}
+                        aria-label={t("search.k_search_loaded_results")}
+                        title={t(
+                          "search.k_search_shortcut_f_or_escape_returns_to_e2053cec",
+                          { shortcut: modifier },
+                        )}
                         placeholder={
                           view === "ports"
-                            ? "Search ports… e.g. 80, port:8080, tcp"
-                            : "Search names, PIDs, paths…"
+                            ? t("search.k_search_ports_e_g_80_port_8080_tcp")
+                            : t("search.k_search_names_pids_paths")
                         }
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
@@ -909,7 +962,7 @@ export function App() {
                       {query && (
                         <button
                           className="icon-button"
-                          aria-label="Clear search"
+                          aria-label={t("search.k_clear_search")}
                           onClick={() => setQuery("")}
                         >
                           <X size={13} />
@@ -926,7 +979,7 @@ export function App() {
                             setPortsPathOnly(event.target.checked)
                           }
                         />
-                        Target processes only
+                        {t("inspection.k_target_processes_only")}
                       </label>
                     ) : (
                       <label className="checkbox-label">
@@ -935,17 +988,17 @@ export function App() {
                           checked={locks}
                           onChange={(event) => setLocks(event.target.checked)}
                         />
-                        Lock evidence only
+                        {t("filters.k_lock_evidence_only")}
                       </label>
                     )}
 
                     <button className="select-all" onClick={selectAll}>
-                      Select all
+                      {t("selection.k_select_all")}
                     </button>
                     <details className="column-picker">
                       <summary>
                         <Columns3 size={14} />
-                        Columns
+                        {t("table.k_columns")}
                         <ChevronDown
                           size={12}
                           className="column-picker-caret"
@@ -954,10 +1007,10 @@ export function App() {
                       <div
                         className="column-picker-menu"
                         role="group"
-                        aria-label="Visible columns"
+                        aria-label={t("table.k_visible_columns")}
                       >
                         <span className="column-picker-heading">
-                          SHOW IN GRID
+                          {t("table.k_show_in_grid")}
                         </span>
                         {tableColumns.map((column) => (
                           <label key={column.key}>
@@ -967,7 +1020,7 @@ export function App() {
                               disabled={column.key === "process"}
                               onChange={() => toggleHiddenColumn(column.key)}
                             />
-                            {column.label}
+                            {t(column.label)}
                           </label>
                         ))}
                       </div>
@@ -977,15 +1030,18 @@ export function App() {
                       disabled={columnCount > 0}
                       title={
                         columnCount > 0
-                          ? "Clear applied filters before closing"
-                          : "Open column filters"
+                          ? t("filters.k_clear_applied_filters_before_closing")
+                          : t("filters.k_open_column_filters")
                       }
                       onClick={() => setShowColumns((visible) => !visible)}
                     >
                       <SlidersHorizontal size={14} />
-                      Column filters{columnCount ? ` (${columnCount})` : ""}
+                      {t("filters.k_column_filters")}
+                      {columnCount ? ` (${columnCount})` : ""}
                     </button>
-                    <span className="muted result-count">{total} results</span>
+                    <span className="muted result-count">
+                      {total} {t("app.k_results")}
+                    </span>
                   </div>
                   {showColumns && (
                     <ColumnFilterPanel
@@ -1001,39 +1057,42 @@ export function App() {
                     <div
                       className="active-filter-banner"
                       role="status"
-                      aria-label="Applied column filters"
+                      aria-label={t("filters.k_applied_column_filters")}
                     >
                       <strong>
                         <SlidersHorizontal size={14} />
-                        Filters active
+                        {t("filters.k_filters_active")}
                       </strong>
                       <div className="active-filter-values">
                         {activeColumnFilters.map((filter) => (
                           <span key={filter.key}>
-                            {filter.label}: {String(filter.value)}
+                            {t(filter.label)}: {String(filter.value)}
                           </span>
                         ))}
                       </div>
                       <button onClick={() => setColumns({})}>
                         <X size={13} />
-                        Clear filters
+                        {t("filters.k_clear_filters")}
                       </button>
                     </div>
                   )}
                   {query && view !== "ports" && (
                     <div className="search-explanation">
-                      Search includes full paths. A shared folder name can match
-                      every row; use the Process name column filter to narrow by
-                      name.
+                      {t(
+                        "filters.k_search_includes_full_paths_a_shared_fol_1d2d885e",
+                      )}
                     </div>
                   )}
                   {scope && (
                     <div className="scope-bar">
-                      Showing {view === "ports" ? "local ports" : "file usages"}{" "}
+                      {t("app.k_showing")}{" "}
+                      {view === "ports"
+                        ? t("inspection.k_local_ports_903c8be8")
+                        : t("status.k_file_usages_d01933d6")}{" "}
                       for <strong>{scope.name}</strong>
                       <button onClick={() => setScope(null)}>
                         <X size={12} />
-                        Clear process filter
+                        {t("filters.k_clear_process_filter")}
                       </button>
                     </div>
                   )}
@@ -1041,28 +1100,33 @@ export function App() {
                     <div className="selection-toolbar">
                       <strong>
                         {selected.size}{" "}
-                        {selected.size === 1 ? "process" : "processes"} selected
+                        {selected.size === 1
+                          ? t("app.k_process_c2e2d662")
+                          : t("navigation.k_processes_da2c4eba")}{" "}
+                        {t("selection.k_selected")}
                       </strong>
                       <span className="muted">
-                        May include processes outside this view
+                        {t(
+                          "selection.k_may_include_processes_outside_this_view",
+                        )}
                       </span>
                       <button onClick={() => copy()}>
                         <Copy size={13} />
-                        Copy
+                        {t("selection.k_copy")}
                       </button>
                       <button disabled={acting} onClick={() => prepare(false)}>
-                        Terminate…
+                        {t("termination.k_terminate")}
                       </button>
                       <button
                         className="danger-text"
                         disabled={acting}
                         onClick={() => prepare(true)}
                       >
-                        Force terminate…
+                        {t("termination.k_force_terminate")}
                       </button>
                       <button
                         className="icon-button"
-                        aria-label="Clear selection"
+                        aria-label={t("selection.k_clear_selection")}
                         onClick={() => setSelected(new Set())}
                       >
                         <X size={14} />
@@ -1070,8 +1134,9 @@ export function App() {
                     </div>
                   ) : (
                     <div className="selection-toolbar selection-hint">
-                      Click a row to inspect · Use the panel button to close
-                      details
+                      {t(
+                        "selection.k_click_a_row_to_inspect_use_the_panel_bu_1ffc65e8",
+                      )}
                     </div>
                   )}
                   <div className="results-workspace">
@@ -1112,7 +1177,9 @@ export function App() {
                       onContext={(row) => {
                         if (status.scanning) {
                           setToast(
-                            "Wait for the current scan to finish before opening row actions.",
+                            t(
+                              "inspection.k_wait_for_the_current_scan_to_finish_bef_20cd41dd",
+                            ),
                           );
                           return;
                         }
@@ -1199,7 +1266,7 @@ export function App() {
                         </summary>
                         <ul>
                           {status.warnings.map((warning, index) => (
-                            <li key={index}>{warning}</li>
+                            <li key={index}>{tValue(warning)}</li>
                           ))}
                         </ul>
                       </details>
@@ -1210,11 +1277,10 @@ export function App() {
             </>
           ) : view === "history" ? (
             <div className="content-page">
-              <span className="eyebrow">SAVED HISTORY</span>
-              <h1>Recent targets</h1>
+              <span className="eyebrow">{t("history.k_saved_history")}</span>
+              <h1>{t("history.k_recent_targets")}</h1>
               <p className="muted">
-                Reinspect targets saved on this device, even after reopening
-                OFLH.
+                {t("history.k_reinspect_targets_saved_on_this_device_b58bafd9")}
               </p>
               {recent.length ? (
                 <>
@@ -1223,14 +1289,14 @@ export function App() {
                       <Search size={15} />
                       <input
                         type="search"
-                        aria-label="Search recent targets"
-                        placeholder="Filter recent targets"
+                        aria-label={t("history.k_search_recent_targets")}
+                        placeholder={t("history.k_filter_recent_targets")}
                         value={recentQuery}
                         onChange={(event) => setRecentQuery(event.target.value)}
                       />
                     </label>
                     <span className="muted recent-count">
-                      {filteredRecent.length} of {recent.length}
+                      {filteredRecent.length} {t("app.k_of")} {recent.length}
                     </span>
                     <button
                       className="danger-text"
@@ -1238,11 +1304,14 @@ export function App() {
                       onClick={clearRecent}
                     >
                       <Trash2 size={14} />
-                      Clear all
+                      {t("app.k_clear_all")}
                     </button>
                   </div>
                   {filteredRecent.length ? (
-                    <div className="recent-list" aria-label="Recent targets">
+                    <div
+                      className="recent-list"
+                      aria-label={t("history.k_recent_targets")}
+                    >
                       {filteredRecent.map((target) => (
                         <div className="recent-entry" key={target.id}>
                           <button
@@ -1256,8 +1325,8 @@ export function App() {
                           </button>
                           <button
                             className="icon-button recent-remove"
-                            aria-label={`Remove ${target.display}`}
-                            title="Remove from recent targets"
+                            aria-label={`${t("app.k_remove")} ${target.display}`}
+                            title={t("history.k_remove_from_recent_targets")}
                             onClick={() => removeRecent(target.id)}
                           >
                             <Trash2 size={15} />
@@ -1268,9 +1337,9 @@ export function App() {
                   ) : (
                     <div className="empty recent-empty">
                       <Search size={26} />
-                      <h3>No matching recent targets</h3>
+                      <h3>{t("history.k_no_matching_recent_targets")}</h3>
                       <button onClick={() => setRecentQuery("")}>
-                        Clear search
+                        {t("search.k_clear_search")}
                       </button>
                     </div>
                   )}
@@ -1278,32 +1347,73 @@ export function App() {
               ) : (
                 <div className="empty">
                   <History size={30} />
-                  <h3>No recent targets</h3>
-                  <p>Choose a file or folder to start an inspection.</p>
+                  <h3>{t("history.k_no_recent_targets")}</h3>
+                  <p>
+                    {t(
+                      "inspection.k_choose_a_file_or_folder_to_start_an_inspection",
+                    )}
+                  </p>
                 </div>
               )}
             </div>
           ) : (
             <div className="content-page">
-              <span className="eyebrow">PREFERENCES</span>
-              <h1>Settings</h1>
+              <span className="eyebrow">{t("app.k_preferences")}</span>
+              <h1>{t("navigation.k_settings")}</h1>
               <section className="setting-section">
                 <div>
-                  <h3>Appearance</h3>
-                  <p className="muted">Choose a theme or follow your system.</p>
+                  <h3>{t("settings.k_appearance")}</h3>
+                  <p className="muted">
+                    {t("themes.k_choose_a_theme_or_follow_your_system")}
+                  </p>
                 </div>
                 <ThemePicker theme={theme} onChange={setTheme} />
               </section>
               <section className="setting-section">
                 <div>
-                  <h3>Interface font size</h3>
+                  <h3>{t("language.k_language")}</h3>
                   <p className="muted">
-                    Scale text throughout the workspace, including tables and
-                    process details.
+                    {t(
+                      "language.k_choose_a_language_or_follow_your_system_setting",
+                    )}
                   </p>
                 </div>
                 <div className="font-setting">
-                  <label htmlFor="font-size">Size</label>
+                  <label htmlFor="language">{t("language.k_language")}</label>
+                  <select
+                    id="language"
+                    value={localePreference}
+                    onChange={(event) => {
+                      try {
+                        localStorage.setItem(
+                          "oflh-language",
+                          event.target.value,
+                        );
+                      } catch {
+                        // Apply the language for this session even without storage.
+                      }
+                      window.location.reload();
+                    }}
+                  >
+                    {languageOptions.map(({ value, label }) => (
+                      <option key={value} value={value}>
+                        {t(label)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </section>
+              <section className="setting-section">
+                <div>
+                  <h3>{t("settings.k_interface_font_size")}</h3>
+                  <p className="muted">
+                    {t(
+                      "inspector.k_scale_text_throughout_the_workspace_inc_945ceeb1",
+                    )}
+                  </p>
+                </div>
+                <div className="font-setting">
+                  <label htmlFor="font-size">{t("app.k_size")}</label>
                   <select
                     id="font-size"
                     value={fontSize}
@@ -1318,47 +1428,51 @@ export function App() {
                     ))}
                   </select>
                   <button onClick={() => setFontSize(14)}>
-                    Reset to default
+                    {t("settings.k_reset_to_default")}
                   </button>
                 </div>
               </section>
               <section className="setting-section">
                 <div>
-                  <h3>About OFLH</h3>
+                  <h3>{t("settings.k_about_oflh")}</h3>
                   <p>
-                    OFLH is an independent project by{" "}
+                    {t("app.k_oflh_is_an_independent_project_by")}{" "}
                     <button
                       className="inline-link"
                       onClick={() => void api.openProfile().catch(report)}
                     >
                       Karim Zouine
                     </button>
-                    , built in spare time. There is no company behind it.
+                    {t(
+                      "app.k_built_in_spare_time_there_is_no_company_5cd7cc08",
+                    )}
                   </p>
                   <p className="muted">
-                    If OFLH helps your work, you can support its ongoing
-                    development.
+                    {t(
+                      "support.k_if_oflh_helps_your_work_you_can_support_4c5c07a8",
+                    )}
                   </p>
                 </div>
                 <div className="inline-actions about-links">
                   <button onClick={() => void api.openProject().catch(report)}>
-                    <ExternalLink size={14} /> View project on GitHub
+                    <ExternalLink size={14} />{" "}
+                    {t("app.k_view_project_on_github")}
                   </button>
                   {status.pull_request_url && (
                     <button
                       onClick={() => void api.openPullRequest().catch(report)}
                     >
-                      <ExternalLink size={14} /> View pull request
+                      <ExternalLink size={14} /> {t("app.k_view_pull_request")}
                     </button>
                   )}
                   {status.build_url && (
                     <button onClick={() => void api.openBuild().catch(report)}>
-                      <ExternalLink size={14} /> View Actions run
+                      <ExternalLink size={14} /> {t("app.k_view_actions_run")}
                     </button>
                   )}
                 </div>
                 <p className="muted about-version">
-                  OFLH Desktop {status.version} · MIT license
+                  OFLH Desktop {status.version} · {t("app.k_mit_license")}
                 </p>
                 {status.commit && (
                   <p className="muted about-version">
@@ -1369,41 +1483,48 @@ export function App() {
               <section className="setting-section shortcuts">
                 <h3>
                   <Keyboard size={17} />
-                  Keyboard shortcuts
+                  {t("settings.k_keyboard_shortcuts")}
                 </h3>
                 <dl>
-                  <dt>Processes / File usages / Ports / Recent targets</dt>
+                  <dt>
+                    {t("history.k_processes_file_usages_ports_recent_targets")}
+                  </dt>
                   <dd>{modifier}+1 / 2 / 3 / 4</dd>
-                  <dt>Next / previous workspace</dt>
+                  <dt>{t("navigation.k_next_previous_workspace")}</dt>
                   <dd>Ctrl+Tab / Ctrl+Shift+Tab</dd>
-                  <dt>Toggle selected process details</dt>
+                  <dt>{t("inspector.k_toggle_selected_process_details")}</dt>
                   <dd>{modifier}+Shift+D</dd>
-                  <dt>Settings</dt>
+                  <dt>{t("navigation.k_settings")}</dt>
                   <dd>{modifier}+,</dd>
-                  <dt>Open file / folder</dt>
-                  <dd>Ctrl / ⌘ O · Shift for folder</dd>
-                  <dt>Search results</dt>
-                  <dd>{modifier}+F or / · Escape leaves search</dd>
-                  <dt>Refresh target</dt>
-                  <dd>Ctrl / ⌘ R or F5</dd>
-                  <dt>Select all matching processes</dt>
+                  <dt>{t("inspection.k_open_file_folder")}</dt>
+                  <dd>Ctrl / ⌘ O · {t("app.k_shift_for_folder")}</dd>
+                  <dt>{t("search.k_search_results")}</dt>
+                  <dd>
+                    {modifier}+F {t("common.k_or")} / ·{" "}
+                    {t("search.k_escape_leaves_search")}
+                  </dd>
+                  <dt>{t("inspection.k_refresh_target")}</dt>
+                  <dd>Ctrl / ⌘ R {t("common.k_or")} F5</dd>
+                  <dt>{t("selection.k_select_all_matching_processes")}</dt>
                   <dd>Ctrl / ⌘ A</dd>
-                  <dt>Copy selected processes</dt>
+                  <dt>{t("selection.k_copy_selected_processes")}</dt>
                   <dd>Ctrl / ⌘ C</dd>
-                  <dt>Navigate / toggle selection</dt>
+                  <dt>{t("app.k_navigate_toggle_selection")}</dt>
                   <dd>↑ ↓ / Space</dd>
-                  <dt>Context actions</dt>
+                  <dt>{t("app.k_context_actions")}</dt>
                   <dd>Shift F10</dd>
-                  <dt>Clear selection and details</dt>
+                  <dt>{t("selection.k_clear_selection_and_details")}</dt>
                   <dd>Escape</dd>
                 </dl>
               </section>
               {import.meta.env.DEV && (
                 <section className="setting-section developer-tools">
                   <div>
-                    <h3>Developer options</h3>
+                    <h3>{t("app.k_developer_options")}</h3>
                     <p className="muted">
-                      Preview the operation-error details and issue-report flow.
+                      {t(
+                        "diagnostics.k_preview_the_operation_error_details_and_667dc1ef",
+                      )}
                     </p>
                   </div>
                   <button
@@ -1420,24 +1541,22 @@ export function App() {
                       )
                     }
                   >
-                    <ShieldAlert size={14} /> Show sample error
+                    <ShieldAlert size={14} />{" "}
+                    {t("diagnostics.k_show_sample_error")}
                   </button>
                 </section>
               )}
               <section className="setting-section">
-                <h3>Search and inspection</h3>
+                <h3>{t("search.k_search_and_inspection")}</h3>
                 <p>
-                  Search runs over the loaded Rust snapshot and supports
-                  substrings, wildcards (*) and word-boundary abbreviations. In
-                  Ports, bare digits match port fragments; port:8080 matches
-                  exactly 8080. Combine port queries with tcp, udp, ipv4, ipv6
-                  or pid:1234. Refresh performs a new system scan.
+                  {t(
+                    "support.k_search_runs_over_the_loaded_rust_snapsh_b52f0264",
+                  )}
                 </p>
                 <p className="muted">
-                  Unknown CPU and memory stay unavailable. Access permissions
-                  may hide processes. Normal termination never escalates to
-                  force termination. Unsaved work can be lost when stopping a
-                  process.
+                  {t(
+                    "termination.k_unknown_cpu_and_memory_stay_unavailable_1ca3b23b",
+                  )}
                 </p>
               </section>
             </div>
@@ -1448,42 +1567,45 @@ export function App() {
         <span className="status-current" role="status">
           {status.scanning && <LoaderCircle size={13} className="spin" />}
           {status.scanning
-            ? "Scanning"
+            ? t("inspection.k_scanning")
             : status.revision
-              ? "Inspection complete"
-              : "Ready to inspect"}
+              ? t("inspection.k_inspection_complete")
+              : t("inspection.k_ready_to_inspect")}
           {status.scanning && (
             <button
               className="status-cancel"
               onClick={() => void api.cancel().then(apply).catch(report)}
             >
-              Cancel
+              {t("common.k_cancel")}
             </button>
           )}
         </span>
         <span className="status-metrics">
-          {status.processes} file users · {status.usages} file usages ·{" "}
-          {status.ports} ports
+          {status.processes} {t("status.k_file_users")} · {status.usages}{" "}
+          {t("status.k_file_usages_d01933d6")} · {status.ports}{" "}
+          {t("navigation.k_ports").toLocaleLowerCase()}
         </span>
         <span className="footer-end">
           <span className="footer-attribution">
-            {selected.size ? `${selected.size} selected · ` : ""}
-            Independent project by{" "}
+            {selected.size
+              ? `${selected.size} ${t("selection.k_selected")} · `
+              : ""}
+            {t("app.k_independent_project_by")}{" "}
             <button
               className="footer-profile"
-              title="Open Karim Zouine's GitHub profile"
+              title={`${t("app.k_open_cf9b7706")} Karim Zouine ${t("app.k_github_profile")}`}
               onClick={() => void api.openProfile().catch(report)}
             >
               Karim Zouine
             </button>
-            , built in spare time
+            , {t("app.k_built_in_spare_time")}
           </span>
           <button
             className="footer-link"
-            title="Choose how to support OFLH"
+            title={t("support.k_choose_how_to_support_oflh")}
             onClick={() => setShowSupport(true)}
           >
-            Donate
+            {t("support.k_donate")}
           </button>
         </span>
       </footer>
@@ -1491,8 +1613,8 @@ export function App() {
         <div className="drop-overlay">
           <div>
             <FolderOpen size={42} />
-            <h2>Drop file or folder to inspect</h2>
-            <p>One target at a time</p>
+            <h2>{t("inspection.k_drop_file_or_folder_to_inspect")}</h2>
+            <p>{t("inspection.k_one_target_at_a_time")}</p>
           </div>
         </div>
       )}
@@ -1504,66 +1626,71 @@ export function App() {
       )}
       {showErrorDetails && error && (
         <Modal
-          title="Operation details"
+          title={t("common.k_operation_details")}
           close={() => setShowErrorDetails(false)}
         >
           <p className="muted">
-            Diagnostic details can contain local paths or other private
-            information. Review them before sharing.
+            {t(
+              "diagnostics.k_diagnostic_details_can_contain_local_pa_5bc47018",
+            )}
           </p>
           <pre className="error-details-modal">{errorDetails || error}</pre>
           <div className="modal-actions">
             <button onClick={copyErrorDetails}>
-              <Copy size={14} /> Copy details
+              <Copy size={14} /> {t("selection.k_copy_details")}
             </button>
-            <button onClick={() => setShowErrorDetails(false)}>Close</button>
+            <button onClick={() => setShowErrorDetails(false)}>
+              {t("common.k_close")}
+            </button>
           </div>
         </Modal>
       )}
       {showSupport && (
-        <Modal title="Support OFLH" close={() => setShowSupport(false)}>
+        <Modal
+          title={t("support.k_support_oflh")}
+          close={() => setShowSupport(false)}
+        >
           <p className="support-intro">
-            Support is optional. Choose the route that best fits how you would
-            like to help this independent project.
+            {t("support.k_support_is_optional_choose_the_route_th_7ee2133e")}
           </p>
           <div className="support-options">
             <section className="support-option">
               <h3>
-                <Coffee size={17} /> Buy Me a Coffee
+                <Coffee size={17} /> {t("support.k_buy_me_a_coffee")}
               </h3>
               <p>
-                <strong>Good for:</strong> a simple contribution from an
-                individual.
+                <strong>{t("support.k_good_for")}</strong>{" "}
+                {t("support.k_a_simple_contribution_from_an_individual")}
               </p>
               <p className="muted">
-                <strong>Trade-off:</strong> checkout is handled by a separate
-                service.
+                <strong>{t("support.k_trade_off")}</strong>{" "}
+                {t("support.k_checkout_is_handled_by_a_separate_service")}
               </p>
               <button
                 className="primary"
                 onClick={() => chooseSupport("coffee")}
               >
-                Continue with Buy Me a Coffee
+                {t("support.k_continue_with_buy_me_a_coffee")}
                 <ExternalLink size={13} />
               </button>
             </section>
             <section className="support-option">
               <h3>
-                <Star size={17} /> GitHub Sponsors
+                <Star size={17} /> {t("support.k_github_sponsors")}
               </h3>
               <p>
-                <strong>Good for:</strong> ongoing sponsorship and company
-                support.
+                <strong>{t("support.k_good_for")}</strong>{" "}
+                {t("support.k_ongoing_sponsorship_and_company_support")}
               </p>
               <p className="muted">
-                <strong>Trade-off:</strong> sponsorship uses GitHub’s checkout
-                flow.
+                <strong>{t("support.k_trade_off")}</strong>{" "}
+                {t("support.k_sponsorship_uses_github_s_checkout_flow")}
               </p>
               <button
                 className="primary"
                 onClick={() => chooseSupport("sponsors")}
               >
-                Continue to GitHub Sponsors
+                {t("support.k_continue_to_github_sponsors")}
                 <ExternalLink size={13} />
               </button>
             </section>
@@ -1575,7 +1702,9 @@ export function App() {
           title={context.name || `PID ${context.pid}`}
           close={() => setContext(null)}
         >
-          <p className="muted">Actions for PID {context.pid}</p>
+          <p className="muted">
+            {t("app.k_actions_for_pid")} {context.pid}
+          </p>
           <div className="context-actions">
             {context.port && (
               <>
@@ -1585,7 +1714,7 @@ export function App() {
                     setContext(null);
                   }}
                 >
-                  Copy port
+                  {t("selection.k_copy_port")}
                 </button>
                 <button
                   onClick={() => {
@@ -1593,7 +1722,7 @@ export function App() {
                     setContext(null);
                   }}
                 >
-                  Copy local endpoint
+                  {t("selection.k_copy_local_endpoint")}
                 </button>
                 <hr />
               </>
@@ -1606,7 +1735,7 @@ export function App() {
               disabled={!context.path}
             >
               <Copy size={15} />
-              Copy path
+              {t("selection.k_copy_path")}
             </button>
             <button
               onClick={() => {
@@ -1615,7 +1744,7 @@ export function App() {
               }}
               disabled={!context.path}
             >
-              Copy filename
+              {t("selection.k_copy_filename")}
             </button>
             {context.pid > 0 && (
               <button
@@ -1624,7 +1753,7 @@ export function App() {
                   setContext(null);
                 }}
               >
-                Copy PID
+                {t("selection.k_copy_pid")}
               </button>
             )}
             <button
@@ -1633,7 +1762,7 @@ export function App() {
                 setContext(null);
               }}
             >
-              Copy process name
+              {t("selection.k_copy_process_name")}
             </button>
             <button
               onClick={() => {
@@ -1643,7 +1772,7 @@ export function App() {
               disabled={!context.path}
             >
               <ExternalLink size={15} />
-              Reveal in file manager
+              {t("app.k_reveal_in_file_manager")}
             </button>
             <button
               onClick={() => {
@@ -1652,7 +1781,7 @@ export function App() {
               }}
               disabled={!context.path}
             >
-              Open containing folder
+              {t("app.k_open_containing_folder")}
             </button>
             <hr />
             <button
@@ -1661,7 +1790,7 @@ export function App() {
                 setContext(null);
               }}
             >
-              View process details
+              {t("inspector.k_view_process_details")}
             </button>
             <button
               onClick={() => {
@@ -1671,7 +1800,7 @@ export function App() {
                 setContext(null);
               }}
             >
-              View matching handles
+              {t("inspector.k_view_matching_handles")}
             </button>
             {details?.process.process_key === context.process_key &&
               details.can_inspect_folder && (
@@ -1683,20 +1812,20 @@ export function App() {
                     setContext(null);
                   }}
                 >
-                  Inspect owner folder
+                  {t("inspector.k_inspect_owner_folder")}
                 </button>
               )}
             {context.actionable && (
               <>
                 <hr />
                 <button onClick={() => prepare(false, [context.process_key])}>
-                  Terminate…
+                  {t("termination.k_terminate")}
                 </button>
                 <button
                   className="danger-text"
                   onClick={() => prepare(true, [context.process_key])}
                 >
-                  Force terminate…
+                  {t("termination.k_force_terminate")}
                 </button>
               </>
             )}
@@ -1704,11 +1833,11 @@ export function App() {
         </Modal>
       )}
       {showThemeWelcome && (
-        <Modal title="Make OFLH yours" close={() => setShowThemeWelcome(false)}>
-          <p>
-            Choose your workspace theme. Preview it now; you can change it
-            anytime in Settings.
-          </p>
+        <Modal
+          title={t("app.k_make_oflh_yours")}
+          close={() => setShowThemeWelcome(false)}
+        >
+          <p>{t("themes.k_choose_your_workspace_theme_preview_it_12e8b92b")}</p>
           <ThemePicker theme={theme} onChange={setTheme} />
           <div className="modal-actions">
             <button
@@ -1716,7 +1845,7 @@ export function App() {
               data-default-focus
               onClick={() => setShowThemeWelcome(false)}
             >
-              Start inspecting
+              {t("app.k_start_inspecting")}
             </button>
           </div>
         </Modal>
@@ -1725,8 +1854,8 @@ export function App() {
         <Modal
           title={
             confirmation.force
-              ? "Force terminate processes?"
-              : "Terminate processes?"
+              ? t("termination.k_force_terminate_processes")
+              : t("termination.k_terminate_processes")
           }
           danger={confirmation.force}
           close={dismiss}
@@ -1735,28 +1864,35 @@ export function App() {
             <ShieldAlert size={22} />
             <p>
               {confirmation.force
-                ? "Force termination stops these processes without allowing normal cleanup. Unsaved work may be lost."
-                : "Request these processes to stop. Unsaved work may be lost. This will not escalate to force termination."}
+                ? t(
+                    "termination.k_force_termination_stops_these_processes_9c247038",
+                  )
+                : t(
+                    "termination.k_request_these_processes_to_stop_unsaved_8b80fb41",
+                  )}
             </p>
           </div>
           <p>
             <strong>
               {confirmation.targets.length}{" "}
-              {confirmation.targets.length === 1 ? "process" : "processes"}
+              {confirmation.targets.length === 1
+                ? t("app.k_process_c2e2d662")
+                : t("navigation.k_processes_da2c4eba")}
             </strong>{" "}
-            — all targets are listed below, including any hidden by filters.
+            — {t("filters.k_all_targets_are_listed_below_including_1515b80a")}
           </p>
           <ul className="confirmation-list">
             {confirmation.targets.map((target) => (
               <li key={target.key}>
-                <strong>{target.name || "(unnamed)"}</strong>
+                <strong>{target.name || t("app.k_unnamed")}</strong>
                 <code>PID {target.pid}</code>
               </li>
             ))}
           </ul>
           <p className="hint">
-            OFLH validates each captured process identity again before sending
-            the request.
+            {t(
+              "termination.k_oflh_validates_each_captured_process_id_5e6d1cc4",
+            )}
           </p>
           <div className="modal-actions">
             <button
@@ -1765,28 +1901,32 @@ export function App() {
               disabled={acting}
               onClick={dismiss}
             >
-              Cancel
+              {t("common.k_cancel")}
             </button>
             <button className="danger" disabled={acting} onClick={terminate}>
               {acting && <LoaderCircle size={14} className="spin" />}
               {acting
-                ? "Waiting for process exit…"
+                ? t("app.k_waiting_for_process_exit")
                 : confirmation.force
-                  ? "Force terminate"
-                  : "Terminate"}
+                  ? t("termination.k_force_terminate_7b6445b3")
+                  : t("termination.k_terminate_77517bd0")}
             </button>
           </div>
         </Modal>
       )}
       {results && (
-        <Modal title="Termination results" close={() => setResults(null)}>
+        <Modal
+          title={t("termination.k_termination_results")}
+          close={() => setResults(null)}
+        >
           <p role="status">
             {status.scanning ? (
               <>
-                <LoaderCircle size={14} className="spin" /> Updating results…
+                <LoaderCircle size={14} className="spin" />{" "}
+                {t("status.k_updating_results")}
               </>
             ) : (
-              "Results refreshed. Exit checks use the original process identity."
+              t("status.k_results_refreshed_exit_checks_use_the_o_d1d684f4")
             )}
           </p>
           <ul className="action-results">
@@ -1796,16 +1936,21 @@ export function App() {
                 <span className={result.error ? "danger-text" : ""}>
                   {result.outcome === "exited" ? (
                     <>
-                      <Check size={15} /> Process exited
+                      <Check size={15} /> {t("termination.k_process_exited")}
                     </>
                   ) : result.outcome === "still_running" ? (
-                    "Request sent · still running after 1.5 seconds"
+                    t(
+                      "termination.k_request_sent_still_running_after_1_5_seconds",
+                    )
                   ) : result.outcome === "unverified" ? (
-                    "Request sent · couldn’t verify exit"
+                    t("termination.k_request_sent_couldn_t_verify_exit")
                   ) : result.error?.kind === "identity_changed" ? (
-                    "Process changed or already exited. No termination was sent."
+                    t(
+                      "termination.k_process_changed_or_already_exited_no_te_9b7e90d2",
+                    )
                   ) : (
-                    result.error?.message || "Termination request failed"
+                    result.error?.message ||
+                    t("termination.k_termination_request_failed")
                   )}
                   {result.outcome === "unverified" && result.error && (
                     <small>{result.error.message}</small>
@@ -1816,10 +1961,10 @@ export function App() {
           </ul>
           <div className="modal-actions">
             <button onClick={refresh} disabled={status.scanning}>
-              <RefreshCw size={14} /> Refresh again
+              <RefreshCw size={14} /> {t("status.k_refresh_again")}
             </button>
             <button data-default-focus onClick={() => setResults(null)}>
-              Done
+              {t("common.k_done")}
             </button>
           </div>
         </Modal>

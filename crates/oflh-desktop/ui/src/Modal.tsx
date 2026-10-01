@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
+import { t } from "./i18n";
 export function Modal({
   title,
   children,
@@ -36,7 +37,7 @@ export function Modal({
         <h2 id="dialog-title">{title}</h2>
         <button
           className="icon-button"
-          aria-label="Close dialog"
+          aria-label={t("app.k_close_dialog")}
           onClick={close}
         >
           <X size={17} />
