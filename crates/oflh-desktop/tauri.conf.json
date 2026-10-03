@@ -46,7 +46,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlDMTBDODVCMDZGQTc1NDIKUldSQ2Rmb0dXOGdRbkVjTmxXSGhCbW5EUmpJL205ZlQzUzU2WFpSUjRxenZYVGxwQzJHajdmKzEK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEzNEY1N0QxOEM0ODIxREUKUldUZUlVaU0wVmRQbzQzVm5VNGxoYVd5NnEydXdWbytWckE3Q1dUaTJrT1JIaEp3eUQxamMvdisK%",
       "endpoints": [
         "https://github.com/karimz1/open-file-lock-handle/releases/latest/download/latest.json"
       ],
