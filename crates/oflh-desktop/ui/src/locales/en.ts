@@ -274,6 +274,8 @@ const en = {
     k_system_default: "System default",
   },
   navigation: {
+    k_collapse_sidebar: "Collapse sidebar",
+    k_expand_sidebar: "Expand sidebar",
     k_next_previous_workspace: "Next / previous workspace",
     k_ports: "Ports",
     k_processes: "Processes",
@@ -325,8 +327,14 @@ const en = {
     k_about_oflh: "About OFLH",
     k_appearance: "Appearance",
     k_interface_font_size: "Interface font size",
+    k_interface_zoom: "Interface zoom",
     k_keyboard_shortcuts: "Keyboard shortcuts",
     k_reset_to_default: "Reset to default",
+    k_scale_the_whole_interface_zoom_help:
+      "Scale the whole interface, including icons, buttons and spacing. Useful if you have trouble reading small UI elements.",
+    k_zoom_in: "Zoom in",
+    k_zoom_in_out_reset: "Zoom in / out / reset",
+    k_zoom_out: "Zoom out",
   },
   status: {
     k_about_automatic_refresh: "About automatic refresh",
@@ -375,13 +383,17 @@ const en = {
     k_columns: "Columns",
     k_deleted: "deleted",
     k_file_was_deleted: "File was deleted",
+    k_focus_mode_hint:
+      "Focus mode: the sidebar is collapsed and extra panels are hidden. Press {{shortcut}} to restore the full layout.",
     k_loading_results: "Loading results",
+    k_maximize_grid: "Maximize grid",
     k_no_matching_local_ports: "No matching local ports",
     k_no_matching_processes: "No matching processes",
     k_no_visible_process_references_this_targ_b434e8b6:
       "No visible process references this target. Permission limits may hide some usage.",
     k_protocol_state: "Protocol / state",
     k_resize_column_column: "Resize {{column}} column",
+    k_restore_layout: "Restore layout",
     k_show_in_grid: "SHOW IN GRID",
     k_sort_by: "Sort by",
     k_visible_columns: "Visible columns",

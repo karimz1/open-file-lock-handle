@@ -19,7 +19,11 @@ import {
   History,
   Info,
   Keyboard,
+  Maximize2,
+  Minimize2,
   Network,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCw,
   Search,
   Settings,
@@ -27,6 +31,8 @@ import {
   Timer,
   Trash2,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import {
   api,
@@ -128,7 +134,7 @@ export function App() {
   const [fontSize, setFontSize] = useState(() => {
     try {
       const saved = Number(localStorage.getItem("oflh-font-size"));
-      return saved >= 12 && saved <= 18 ? saved : 14;
+      return saved >= 12 && saved <= 24 ? saved : 14;
     } catch {
       return 14;
     }
@@ -142,6 +148,11 @@ export function App() {
       /* Session setting remains usable. */
     }
   }, [fontSize]);
+  // Font size already scales the whole interface (see the "Scalable controls"
+  // rules in style.css), so zoom in/out just steps the same value.
+  const zoomPercent = Math.round((fontSize / 14) * 100);
+  const adjustZoom = (steps: number) =>
+    setFontSize((current) => Math.min(24, Math.max(12, current + steps * 2)));
   useEffect(() => {
     try {
       localStorage.removeItem("oflh-auto-reload-seconds");
@@ -180,6 +191,26 @@ export function App() {
     });
   };
   const [showColumns, setShowColumns] = useState(false);
+  const [maximized, setMaximized] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("oflh-sidebar-collapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const sidebarIsCollapsed = sidebarCollapsed || maximized;
+  const toggleSidebarCollapsed = () => {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem("oflh-sidebar-collapsed", next ? "1" : "0");
+      } catch {
+        // The current session can still use the changed preference.
+      }
+      return next;
+    });
+  };
   const columns = view === "ports" ? portColumns : fileColumns;
   const setColumns = view === "ports" ? setPortColumns : setFileColumns;
   const activeColumnFilters = Object.entries(columns).flatMap(([key, value]) =>
@@ -586,6 +617,18 @@ export function App() {
       } else if (command && event.key.toLowerCase() === "o") {
         event.preventDefault();
         runScan(api.choose(event.shiftKey));
+      } else if (!editing && command && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        toggleSidebarCollapsed();
+      } else if (command && (event.key === "+" || event.key === "=")) {
+        event.preventDefault();
+        adjustZoom(1);
+      } else if (command && event.key === "-") {
+        event.preventDefault();
+        adjustZoom(-1);
+      } else if (command && event.key === "0") {
+        event.preventDefault();
+        setFontSize(14);
       } else if (
         !editing &&
         command &&
@@ -603,8 +646,11 @@ export function App() {
         event.preventDefault();
         copy();
       } else if (!editing && event.key === "Escape") {
-        setSelected(new Set());
-        setFocused(null);
+        if (maximized) setMaximized(false);
+        else {
+          setSelected(new Set());
+          setFocused(null);
+        }
       }
     };
     window.addEventListener("keydown", handle);
@@ -622,6 +668,7 @@ export function App() {
     setScope(null);
     setSort("relevance");
     setDescending(false);
+    if (next === "settings" || next === "history") setMaximized(false);
     if (next === "ports" && !status.revision && !status.scanning)
       runScan(api.ports(), "ports");
   };
@@ -698,8 +745,34 @@ export function App() {
           </button>
         </div>
       </header>
-      <div className="app-body">
-        <nav className="sidebar" aria-label={t("navigation.k_workspace")}>
+      <div className={`app-body${maximized ? " grid-maximized" : ""}`}>
+        <nav
+          className={`sidebar${sidebarIsCollapsed ? " collapsed" : ""}`}
+          aria-label={t("navigation.k_workspace")}
+        >
+          {!maximized && (
+            <button
+              className="sidebar-toggle"
+              aria-expanded={!sidebarCollapsed}
+              title={
+                sidebarCollapsed
+                  ? t("navigation.k_expand_sidebar")
+                  : t("navigation.k_collapse_sidebar")
+              }
+              onClick={toggleSidebarCollapsed}
+            >
+              {sidebarCollapsed ? (
+                <PanelLeftOpen size={16} />
+              ) : (
+                <PanelLeftClose size={16} />
+              )}
+              <span className="nav-label">
+                {sidebarCollapsed
+                  ? t("navigation.k_expand_sidebar")
+                  : t("navigation.k_collapse_sidebar")}
+              </span>
+            </button>
+          )}
           <div className="nav-section">
             {t("navigation.k_workspace_70398828")}
           </div>
@@ -774,10 +847,14 @@ export function App() {
             </button>
             <button
               className="github-link"
+              title={t("navigation.k_star_on_github")}
               onClick={() => void api.openProject().catch(report)}
             >
-              <Star size={14} /> {t("navigation.k_star_on_github")}{" "}
-              <ExternalLink size={12} />
+              <Star size={14} />
+              <span className="nav-label">
+                {t("navigation.k_star_on_github")}
+              </span>
+              <ExternalLink size={12} className="nav-external-icon" />
             </button>
             <span className="version">
               {status.version === "development"
@@ -789,6 +866,15 @@ export function App() {
           </div>
         </nav>
         <main>
+          {maximized && (
+            <div className="maximize-banner" role="status">
+              <Maximize2 size={14} />
+              <span>{t("table.k_focus_mode_hint", { shortcut: "Esc" })}</span>
+              <button onClick={() => setMaximized(false)}>
+                {t("table.k_restore_layout")}
+              </button>
+            </div>
+          )}
           {error && (
             <div className="error-banner" role="alert">
               <ShieldAlert size={17} />
@@ -833,43 +919,45 @@ export function App() {
           )}
           {inspecting ? (
             <>
-              <div className="workspace-heading">
-                <div>
-                  <div className="eyebrow">
-                    {view === "ports"
-                      ? t("inspection.k_network_inspection")
-                      : t("inspection.k_file_inspection")}
-                  </div>
-                  <h1>
-                    {view === "ports"
-                      ? t("inspection.k_local_ports")
-                      : view === "handles"
-                        ? t("status.k_file_usages")
-                        : t("navigation.k_processes")}
-                  </h1>
-                  <p>
-                    {view === "ports"
-                      ? t(
-                          "inspector.k_find_local_tcp_listeners_bound_udp_sock_7d6edd16",
-                        )
-                      : status.target
+              {!maximized && (
+                <div className="workspace-heading">
+                  <div>
+                    <div className="eyebrow">
+                      {view === "ports"
+                        ? t("inspection.k_network_inspection")
+                        : t("inspection.k_file_inspection")}
+                    </div>
+                    <h1>
+                      {view === "ports"
+                        ? t("inspection.k_local_ports")
+                        : view === "handles"
+                          ? t("status.k_file_usages")
+                          : t("navigation.k_processes")}
+                    </h1>
+                    <p>
+                      {view === "ports"
                         ? t(
-                            "inspection.k_processes_referencing_your_target_and_i_9e70e943",
+                            "inspector.k_find_local_tcp_listeners_bound_udp_sock_7d6edd16",
                           )
-                        : t(
-                            "inspection.k_find_out_which_processes_are_using_a_fi_c1cc0eee",
-                          )}
-                  </p>
+                        : status.target
+                          ? t(
+                              "inspection.k_processes_referencing_your_target_and_i_9e70e943",
+                            )
+                          : t(
+                              "inspection.k_find_out_which_processes_are_using_a_fi_c1cc0eee",
+                            )}
+                    </p>
+                  </div>
+                  <button
+                    className="primary"
+                    onClick={() => runScan(api.choose(true))}
+                  >
+                    <FolderOpen size={15} />
+                    {t("inspection.k_open_folder")}
+                  </button>
                 </div>
-                <button
-                  className="primary"
-                  onClick={() => runScan(api.choose(true))}
-                >
-                  <FolderOpen size={15} />
-                  {t("inspection.k_open_folder")}
-                </button>
-              </div>
-              {view !== "ports" && (
+              )}
+              {!maximized && view !== "ports" && (
                 <form
                   className="target-bar"
                   onSubmit={(event) => {
@@ -1043,6 +1131,27 @@ export function App() {
                     <span className="muted result-count">
                       {total} {t("app.k_results")}
                     </span>
+                    <button
+                      className="icon-button"
+                      aria-pressed={maximized}
+                      aria-label={
+                        maximized
+                          ? t("table.k_restore_layout")
+                          : t("table.k_maximize_grid")
+                      }
+                      title={
+                        maximized
+                          ? t("table.k_restore_layout")
+                          : t("table.k_maximize_grid")
+                      }
+                      onClick={() => setMaximized((value) => !value)}
+                    >
+                      {maximized ? (
+                        <Minimize2 size={14} />
+                      ) : (
+                        <Maximize2 size={14} />
+                      )}
+                    </button>
                   </div>
                   {showColumns && (
                     <ColumnFilterPanel
@@ -1422,7 +1531,7 @@ export function App() {
                       setFontSize(Number(event.target.value))
                     }
                   >
-                    {[12, 13, 14, 15, 16, 17, 18].map((size) => (
+                    {[12, 13, 14, 15, 16, 17, 18, 20, 22, 24].map((size) => (
                       <option key={size} value={size}>
                         {size} px
                       </option>
@@ -1434,6 +1543,38 @@ export function App() {
                 </div>
               </section>
               <UpdateBanner />
+              <section className="setting-section">
+                <div>
+                  <h3>{t("settings.k_interface_zoom")}</h3>
+                  <p className="muted">
+                    {t("settings.k_scale_the_whole_interface_zoom_help")}
+                  </p>
+                </div>
+                <div className="font-setting">
+                  <button
+                    className="icon-button"
+                    aria-label={t("settings.k_zoom_out")}
+                    title={`${t("settings.k_zoom_out")} (${modifier}+-)`}
+                    disabled={fontSize <= 12}
+                    onClick={() => adjustZoom(-1)}
+                  >
+                    <ZoomOut size={16} />
+                  </button>
+                  <span className="zoom-value">{zoomPercent}%</span>
+                  <button
+                    className="icon-button"
+                    aria-label={t("settings.k_zoom_in")}
+                    title={`${t("settings.k_zoom_in")} (${modifier}++)`}
+                    disabled={fontSize >= 24}
+                    onClick={() => adjustZoom(1)}
+                  >
+                    <ZoomIn size={16} />
+                  </button>
+                  <button onClick={() => setFontSize(14)}>
+                    {t("settings.k_reset_to_default")}
+                  </button>
+                </div>
+              </section>
               <section className="setting-section">
                 <div>
                   <h3>{t("settings.k_about_oflh")}</h3>
@@ -1517,6 +1658,8 @@ export function App() {
                   <dd>Shift F10</dd>
                   <dt>{t("selection.k_clear_selection_and_details")}</dt>
                   <dd>Escape</dd>
+                  <dt>{t("settings.k_zoom_in_out_reset")}</dt>
+                  <dd>Ctrl / ⌘ + / - / 0</dd>
                 </dl>
               </section>
               {import.meta.env.DEV && (
