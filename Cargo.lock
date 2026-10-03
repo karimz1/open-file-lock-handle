@@ -3027,7 +3027,7 @@ dependencies = [
 
 [[package]]
 name = "oflh"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "oflh-core",
  "oflh-platform",
@@ -3040,7 +3040,7 @@ dependencies = [
 
 [[package]]
 name = "oflh-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "thiserror 2.0.21",
  "unicode-general-category",
@@ -3048,7 +3048,7 @@ dependencies = [
 
 [[package]]
 name = "oflh-desktop"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "oflh-core",
  "oflh-platform",
@@ -3068,7 +3068,7 @@ dependencies = [
 
 [[package]]
 name = "oflh-platform"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "cc",
  "libc",
@@ -3082,7 +3082,7 @@ dependencies = [
 
 [[package]]
 name = "oflh-tui"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "crossterm",
  "oflh-core",
@@ -6473,7 +6473,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.22.1",
  "minisign-verify",
