@@ -775,9 +775,6 @@ pub(super) fn launch_elevated(executable: &Path, arguments: &str) -> Result<u32>
     // SAFETY: structure size and all NUL-terminated buffers remain valid through the synchronous call.
     if unsafe { ShellExecuteExW(&mut info) } == 0 {
         let error = std::io::Error::last_os_error();
-        if error.raw_os_error() == Some(ERROR_CANCELLED as i32) {
-            return Err(Error::Cancelled);
-        }
         return Err(io("request UAC authorization", error));
     }
     let handle = Handle::new(info.hProcess, "open administrator helper")?;

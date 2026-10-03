@@ -109,22 +109,26 @@ fn launch(executable: &Path, arguments: &[String]) -> Result<u32> {
 }
 #[cfg(target_os = "macos")]
 fn launch(executable: &Path, arguments: &[String]) -> Result<u32> {
-    // AppleScript quotes the entire shell command; shell quoting separately preserves
-    // spaces, quotes, dollar signs and backticks in the executable path.
-    let path = executable.to_str().ok_or_else(|| {
-        Error::Unavailable("Administrator authorization requires a UTF-8 executable path".into())
-    })?;
-    let command = format!("'{}' {}", path.replace('\'', "'\\''"), arguments.join(" "));
-    let script = format!(
-        "do shell script \"{}\" with administrator privileges",
-        command.replace('\\', "\\\\").replace('"', "\\\"")
-    );
+    let script = administrator_script(executable, arguments)?;
     output_code(
         Command::new("/usr/bin/osascript")
             .args(["-e", &script])
             .output()
             .map_err(|error| io("request administrator authorization", error))?,
     )
+}
+#[cfg(any(target_os = "macos", test))]
+fn administrator_script(executable: &Path, arguments: &[String]) -> Result<String> {
+    // AppleScript quotes the entire shell command; shell quoting separately preserves
+    // spaces, quotes, dollar signs and backticks in the executable path.
+    let path = executable.to_str().ok_or_else(|| {
+        Error::Unavailable("Administrator authorization requires a UTF-8 executable path".into())
+    })?;
+    let command = format!("'{}' {}", path.replace('\'', "'\\''"), arguments.join(" "));
+    Ok(format!(
+        "do shell script \"{}\" with administrator privileges",
+        command.replace('\\', "\\\\").replace('"', "\\\"")
+    ))
 }
 #[cfg(windows)]
 fn launch(executable: &Path, arguments: &[String]) -> Result<u32> {
@@ -182,6 +186,32 @@ mod tests {
         ));
         assert!(decode_outcome(0).is_ok());
         assert!(decode_outcome(5).is_err());
+    }
+    #[test]
+    fn administrator_script_quotes_shell_and_applescript_separately() {
+        let script = administrator_script(
+            Path::new("/Applications/Fixture's \"$HOME`id`\\ app"),
+            &["--admin-terminate".into(), "42".into()],
+        )
+        .unwrap();
+        assert!(script.starts_with("do shell script \"'"));
+        assert!(script.ends_with(" --admin-terminate 42\" with administrator privileges"));
+        assert!(script.contains("Fixture'\\\\''s"));
+        assert!(script.contains("\\\"$HOME`id`\\\\ app'"));
+        #[cfg(target_os = "macos")]
+        {
+            let directory = tempfile::tempdir().unwrap();
+            let output = Command::new("/usr/bin/osacompile")
+                .arg("-o")
+                .arg(directory.path().join("fixture.scpt"))
+                .args(["-e", &script])
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "generated AppleScript must compile without executing authorization"
+            );
+        }
     }
     #[test]
     fn helper_rejects_malformed_protected_and_requester_targets() {

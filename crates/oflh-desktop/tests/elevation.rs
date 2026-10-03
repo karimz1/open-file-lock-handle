@@ -65,8 +65,9 @@ fn request(
     {
         assert!(
             output.status.success(),
-            "helper launcher failed: {:?}",
-            output.status
+            "helper launcher failed (privileged={privileged}, denied={denied}, mode={mode}): {:?}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
         );
         String::from_utf8(output.stdout)
             .unwrap()
@@ -172,7 +173,16 @@ fn exercise_helper(executable: &Path, privileged: bool) {
     assert_eq!(request(executable, identity, "2", privileged, false), 4);
     #[cfg(unix)]
     if privileged {
-        let denied = request(executable, identity, "1", privileged, true);
+        use std::os::unix::fs::PermissionsExt;
+        // Hosted runner home directories may be inaccessible to nobody. Copy the
+        // exact tested helper bytes into a traversable test-only directory.
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let denied_executable = directory.path().join("oflh-helper");
+        std::fs::copy(executable, &denied_executable).unwrap();
+        std::fs::set_permissions(&denied_executable, std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        let denied = request(&denied_executable, identity, "1", privileged, true);
         assert!(
             denied >= 256,
             "different-user request must retain a native error"
