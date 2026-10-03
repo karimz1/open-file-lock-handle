@@ -919,6 +919,42 @@ test("workspace shortcuts expose hints and respect editors and dialogs", async (
   await expect(search).toBeFocused();
 });
 
+for (const [locale, applyLabel] of [
+  ["en", "Apply theme"],
+  ["de", "Theme anwenden"],
+  ["zh", "应用主题"],
+]) {
+  test(`first launch applies the theme without inspecting in ${locale}`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page.evaluate((language) => {
+      localStorage.removeItem("oflh-theme");
+      localStorage.setItem("oflh-language", language);
+    }, locale);
+    await page.reload();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: applyLabel, exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    const calls = await page.evaluate(() => (window as any).__testCalls);
+    expect(
+      calls.some((call: any) =>
+        [
+          "refresh",
+          "inspect",
+          "inspect_ports",
+          "choose",
+          "revisit",
+          "follow_process",
+        ].includes(call.command),
+      ),
+    ).toBe(false);
+    await page.reload();
+    await expect(dialog).not.toBeVisible();
+  });
+}
+
 test("first launch previews a theme and migrates neutral Dark", async ({
   page,
 }) => {
@@ -938,7 +974,7 @@ test("first launch previews a theme and migrates neutral Dark", async ({
     .click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "purple");
   await page.screenshot({ path: "test-results/first-launch.png" });
-  await dialog.getByRole("button", { name: "Start inspecting" }).click();
+  await dialog.getByRole("button", { name: "Apply theme" }).click();
   await page.reload();
   await expect(dialog).not.toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "purple");

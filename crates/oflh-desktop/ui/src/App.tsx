@@ -1993,7 +1993,7 @@ export function App() {
               data-default-focus
               onClick={() => setShowThemeWelcome(false)}
             >
-              {t("app.k_start_inspecting")}
+              {t("app.k_apply_theme")}
             </button>
           </div>
         </Modal>
