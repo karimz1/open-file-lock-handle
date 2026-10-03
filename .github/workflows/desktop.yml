@@ -7,7 +7,7 @@ on:
   workflow_call:
     secrets:
       TAURI_SIGNING_PRIVATE_KEY:
-        required: false
+        required: true
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
         required: false
     inputs:
@@ -21,6 +21,14 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+      - name: Require updater signing key before building
+        env:
+          UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$UPDATER_PRIVATE_KEY" ]; then
+            echo "::error::Desktop CI requires TAURI_SIGNING_PRIVATE_KEY, including development and RC builds."
+            exit 1
+          fi
       - name: Install pinned Rust toolchain
         run: rustup show
       - name: Check workspace lockfile
@@ -31,6 +39,18 @@ jobs:
           cache: npm
           cache-dependency-path: crates/oflh-desktop/ui/package-lock.json
       - run: npm ci
+        working-directory: crates/oflh-desktop/ui
+      - name: Verify updater signing key against the app public key
+        env:
+          UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          printf '%s' "$UPDATER_PRIVATE_KEY" > "$RUNNER_TEMP/updater-preflight.key"
+          chmod 600 "$RUNNER_TEMP/updater-preflight.key"
+          trap 'rm -f "$RUNNER_TEMP/updater-preflight.key"' EXIT
+          printf 'OFLH updater signing preflight\n' > "$RUNNER_TEMP/updater-preflight"
+          npm run tauri -- signer sign -f "$RUNNER_TEMP/updater-preflight.key" "$RUNNER_TEMP/updater-preflight"
+          cargo xtask verify-updater-signature --config ../tauri.conf.json --payload "$RUNNER_TEMP/updater-preflight" --signature "$RUNNER_TEMP/updater-preflight.sig"
         working-directory: crates/oflh-desktop/ui
       - run: npm run format:check && npm run build && npm test && npx playwright install --with-deps chrome && npm run test:ui
         working-directory: crates/oflh-desktop/ui
@@ -81,7 +101,7 @@ jobs:
         run: |
           cargo fmt --all --check
           cargo clippy -p oflh-desktop --all-targets --features desktop --locked -- -D warnings
-          cargo test -p oflh-desktop --features desktop --locked
+          cargo test -p oflh-desktop --features updater-tests --locked
       - name: Set traceable build identity and matching installer version
         run: |
           OFLH_VERSION=$(cargo xtask ci-version --version "$RELEASE_TAG" --commit "$BUILD_COMMIT" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" --repository "$GITHUB_REPOSITORY" --server-url "$GITHUB_SERVER_URL" --pr-number "$PR_NUMBER" --github-env "$GITHUB_ENV")
@@ -130,14 +150,8 @@ jobs:
         working-directory: crates/oflh-desktop/ui
         run: |
           if [ -z "$UPDATER_PRIVATE_KEY" ]; then
-            if [ "$RELEASE_TAG" != dev ]; then
-              echo "::error::Tagged releases require TAURI_SIGNING_PRIVATE_KEY."
-              exit 1
-            fi
-            # Development artifacts use a disposable key and cannot update released installs.
-            npm run tauri -- signer generate -w "$RUNNER_TEMP/updater-ci.key" -p "" >/dev/null
-            UPDATER_PRIVATE_KEY=$(cat "$RUNNER_TEMP/updater-ci.key")
-            UPDATER_PRIVATE_KEY_PASSWORD=
+            echo "::error::Desktop CI requires TAURI_SIGNING_PRIVATE_KEY."
+            exit 1
           fi
           echo "::add-mask::$UPDATER_PRIVATE_KEY"
           if [ -n "$UPDATER_PRIVATE_KEY_PASSWORD" ]; then
@@ -159,6 +173,11 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.version || 'dev' }}
         run: cargo xtask package-desktop --version "$RELEASE_TAG" --os '${{ matrix.os }}' --arch '${{ matrix.arch }}' --binary target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }} --bundle-dir target/release/bundle --output desktop-dist
+      - name: Verify real packaged updater download and signature
+        if: matrix.os != 'linux'
+        env:
+          OFLH_UPDATER_PACKAGE: desktop-dist/oflh-desktop.${{ matrix.os }}.${{ matrix.arch }}${{ matrix.os == 'windows' && '-installer.exe' || '.app.tar.gz' }}
+        run: cargo test -p oflh-desktop --features updater-tests --locked --test updater actual_packaged_update_is_detected_and_downloaded -- --ignored
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'linux'
         with:

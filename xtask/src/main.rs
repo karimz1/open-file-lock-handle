@@ -3,6 +3,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 mod desktop;
 mod release;
+mod signing;
 use semver::{BuildMetadata, Prerelease, Version};
 use sha2::{Digest, Sha256};
 use std::{
@@ -250,6 +251,9 @@ fn run() -> Result<()> {
             "--server-url",
             "--pr-number",
             "--github-env",
+            "--config",
+            "--payload",
+            "--signature",
         ]
         .contains(&key.as_str())
         {
@@ -266,10 +270,19 @@ fn run() -> Result<()> {
             .map(String::as_str)
             .ok_or_else(|| format!("missing {name}"))
     };
-    let tag = required("--version")?;
+    let tag = if action == "verify-updater-signature" {
+        "dev"
+    } else {
+        required("--version")?
+    };
     version(tag)?;
     let output = Path::new(options.get("--output").map_or("dist", String::as_str));
     match action.as_str() {
+        "verify-updater-signature" => signing::verify(
+            Path::new(required("--config")?),
+            Path::new(required("--payload")?),
+            Path::new(required("--signature")?),
+        )?,
         "validate" => validate_workspace_version(tag)?,
         "ci-version" => {
             validate_workspace_version(tag)?;
