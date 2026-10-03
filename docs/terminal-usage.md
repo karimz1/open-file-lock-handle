@@ -101,8 +101,9 @@ that could not be identified cannot be stopped. Results refresh after a successf
 request. A termination request does not guarantee the process has exited.
 
 Stopping a parent may close its application and affect its children. It does not
-recursively terminate the entire tree. `oflh` does not directly unlock files;
-terminating a process may release the resources it holds.
+recursively terminate the entire tree. To free a file or port, close the application
+normally or use these actions to stop the process holding it. Once the process
+exits, its resources can be released. Save your work before stopping a process.
 
 ## Keyboard reference
 
