@@ -23,6 +23,8 @@ npm --prefix crates/oflh-desktop/ui run tauri -- build --no-bundle -- --locked
 This builds the desktop executable without an installer. On Windows, run the
 corresponding `.exe` in `target\release`.
 
+For auto-updater signing, see [Set up the updater keys](releasing.md#set-up-the-updater-keys).
+
 ## Validate changes
 
 Run the workspace checks and, with the Desktop prerequisites installed, the
