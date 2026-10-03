@@ -100,11 +100,13 @@ export interface Details {
 export interface Confirmation {
   ticket: string;
   force: boolean;
+  elevated: boolean;
   targets: { key: string; name: string; pid: number }[];
 }
 export interface ActionResult {
   outcome: "exited" | "still_running" | "unverified" | "failed";
   pid: number;
+  admin_recovery?: boolean;
   error: Failure | null;
 }
 export const api = {
@@ -141,6 +143,8 @@ export const api = {
   prepareAncestor: (owner: string, key: string, force: boolean) =>
     invoke<Confirmation>("prepare_ancestor", { owner, key, force }),
   dismiss: () => invoke<void>("dismiss"),
+  prepareElevated: (ticket: string) =>
+    invoke<Confirmation>("prepare_elevated", { ticket }),
   terminate: (ticket: string) =>
     invoke<ActionResult[]>("terminate", { ticket }),
   recent: () => invoke<{ id: number; display: string }[]>("recent"),

@@ -1,6 +1,7 @@
 //! Native OS boundaries. A scanner is owned by one worker, never shared concurrently.
 #![deny(missing_docs)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+pub mod elevation;
 use oflh_core::*;
 use std::collections::HashMap;
 #[cfg(not(target_os = "linux"))]

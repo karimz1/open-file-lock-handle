@@ -5,7 +5,7 @@ export function forceRecoveryTargets(
   confirmation: Confirmation | null,
   results: ActionResult[],
 ): Confirmation["targets"] {
-  if (!confirmation || confirmation.force) return [];
+  if (!confirmation || confirmation.force || confirmation.elevated) return [];
   return confirmation.targets.filter((target) =>
     results.some(
       (result) =>

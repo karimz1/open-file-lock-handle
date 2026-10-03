@@ -48,6 +48,8 @@ impl From<Error> for Failure {
             Error::Unavailable(_) => ("unavailable", None),
             Error::Io { source, .. } => (
                 match source.kind() {
+                    #[cfg(windows)]
+                    _ if source.raw_os_error() == Some(1223) => "cancelled",
                     std::io::ErrorKind::PermissionDenied => "permission_denied",
                     std::io::ErrorKind::NotFound => "not_found",
                     _ => "io",
@@ -297,6 +299,8 @@ pub struct Confirmation {
     pub ticket: String,
     /// Explicit force mode captured when preparing the confirmation.
     pub force: bool,
+    /// Explicit OS authorization retry, captured by the service.
+    pub elevated: bool,
     /// All confirmed processes, including any hidden by filters.
     pub targets: Vec<ActionTarget>,
 }
@@ -318,6 +322,8 @@ pub enum ActionOutcome {
 pub struct ActionResult {
     /// Verified outcome; sending a request alone does not prove exit.
     pub outcome: ActionOutcome,
+    /// Permission-specific recovery retained in Rust for this result receipt.
+    pub admin_recovery: bool,
     /// Observed PID; never sufficient on its own for an action.
     pub pid: u32,
     /// Failure for this operation, if any.
@@ -342,6 +348,17 @@ mod tests {
                 ..identity
             })
         );
+    }
+    #[cfg(windows)]
+    #[test]
+    fn uac_cancellation_preserves_the_native_error_code() {
+        let failure = Failure::from(oflh_core::io(
+            "request UAC authorization",
+            std::io::Error::from_raw_os_error(1223),
+        ));
+        assert_eq!(failure.kind, "cancelled");
+        assert_eq!(failure.os_code, Some(1223));
+        assert!(failure.message.contains("request UAC authorization"));
     }
     #[test]
     fn failures_keep_category_context_and_os_code() {

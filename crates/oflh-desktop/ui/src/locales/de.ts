@@ -413,6 +413,12 @@ const de: TranslationSchema<typeof en> = {
     k_visible_columns: "Sichtbare Spalten",
   },
   termination: {
+    k_retry_admin: "Mit Administratorrechten erneut versuchen …",
+    k_admin_recovery:
+      "Zugriff verweigert. Sie können einen erneuten Versuch für diese ursprünglichen Ziele autorisieren. Administratorrechte garantieren keinen Erfolg.",
+    k_admin_confirmation:
+      "Das Betriebssystem fordert für jedes Ziel eine Administratorautorisierung an. Die ursprüngliche Beendigungsart bleibt erhalten. Abbrechen stoppt weitere Anfragen.",
+
     k_normal_termination_recovery:
       "Einige Prozesse konnten nicht normal beendet werden. Mit „Beenden erzwingen“ können Sie sie ohne Aufräumen stoppen. Nicht gespeicherte Arbeit kann verloren gehen.",
     k_force_terminate: "Beenden erzwingen …",

@@ -400,6 +400,12 @@ const en = {
     k_visible_columns: "Visible columns",
   },
   termination: {
+    k_retry_admin: "Retry with administrator privileges…",
+    k_admin_recovery:
+      "Permission denied. You can authorize a retry for these original targets. Administrator privileges do not guarantee success.",
+    k_admin_confirmation:
+      "The operating system will request administrator authorization for each target. The original termination mode is preserved. Cancel stops further requests.",
+
     k_normal_termination_recovery:
       "Some processes could not be stopped normally. You can use Force Terminate to stop them without cleanup. Unsaved work may be lost.",
     k_force_terminate: "Force terminate…",

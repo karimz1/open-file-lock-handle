@@ -260,6 +260,19 @@ test.beforeEach(async ({ page }) => {
                 return { key, name: row.name, pid: row.pid };
               }),
             };
+          if (command === "prepare_elevated")
+            return {
+              ticket: "admin-ticket",
+              force: (window as any).__adminForce ?? true,
+              elevated: true,
+              targets: [
+                {
+                  key: "4000:18446744073709551615:0",
+                  name: "fixture-process",
+                  pid: 4000,
+                },
+              ],
+            };
           if (command === "prepare_ancestor")
             return {
               ticket: "parent-ticket",
@@ -1752,4 +1765,129 @@ test("normal ancestor failure offers force recovery for the captured ancestor", 
     key: "3000:900:0",
     force: true,
   });
+});
+
+for (const force of [false, true]) {
+  test(`permission recovery preserves ${force ? "force" : "normal"} mode and defaults to cancel`, async ({
+    page,
+  }) => {
+    await page.addInitScript((force) => {
+      (window as any).__adminForce = force;
+      (window as any).__terminationResults = [
+        {
+          pid: 4000,
+          outcome: "failed",
+          admin_recovery: true,
+          error: {
+            kind: "permission_denied",
+            message: "Synthetic permission denied",
+            os_code: 13,
+          },
+        },
+      ];
+    }, force);
+    await page.goto("/");
+    await page.getByRole("grid").getByRole("row").nth(1).click();
+    await page
+      .getByRole("button", {
+        name: force ? "Force terminate…" : "Terminate…",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", {
+        name: force ? "Force terminate" : "Terminate",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("button", { name: "Retry with administrator privileges…" })
+      .click();
+    const dialog = page.getByRole("dialog");
+    await expect(
+      dialog.getByRole("button", { name: "Cancel", exact: true }),
+    ).toBeFocused();
+    await expect(dialog.getByText("PID 4000")).toBeVisible();
+    await expect(
+      dialog.getByText(
+        /operating system will request administrator authorization/,
+      ),
+    ).toBeVisible();
+    await page.screenshot({
+      path: `test-results/admin-confirmation-${force}.png`,
+    });
+    await page.keyboard.press("Escape");
+    let calls = await page.evaluate(() => (window as any).__testCalls);
+    expect(
+      calls.filter((call: any) => call.command === "terminate"),
+    ).toHaveLength(1);
+    expect(
+      calls.find((call: any) => call.command === "prepare_elevated").args,
+    ).toEqual({ ticket: "captured-ticket" });
+  });
+}
+
+test("confirmed administrator retry uses its new receipt and never offers repeated elevation", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__terminationResults = [
+      {
+        pid: 4000,
+        outcome: "failed",
+        admin_recovery: true,
+        error: {
+          kind: "permission_denied",
+          message: "Synthetic permission denied",
+          os_code: 13,
+        },
+      },
+    ];
+  });
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page
+    .getByRole("button", { name: "Force terminate…", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Force terminate", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Retry with administrator privileges…" })
+    .click();
+  await page.evaluate(() => {
+    (window as any).__terminationResults = [
+      {
+        pid: 4000,
+        outcome: "failed",
+        admin_recovery: false,
+        error: {
+          kind: "permission_denied",
+          message: "Synthetic elevated permission denied",
+          os_code: 13,
+        },
+      },
+    ];
+  });
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Force terminate", exact: true })
+    .click();
+  await expect(
+    page.getByText("Synthetic elevated permission denied"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Retry with administrator privileges…" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("dialog").getByRole("button", { name: "Force terminate…" }),
+  ).toHaveCount(0);
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls
+      .filter((call: any) => call.command === "terminate")
+      .map((call: any) => call.args),
+  ).toEqual([{ ticket: "captured-ticket" }, { ticket: "admin-ticket" }]);
 });

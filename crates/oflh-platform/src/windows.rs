@@ -756,3 +756,42 @@ pub(super) fn port_processes(cancel: &Cancellation) -> Result<Vec<Process>> {
     }
     Ok(processes)
 }
+
+pub(super) fn launch_elevated(executable: &Path, arguments: &str) -> Result<u32> {
+    use windows_sys::Win32::UI::Shell::{
+        SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW,
+    };
+    let executable = wide(executable)?;
+    let parameters: Vec<u16> = arguments.encode_utf16().chain(Some(0)).collect();
+    let verb: Vec<u16> = "runas".encode_utf16().chain(Some(0)).collect();
+    // SAFETY: zero is a valid initial state for this Win32 structure; cbSize is set below.
+    let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
+    info.cbSize = size_of::<SHELLEXECUTEINFOW>() as u32;
+    info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+    info.lpVerb = verb.as_ptr();
+    info.lpFile = executable.as_ptr();
+    info.lpParameters = parameters.as_ptr();
+    info.nShow = SW_HIDE;
+    // SAFETY: structure size and all NUL-terminated buffers remain valid through the synchronous call.
+    if unsafe { ShellExecuteExW(&mut info) } == 0 {
+        let error = std::io::Error::last_os_error();
+        return Err(io("request UAC authorization", error));
+    }
+    let handle = Handle::new(info.hProcess, "open administrator helper")?;
+    // SAFETY: handle owns the helper process, and waiting runs off the UI thread.
+    if unsafe { WaitForSingleObject(handle.0, INFINITE) } != WAIT_OBJECT_0 {
+        return Err(io(
+            "wait for administrator helper",
+            std::io::Error::last_os_error(),
+        ));
+    }
+    let mut code = 0;
+    // SAFETY: valid owned process handle and writable DWORD output.
+    if unsafe { GetExitCodeProcess(handle.0, &mut code) } == 0 {
+        return Err(io(
+            "read administrator helper result",
+            std::io::Error::last_os_error(),
+        ));
+    }
+    Ok(code)
+}

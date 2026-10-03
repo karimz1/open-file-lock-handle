@@ -5,6 +5,7 @@ import { forceRecoveryTargets } from "./termination";
 const confirmation: Confirmation = {
   ticket: "fixture",
   force: false,
+  elevated: false,
   targets: [
     { key: "42:10:0", name: "fixture", pid: 42 },
     { key: "43:11:0", name: "other", pid: 43 },
