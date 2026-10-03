@@ -75,6 +75,26 @@ skips normal cleanup and may lose unsaved work; permissions and identity checks
 still apply. Unknown exit checks and changed or protected identities do not offer
 this recovery action. Normal termination never escalates automatically.
 
+### Administrator retry
+
+When a normal or force termination fails specifically because of permissions,
+**Retry with administrator privileges…** opens a fresh confirmation for only the
+permission-denied original targets, including ancestors and hidden selections.
+The normal or force mode stays the same. Cancel is the default; elevation and
+termination never happen automatically.
+
+The UI stays unprivileged. A headless instance of the same executable rechecks
+PID plus birth identity and protected-process guards before acting. Windows uses
+UAC, Linux uses `/usr/bin/pkexec` (polkit and an authentication agent must be
+available), and macOS uses the system administrator authorization prompt through
+`osascript`. The OS may request authorization separately for each target.
+Cancelling authorization stops the remaining requests. Already elevated sessions
+and elevated failures do not offer another administrator retry.
+
+Administrator privileges do not guarantee termination or prove a file lock.
+Protected processes and OS restrictions still apply. Exit verification may remain
+unavailable to the unprivileged UI even after a successful privileged request.
+
 ## Keyboard and refresh
 
 The full shortcut list is shown in Settings and beside relevant controls. Press

@@ -571,6 +571,22 @@ export function App() {
     resultContext?.confirmation ?? null,
     results ?? [],
   );
+  const adminRecovery =
+    results?.some((result) => result.admin_recovery) &&
+    !resultContext?.confirmation.elevated;
+  const prepareAdminRecovery = () => {
+    if (!resultContext || acting) return;
+    setActing(true);
+    void api
+      .prepareElevated(resultContext.confirmation.ticket)
+      .then((value) => {
+        setActing(false);
+        setResults(null);
+        setConfirmation(value);
+      })
+      .catch(report)
+      .finally(() => setActing(false));
+  };
   const prepareForceRecovery = () => {
     if (!resultContext || acting || status.scanning || !recoveryTargets.length)
       return;
@@ -2056,6 +2072,9 @@ export function App() {
                   )}
             </p>
           </div>
+          {confirmation.elevated && (
+            <p role="status">{t("termination.k_admin_confirmation")}</p>
+          )}
           <p>
             <strong>
               {confirmation.targets.length}{" "}
@@ -2143,13 +2162,24 @@ export function App() {
               </li>
             ))}
           </ul>
-          {recoveryTargets.length > 0 && (
+          {adminRecovery && (
+            <p role="status">{t("termination.k_admin_recovery")}</p>
+          )}
+          {recoveryTargets.length > 0 && !adminRecovery && (
             <p role="status">
               {t("termination.k_normal_termination_recovery")}
             </p>
           )}
           <div className="modal-actions">
-            {recoveryTargets.length > 0 ? (
+            {adminRecovery ? (
+              <button
+                className="danger"
+                onClick={prepareAdminRecovery}
+                disabled={acting}
+              >
+                {t("termination.k_retry_admin")}
+              </button>
+            ) : recoveryTargets.length > 0 ? (
               <button
                 className="danger"
                 onClick={prepareForceRecovery}

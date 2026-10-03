@@ -18,10 +18,13 @@ struct ScanJob {
     owner: Option<Identity>,
     cancel: Cancellation,
 }
+#[derive(Clone)]
 struct PendingAction {
     ticket: String,
     identities: Vec<Identity>,
     force: bool,
+    elevated: bool,
+    targets: Vec<ActionTarget>,
 }
 struct State {
     generation: u32,
@@ -34,6 +37,7 @@ struct State {
     recent: Vec<(u32, PathBuf)>,
     error: Option<Failure>,
     action: Option<PendingAction>,
+    admin_recovery: Option<PendingAction>,
     next_ticket: u64,
     ancestry: Option<(String, Vec<Ancestor>)>,
 }
@@ -109,6 +113,7 @@ impl Service {
                 recent,
                 error: None,
                 action: None,
+                admin_recovery: None,
                 next_ticket: 0,
                 ancestry: None,
             }),
@@ -388,7 +393,17 @@ impl Service {
         targets: Vec<ActionTarget>,
         force: bool,
     ) -> Result<Confirmation, Failure> {
+        self.confirm_mode(identities, targets, force, false)
+    }
+    fn confirm_mode(
+        &self,
+        identities: Vec<Identity>,
+        targets: Vec<ActionTarget>,
+        force: bool,
+        elevated: bool,
+    ) -> Result<Confirmation, Failure> {
         let mut state = self.shared.lock();
+        state.admin_recovery = None;
         state.next_ticket = state
             .next_ticket
             .checked_add(1)
@@ -398,12 +413,39 @@ impl Service {
             ticket: ticket.clone(),
             identities,
             force,
+            elevated,
+            targets: targets.clone(),
         });
         Ok(Confirmation {
             ticket,
             force,
+            elevated,
             targets,
         })
+    }
+    /// Confirm only permission-denied targets retained from the original result receipt.
+    /// Refreshes do not replace captured identities; native validation occurs in the helper.
+    pub fn prepare_elevated(&self, ticket: &str) -> Result<Confirmation, Failure> {
+        let action = {
+            let mut state = self.shared.lock();
+            if state
+                .admin_recovery
+                .as_ref()
+                .is_none_or(|action| action.ticket != ticket)
+            {
+                return Err(Failure::invalid(
+                    "Administrator recovery expired; review the results again",
+                ));
+            }
+            state
+                .admin_recovery
+                .take()
+                .ok_or_else(|| Failure::invalid("No administrator recovery available"))?
+        };
+        for identity in &action.identities {
+            identity.validate().map_err(Failure::from)?;
+        }
+        self.confirm_mode(action.identities, action.targets, action.force, true)
     }
     /// Invalidate an outstanding confirmation without sending any process signal.
     pub fn dismiss(&self) {
@@ -415,8 +457,25 @@ impl Service {
         ticket: &str,
         backend: &mut dyn Backend,
     ) -> Result<Vec<ActionResult>, Failure> {
-        let action = {
+        self.terminate_using(
+            ticket,
+            backend,
+            oflh_platform::elevation::is_elevated(),
+            |backend, identity, force, elevated, cancel| {
+                if elevated {
+                    let executable = std::env::current_exe()
+                        .map_err(|error| oflh_core::io("locate administrator helper", error))?;
+                    oflh_platform::elevation::terminate(&executable, identity, force, cancel)
+                } else {
+                    backend.terminate(identity, force, cancel)
+                }
+            },
+        )
+    }
+    fn consume_action(&self, ticket: &str) -> Result<PendingAction, Failure> {
+        {
             let mut state = self.shared.lock();
+            state.admin_recovery = None;
             if state
                 .action
                 .as_ref()
@@ -429,8 +488,23 @@ impl Service {
             state
                 .action
                 .take()
-                .ok_or_else(|| Failure::invalid("Confirmation expired"))?
-        };
+                .ok_or_else(|| Failure::invalid("Confirmation expired"))
+        }
+    }
+    fn terminate_using(
+        &self,
+        ticket: &str,
+        backend: &mut dyn Backend,
+        already_elevated: bool,
+        mut request: impl FnMut(
+            &mut dyn Backend,
+            Identity,
+            bool,
+            bool,
+            &Cancellation,
+        ) -> oflh_core::Result<()>,
+    ) -> Result<Vec<ActionResult>, Failure> {
+        let action = self.consume_action(ticket)?;
         let cancel = Cancellation::default();
         let mut results: Vec<_> = action
             .identities
@@ -438,10 +512,26 @@ impl Service {
             .map(|&identity| {
                 let error = identity
                     .validate()
-                    .and_then(|()| backend.terminate(identity, action.force, &cancel))
+                    .and_then(|()| cancel.check())
+                    .and_then(|()| {
+                        request(backend, identity, action.force, action.elevated, &cancel)
+                    })
                     .err()
                     .map(Failure::from);
+                if action.elevated
+                    && error.as_ref().is_some_and(|failure| {
+                        matches!(failure.kind.as_str(), "cancelled" | "unavailable")
+                    })
+                {
+                    cancel.cancel();
+                }
+                let admin_recovery = !already_elevated
+                    && !action.elevated
+                    && error
+                        .as_ref()
+                        .is_some_and(|failure| failure.kind == "permission_denied");
                 ActionResult {
+                    admin_recovery,
                     pid: identity.pid,
                     outcome: if error.is_some() {
                         ActionOutcome::Failed
@@ -452,31 +542,24 @@ impl Service {
                 }
             })
             .collect();
-        // One shared deadline bounds multi-selection latency. Never signal again or
-        // infer exit from a missing file/port row: verify the captured birth identity.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1500);
-        loop {
-            for (result, &identity) in results.iter_mut().zip(&action.identities) {
-                if result.outcome != ActionOutcome::StillRunning {
-                    continue;
-                }
-                match backend.is_running(identity) {
-                    Ok(false) => result.outcome = ActionOutcome::Exited,
-                    Ok(true) => {}
-                    Err(error) => {
-                        result.outcome = ActionOutcome::Unverified;
-                        result.error = Some(Failure::from(error));
-                    }
-                }
+        verify_action_results(backend, &action.identities, &mut results);
+        let mut recovery = PendingAction {
+            ticket: action.ticket.clone(),
+            force: action.force,
+            elevated: false,
+            identities: Vec::new(),
+            targets: Vec::new(),
+        };
+        for ((identity, target), result) in
+            action.identities.iter().zip(&action.targets).zip(&results)
+        {
+            if result.admin_recovery {
+                recovery.identities.push(*identity);
+                recovery.targets.push(target.clone());
             }
-            if results
-                .iter()
-                .all(|result| result.outcome != ActionOutcome::StillRunning)
-                || std::time::Instant::now() >= deadline
-            {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        if !recovery.identities.is_empty() {
+            self.shared.lock().admin_recovery = Some(recovery);
         }
         Ok(results)
     }
@@ -489,6 +572,38 @@ impl Drop for Service {
         state.pending = None;
         state.action = None;
         self.shared.ready.notify_one();
+    }
+}
+fn verify_action_results(
+    backend: &mut dyn Backend,
+    identities: &[Identity],
+    results: &mut [ActionResult],
+) {
+    // One shared deadline bounds multi-selection latency. Never signal again or
+    // infer exit from a missing file/port row: verify the captured birth identity.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1500);
+    loop {
+        for (result, &identity) in results.iter_mut().zip(identities) {
+            if result.outcome != ActionOutcome::StillRunning {
+                continue;
+            }
+            match backend.is_running(identity) {
+                Ok(false) => result.outcome = ActionOutcome::Exited,
+                Ok(true) => {}
+                Err(error) => {
+                    result.outcome = ActionOutcome::Unverified;
+                    result.error = Some(Failure::from(error));
+                }
+            }
+        }
+        if results
+            .iter()
+            .all(|result| result.outcome != ActionOutcome::StillRunning)
+            || std::time::Instant::now() >= deadline
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 }
 fn scan(backend: &mut dyn Backend, job: &ScanJob) -> Result<(Option<PathBuf>, Dataset), Failure> {
@@ -686,6 +801,155 @@ mod tests {
             },
         ));
         (service, identity)
+    }
+    #[test]
+    fn administrator_recovery_preserves_receipt_identity_mode_and_cancel() {
+        for force in [false, true] {
+            let (service, identity) = action_service();
+            let confirmation = service
+                .prepare(1, &[identity_key(identity)], force)
+                .unwrap();
+            let mut backend = Recorder::default();
+            let results = service
+                .terminate_using(
+                    &confirmation.ticket,
+                    &mut backend,
+                    false,
+                    |_, _, _, elevated, _| {
+                        assert!(!elevated);
+                        Err(oflh_core::io(
+                            "test termination",
+                            std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+                        ))
+                    },
+                )
+                .unwrap();
+            assert!(results[0].admin_recovery);
+            assert!(service.prepare_elevated("forged").is_err());
+            // A refresh cannot replace the identities retained by the result receipt.
+            service.shared.lock().dataset = Arc::new(Dataset::new(2, Snapshot::default()));
+            let retry = service.prepare_elevated(&confirmation.ticket).unwrap();
+            assert!(retry.elevated);
+            assert_eq!(retry.force, force);
+            assert_eq!(retry.targets[0].key, identity_key(identity));
+            assert!(service.prepare_elevated(&confirmation.ticket).is_err());
+            let results = service
+                .terminate_using(
+                    &retry.ticket,
+                    &mut backend,
+                    false,
+                    |_, captured, retry_force, elevated, _| {
+                        assert_eq!(captured, identity);
+                        assert_eq!(retry_force, force);
+                        assert!(elevated);
+                        Err(Error::Cancelled)
+                    },
+                )
+                .unwrap();
+            assert_eq!(results[0].error.as_ref().unwrap().kind, "cancelled");
+            assert!(!results[0].admin_recovery);
+            assert!(service.prepare_elevated(&retry.ticket).is_err());
+        }
+    }
+    #[test]
+    fn administrator_recovery_filters_mixed_results_and_stops_after_authorization_cancel() {
+        let (service, identity) = action_service();
+        let identities: Vec<_> = (0..4)
+            .map(|index| Identity {
+                pid: identity.pid - index,
+                ..identity
+            })
+            .collect();
+        let targets = identities
+            .iter()
+            .map(|identity| ActionTarget {
+                key: identity_key(*identity),
+                pid: identity.pid,
+                name: "fixture".into(),
+            })
+            .collect();
+        let confirmation = service.confirm(identities.clone(), targets, true).unwrap();
+        let mut call = 0;
+        let results = service
+            .terminate_using(
+                &confirmation.ticket,
+                &mut Recorder::default(),
+                false,
+                |_, _, _, _, _| {
+                    call += 1;
+                    match call {
+                        1 | 2 => Err(oflh_core::io(
+                            "test",
+                            std::io::ErrorKind::PermissionDenied.into(),
+                        )),
+                        3 => Err(Error::Changed),
+                        _ => Ok(()),
+                    }
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| result.admin_recovery)
+                .count(),
+            2
+        );
+        let retry = service.prepare_elevated(&confirmation.ticket).unwrap();
+        assert_eq!(retry.targets.len(), 2);
+        call = 0;
+        let results = service
+            .terminate_using(
+                &retry.ticket,
+                &mut Recorder::default(),
+                false,
+                |_, captured, _, elevated, _| {
+                    call += 1;
+                    assert_eq!(captured, identities[0]);
+                    assert!(elevated);
+                    Err(Error::Cancelled)
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            call, 1,
+            "cancelling authorization must stop the remaining requests"
+        );
+        assert!(
+            results
+                .iter()
+                .all(|result| result.error.as_ref().unwrap().kind == "cancelled")
+        );
+        assert!(results.iter().all(|result| !result.admin_recovery));
+    }
+    #[test]
+    fn administrator_recovery_excludes_other_errors_and_elevated_sessions() {
+        for (already_elevated, error) in [
+            (
+                true,
+                Error::Io {
+                    operation: "test",
+                    source: std::io::ErrorKind::PermissionDenied.into(),
+                },
+            ),
+            (false, Error::Changed),
+            (false, Error::Protected),
+            (false, Error::Cancelled),
+        ] {
+            let (service, identity) = action_service();
+            let confirmation = service.prepare(1, &[identity_key(identity)], true).unwrap();
+            let mut error = Some(error);
+            let results = service
+                .terminate_using(
+                    &confirmation.ticket,
+                    &mut Recorder::default(),
+                    already_elevated,
+                    |_, _, _, _, _| Err(error.take().unwrap()),
+                )
+                .unwrap();
+            assert!(!results[0].admin_recovery);
+            assert!(service.prepare_elevated(&confirmation.ticket).is_err());
+        }
     }
     #[test]
     fn recent_target_removal_updates_service_and_database_together() {

@@ -297,6 +297,8 @@ pub struct Confirmation {
     pub ticket: String,
     /// Explicit force mode captured when preparing the confirmation.
     pub force: bool,
+    /// Explicit OS authorization retry, captured by the service.
+    pub elevated: bool,
     /// All confirmed processes, including any hidden by filters.
     pub targets: Vec<ActionTarget>,
 }
@@ -318,6 +320,8 @@ pub enum ActionOutcome {
 pub struct ActionResult {
     /// Verified outcome; sending a request alone does not prove exit.
     pub outcome: ActionOutcome,
+    /// Permission-specific recovery retained in Rust for this result receipt.
+    pub admin_recovery: bool,
     /// Observed PID; never sufficient on its own for an action.
     pub pid: u32,
     /// Failure for this operation, if any.

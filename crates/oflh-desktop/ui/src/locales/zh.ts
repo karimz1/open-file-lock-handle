@@ -393,6 +393,12 @@ const zh: TranslationSchema<typeof en> = {
     k_visible_columns: "可见列",
   },
   termination: {
+    k_retry_admin: "以管理员权限重试…",
+    k_admin_recovery:
+      "权限不足。您可以授权对原始目标重试。管理员权限不保证成功。",
+    k_admin_confirmation:
+      "操作系统将为每个目标请求管理员授权。保留原来的终止方式。取消将停止后续请求。",
+
     k_normal_termination_recovery:
       "部分进程无法正常终止。您可以使用强制终止，在不执行清理的情况下停止它们。未保存的工作可能会丢失。",
     k_force_terminate: "强制终止…",

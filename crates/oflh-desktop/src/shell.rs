@@ -202,6 +202,10 @@ fn prepare_ancestor(
     service.prepare_ancestor(&owner, &key, force)
 }
 #[tauri::command]
+fn prepare_elevated(service: Desktop<'_>, ticket: String) -> Result<Confirmation, Failure> {
+    service.prepare_elevated(&ticket)
+}
+#[tauri::command]
 fn dismiss(service: Desktop<'_>) {
     service.dismiss();
 }
@@ -402,6 +406,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             reveal,
             prepare,
             prepare_ancestor,
+            prepare_elevated,
             dismiss,
             terminate,
             recent,

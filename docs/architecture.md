@@ -61,3 +61,30 @@ revalidates identity before signaling.
 
 See [Development](development.md) to build and test, and [Releasing](releasing.md)
 for packaging.
+
+## Desktop administrator recovery
+
+The desktop service retains permission-denied targets with their original PID and
+birth identity under the completed action receipt. An administrator retry consumes
+that receipt and creates a new single-use confirmation with the same normal/force
+mode. Neither the frontend selection nor a refreshed dataset supplies the targets.
+Only an explicit confirmation launches the headless `--admin-terminate` mode of
+the current desktop executable, before renderer initialization.
+
+Native authorization stays in `oflh-platform`: UAC via an owned helper process
+handle on Windows, polkit `pkexec` on Linux, and `osascript` administrator
+authorization on macOS. Executable paths are passed losslessly on Windows/Linux;
+macOS rejects non-UTF-8 executable paths rather than changing them. Shell and
+AppleScript quoting protect the macOS executable path. Numeric-only arguments
+carry the full identity, requester PID, and explicit mode. The requester remains
+protected despite the helper having a separate PID. Native backends revalidate
+birth identity and retain their existing native handle and signal invariants.
+
+The helper returns a bounded numeric outcome, preserving native OS error codes.
+Unix carries it over stdout; Windows uses the owned process's exit code. No
+privileged result files, persistent daemons, or arbitrary shell commands are
+accepted. Authorization cancellation stops subsequent targets. Exit checks remain
+in the unprivileged service, so they may report unknown state. The six native CI
+jobs test helper identity guards, mode parsing and force termination; Unix jobs
+also check a denied different-user request followed by a privileged request.
+Interactive consent dialogs require manual OS testing.

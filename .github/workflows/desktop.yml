@@ -17,6 +17,43 @@ on:
 permissions:
   contents: read
 jobs:
+  administrator-recovery:
+    name: Administrator recovery / ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {label: Linux x86-64, runner: ubuntu-24.04, os: linux}
+          - {label: Linux ARM64, runner: ubuntu-24.04-arm, os: linux}
+          - {label: macOS Intel, runner: macos-15-intel, os: darwin}
+          - {label: macOS Apple Silicon, runner: macos-15, os: darwin}
+          - {label: Windows x86-64, runner: windows-2025, os: windows}
+          - {label: Windows ARM64, runner: windows-11-arm, os: windows}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Linux native build dependencies
+        if: matrix.os == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libxdo-dev libssl-dev librsvg2-dev patchelf
+      - run: rustup show
+      - run: npm ci && npm run build
+        working-directory: crates/oflh-desktop/ui
+      - name: Build headless helper and test service transitions
+        run: |
+          cargo build -p oflh-desktop --features desktop --locked
+          cargo test -p oflh-desktop --lib --locked administrator_recovery
+          cargo test -p oflh-platform --lib --locked elevation
+      - name: Exercise native helper with privileged and denied requests
+        env:
+          OFLH_ADMIN_HELPER_EXE: ${{ github.workspace }}/target/debug/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }}
+        run: cargo test -p oflh-desktop --locked --test elevation packaged_helper_validates_identity_permissions_and_force_action -- --ignored
   frontend:
     runs-on: ubuntu-24.04
     steps:
@@ -111,6 +148,10 @@ jobs:
         working-directory: crates/oflh-desktop/ui
       - name: Verify built desktop version
         run: test "$(./target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }} --version | head -n 1)" = "oflh-desktop $OFLH_VERSION"
+      - name: Test packaged administrator helper on the native target
+        env:
+          OFLH_ADMIN_HELPER_EXE: ${{ github.workspace }}/target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }}
+        run: cargo test -p oflh-desktop --locked --test elevation packaged_helper_validates_identity_permissions_and_force_action -- --ignored
       - name: Smoke-test native app startup
         env:
           APP_PATH: ./target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }}
