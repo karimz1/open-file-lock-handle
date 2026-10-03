@@ -70,8 +70,10 @@ Updater signatures require a Tauri keypair. Keep the public key in
 `tauri.conf.json` and the private key in the `TAURI_SIGNING_PRIVATE_KEY` repository
 secret. Set `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if the key has a password. Back up
 the private key: existing installs need it to verify future updates.
-CI builds without the secret use a temporary key and must not be published as
-updates for existing installs.
+Development CI builds without the secret use a temporary key and must not be
+published as updates for existing installs. Tagged release builds require the
+real signing secret and fail if it is missing. The Release workflow passes the
+signing secrets explicitly to the reusable Desktop workflow.
 
 Updater signing does not replace macOS notarization or Windows code signing.
 These are not configured, so installers still show OS warnings.

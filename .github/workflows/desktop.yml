@@ -5,6 +5,11 @@ on:
     branches: [main, feature/oflh-desktop-rc]
   workflow_dispatch:
   workflow_call:
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
     inputs:
       version:
         type: string
@@ -48,8 +53,8 @@ jobs:
         include:
           - {os: linux, arch: amd64, label: 'Linux x86-64 (linux/amd64)', runner: ubuntu-24.04, bundles: 'deb,rpm'}
           - {os: linux, arch: arm64, label: 'Linux ARM64 (linux/arm64)', runner: ubuntu-24.04-arm, bundles: 'deb,rpm'}
-          - {os: darwin, arch: amd64, label: 'macOS Intel (darwin/amd64)', runner: macos-15-intel, bundles: dmg}
-          - {os: darwin, arch: arm64, label: 'macOS Apple Silicon (darwin/arm64)', runner: macos-15, bundles: dmg}
+          - {os: darwin, arch: amd64, label: 'macOS Intel (darwin/amd64)', runner: macos-15-intel, bundles: 'app,dmg'}
+          - {os: darwin, arch: arm64, label: 'macOS Apple Silicon (darwin/arm64)', runner: macos-15, bundles: 'app,dmg'}
           - {os: windows, arch: amd64, label: 'Windows x86-64 (windows/amd64)', runner: windows-2025, bundles: nsis}
           - {os: windows, arch: arm64, label: 'Windows ARM64 (windows/arm64)', runner: windows-11-arm, bundles: nsis}
     env:
@@ -119,19 +124,34 @@ jobs:
                           process.wait()
           PY
       - name: Prepare updater signing key
-        if: matrix.os != 'linux'
+        env:
+          UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          UPDATER_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         working-directory: crates/oflh-desktop/ui
         run: |
-          if [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
-            echo "TAURI_SIGNING_PRIVATE_KEY=${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" >> "$GITHUB_ENV"
-            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" >> "$GITHUB_ENV"
-          else
-            # No repo secret (for example a fork pull request): sign with a
-            # throwaway key so the build succeeds. These artifacts are never published.
-            npx tauri signer generate -w "$RUNNER_TEMP/updater-ci.key" -p "" >/dev/null
-            echo "TAURI_SIGNING_PRIVATE_KEY=$(cat "$RUNNER_TEMP/updater-ci.key")" >> "$GITHUB_ENV"
-            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=" >> "$GITHUB_ENV"
+          if [ -z "$UPDATER_PRIVATE_KEY" ]; then
+            if [ "$RELEASE_TAG" != dev ]; then
+              echo "::error::Tagged releases require TAURI_SIGNING_PRIVATE_KEY."
+              exit 1
+            fi
+            # Development artifacts use a disposable key and cannot update released installs.
+            npm run tauri -- signer generate -w "$RUNNER_TEMP/updater-ci.key" -p "" >/dev/null
+            UPDATER_PRIVATE_KEY=$(cat "$RUNNER_TEMP/updater-ci.key")
+            UPDATER_PRIVATE_KEY_PASSWORD=
           fi
+          echo "::add-mask::$UPDATER_PRIVATE_KEY"
+          if [ -n "$UPDATER_PRIVATE_KEY_PASSWORD" ]; then
+            echo "::add-mask::$UPDATER_PRIVATE_KEY_PASSWORD"
+          fi
+          # Use files so multiline key material is never written to the environment file.
+          printf '%s' "$UPDATER_PRIVATE_KEY" > "$RUNNER_TEMP/updater-signing.key"
+          chmod 600 "$RUNNER_TEMP/updater-signing.key"
+          echo "TAURI_SIGNING_PRIVATE_KEY=$RUNNER_TEMP/updater-signing.key" >> "$GITHUB_ENV"
+          {
+            echo 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD<<OFLH_UPDATER_PASSWORD'
+            printf '%s\n' "$UPDATER_PRIVATE_KEY_PASSWORD"
+            echo 'OFLH_UPDATER_PASSWORD'
+          } >> "$GITHUB_ENV"
       - name: Bundle the built executable without rebuilding
         run: npm run tauri -- bundle --config "$RUNNER_TEMP/desktop-version.json" --no-binary-patching --bundles '${{ matrix.bundles }}'
         working-directory: crates/oflh-desktop/ui
