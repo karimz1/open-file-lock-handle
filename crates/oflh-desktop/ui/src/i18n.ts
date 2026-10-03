@@ -1,9 +1,11 @@
+import zh from "./locales/zh";
 import de from "./locales/de";
 import en, { type MessageKey } from "./locales/en";
 
 const LANGUAGES = {
   en: { catalog: en, label: "language.k_english" },
   de: { catalog: de, label: "language.k_german" },
+  zh: { catalog: zh, label: "language.k_chinese_simplified" },
 } as const;
 
 export type { MessageKey };
@@ -64,7 +66,8 @@ export function resolvePreferredLocale(
 export function readLocalePreference(): LocalePreference {
   try {
     const saved = localStorage.getItem(localeStorageKey);
-    if (saved === "en" || saved === "de" || saved === "system") return saved;
+    if (saved === "system") return saved;
+    if (saved && Object.hasOwn(LANGUAGES, saved)) return saved as Locale;
   } catch {
     // Locale selection remains available for the current system language.
   }

@@ -84,10 +84,13 @@ and OFLH Purple, plus font size. Your theme, font size and details width persist
 The first launch offers a theme choice. The app remembers these settings between
 launches.
 
+In Settings, choose English, German, or Simplified Chinese under **Language**,
+or follow your system language. Your preference is saved between launches.
+
 ## Updates
 
 Settings also has an **Updates** section. OFLH Desktop checks for a newer
-release on launch. On Windows and macOS installs, "Install and restart" downloads
+release when you open Settings. On Windows and macOS installs, "Install and restart" downloads
 and installs the update, then relaunches the app. Other packages (for example
 Linux `.deb`/`.rpm` installs) show "View release notes" instead; use your
 package manager or the [releases page](https://github.com/karimz1/open-file-lock-handle/releases)
