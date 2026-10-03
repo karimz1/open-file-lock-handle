@@ -4,6 +4,44 @@ Find which processes are using a file, folder or local port without opening a
 terminal. For installation and the first scan, see the [README quick start](../README.md#getting-started).
 The [terminal guide](terminal-usage.md) covers the separate CLI/TUI interface.
 
+## Linux archive installation
+
+New builds provide `oflh-desktop.linux.amd64.tar.gz` (x86-64) and
+`oflh-desktop.linux.arm64.tar.gz` (AArch64) alongside the `.deb` and `.rpm`
+installers. Older releases such as `v0.4.0` do not include these archives.
+ARM32 builds are not available. Download the archive matching your CPU from
+[GitHub Releases](https://github.com/karimz1/open-file-lock-handle/releases),
+check it against the release's `checksums.txt`, then extract and run it in your
+graphical desktop session. For x86-64:
+
+```sh
+tar -xzf oflh-desktop.linux.amd64.tar.gz
+./oflh-desktop/oflh-desktop
+```
+
+No package conversion, administrator privileges, or `PATH` changes are needed
+to launch the extracted app. Keep the directory in a location you can write to.
+It includes the executable, license, icon, and startup instructions. Updates are
+manual: close the app, download the new archive, and extract it into a fresh directory.
+
+The archive includes the executable, not its system libraries. It requires a
+compatible glibc runtime (built on Ubuntu 24.04), GTK 3, WebKitGTK 4.1, libsoup 3,
+and their runtime dependencies. Alpine/musl and older incompatible glibc systems
+are not supported by these binaries. A tarball does not guarantee compatibility
+with every Linux distribution.
+
+On Arch Linux, install the runtime packages before launching:
+
+```sh
+sudo pacman -Syu webkit2gtk-4.1 gtk3
+```
+
+See Arch's official [WebKitGTK 4.1](https://archlinux.org/packages/extra/x86_64/webkit2gtk-4.1/)
+and [GTK 3](https://archlinux.org/packages/extra/x86_64/gtk3/) package pages.
+CI checks archive extraction and startup as an unprivileged user on Ubuntu and
+Fedora for both architectures, and on Arch Linux for x86-64. Arch Linux ARM
+is a separate distribution and is not covered by this Arch smoke test.
+
 ## Inspect files and processes
 
 Drop a file or folder anywhere in the window, choose **Open file** / **Open folder**,
@@ -118,7 +156,7 @@ or follow your system language. Your preference is saved between launches.
 Settings also has an **Updates** section. OFLH Desktop checks for a newer
 release when you open Settings. On Windows and macOS installs, "Install and restart" downloads
 and installs the update, then relaunches the app. Other packages (for example
-Linux `.deb`/`.rpm` installs) show "View release notes" instead; use your
+Linux `.deb`/`.rpm` installs and manual `.tar.gz` archives) show "View release notes" instead; use your
 package manager or the [releases page](https://github.com/karimz1/open-file-lock-handle/releases)
 to update.
 

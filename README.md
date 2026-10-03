@@ -46,11 +46,17 @@ the right download and view screenshots, visit the [website](https://oflh.karimz
 | Platform | Download |
 | --- | --- |
 | macOS | `.dmg` |
-| Linux | `.deb` or `.rpm` for your distribution |
+| Linux | `.deb`, `.rpm`, or a manual `.tar.gz` archive (x86-64 / ARM64) |
 | Windows | `-installer.exe` |
 
 Open the installer and follow its steps. Desktop installers are unsigned; see
 [installation warnings](#unsigned-installers) if your OS blocks them.
+
+Linux archive downloads are included in new builds; older releases such as
+`v0.4.0` only contain `.deb` and `.rpm` desktop packages. The archive can be used
+on Arch and other compatible glibc distributions after installing system
+libraries. See [Linux archive installation](docs/desktop-usage.md#linux-archive-installation)
+for extraction, startup, and dependency requirements. ARM32 is not available.
 
 <a id="cli-tui-install"></a>
 

@@ -228,6 +228,14 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'linux'
         with:
+          name: oflh-desktop.linux.${{ matrix.arch }}.tar.gz
+          archive: false
+          path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'linux'
+        with:
           name: oflh-desktop.linux.${{ matrix.arch }}.deb
           archive: false
           path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.deb
@@ -359,6 +367,65 @@ jobs:
           useradd --create-home smoke
           set +e
           su -s /bin/bash smoke -c 'timeout --signal=TERM --kill-after=5s 15s xvfb-run -a oflh-desktop'
+          result=$?
+          set -e
+          test "$result" -eq 124
+
+  archive-smoke:
+    needs: native
+    name: Linux archive / ${{ matrix.distribution }} / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {distribution: Ubuntu, arch: amd64, runner: ubuntu-24.04, container: 'ubuntu:24.04'}
+          - {distribution: Ubuntu, arch: arm64, runner: ubuntu-24.04-arm, container: 'ubuntu:24.04'}
+          - {distribution: Fedora, arch: amd64, runner: ubuntu-24.04, container: 'fedora:latest'}
+          - {distribution: Fedora, arch: arm64, runner: ubuntu-24.04-arm, container: 'fedora:latest'}
+          - {distribution: Arch, arch: amd64, runner: ubuntu-24.04, container: 'archlinux:base'}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: oflh-desktop.linux.${{ matrix.arch }}.tar.gz
+          path: archive
+      - name: Install Ubuntu runtime dependencies
+        if: matrix.distribution == 'Ubuntu'
+        run: |
+          apt-get update
+          apt-get install -y libwebkit2gtk-4.1-0 libgtk-3-0t64 xvfb xauth fonts-dejavu-core passwd util-linux tar gzip
+      - name: Install Fedora runtime dependencies
+        if: matrix.distribution == 'Fedora'
+        run: dnf install -y webkit2gtk4.1 gtk3 xorg-x11-server-Xvfb xorg-x11-xauth dejavu-sans-fonts shadow-utils util-linux tar gzip
+      - name: Install Arch runtime dependencies
+        if: matrix.distribution == 'Arch'
+        run: pacman -Syu --noconfirm webkit2gtk-4.1 gtk3 xorg-server-xvfb xorg-xauth ttf-dejavu shadow util-linux tar gzip
+      - name: Extract and inspect the standalone archive
+        run: |
+          tar -xzf archive/oflh-desktop.linux.${{ matrix.arch }}.tar.gz
+          test -x oflh-desktop/oflh-desktop
+          test -s oflh-desktop/LICENSE
+          test -s oflh-desktop/README.txt
+          test -s oflh-desktop/icon.png
+          ./oflh-desktop/oflh-desktop --version
+          ldd ./oflh-desktop/oflh-desktop > archive/dependencies.txt
+          if grep -q 'not found' archive/dependencies.txt; then
+            cat archive/dependencies.txt
+            exit 1
+          fi
+      - name: Launch the extracted app as an unprivileged user
+        run: |
+          useradd --create-home smoke
+          # Use a traversable location instead of runner-owned workspace directories.
+          cp -r oflh-desktop /tmp/oflh-archive-smoke
+          chmod -R a+rX /tmp/oflh-archive-smoke
+          set +e
+          su -s /bin/bash smoke -c 'timeout --signal=TERM --kill-after=5s 15s xvfb-run -a /tmp/oflh-archive-smoke/oflh-desktop'
           result=$?
           set -e
           test "$result" -eq 124
