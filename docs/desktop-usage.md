@@ -67,7 +67,13 @@ Stopping a parent process can affect its children or your session.
 
 oflh checks that each PID still belongs to the selected process before acting.
 Results refresh afterward. Permission failures and processes still running are
-reported; normal termination never escalates to force termination automatically.
+reported. After a failed normal termination request or a verified still-running
+process, the results dialog suggests **Force terminate** instead of **Refresh
+again**. This opens a new confirmation for only the unsuccessful captured targets,
+including a selected ancestor. Cancel remains the default. Force termination
+skips normal cleanup and may lose unsaved work; permissions and identity checks
+still apply. Unknown exit checks and changed or protected identities do not offer
+this recovery action. Normal termination never escalates automatically.
 
 ## Keyboard and refresh
 

@@ -266,6 +266,9 @@ test.beforeEach(async ({ page }) => {
               force: args.force,
               targets: [{ key: args.key, name: "fixture-shell", pid: 3000 }],
             };
+          if (command === "terminate" && (window as any).__terminationResults) {
+            return (window as any).__terminationResults;
+          }
           if (command === "terminate" && args.ticket === "parent-ticket") {
             await new Promise((resolve) => setTimeout(resolve, 200));
             return [{ pid: 3000, outcome: "exited", error: null }];
@@ -1657,4 +1660,96 @@ test("Chinese language preference survives reload and can return to system defau
   expect(await page.evaluate(() => localStorage.getItem("oflh-language"))).toBe(
     "system",
   );
+});
+
+test("normal termination recovery confirms captured targets instead of refreshing again", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results")).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__terminationResults = [
+      { pid: 4000, outcome: "still_running", error: null },
+    ];
+  });
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page
+    .getByRole("textbox", { name: "Search loaded results" })
+    .fill("node");
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Terminate", exact: true }).click();
+  await expect(
+    dialog.getByText(/Some processes could not be stopped normally/),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Refresh again" }),
+  ).toHaveCount(0);
+  await page.screenshot({ path: "test-results/force-recovery-results.png" });
+  await dialog
+    .getByRole("button", { name: "Force terminate…", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  await expect(dialog.getByText("PID 4000")).toBeVisible();
+  await expect(
+    dialog.getByText(/without allowing normal cleanup/),
+  ).toBeVisible();
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls
+      .filter((call: any) => call.command === "prepare")
+      .map((call: any) => call.args),
+  ).toEqual([
+    { revision: 1, keys: ["4000:18446744073709551615:0"], force: false },
+    { revision: 1, keys: ["4000:18446744073709551615:0"], force: true },
+  ]);
+  expect(
+    calls.filter((call: any) => call.command === "terminate"),
+  ).toHaveLength(1);
+});
+
+test("normal ancestor failure offers force recovery for the captured ancestor", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results")).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__terminationResults = [
+      {
+        pid: 3000,
+        outcome: "failed",
+        error: {
+          kind: "permission_denied",
+          message: "fixture permission failure",
+          os_code: 13,
+        },
+      },
+    ];
+  });
+  await page.getByRole("grid").getByRole("row").nth(1).dblclick();
+  await page.getByRole("button", { name: "fixture-shell 3000" }).click();
+  await page
+    .getByRole("button", { name: "Terminate parent…", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Terminate", exact: true }).click();
+  await expect(dialog.getByText("fixture permission failure")).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Force terminate…", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  await expect(dialog.getByText("PID 3000")).toBeVisible();
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls.filter((call: any) => call.command === "prepare_ancestor").at(-1)
+      .args,
+  ).toEqual({
+    owner: "4000:18446744073709551615:0",
+    key: "3000:900:0",
+    force: true,
+  });
 });
