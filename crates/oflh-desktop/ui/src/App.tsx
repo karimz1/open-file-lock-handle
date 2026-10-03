@@ -1,3 +1,4 @@
+import { forceRecoveryTargets } from "./termination";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -235,6 +236,11 @@ export function App() {
   const [details, setDetails] = useState<Details | null>(null);
   const [context, setContext] = useState<Row | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const [ancestorOwner, setAncestorOwner] = useState<string | null>(null);
+  const [resultContext, setResultContext] = useState<{
+    confirmation: Confirmation;
+    ancestorOwner: string | null;
+  } | null>(null);
   const [showSupport, setShowSupport] = useState(false);
   const [results, setResults] = useState<ActionResult[] | null>(null);
   const [acting, setActing] = useState(false);
@@ -521,6 +527,7 @@ export function App() {
   };
   const prepare = (force: boolean, keys = [...selected]) => {
     setContext(null);
+    setAncestorOwner(null);
     setActing(true);
     void api
       .prepare(status.revision, keys, force)
@@ -552,9 +559,37 @@ export function App() {
       .terminate(confirmation.ticket)
       .then((value) => {
         setConfirmation(null);
+        setResultContext({ confirmation, ancestorOwner });
         setResults(value);
         setSelected(new Set());
         runScan(api.refresh(), view, false);
+      })
+      .catch(report)
+      .finally(() => setActing(false));
+  };
+  const recoveryTargets = forceRecoveryTargets(
+    resultContext?.confirmation ?? null,
+    results ?? [],
+  );
+  const prepareForceRecovery = () => {
+    if (!resultContext || acting || status.scanning || !recoveryTargets.length)
+      return;
+    setActing(true);
+    const owner = resultContext.ancestorOwner;
+    const request = owner
+      ? api.prepareAncestor(owner, recoveryTargets[0].key, true)
+      : api.prepare(
+          status.revision,
+          recoveryTargets.map((target) => target.key),
+          true,
+        );
+    void request
+      .then((value) => {
+        // Enable Cancel before the confirmation mounts and chooses its default focus.
+        setActing(false);
+        setAncestorOwner(owner);
+        setResults(null);
+        setConfirmation(value);
       })
       .catch(report)
       .finally(() => setActing(false));
@@ -1309,6 +1344,7 @@ export function App() {
                         }
                         terminateAncestor={(key, force) => {
                           setActing(true);
+                          setAncestorOwner(details.process.process_key);
                           void api
                             .prepareAncestor(
                               details.process.process_key,
@@ -2107,10 +2143,25 @@ export function App() {
               </li>
             ))}
           </ul>
+          {recoveryTargets.length > 0 && (
+            <p role="status">
+              {t("termination.k_normal_termination_recovery")}
+            </p>
+          )}
           <div className="modal-actions">
-            <button onClick={refresh} disabled={status.scanning}>
-              <RefreshCw size={14} /> {t("status.k_refresh_again")}
-            </button>
+            {recoveryTargets.length > 0 ? (
+              <button
+                className="danger"
+                onClick={prepareForceRecovery}
+                disabled={acting || status.scanning}
+              >
+                {t("termination.k_force_terminate")}
+              </button>
+            ) : (
+              <button onClick={refresh} disabled={status.scanning}>
+                <RefreshCw size={14} /> {t("status.k_refresh_again")}
+              </button>
+            )}
             <button data-default-focus onClick={() => setResults(null)}>
               {t("common.k_done")}
             </button>

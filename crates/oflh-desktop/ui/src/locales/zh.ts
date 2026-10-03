@@ -393,6 +393,8 @@ const zh: TranslationSchema<typeof en> = {
     k_visible_columns: "可见列",
   },
   termination: {
+    k_normal_termination_recovery:
+      "部分进程无法正常终止。您可以使用强制终止，在不执行清理的情况下停止它们。未保存的工作可能会丢失。",
     k_force_terminate: "强制终止…",
     k_force_terminate_7b6445b3: "强制终止",
     k_force_terminate_parent: "强制终止父进程…",

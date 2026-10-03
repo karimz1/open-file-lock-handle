@@ -400,6 +400,8 @@ const en = {
     k_visible_columns: "Visible columns",
   },
   termination: {
+    k_normal_termination_recovery:
+      "Some processes could not be stopped normally. You can use Force Terminate to stop them without cleanup. Unsaved work may be lost.",
     k_force_terminate: "Force terminate…",
     k_force_terminate_7b6445b3: "Force terminate",
     k_force_terminate_parent: "Force terminate parent…",

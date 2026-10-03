@@ -413,6 +413,8 @@ const de: TranslationSchema<typeof en> = {
     k_visible_columns: "Sichtbare Spalten",
   },
   termination: {
+    k_normal_termination_recovery:
+      "Einige Prozesse konnten nicht normal beendet werden. Mit „Beenden erzwingen“ können Sie sie ohne Aufräumen stoppen. Nicht gespeicherte Arbeit kann verloren gehen.",
     k_force_terminate: "Beenden erzwingen …",
     k_force_terminate_7b6445b3: "Beenden erzwingen",
     k_force_terminate_parent: "Elternprozess zwangsweise beenden …",
