@@ -4,6 +4,11 @@ on:
   push:
     branches: [main, feature/oflh-desktop-rc]
   workflow_dispatch:
+    inputs:
+      administrator_only:
+        description: Run only the six native administrator-recovery jobs
+        type: boolean
+        default: false
   workflow_call:
     secrets:
       TAURI_SIGNING_PRIVATE_KEY:
@@ -55,6 +60,7 @@ jobs:
           OFLH_ADMIN_HELPER_EXE: ${{ github.workspace }}/target/debug/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }}
         run: cargo test -p oflh-desktop --locked --test elevation packaged_helper_validates_identity_permissions_and_force_action -- --ignored
   frontend:
+    if: ${{ !inputs.administrator_only }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7

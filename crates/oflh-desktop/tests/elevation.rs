@@ -176,7 +176,10 @@ fn exercise_helper(executable: &Path, privileged: bool) {
         use std::os::unix::fs::PermissionsExt;
         // Hosted runner home directories may be inaccessible to nobody. Copy the
         // exact tested helper bytes into a traversable test-only directory.
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::Builder::new()
+            .prefix("oflh-helper-test-")
+            .tempdir_in("/tmp")
+            .unwrap();
         std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
         let denied_executable = directory.path().join("oflh-helper");
         std::fs::copy(executable, &denied_executable).unwrap();
