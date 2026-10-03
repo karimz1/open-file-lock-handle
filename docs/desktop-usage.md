@@ -84,5 +84,8 @@ and OFLH Purple, plus font size. Your theme, font size and details width persist
 The first launch offers a theme choice. The app remembers these settings between
 launches.
 
+In Settings, choose English, German, or Simplified Chinese under **Language**,
+or follow your system language. Your preference is saved between launches.
+
 For OS limitations, see [platform support](platform-support.md). For build,
 testing and packaging details, see [development](development.md).

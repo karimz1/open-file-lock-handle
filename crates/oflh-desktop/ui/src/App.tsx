@@ -1364,14 +1364,17 @@ export function App() {
                   <div className="evidence-note">
                     <ShieldAlert size={13} />
                     <span>
-                      {view === "ports"
-                        ? "Local bindings do not prove external reachability. Unknown owners cannot be terminated."
-                        : "File usage is not proof of a lock. Windows resource users are not proven lock owners."}
+                      {t(
+                        view === "ports"
+                          ? "termination.k_local_bindings_do_not_prove_external_re_a5cdb1ad"
+                          : "app.k_file_usage_is_not_proof_of_a_lock_windo_f7640915",
+                      )}
                     </span>
                     {status.warnings.length > 0 && (
                       <details>
                         <summary>
-                          {status.warnings.length} coverage notices
+                          {status.warnings.length}{" "}
+                          {t("status.k_coverage_notices")}
                         </summary>
                         <ul>
                           {status.warnings.map((warning, index) => (

@@ -266,6 +266,7 @@ const en = {
     k_working_directory: "Working directory",
   },
   language: {
+    k_chinese_simplified: "Chinese (Simplified)",
     k_choose_a_language_or_follow_your_system_setting:
       "Choose a language or follow your system setting.",
     k_english: "English",

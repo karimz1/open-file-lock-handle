@@ -7,6 +7,7 @@ import {
 } from "./i18n";
 import de from "./locales/de";
 import en from "./locales/en";
+import zh from "./locales/zh";
 
 function flattenCatalog(
   catalog: Record<string, unknown>,
@@ -26,21 +27,25 @@ function flattenCatalog(
 describe("desktop locale selection", () => {
   it("requires complete locale coverage and matching interpolation placeholders", () => {
     const english = flattenCatalog(en);
-    const german = flattenCatalog(de);
-    expect(Object.keys(german).sort()).toEqual(Object.keys(english).sort());
-
-    for (const [key, englishMessage] of Object.entries(english)) {
-      const germanMessage = german[key];
-      expect(germanMessage.trim(), key).not.toBe("");
-      expect(
-        [...germanMessage.matchAll(/\{\{(\w+)\}\}/g)]
-          .map((match) => match[1])
-          .sort(),
-      ).toEqual(
-        [...englishMessage.matchAll(/\{\{(\w+)\}\}/g)]
-          .map((match) => match[1])
-          .sort(),
+    for (const catalog of [de, zh]) {
+      const translated = flattenCatalog(catalog);
+      expect(Object.keys(translated).sort()).toEqual(
+        Object.keys(english).sort(),
       );
+
+      for (const [key, englishMessage] of Object.entries(english)) {
+        const translatedMessage = translated[key];
+        expect(translatedMessage.trim(), key).not.toBe("");
+        expect(
+          [...translatedMessage.matchAll(/\{\{(\w+)\}\}/g)]
+            .map((match) => match[1])
+            .sort(),
+        ).toEqual(
+          [...englishMessage.matchAll(/\{\{(\w+)\}\}/g)]
+            .map((match) => match[1])
+            .sort(),
+        );
+      }
     }
   });
 
@@ -50,6 +55,29 @@ describe("desktop locale selection", () => {
       expect(resolveLocale(language)).toBe("de");
     },
   );
+
+  it.each(["zh", "zh-CN", "zh-SG", "zh-Hans", "zh_Hans_CN", "ZH-cn"])(
+    "selects Simplified Chinese for %s",
+    (language) => {
+      expect(resolveLocale(language)).toBe("zh");
+    },
+  );
+
+  it("translates Chinese labels and preserves interpolated values", () => {
+    expect(translate("zh", "navigation.k_settings")).toBe("设置");
+    expect(
+      translate("zh", "table.k_resize_column_column", { column: "路径" }),
+    ).toBe("调整路径列宽");
+    expect(
+      translate(
+        "zh",
+        "search.k_search_shortcut_f_or_escape_returns_to_e2053cec",
+        {
+          shortcut: "Ctrl",
+        },
+      ),
+    ).toBe("搜索（Ctrl+F 或 /）；按 Escape 返回工作区");
+  });
 
   it.each(["en", "en-US", "pt-PT", "fr-FR", "", undefined, null])(
     "falls back to English for %s",
@@ -70,6 +98,8 @@ describe("desktop locale selection", () => {
   });
 
   it("honors an explicit language and follows system language when requested", () => {
+    expect(resolvePreferredLocale("zh", "en-US")).toBe("zh");
+    expect(resolvePreferredLocale("system", "zh-CN")).toBe("zh");
     expect(resolvePreferredLocale("de", "pt-PT")).toBe("de");
     expect(resolvePreferredLocale("en", "de-DE")).toBe("en");
     expect(resolvePreferredLocale("system", "de-DE")).toBe("de");
