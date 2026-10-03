@@ -278,6 +278,7 @@ const de: TranslationSchema<typeof en> = {
     k_working_directory: "Arbeitsverzeichnis",
   },
   language: {
+    k_chinese_simplified: "Chinesisch (vereinfacht)",
     k_choose_a_language_or_follow_your_system_setting:
       "Wähle eine Sprache oder übernimm die Systemeinstellung.",
     k_english: "Englisch",

@@ -1434,3 +1434,63 @@ test("language setting switches languages and persists the preference", async ({
     "system",
   );
 });
+
+test("Chinese system language translates the workspace and process confirmation", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "language", {
+      configurable: true,
+      value: "zh-CN",
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh");
+  await expect(
+    page.getByRole("grid", { name: "使用此目标的进程" }),
+  ).toBeVisible();
+  await expect(page.locator(".evidence-note")).toContainText(
+    "文件被使用不代表被锁定",
+  );
+  await expect(page.locator(".evidence-note summary")).toContainText(
+    "检测范围说明",
+  );
+  await page.getByRole("button", { name: "列筛选", exact: true }).click();
+  const filters = page.getByRole("form", { name: "列筛选" });
+  await expect(filters.getByLabel("进程名称")).toBeVisible();
+  await page.screenshot({ path: "test-results/chinese-filters.png" });
+  await filters.getByRole("button", { name: "关闭", exact: true }).click();
+  await page.getByRole("row").filter({ hasText: "Code" }).first().click();
+  await page.getByRole("button", { name: "终止…", exact: true }).click();
+  const confirmation = page.getByRole("dialog");
+  await expect(confirmation).toContainText("未保存的工作可能丢失");
+  await expect(
+    confirmation.getByRole("button", { name: "取消", exact: true }),
+  ).toBeFocused();
+  await page.screenshot({ path: "test-results/chinese-confirmation.png" });
+});
+
+test("Chinese language preference survives reload and can return to system default", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Language", { exact: true }).selectOption("zh");
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh");
+  expect(await page.evaluate(() => localStorage.getItem("oflh-language"))).toBe(
+    "zh",
+  );
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh");
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await expect(page.getByLabel("语言", { exact: true })).toHaveValue("zh");
+  await expect(
+    page.getByRole("option", { name: "简体中文", exact: true }),
+  ).toHaveCount(1);
+  await page.screenshot({ path: "test-results/chinese-settings.png" });
+  await page.getByLabel("语言", { exact: true }).selectOption("system");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  expect(await page.evaluate(() => localStorage.getItem("oflh-language"))).toBe(
+    "system",
+  );
+});
