@@ -20,7 +20,9 @@ git push origin v0.2.0-rc.1
 ```
 
 Use the intended version throughout. A version with a suffix such as `-rc.1`
-creates a prerelease. Release executables and installer metadata use the tag
+creates a prerelease and is explicitly excluded from GitHub's **Latest** release.
+The latest stable release remains the default download and updater destination.
+Release executables and installer metadata use the tag
 without `v`; local builds display **development**.
 
 ## Review the draft
@@ -28,6 +30,13 @@ without `v`; local builds display **development**.
 Check that all native jobs passed for the tagged commit and the expected assets
 are present. Write release notes describing changes users will notice, then
 publish the draft in GitHub Releases.
+
+New drafts prepend a [download introduction](../.github/release-notes/downloads.md)
+to GitHub's generated **What's Changed** section and full changelog. It links to
+the website's download selector and directs readers to the version-specific
+assets and checksums below, especially for release candidates. Retrying an
+existing draft preserves edited release notes and reinforces its prerelease
+classification for RC tags. Published releases cannot be modified by a retry.
 
 Browser tests use sample results; they do not exercise native dialogs or every
 installer interaction. Check affected native behavior when a release changes it.

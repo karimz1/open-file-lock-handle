@@ -111,12 +111,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
+          PRERELEASE=()
+          if [[ "$TAG" == *-* ]]; then PRERELEASE=(--prerelease --latest=false); fi
           if gh release view "$TAG" --json isDraft >/tmp/release.json 2>/dev/null; then
             test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true
+            if [[ "$TAG" == *-* ]]; then
+              gh release edit "$TAG" "${PRERELEASE[@]}"
+            fi
           else
-            PRERELEASE=()
-            if [[ "$TAG" == *-* ]]; then PRERELEASE=(--prerelease); fi
-            gh release create "$TAG" --verify-tag --draft "${PRERELEASE[@]}" --title "OFLH $TAG" --generate-notes
+            gh release create "$TAG" --verify-tag --draft "${PRERELEASE[@]}" --title "OFLH $TAG" --notes-file .github/release-notes/downloads.md --generate-notes
           fi
           gh release upload "$TAG" release-dist/* --clobber
           echo '### Release ready for review' >> "$GITHUB_STEP_SUMMARY"
