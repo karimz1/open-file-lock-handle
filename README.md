@@ -1,116 +1,84 @@
 <p align="center">
-  <img src="crates/oflh-desktop/app-icon.svg" alt="Open File Lock Handle Desktop app icon" width="88">
+  <img src="crates/oflh-desktop/app-icon.svg" alt="Open File Lock Handle logo" width="88">
 </p>
 
 # Open File Lock Handle (oflh)
 
 [![Website](https://img.shields.io/badge/website-oflh-8B5CF6)](https://oflh.karimzouine.com/)
+[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-64748b)](#platforms)
 [![GitHub downloads](https://img.shields.io/github/downloads/karimz1/open-file-lock-handle/total?label=downloads)](https://github.com/karimz1/open-file-lock-handle/releases)
 [![CI](https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml/badge.svg)](https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml)
-[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-64748b)](#platforms)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Listed on AwesomeTUI](https://img.shields.io/badge/AwesomeTUI-listed-64748b)](https://awesometui.com/open-file-lock-handle)
-[![Listed on AlternativeTo](https://img.shields.io/badge/AlternativeTo-listed-64748b)](https://alternativeto.net/software/oflh-open-file-lock-handle/about/)
 
-Find which processes are using a file or directory, and which processes own local
-TCP listeners or bound UDP sockets. Choose OFLH Desktop or the interactive
-terminal app (CLI/TUI). Both use the same native Rust inspection engine on Linux,
-macOS, and Windows.
+oflh shows which processes are using a file, folder, or local port. Use it to
+investigate files that cannot be deleted or replaced, folders still in use, and
+“port already in use” errors.
 
-Ever tried to delete, move, or replace a file and gotten a vague "it's in use"
-error with no explanation? Or started a server and hit "port already in use"
-with no idea what's already using it? oflh shows you exactly which app or
-process is holding that file, folder, or port &mdash; and lets you terminate it
-directly if you choose to.
+Choose the desktop app or the interactive terminal app. Both run on Linux,
+macOS, and Windows. You can inspect matching file usages, lock evidence, process
+parents, and local ports, then terminate a process after confirmation.
 
-Visit the [oflh website](https://oflh.karimzouine.com/) for
-screenshots and one-click downloads for Linux, macOS, and Windows.
+Open files are not always locked. Windows resource users are not verified lock
+owners, and permissions can limit what oflh finds.
 
-## Choose an interface
+[Install](#install) · [Build from source](#build-from-source)
 
-| | OFLH Desktop | oflh CLI/TUI |
-| --- | --- | --- |
-| Best for | Exploring results in a graphical workspace | Working from a terminal with keyboard navigation |
-| Includes | File and folder scans, ports, filters, process details and ancestry | File and folder scans, ports, process details and ancestry |
-| Start with | Open the app, then choose or drop a file or folder | `oflh [PATH]` or `oflh --port PORT` |
-| Install | [Desktop options](#desktop-install) | [CLI/TUI options](#cli-tui-install) |
+## Desktop
 
-### Desktop
+![OFLH Desktop showing processes using a folder and the selected process details](images/desktop.png)
 
-![OFLH Desktop showing process results and process details](images/desktop.png)
+## Terminal
 
-### Terminal
+[![Terminal demonstration](images/demo-thumbnail.jpg)](images/demo.gif)
 
-<a href="./images/demo.gif" target="_blank" rel="noopener"><img src="./images/demo-thumbnail.jpg" alt="demo of oflh terminal"></a>
-
-<a href="https://asciinema.org/a/1266562" target="_blank" rel="noopener">View the terminal recording on asciinema</a>
+[Watch the terminal recording](https://asciinema.org/a/1266562)
 
 ## Install
 
-<a id="cli-tui-install"></a>
-
-### CLI/TUI
-
-On macOS or Linux, install with Homebrew:
-
-```sh
-brew install karimz1/tap/oflh-cli
-```
-
-For other platforms, or to install without Homebrew, download the CLI for your
-operating system and CPU from [GitHub Releases](https://github.com/karimz1/open-file-lock-handle/releases).
-On macOS or Linux, make the downloaded file executable and rename it to `oflh`.
-For example, for the macOS ARM64 build:
-
-```sh
-chmod +x ./oflh-cli.darwin.arm64
-mv ./oflh-cli.darwin.arm64 ./oflh
-./oflh [PATH]
-```
-
-Use the filename that matches your downloaded build. On Windows, rename the
-downloaded `.exe` to `oflh.exe`, then run `.\oflh.exe [PATH]` in PowerShell.
-
-For options and keyboard controls, see the [Terminal user guide](docs/usage.md).
+Download the build for your operating system and CPU from
+[GitHub Releases](https://github.com/karimz1/open-file-lock-handle/releases).
+`amd64` means x86-64; `arm64` includes Apple Silicon. For an easier way to find
+the right download and view screenshots, visit the [website](https://oflh.karimzouine.com/).
 
 <a id="desktop-install"></a>
 
 ### Desktop
 
-Download the installer for your operating system from
-[GitHub Releases](https://github.com/karimz1/open-file-lock-handle/releases),
-then open it and follow the installation steps.
-
-| Operating system | Install method |
+| Platform | Download |
 | --- | --- |
-| macOS | DMG from GitHub Releases |
-| Linux | DEB or RPM package for x86-64 or ARM64 |
-| Windows | Installer from GitHub Releases |
+| macOS | `.dmg` |
+| Linux | `.deb` or `.rpm` for your distribution |
+| Windows | `-installer.exe` |
 
-For search, filters, and process actions, see the
-[Desktop user guide](docs/desktop-usage.md).
+Open the installer and follow its steps. Desktop installers are unsigned; see
+[installation warnings](#unsigned-installers) if your OS blocks them.
 
-Release downloads are individual files, not ZIP bundles. Each release includes
-one `checksums.txt` with SHA-256 hashes for every CLI executable and Desktop
-installer in that release.
+<a id="cli-tui-install"></a>
 
-#### Known limitation: unsigned builds
+### Terminal
 
-oflh is free and open source and does not have an Apple Developer ID or a
-Windows code-signing certificate yet, so Desktop installers are unsigned.
+With Homebrew on macOS or Linux:
 
-- **macOS**: Gatekeeper reports the app as "damaged." It is not corrupted;
-  clear the quarantine flag with `xattr -cr "/Applications/OFLH Desktop.app"`
-  (adjust the path if installed elsewhere), then reopen the app.
-- **Windows**: SmartScreen flags the installer as from an "unknown publisher."
-  Click **More info**, then **Run anyway** to continue the installer.
-- **Linux**: DEB/RPM packages have no GPG signature yet. If your package
-  manager warns about a missing signature, verify the download against
-  `checksums.txt` in the release instead.
+```sh
+brew install karimz1/tap/oflh-cli
+```
 
-If you would like to help fund a code-signing certificate, consider
-[sponsoring on GitHub](https://github.com/sponsors/karimz1) or
-[Buy Me a Coffee](https://www.buymeacoffee.com/karimz1).
+Alternatively, download a standalone CLI executable. On macOS or Linux, make it
+executable and run it directly. For example, on macOS ARM64:
+
+```sh
+chmod +x ./oflh-cli.darwin.arm64
+./oflh-cli.darwin.arm64 ./build
+```
+
+Use the filename of your download. On Windows x86-64, run from PowerShell:
+
+```powershell
+.\oflh-cli.windows.amd64.exe .\build
+```
+
+You can rename the executable to `oflh` (`oflh.exe` on Windows) and place it on
+`PATH` to use the commands below from any directory.
 
 <a id="getting-started"></a>
 
@@ -118,50 +86,78 @@ If you would like to help fund a code-signing certificate, consider
 
 ### Desktop
 
-1. Open a file or folder, or drop it into the window.
-2. Select a process to inspect its matching file usages, ports, and ancestry.
-3. Search or filter the results, then refresh to take a new snapshot.
-4. Close the owning application normally when possible. Termination is an
-   explicit, confirmed action and can interrupt work.
+1. Open the app and choose **Open file** or **Open folder**, or drop a path into the window.
+2. Select a process to inspect its file usages, local ports, and ancestry.
+3. Search or filter the results. Refresh to take a new snapshot.
 
-### CLI/TUI
+See the [Desktop user guide](docs/desktop-usage.md) for filters, selection, and actions.
 
-Run `oflh` in an interactive terminal. With no argument, it scans the current
-directory. A directory target includes descendants.
+### Terminal
+
+Run in an interactive terminal. With no path, oflh scans the current directory;
+folder scans include descendants.
 
 ```sh
-oflh ./build
-oflh ./build/plugin.dll
-oflh --port 3000
+oflh ./build                 # Processes using this folder
+oflh ./build/plugin.dll      # Processes using one file
+oflh --port 3000             # Local TCP listener or UDP binding on port 3000
 ```
 
-Use `1`, `2`, and `3` to switch between Processes, Locked files, and Ports. Press
-Enter to inspect a selected process, `/` to search, `r` to refresh, and `?` for
-help.
+| Key | Action |
+| --- | --- |
+| `1` / `2` / `3` | Processes / Locked files / Ports |
+| `↑` / `↓`, `Enter` | Select and inspect a process |
+| `/` | Search |
+| `r` | Refresh |
+| `?` | Help and scan warnings |
+| `q` | Quit (outside search editing) |
 
-## What the results mean
+See the [Terminal user guide](docs/terminal-usage.md) for search, selection, and actions.
 
-An open file is not necessarily locked. OFLH separates file usage from lock
-evidence and does not unlock files. Detection depends on operating-system APIs,
-permissions, and concurrent system activity. Windows resource users are not
-verified lock owners. See [platform coverage and limitations](docs/platform-support.md).
+<a id="platform-behavior"></a>
 
-## Platforms
+## Limitations
 
-CLI and Desktop releases target Linux, macOS, and Windows on x86-64 and ARM64.
-Desktop installers are DEB/RPM on Linux, DMG on macOS, and EXE on Windows. The
-release page is the source of truth for available builds.
+Results are snapshots, limited by OS APIs and permissions. Empty results do not
+prove a file is unused. oflh reports usage and lock evidence; it does not unlock
+files. Ports are local TCP listeners and bound UDP sockets, not reachability tests.
 
-## Project references
+Close the owning application normally when possible. Termination can lose unsaved
+work, and stopping a parent can affect its children. Actions require confirmation.
+See [platform support](docs/platform-support.md) for detection limits.
 
+## Build from source
+
+See [Development](docs/development.md) for prerequisites and the commands to build
+and run either the CLI or Desktop locally.
+
+## Unsigned installers
+
+Only bypass an OS warning for a download you trust. Release assets include
+`checksums.txt` with SHA-256 hashes for checking download integrity.
+
+- **macOS:** If Gatekeeper blocks the installed app or reports it as damaged,
+  clear its quarantine flag with `xattr -cr "/Applications/OFLH Desktop.app"`,
+  then reopen it. Adjust the path if installed elsewhere.
+- **Windows:** SmartScreen may show an unknown publisher. **More info → Run anyway**
+  continues installation.
+- **Linux:** DEB/RPM packages have no GPG signature. Check the release checksum
+  if your package manager warns about a missing signature.
+
+<a id="platforms"></a>
+
+Release targets are Linux, macOS, and Windows on x86-64 and ARM64. Available
+packages are listed on the release page.
+
+<a id="project-references"></a>
+
+## Documentation
+
+- [Terminal guide](docs/terminal-usage.md) and [Desktop guide](docs/desktop-usage.md)
 - [Platform support and limitations](docs/platform-support.md)
+- [Building and testing](docs/development.md)
+- [Contributing](CONTRIBUTING.md), [Architecture](docs/architecture.md),
+  and [Releasing](docs/releasing.md)
 
-For contributors and maintainers:
-
-- [Architecture](docs/architecture.md)
-- [Development and testing](docs/development.md)
-- [Performance measurements](docs/performance.md)
-- [Release process](docs/releasing.md)
-
-Report a reproducible problem in [GitHub Issues](https://github.com/karimz1/open-file-lock-handle/issues).
-OFLH is licensed under [MIT](LICENSE).
+Report bugs in [GitHub Issues](https://github.com/karimz1/open-file-lock-handle/issues).
+Licensed under [MIT](LICENSE).

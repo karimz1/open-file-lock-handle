@@ -2,9 +2,7 @@
 
 Find which processes are using a file, folder or local port without opening a
 terminal. For installation and the first scan, see the [README quick start](../README.md#getting-started).
-The [terminal guide](usage.md) covers the separate CLI/TUI interface.
-
-![OFLH Desktop showing process results, file usages, and process details](../images/desktop.png)
+The [terminal guide](terminal-usage.md) covers the separate CLI/TUI interface.
 
 ## Inspect files and processes
 
@@ -12,17 +10,15 @@ Drop a file or folder anywhere in the window, choose **Open file** / **Open fold
 or type a path and choose **Inspect**. **Recent targets** lets you revisit targets
 from previous launches. Folder scans include descendants.
 
-![Desktop showing process results for a folder after it is dropped](../images/desktop-folder.png)
-
 **Processes** groups results by process. **File usages** shows individual matching
 observations. Click a row to open details. Use the panel button or close button to
 close it. Table paths are shortened for readability. Full paths and copy/reveal
 actions are available in details. Drag column dividers or the details panel edge
 to resize.
 
-The details panel puts **Matching handles**, **Local ports**, and **Process ancestry**
-near the top. Ancestry reads from oldest captured parent down to the highlighted
-current process. Click an ancestor to select its process actions.
+Details show **Matching handles**, **Local ports**, and **Process ancestry**.
+The ancestry tree lists parents above the selected process. Click a parent to
+inspect it or use its process actions.
 
 An open file is not proof of a lock. **Lock evidence only** restricts results to
 reported evidence. Windows resource users are not proven lock owners. Open
@@ -39,9 +35,6 @@ access/relation. Numeric bounds are inclusive. Unknown metrics do not match a
 numeric bound. An unavailable CPU sample is not zero. Choose **Apply filters**
 to apply, or **Clear filters** to reset column predicates.
 
-![Desktop results narrowed by a process-name search](../images/desktop-search.png)
-
-![Desktop results with an applied process-name column filter](../images/desktop-filters.png)
 
 In **Ports**, search `port:3000` for an exact port or `30` for matching fragments.
 You can combine terms such as `port:3000 tcp`, `udp`, `ipv6` or `pid:1234`.
@@ -50,8 +43,6 @@ The view lists local TCP listeners and bound UDP sockets, not network reachabili
 Opening **Local ports** from details scopes results to that captured process.
 Refresh and termination preserve that scope: an empty result can confirm that the
 process's bindings disappeared. Clear the scope explicitly to see other owners.
-
-![Desktop local ports showing a TCP listener and UDP binding](../images/desktop-ports.png)
 
 ## Selection and copying
 
@@ -72,10 +63,9 @@ normal platform action. **Force terminate** is a separate, stronger action.
 Review the named processes and PIDs before confirming. Cancel is the default.
 Stopping a parent process can affect its children or your session.
 
-Rust revalidates captured process identities before acting, checks whether the
-original process exited, and refreshes results. A request is not proof of exit:
-permission failures, still-running processes and unavailable verification are
-reported separately. OFLH never silently escalates to force termination.
+oflh checks that each PID still belongs to the selected process before acting.
+Results refresh afterward. Permission failures and processes still running are
+reported; normal termination never escalates to force termination automatically.
 
 ## Keyboard and refresh
 
@@ -102,5 +92,4 @@ package manager or the [releases page](https://github.com/karimz1/open-file-lock
 to update.
 
 For OS limitations, see [platform support](platform-support.md). For build,
-testing and packaging details, see [development](development.md) and the
-[RC validation checklist](desktop-rc.md).
+testing and packaging details, see [development](development.md).

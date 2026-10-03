@@ -1,113 +1,24 @@
-# Development and source builds
+# Build locally
 
-Install Rust through rustup. `rust-toolchain.toml` pins the toolchain used by CI.
-Run the repository gates with:
+Run from the repository root with Rust installed. Desktop also needs Node.js,
+installed frontend dependencies, and the [Tauri system prerequisites](https://v2.tauri.app/start/prerequisites/).
+
+## CLI
 
 ```sh
-cargo xtask check
 cargo build --release --locked --bin oflh
-./target/release/oflh .
+./target/release/oflh
 ```
 
-`check` runs standard formatting, Clippy with warnings denied, and workspace tests.
-Native integration tests also require a C compiler (Clang/GCC on Unix, MSVC or
-MinGW on Windows). The independent fixture in
-`crates/oflh-platform/tests/fixtures/lock-fixture.c` exercises interoperability
-with native locks. It is compiled into a temporary test directory only.
+<a id="desktop-development"></a>
+<a id="build-desktop"></a>
 
-## Working on the code
-
-See [Architecture](architecture.md) for crate responsibilities, data flow, and
-native safety boundaries. Run a focused test while developing, then the full
-validation command before submitting a pull request:
-
-```sh
-cargo test -p oflh-core
-cargo test -p oflh-platform --test native
-cargo test -p oflh-platform --test ports
-cargo test -p oflh-tui
-cargo test -p oflh --test terminal
-cargo xtask check
-```
-
-On Windows, run from a developer shell with the native compiler available. On
-macOS, install Xcode Command Line Tools, including the SDK and libclang needed
-by `netstat2` to generate its libproc bindings. Cross-checking macOS from Linux
-also requires an Apple SDK. Installing the Rust target alone is insufficient.
-On Linux, install a C compiler and the
-usual linker/build tools from your distribution.
-
-## Validation
-
-Native CI tests Linux, macOS, and Windows on both x86-64 and ARM64. Checks cover
-real locks and release, sharing modes, cancellation, stale/protected identities,
-resource sampling, parent termination, Unicode paths, and independent C fixtures.
-Unix additionally covers mappings and working directories. Linux covers deleted
-files and hard links.
-
-A real PTY/ConPTY test exercises startup, input, resizing, and quit on each native
-target. State tests cover confirmation and identity safety. Text golden snapshots
-cover process, lock, detail, and compact screens. Review intentional changes before
-updating them with `OFLH_UPDATE_SNAPSHOTS=1 cargo test -p oflh-tui golden_screens`.
-For visual review, set `OFLH_VISUAL_DIR` to a temporary directory when running
-`cargo test -p oflh-tui`. The tests export SVG previews using sample data. Use
-these previews for documentation instead of captures containing real process
-names or private paths. Rendering can still vary between terminal emulators.
-
-Unit tests live in `#[cfg(test)]` modules. Cargo integration tests are separate
-executables. CLI release packaging builds only `oflh`. Desktop packaging builds
-the separate `oflh-desktop` executable. Test harnesses, C fixtures, benchmarks,
-and developer tooling are absent from both distributed applications.
-
-## Documentation and performance
-
-Build API documentation with `cargo doc --workspace --no-deps`. Public APIs should
-explain their contract. Native wrappers should document buffer and lifetime rules.
-Use [Performance](performance.md) when measuring a scanner or startup change.
-
-For pull-request expectations, see [Contributing](../CONTRIBUTING.md). Release
-maintainers should follow [Releasing](releasing.md).
-
-## Desktop development
-
-Install Node.js 24 and the [native WebView prerequisites](desktop.md#build-prerequisites).
-From the repository root:
-
-```sh
-npm --prefix crates/oflh-desktop/ui ci
-npm --prefix crates/oflh-desktop/ui run tauri -- dev
-```
-
-Regenerate the Desktop screenshots used in the README and user guide with
-Playwright's deterministic synthetic data:
-
-```sh
-npm --prefix crates/oflh-desktop/ui run screenshots:docs
-```
-
-The documentation screenshot test also runs with `test:ui` and checks the
-folder-drop UI flow, search, filters, and port results before capturing them.
-Playwright supplies the Tauri events and synthetic scan response; it does not
-simulate an operating-system drag gesture. Rust unit tests cover acceptance of
-one dropped path and rejection of zero or multiple paths. Normal test runs write
-previews under `test-results`; this command updates the images in `images/`.
-
-To build a standalone Desktop executable:
+## Desktop
 
 ```sh
 npm --prefix crates/oflh-desktop/ui run tauri -- build --no-bundle -- --locked
 ./target/release/oflh-desktop
 ```
 
-On Windows the executables are `target\release\oflh.exe` and
-`target\release\oflh-desktop.exe`. Local builds display **development**. Release
-CI uses the validated tag for both frontends and passes the same version to Tauri
-installer configuration. Pull request builds use a SemVer prerelease containing
-the PR number, Actions run ID and attempt, and source commit. `cargo xtask
-ci-version` generates that identity from the workspace package version. Run
-`oflh --version` or `oflh-desktop --version` to print the full commit and links.
-Desktop Settings and the TUI help screen also show the build provenance.
-
-See [OFLH Desktop](desktop.md) for WebView prerequisites, frontend checks and
-native packaging. Ordinary CLI builds and `cargo xtask check` do not require a
-GUI toolchain. Desktop shell validation additionally enables the `desktop` feature.
+This builds the desktop executable without an installer. On Windows, run the
+corresponding `.exe` in `target\release`.

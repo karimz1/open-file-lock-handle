@@ -1,6 +1,6 @@
 # Platform behavior
 
-[Back to the README](../README.md) · [User guide](usage.md)
+[Back to the README](../README.md) · [Terminal guide](terminal-usage.md) · [Desktop guide](desktop-usage.md)
 
 The workflow is shared across platforms, but discovery and lock semantics depend
 on the operating system. Results are a snapshot of what the current user can
@@ -15,6 +15,10 @@ Press `?` for the full scan details.
 | Linux | `/proc`: file descriptors, CWD, executable, mapped files, deleted-but-open files | `SIGTERM` with `pidfd` identity validation |
 | macOS | `libproc`: vnode descriptors, CWD, executable, mapped files | `SIGTERM` after start-time validation |
 | Windows | Restart Manager, Toolhelp modules and executables | `WM_CLOSE` for process windows |
+
+Actions revalidate PID and process birth identity before signaling. Linux uses
+an owned pidfd; Windows force termination uses a validated process handle. macOS
+checks start time before signaling, but its APIs leave a narrow exit/PID-reuse race.
 
 Windows console and service processes may require explicit force termination.
 Windows discovery does not cover CWD, directory handles, or deleted files.
@@ -59,7 +63,6 @@ interval: 100% means all CPUs. It requires two samples of the same process. A
 lightweight metrics sample runs about one second after the initial results;
 use `a` for regular updates. Unavailable metrics appear as a dash, for example when
 permissions or process exit prevent inspection.
-
 
 ## Ports
 

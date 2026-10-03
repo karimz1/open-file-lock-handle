@@ -7,9 +7,10 @@ Bug reports, documentation fixes, and focused code changes are welcome.
 Search [existing issues](https://github.com/karimz1/open-file-lock-handle/issues)
 before opening a new one. Include:
 
-- `oflh --version`, operating system, architecture, and terminal application.
+- App version (`oflh --version` or Desktop Settings), operating system, and architecture.
+- Which interface you used; include the terminal application for CLI issues.
 - Steps to reproduce, expected behavior, and what happened instead.
-- Relevant warnings shown by `oflh` and whether the target is a file or directory.
+- Relevant warnings shown by `oflh` and whether the target is a file, folder, or port.
 
 Use a minimal example with temporary files where possible. Redact usernames,
 private paths, hostnames, process arguments, and credentials from screenshots or
@@ -21,7 +22,9 @@ logs. Do not post sensitive data in a public issue.
 2. Keep the change focused and follow the boundaries in [Architecture](docs/architecture.md).
 3. Add regression coverage for behavior changes. Include before/after screenshots
    for terminal layout changes, using synthetic process names and paths.
-4. Run `cargo xtask check` and review your diff for generated files and sensitive data.
+4. Run `cargo xtask check`. For Desktop changes, follow the checks in the
+   [Desktop CI workflow](.github/workflows/desktop.yml).
+   Review your diff for generated files and sensitive data.
 5. Open a pull request explaining the problem, resulting behavior, and validation.
 
 Use standard Rust formatting and descriptive names. Prefer small functions,
@@ -31,5 +34,5 @@ identity checks or confirmation behavior to simplify a change.
 
 Native changes need tests on the affected operating systems and architectures;
 cross-compilation alone cannot validate operating-system behavior. Performance
-changes should include a repeatable workload and equivalent inspection coverage;
-see [Performance](docs/performance.md).
+changes should include reproducible measurements using the same workload and
+inspection coverage.
