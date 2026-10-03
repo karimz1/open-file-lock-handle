@@ -110,10 +110,12 @@ mod tests {
         }
         assemble(&cli, &desktop_dir, &output, "v1.2.3").unwrap();
         let sums = fs::read_to_string(output.join("checksums.txt")).unwrap();
-        assert_eq!(sums.lines().count(), 20);
-        assert_eq!(fs::read_dir(&output).unwrap().count(), 22);
+        assert_eq!(sums.lines().count(), 22);
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 24);
         assert!(sums.contains("oflh-cli.windows.arm64.exe"));
         assert!(sums.contains("oflh-desktop.linux.amd64.rpm"));
+        assert!(sums.contains("oflh-desktop.linux.amd64.tar.gz"));
+        assert!(sums.contains("oflh-desktop.linux.arm64.tar.gz"));
         assert!(sums.contains("oflh-desktop.windows.amd64-installer.exe"));
         assert!(sums.contains("oflh-desktop.windows.amd64-installer.exe.sig"));
         assert!(sums.contains("oflh-desktop.darwin.arm64.app.tar.gz"));
