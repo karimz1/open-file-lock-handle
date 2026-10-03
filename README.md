@@ -6,6 +6,7 @@
 
 [![Website](https://img.shields.io/badge/website-oflh-8B5CF6)](https://oflh.karimzouine.com/)
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-64748b)](#platforms)
+[![Desktop languages: English, German, Simplified Chinese](https://img.shields.io/badge/desktop%20languages-English%20%7C%20German%20%7C%20Simplified%20Chinese-4264db)](docs/desktop-usage.md#appearance)
 [![GitHub downloads](https://img.shields.io/github/downloads/karimz1/open-file-lock-handle/total?label=downloads)](https://github.com/karimz1/open-file-lock-handle/releases)
 [![CI](https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml/badge.svg)](https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
