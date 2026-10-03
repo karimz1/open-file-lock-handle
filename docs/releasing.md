@@ -33,8 +33,9 @@ publish the draft in GitHub Releases.
 
 New drafts prepend a [download introduction](../.github/release-notes/downloads.md)
 to GitHub's generated **What's Changed** section and full changelog. It links to
-the website's download selector and directs readers to the version-specific
-assets and checksums below, especially for release candidates. Retrying an
+the website's latest stable downloads and documentation for newcomers, and
+directs experienced users to this GitHub release's version-specific assets and
+checksums, especially for release candidates. Retrying an
 existing draft preserves edited release notes and reinforces its prerelease
 classification for RC tags. Published releases cannot be modified by a retry.
 
