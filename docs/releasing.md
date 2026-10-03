@@ -66,12 +66,71 @@ Windows and macOS Desktop installs read `latest.json` from the latest stable
 GitHub release. Linux DEB/RPM users update through their package manager or the
 release page.
 
-Updater signatures require a Tauri keypair. Keep the public key in
-`tauri.conf.json` and the private key in the `TAURI_SIGNING_PRIVATE_KEY` repository
-secret. Set `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if the key has a password. Back up
-the private key: existing installs need it to verify future updates.
-CI builds without the secret use a temporary key and must not be published as
-updates for existing installs.
+### Set up the updater keys
+
+Run these commands from the repository root. You need Node.js and
+GitHub CLI authenticated with permission to manage this repository's secrets.
+
+```sh
+npm --prefix crates/oflh-desktop/ui ci
+
+umask 077
+mkdir -p "$HOME/.config/oflh"
+npm --prefix crates/oflh-desktop/ui run tauri -- signer generate \
+  --ci -p "" \
+  -w "$HOME/.config/oflh/updater.key"
+```
+
+This creates `updater.key` and `updater.key.pub`. The example uses an empty
+password. Keep the private key outside Git and back it up securely. Do not
+replace an existing key just to repeat the setup. To use a password, omit
+`--ci -p ""` and enter it when the generator prompts.
+
+Print the public key:
+
+```sh
+cat "$HOME/.config/oflh/updater.key.pub"
+```
+
+Copy the whole output and paste it into `plugins.updater.pubkey` in
+`crates/oflh-desktop/tauri.conf.json`. Leave the updater endpoint unchanged.
+
+Upload the private key to GitHub Actions:
+
+```sh
+gh secret set TAURI_SIGNING_PRIVATE_KEY \
+  --repo karimz1/open-file-lock-handle \
+  < "$HOME/.config/oflh/updater.key"
+```
+
+Existing installations trust the public key they were built with. Changing it
+requires a planned migration signed with the old key, or a manual reinstall.
+If the old private key is lost, those installations cannot accept updates signed
+with a replacement key. See the [Tauri updater guide](https://v2.tauri.app/plugin/updater/).
+
+### Signing checks in CI
+
+All Desktop CI builds, including development pull requests and RCs, require the
+real signing secret. The frontend job signs a small test payload and verifies
+it against the app's public key before any native jobs start, catching missing,
+invalid, or mismatched keys early. Fork pull requests without access to the
+secret cannot pass Desktop CI. The Release workflow passes the signing secrets
+explicitly to the reusable Desktop workflow.
+
+## Updater regression coverage
+
+Native Desktop CI uses a loopback HTTP server and the real Tauri updater to
+exercise a synthetic newer RC, current and older versions, endpoint failures,
+malformed metadata, signed downloads, tampered payload rejection, and signed
+version mismatch rejection. Windows
+and macOS jobs also serve their actual packaged updater artifact and verify its
+download against the public key embedded in the app. Browser tests cover install,
+restart, failure, release-note fallback, and retry behavior.
+
+The loopback HTTP override and synthetic signing fixtures are test-only; the
+production endpoint remains HTTPS. Tests do not run installers or replace the
+running application. End-to-end installation and restart still need native
+release-candidate testing.
 
 Updater signing does not replace macOS notarization or Windows code signing.
 These are not configured, so installers still show OS warnings.

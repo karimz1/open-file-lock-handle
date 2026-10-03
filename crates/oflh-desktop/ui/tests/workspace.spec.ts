@@ -129,6 +129,17 @@ test.beforeEach(async ({ page }) => {
             return 1;
           }
           if (command === "plugin:event|unlisten") return;
+          if (command === "plugin:updater|check") {
+            if ((window as any).__updateCheckFails)
+              throw new Error("Synthetic update endpoint failure");
+            return (window as any).__updateMetadata ?? null;
+          }
+          if (command === "plugin:updater|download_and_install") {
+            if ((window as any).__updateInstallFails)
+              throw new Error("Synthetic update signature failure");
+            return;
+          }
+          if (command === "plugin:process|restart") return;
           if (command === "status") return status;
           if (command === "recent") return recentTargets;
           if (command === "remove_recent") {
@@ -289,6 +300,7 @@ test.beforeEach(async ({ page }) => {
               "open_profile",
               "open_donation",
               "open_sponsors",
+              "open_release_notes",
               "open_issue",
             ].includes(command)
           )
@@ -1115,6 +1127,118 @@ test("termination preserves the captured owner port filter", async ({
   ).toBe("4000:18446744073709551615:0");
 });
 
+test("Settings reports when no update is available and links to the releases page", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByText("You’re up to date.")).toBeVisible();
+  await page.getByRole("button", { name: "View release notes" }).click();
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(calls.some((call: any) => call.command === "open_release_notes")).toBe(
+    true,
+  );
+});
+
+test("Settings offers to install an announced update and relaunches after install", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__updateMetadata = {
+      rid: 1,
+      currentVersion: "0.1.0",
+      version: "9.9.9",
+      date: "2026-01-01",
+      body: "Fixture release notes",
+      rawJson: {},
+    };
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByText("Update available: v9.9.9")).toBeVisible();
+  await page.getByRole("button", { name: "Install and restart" }).click();
+  await expect(
+    page.getByText("Update installed. Restart OFLH to finish."),
+  ).toBeVisible();
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls.some(
+      (call: any) => call.command === "plugin:updater|download_and_install",
+    ),
+  ).toBe(true);
+  expect(
+    calls.some((call: any) => call.command === "plugin:process|restart"),
+  ).toBe(true);
+});
+
+test("failed update installation never restarts and can be retried", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__updateMetadata = {
+      rid: 1,
+      currentVersion: "1.0.0-rc.1",
+      version: "9.9.9-rc.1",
+      body: "Synthetic RC",
+      rawJson: {},
+    };
+    (window as any).__updateInstallFails = true;
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByText("Update available: v9.9.9-rc.1")).toBeVisible();
+  await page.getByRole("button", { name: "Install and restart" }).click();
+  await expect(page.getByText("Could not check for updates")).toBeVisible();
+  let calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls.some((call: any) => call.command === "plugin:process|restart"),
+  ).toBe(false);
+  await page.evaluate(() => {
+    (window as any).__updateInstallFails = false;
+  });
+  await page
+    .getByRole("button", { name: "Check for updates", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Install and restart" }).click();
+  await expect(
+    page.getByText("Update installed. Restart OFLH to finish."),
+  ).toBeVisible();
+  calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls.filter((call: any) => call.command === "plugin:process|restart"),
+  ).toHaveLength(1);
+});
+
+test("update check failure offers release notes and recovers on retry", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__updateCheckFails = true;
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(
+    page.getByText(
+      "Automatic updates are not available for this package. Use the releases page instead.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Install and restart" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "View release notes" }).click();
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(calls.some((call: any) => call.command === "open_release_notes")).toBe(
+    true,
+  );
+  await page.evaluate(() => {
+    (window as any).__updateCheckFails = false;
+  });
+  await page
+    .getByRole("button", { name: "Check for updates", exact: true })
+    .click();
+  await expect(page.getByText("You’re up to date.")).toBeVisible();
+});
+
 test("column filters submit typed predicates and F5 does not outline the entire grid", async ({
   page,
 }) => {
@@ -1487,6 +1611,10 @@ test("Chinese language preference survives reload and can return to system defau
   await expect(
     page.getByRole("option", { name: "简体中文", exact: true }),
   ).toHaveCount(1);
+  await expect(
+    page.getByRole("heading", { name: "更新", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("已是最新版本。", { exact: true })).toBeVisible();
   await page.screenshot({ path: "test-results/chinese-settings.png" });
   await page.getByLabel("语言", { exact: true }).selectOption("system");
   await expect(page.locator("html")).toHaveAttribute("lang", "en");

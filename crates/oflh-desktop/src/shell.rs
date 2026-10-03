@@ -294,6 +294,16 @@ fn open_sponsors(app: tauri::AppHandle) -> Result<(), Failure> {
 }
 
 #[tauri::command]
+fn open_release_notes(app: tauri::AppHandle) -> Result<(), Failure> {
+    app.opener()
+        .open_url(
+            "https://github.com/karimz1/open-file-lock-handle/releases/latest",
+            None::<&str>,
+        )
+        .map_err(integration)
+}
+
+#[tauri::command]
 fn open_issue(app: tauri::AppHandle, title: String, body: String) -> Result<(), Failure> {
     let mut url = url::Url::parse("https://github.com/karimz1/open-file-lock-handle/issues/new")
         .map_err(integration)?;
@@ -318,6 +328,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let handle = app.handle().clone();
             let app_data = app.path().app_data_dir()?;
@@ -374,6 +386,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             open_profile,
             open_donation,
             open_sponsors,
+            open_release_notes,
             open_issue,
             inspect,
             refresh,

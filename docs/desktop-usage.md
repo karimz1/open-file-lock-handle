@@ -87,5 +87,14 @@ launches.
 In Settings, choose English, German, or Simplified Chinese under **Language**,
 or follow your system language. Your preference is saved between launches.
 
+## Updates
+
+Settings also has an **Updates** section. OFLH Desktop checks for a newer
+release when you open Settings. On Windows and macOS installs, "Install and restart" downloads
+and installs the update, then relaunches the app. Other packages (for example
+Linux `.deb`/`.rpm` installs) show "View release notes" instead; use your
+package manager or the [releases page](https://github.com/karimz1/open-file-lock-handle/releases)
+to update.
+
 For OS limitations, see [platform support](platform-support.md). For build,
 testing and packaging details, see [development](development.md).

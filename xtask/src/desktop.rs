@@ -7,19 +7,35 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Expected package extensions per OS. `darwin`'s `gz`/`sig` and `windows`'s
+/// `sig` are updater artifacts created alongside the manual-install package
+/// because `createUpdaterArtifacts` is enabled; Linux has none since no
+/// AppImage target is built, so it falls back to a manual download link.
 pub(super) fn extensions(os: &str) -> Result<&'static [&'static str]> {
     match os {
         "linux" => Ok(&["deb", "rpm"]),
-        "darwin" => Ok(&["dmg"]),
-        "windows" => Ok(&["exe"]),
+        "darwin" => Ok(&["dmg", "gz", "sig"]),
+        "windows" => Ok(&["exe", "sig"]),
         _ => Err("unsupported desktop OS".into()),
     }
 }
 pub(super) fn artifact(os: &str, arch: &str, extension: &str) -> String {
-    if os == "windows" {
-        format!("oflh-desktop.{os}.{arch}-installer.{extension}")
-    } else {
-        format!("oflh-desktop.{os}.{arch}.{extension}")
+    match (os, extension) {
+        ("windows", "sig") => format!("oflh-desktop.windows.{arch}-installer.exe.sig"),
+        ("windows", _) => format!("oflh-desktop.windows.{arch}-installer.{extension}"),
+        ("darwin", "gz") => format!("oflh-desktop.darwin.{arch}.app.tar.gz"),
+        ("darwin", "sig") => format!("oflh-desktop.darwin.{arch}.app.tar.gz.sig"),
+        _ => format!("oflh-desktop.{os}.{arch}.{extension}"),
+    }
+}
+/// The updater manifest's URL must point at the installable updater package
+/// (the NSIS/MSI installer on Windows, the `.app.tar.gz` on macOS), never at
+/// the `.sig` file or, on macOS, the human-facing `.dmg`.
+pub(super) fn updater_payload_extension(os: &str) -> Option<&'static str> {
+    match os {
+        "windows" => Some("exe"),
+        "darwin" => Some("gz"),
+        _ => None,
     }
 }
 fn collect(

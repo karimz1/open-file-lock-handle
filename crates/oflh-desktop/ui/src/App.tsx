@@ -58,6 +58,7 @@ import {
   type ColumnKey,
 } from "./Table";
 import { ColumnFilterPanel } from "./ColumnFilters";
+import { UpdateBanner } from "./UpdateBanner";
 import {
   languageOptions,
   localePreference,
@@ -1544,6 +1545,7 @@ export function App() {
                   </button>
                 </div>
               </section>
+              <UpdateBanner />
               <section className="setting-section">
                 <div>
                   <h3>{t("settings.k_interface_zoom")}</h3>

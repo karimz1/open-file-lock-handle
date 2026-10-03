@@ -450,6 +450,26 @@ const en = {
     k_system: "System",
     k_vs_code_dark: "VS Code Dark",
   },
+  update: {
+    k_a_newer_version_is_available: "A newer version is available.",
+    k_check_for_updates: "Check for updates",
+    k_checking_for_updates: "Checking for updates…",
+    k_download_from_the_releases_page: "Download from the releases page",
+    k_downloading_update: "Downloading update…",
+    k_install_and_restart: "Install and restart",
+    k_installing_update: "Installing update…",
+    k_restart_to_finish_installing_the_update:
+      "Restart to finish installing the update.",
+    k_update_available_version: "Update available: v{{version}}",
+    k_update_check_failed: "Could not check for updates",
+    k_update_installed_restart_oflh_to_finish:
+      "Update installed. Restart OFLH to finish.",
+    k_update_not_supported_on_this_package:
+      "Automatic updates are not available for this package. Use the releases page instead.",
+    k_updates: "Updates",
+    k_view_release_notes: "View release notes",
+    k_you_re_up_to_date: "You’re up to date.",
+  },
 } as const;
 
 export default en;

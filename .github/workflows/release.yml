@@ -34,6 +34,9 @@ jobs:
   desktop:
     needs: validate
     uses: ./.github/workflows/desktop.yml
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     with:
       version: ${{ inputs.tag || github.ref_name }}
   homebrew:

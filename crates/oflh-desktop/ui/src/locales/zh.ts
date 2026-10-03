@@ -441,6 +441,25 @@ const zh: TranslationSchema<typeof en> = {
     k_system: "跟随系统",
     k_vs_code_dark: "VS Code 深色",
   },
+  update: {
+    k_a_newer_version_is_available: "有新版本可用。",
+    k_check_for_updates: "检查更新",
+    k_checking_for_updates: "正在检查更新…",
+    k_download_from_the_releases_page: "从发布页面下载",
+    k_downloading_update: "正在下载更新…",
+    k_install_and_restart: "安装并重启",
+    k_installing_update: "正在安装更新…",
+    k_restart_to_finish_installing_the_update: "重启以完成更新安装。",
+    k_update_available_version: "有可用更新：v{{version}}",
+    k_update_check_failed: "无法检查更新",
+    k_update_installed_restart_oflh_to_finish:
+      "更新已安装。重启 OFLH 以完成更新。",
+    k_update_not_supported_on_this_package:
+      "此安装包不支持自动更新。请使用发布页面。",
+    k_updates: "更新",
+    k_view_release_notes: "查看发布说明",
+    k_you_re_up_to_date: "已是最新版本。",
+  },
 };
 
 export default zh;
