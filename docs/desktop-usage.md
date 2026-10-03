@@ -58,7 +58,9 @@ the OS file manager for the selected native path.
 
 ## Process actions
 
-Close the owning application normally when possible. **Terminate** requests the
+To free a file or port, close the application using it normally when possible.
+Stopping its process can release the files and ports it holds. Save your work
+first: unsaved changes can be lost. **Terminate** requests the
 normal platform action. **Force terminate** is a separate, stronger action.
 Review the named processes and PIDs before confirming. Cancel is the default.
 Stopping a parent process can affect its children or your session.

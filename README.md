@@ -16,10 +16,8 @@ investigate files that cannot be deleted or replaced, folders still in use, and
 
 Choose the desktop app or the interactive terminal app. Both run on Linux,
 macOS, and Windows. You can inspect matching file usages, lock evidence, process
-parents, and local ports, then terminate a process after confirmation.
-
-Open files are not always locked. Windows resource users are not verified lock
-owners, and permissions can limit what oflh finds.
+parents, and local ports. Filter for lock evidence and, after confirmation,
+terminate a process to help release the files or ports it holds.
 
 [Install](#install) · [Build from source](#build-from-source)
 
@@ -88,7 +86,10 @@ You can rename the executable to `oflh` (`oflh.exe` on Windows) and place it on
 
 1. Open the app and choose **Open file** or **Open folder**, or drop a path into the window.
 2. Select a process to inspect its file usages, local ports, and ancestry.
-3. Search or filter the results. Refresh to take a new snapshot.
+3. Search or filter the results. Use **Lock evidence only** to focus on reported locks.
+4. To free a file, close the application normally or terminate its process from
+   oflh after confirmation. Save your work first; termination can lose unsaved changes.
+5. Refresh to check the current file usage.
 
 See the [Desktop user guide](docs/desktop-usage.md) for filters, selection, and actions.
 
@@ -118,13 +119,26 @@ See the [Terminal user guide](docs/terminal-usage.md) for search, selection, and
 
 ## Limitations
 
-Results are snapshots, limited by OS APIs and permissions. Empty results do not
-prove a file is unused. oflh reports usage and lock evidence; it does not unlock
-files. Ports are local TCP listeners and bound UDP sockets, not reachability tests.
+An open file is not always locked. The lock filter shows reported lock evidence;
+on Windows, file users and sharing conflicts cannot reliably identify the process
+causing a lock. Permissions can limit results. Refresh after closing a program;
+an empty result alone does not guarantee a file is free. Ports show local TCP
+listeners and bound UDP sockets.
 
 Close the owning application normally when possible. Termination can lose unsaved
 work, and stopping a parent can affect its children. Actions require confirmation.
 See [platform support](docs/platform-support.md) for detection limits.
+
+## Privacy
+
+Privacy is a core principle of oflh. File and process inspection runs locally;
+file contents and scan results are not uploaded. That is why oflh is open source:
+anyone can [inspect the code](https://github.com/karimz1/open-file-lock-handle)
+and [build the tool themselves](docs/development.md). The build workflows and
+[CI runs](https://github.com/karimz1/open-file-lock-handle/actions), including
+those for release candidates (RCs), are public too.
+
+The desktop app contacts GitHub to check for and download updates.
 
 ## Build from source
 
@@ -133,16 +147,13 @@ and run either the CLI or Desktop locally.
 
 ## Unsigned installers
 
-Only bypass an OS warning for a download you trust. Release assets include
-`checksums.txt` with SHA-256 hashes for checking download integrity.
+Downloads are unsigned. Your system may show a publisher or signature
+warning, such as “unknown publisher” on Windows. Only bypass a warning for a
+download you trust. Releases include `checksums.txt` for checking SHA-256 hashes.
 
 - **macOS:** If Gatekeeper blocks the installed app or reports it as damaged,
   clear its quarantine flag with `xattr -cr "/Applications/OFLH Desktop.app"`,
   then reopen it. Adjust the path if installed elsewhere.
-- **Windows:** SmartScreen may show an unknown publisher. **More info → Run anyway**
-  continues installation.
-- **Linux:** DEB/RPM packages have no GPG signature. Check the release checksum
-  if your package manager warns about a missing signature.
 
 <a id="platforms"></a>
 
