@@ -176,7 +176,7 @@ jobs:
       - name: Verify real packaged updater download and signature
         if: matrix.os != 'linux'
         env:
-          OFLH_UPDATER_PACKAGE: desktop-dist/oflh-desktop.${{ matrix.os }}.${{ matrix.arch }}${{ matrix.os == 'windows' && '-installer.exe' || '.app.tar.gz' }}
+          OFLH_UPDATER_PACKAGE: ${{ github.workspace }}/desktop-dist/oflh-desktop.${{ matrix.os }}.${{ matrix.arch }}${{ matrix.os == 'windows' && '-installer.exe' || '.app.tar.gz' }}
         run: cargo test -p oflh-desktop --features updater-tests --locked --test updater actual_packaged_update_is_detected_and_downloaded -- --ignored
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'linux'
