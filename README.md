@@ -5,7 +5,7 @@
 # Open File Lock Handle (oflh)
 
 [![Website](https://img.shields.io/badge/website-oflh-8B5CF6)](https://oflh.karimzouine.com/)
-[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-64748b)](#platforms)
+[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-64748b)](https://oflh.karimzouine.com/de#download)
 [![Desktop languages: English, German, Simplified Chinese](https://img.shields.io/badge/desktop%20languages-English%20%7C%20German%20%7C%20Simplified%20Chinese-4264db)](https://github.com/karimz1/open-file-lock-handle/tree/main/crates/oflh-desktop/ui/src/locales)
 [![GitHub downloads](https://img.shields.io/github/downloads/karimz1/open-file-lock-handle/total?label=downloads)](https://github.com/karimz1/open-file-lock-handle/releases)
 [![CI](https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml/badge.svg)](https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml)
