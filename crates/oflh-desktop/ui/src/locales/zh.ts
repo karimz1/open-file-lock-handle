@@ -81,7 +81,7 @@ const zh: TranslationSchema<typeof en> = {
     k_size: "大小",
     k_some_port_entries_could_not_be_inspecte_6356812f:
       "部分端口信息无法检查（权限不足或套接字发生变化）。",
-    k_start_inspecting: "开始检查",
+    k_apply_theme: "应用主题",
     k_unknown: "未知",
     k_unnamed: "（未命名）",
     k_view_actions_run: "查看 Actions 运行记录",

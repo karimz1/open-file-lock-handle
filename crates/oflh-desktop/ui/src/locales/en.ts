@@ -78,7 +78,7 @@ const en = {
     k_size: "Size",
     k_some_port_entries_could_not_be_inspecte_6356812f:
       "Some port entries could not be inspected (permissions or socket changes).",
-    k_start_inspecting: "Start inspecting",
+    k_apply_theme: "Apply theme",
     k_unknown: "unknown",
     k_unnamed: "(unnamed)",
     k_view_actions_run: "View Actions run",

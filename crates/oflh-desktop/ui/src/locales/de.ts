@@ -83,7 +83,7 @@ const de: TranslationSchema<typeof en> = {
     k_size: "Größe",
     k_some_port_entries_could_not_be_inspecte_6356812f:
       "Einige Porteinträge konnten wegen fehlender Berechtigungen oder geänderter Sockets nicht untersucht werden.",
-    k_start_inspecting: "Untersuchung starten",
+    k_apply_theme: "Theme anwenden",
     k_unknown: "unbekannt",
     k_unnamed: "(unbenannt)",
     k_view_actions_run: "Actions-Ausführung ansehen",
