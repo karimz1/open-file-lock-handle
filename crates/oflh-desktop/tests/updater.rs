@@ -114,8 +114,19 @@ fn build_updater(
     tauri::App<tauri::test::MockRuntime>,
     tauri_plugin_updater::Updater,
 ) {
+    build_updater_with_version(server, public_key, "1.0.0-rc.1")
+}
+
+fn build_updater_with_version(
+    server: &UpdateServer,
+    public_key: &str,
+    current_version: &str,
+) -> (
+    tauri::App<tauri::test::MockRuntime>,
+    tauri_plugin_updater::Updater,
+) {
     let mut context = mock_context(noop_assets());
-    context.package_info_mut().version = "1.0.0-rc.1".parse().unwrap();
+    context.package_info_mut().version = current_version.parse().unwrap();
     // HTTP is permitted only in this loopback test configuration, never in the app config.
     context.config_mut().plugins.0.insert(
         "updater".into(),
@@ -222,11 +233,27 @@ fn actual_packaged_update_is_detected_and_downloaded() {
         .unwrap()
         .as_str()
         .unwrap();
-    let server = UpdateServer::start_signed("9.9.9-rc.1", payload.clone(), 200, signature.trim());
-    let (_app, updater) = build_updater(&server, public_key);
+    let package_version =
+        std::env::var("OFLH_VERSION").expect("CI must supply the signed build version");
+    let server =
+        UpdateServer::start_signed(&package_version, payload.clone(), 200, signature.trim());
+    let (_app, updater) = build_updater_with_version(&server, public_key, "0.0.0");
     tauri::async_runtime::block_on(async {
         let update = updater.check().await.unwrap().unwrap();
-        assert_eq!(update.version, "9.9.9-rc.1");
+        assert_eq!(update.version, package_version);
         assert_eq!(update.download(|_, _| {}, || {}).await.unwrap(), payload);
+    });
+}
+
+#[test]
+fn announced_version_must_match_the_signed_artifact_version() {
+    let server = UpdateServer::start("9.9.9-rc.2", PAYLOAD.to_vec(), 200);
+    let (_app, updater) = build_updater(&server, PUBLIC_KEY.trim());
+    tauri::async_runtime::block_on(async {
+        let update = updater.check().await.unwrap().unwrap();
+        assert!(matches!(
+            update.download(|_, _| {}, || {}).await,
+            Err(tauri_plugin_updater::Error::SignedVersionMismatch { .. })
+        ));
     });
 }

@@ -81,7 +81,8 @@ explicitly to the reusable Desktop workflow.
 
 Native Desktop CI uses a loopback HTTP server and the real Tauri updater to
 exercise a synthetic newer RC, current and older versions, endpoint failures,
-malformed metadata, signed downloads, and tampered payload rejection. Windows
+malformed metadata, signed downloads, tampered payload rejection, and signed
+version mismatch rejection. Windows
 and macOS jobs also serve their actual packaged updater artifact and verify its
 download against the public key embedded in the app. Browser tests cover install,
 restart, failure, release-note fallback, and retry behavior.
