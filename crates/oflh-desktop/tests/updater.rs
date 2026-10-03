@@ -69,13 +69,20 @@ impl UpdateServer {
 impl Drop for UpdateServer {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
-        if let Some(worker) = self.worker.take() {
-            worker.join().unwrap();
+        // Preserve the original test failure instead of aborting on a second panic.
+        if let Some(worker) = self.worker.take()
+            && let Err(failure) = worker.join()
+            && !thread::panicking()
+        {
+            std::panic::resume_unwind(failure);
         }
     }
 }
 
 fn serve_request(mut stream: TcpStream, manifest: &str, payload: &[u8], status: u16) {
+    // Accepted sockets inherit nonblocking mode on macOS. Large package responses
+    // must wait for the updater to drain the socket rather than fail with WouldBlock.
+    stream.set_nonblocking(false).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .unwrap();
@@ -256,4 +263,36 @@ fn announced_version_must_match_the_signed_artifact_version() {
             Err(tauri_plugin_updater::Error::SignedVersionMismatch { .. })
         ));
     });
+}
+
+#[test]
+fn large_response_completes_when_the_accepted_socket_was_nonblocking() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let payload = vec![b'x'; 8 * 1024 * 1024];
+    let expected_length = payload.len();
+    let worker = thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        stream.set_nonblocking(true).unwrap();
+        serve_request(stream, "{}", &payload, 200);
+    });
+    let mut client = TcpStream::connect(address).unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    client
+        .write_all(b"GET /payload HTTP/1.1\r\nHost: localhost\r\n\r\n")
+        .unwrap();
+    // Leave enough backpressure to exercise a response larger than the send buffer.
+    thread::sleep(Duration::from_millis(100));
+    let mut response = Vec::new();
+    client.read_to_end(&mut response).unwrap();
+    worker.join().unwrap();
+    let header_end = response
+        .windows(4)
+        .position(|bytes| bytes == b"\r\n\r\n")
+        .unwrap()
+        + 4;
+    assert_eq!(response.len() - header_end, expected_length);
+    assert!(response[header_end..].iter().all(|byte| *byte == b'x'));
 }
