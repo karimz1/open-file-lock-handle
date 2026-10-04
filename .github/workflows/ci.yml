@@ -4,8 +4,17 @@ on:
     branches: [main, architecture/redesign-in-rust]
   pull_request:
   workflow_dispatch:
+    inputs:
+      upload_artifacts:
+        description: Upload CLI downloads with one-day retention
+        type: boolean
+        default: false
   workflow_call:
     inputs:
+      upload_artifacts:
+        description: Upload CLI downloads for downstream release jobs
+        type: boolean
+        default: false
       version:
         type: string
         default: dev
@@ -72,8 +81,9 @@ jobs:
       - name: Package tested executable
         run: cargo xtask package --version "$RELEASE_TAG" --os '${{ matrix.os }}' --arch '${{ matrix.arch }}' --binary target/release/oflh${{ matrix.os == 'windows' && '.exe' || '' }}
       - uses: actions/upload-artifact@v7
+        if: inputs.upload_artifacts
         with:
           archive: false
           path: dist/oflh-cli.*
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
