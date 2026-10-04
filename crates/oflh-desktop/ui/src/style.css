@@ -1989,8 +1989,11 @@ kbd.shortcut {
 .settings-menu {
   position: relative;
 }
-.settings-trigger {
-  width: 100%;
+.sidebar-bottom .settings-trigger {
+  width: 40px;
+  height: 40px;
+  padding: 10px;
+  justify-content: center;
 }
 .settings-icon {
   position: relative;
@@ -2014,11 +2017,11 @@ kbd.shortcut {
 }
 .settings-popup {
   position: absolute;
-  left: 0;
-  bottom: calc(100% + 6px);
+  left: 44px;
+  bottom: 0;
   z-index: 20;
   width: max-content;
-  min-width: 230px;
+  min-width: 245px;
   max-width: 340px;
   padding: 5px;
   background: var(--panel);
@@ -2054,4 +2057,83 @@ kbd.shortcut {
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+.theme-menu-group {
+  position: relative;
+}
+.settings-popup button {
+  min-height: 34px;
+  white-space: nowrap;
+}
+.settings-popup button:focus-visible,
+.theme-menu-group:has(.themes-submenu) > button {
+  background: var(--hover);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.menu-chevron {
+  margin-left: auto;
+}
+.themes-submenu {
+  left: calc(100% + 5px);
+  bottom: -5px;
+  min-width: 210px;
+}
+.themes-submenu::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -7px;
+  width: 7px;
+}
+.menu-theme-swatch {
+  width: 15px;
+  height: 15px;
+  border: 2px solid;
+  border-radius: 50%;
+  flex: none;
+}
+.update-dialog-version {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--accent);
+  margin-bottom: 16px;
+}
+.update-dialog-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+.update-toast {
+  max-width: calc(100vw - 32px);
+  align-items: center;
+}
+.update-toast .icon-button {
+  color: inherit;
+}
+@media (max-width: 600px) {
+  .settings-popup {
+    left: 0;
+    bottom: calc(100% + 6px);
+  }
+  .themes-submenu {
+    position: static;
+    min-width: 0;
+    margin: 4px 0 4px 16px;
+    box-shadow: none;
+  }
+  .update-dialog-version,
+  .modal-actions:has(.primary) {
+    flex-wrap: wrap;
+  }
+}
+
+.update-release-notes {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }

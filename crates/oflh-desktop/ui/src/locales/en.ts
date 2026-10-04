@@ -444,6 +444,7 @@ const en = {
       "Unknown CPU and memory stay unavailable. Access permissions may hide processes. Normal termination never escalates to force termination. Unsaved work can be lost when stopping a process.",
   },
   themes: {
+    k_themes: "Themes",
     k_bright_and_clear: "Bright and clear",
     k_choose_a_theme_or_follow_your_system:
       "Choose a theme or follow your system.",
@@ -461,6 +462,16 @@ const en = {
     k_vs_code_dark: "VS Code Dark",
   },
   update: {
+    k_new_update_available: "New update available",
+    k_update_recommendation:
+      "Updates can include bug fixes, stability improvements, and new features. We recommend installing the latest version. See the release notes for details.",
+    k_install_question:
+      "Would you like to install this update? OFLH will restart after installation.",
+    k_manual_download:
+      "Automatic updates are not available for this Linux package. Visit the download page and download the app again to get the latest version for your operating system.",
+    k_go_to_download_page: "Go to download page",
+    k_later: "Later",
+
     k_notification: "An update is available.",
     k_download_update: "Download update",
     k_update_action_failed: "Could not complete the update. Try again.",

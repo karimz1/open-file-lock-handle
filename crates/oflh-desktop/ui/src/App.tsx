@@ -61,6 +61,7 @@ import { ColumnFilterPanel } from "./ColumnFilters";
 import { SettingsMenu } from "./SettingsMenu";
 import { useUpdates } from "./useUpdates";
 import { UpdateBanner } from "./UpdateBanner";
+import { UpdateFeedback } from "./UpdateFeedback";
 import {
   languageOptions,
   localePreference,
@@ -893,6 +894,8 @@ export function App() {
             </p>
             <SettingsMenu
               updates={updates}
+              theme={theme}
+              onThemeChange={setTheme}
               active={view === "settings"}
               openSettings={() => changeView("settings")}
             />
@@ -1804,6 +1807,7 @@ export function App() {
           </div>
         </div>
       )}
+      <UpdateFeedback updates={updates} report={report} />
       {toast && (
         <div className="toast" role="status">
           <Check size={15} />

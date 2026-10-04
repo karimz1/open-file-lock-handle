@@ -321,6 +321,7 @@ test.beforeEach(async ({ page }) => {
               "open_donation",
               "open_sponsors",
               "open_release_notes",
+              "open_download",
               "open_issue",
             ].includes(command)
           )
@@ -1208,11 +1209,8 @@ for (const mode of ["install", "download"] as const) {
     await expect(gear.locator(".update-badge")).toHaveText("1");
     await gear.click();
     const menu = page.getByRole("menu", { name: "Settings" });
-    const action =
-      mode === "download" ? "Download update" : "Install and restart";
-    await expect(
-      menu.getByRole("menuitem", { name: `${action} 1` }),
-    ).toBeVisible();
+    const action = "New update available";
+    await expect(menu.getByRole("menuitem", { name: action })).toBeVisible();
     await page.screenshot({ path: `test-results/update-menu-${mode}.png` });
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
@@ -1222,7 +1220,31 @@ for (const mode of ["install", "download"] as const) {
     await expect(page.getByText("Update available: v9.9.9")).toBeVisible();
     await page.keyboard.press("Control+1");
     await gear.click();
-    await menu.getByRole("menuitem", { name: `${action} 1` }).click();
+    await menu.getByRole("menuitem", { name: action }).click();
+    const dialog = page.getByRole("dialog", { name: "New update available" });
+    await expect(dialog).toBeVisible();
+    const before = await page.evaluate(() => (window as any).__testCalls);
+    expect(
+      before.some(
+        (call: any) =>
+          call.command === "open_download" ||
+          call.command === "plugin:updater|download_and_install",
+      ),
+    ).toBe(false);
+    if (mode === "download")
+      await expect(
+        dialog.getByText(
+          /Automatic updates are not available for this Linux package/,
+        ),
+      ).toBeVisible();
+    await page.screenshot({ path: `test-results/update-dialog-${mode}.png` });
+    await dialog
+      .getByRole("button", {
+        name:
+          mode === "download" ? "Go to download page" : "Install and restart",
+      })
+      .click();
+    await expect(dialog).toHaveCount(0);
     const calls = await page.evaluate(() => (window as any).__testCalls);
     expect(
       calls.filter((call: any) => call.command === "plugin:updater|check"),
@@ -1288,6 +1310,10 @@ test("Settings offers to install an announced update and relaunches after instal
   await page.keyboard.press("Control+,");
   await expect(page.getByText("Update available: v9.9.9")).toBeVisible();
   await page.getByRole("button", { name: "Install and restart" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Install and restart" })
+    .click();
   await expect(
     page.getByText("Update installed. Restart OFLH to finish."),
   ).toBeVisible();
@@ -1319,8 +1345,14 @@ test("failed update installation never restarts and can be retried", async ({
   await page.keyboard.press("Control+,");
   await expect(page.getByText("Update available: v9.9.9-rc.1")).toBeVisible();
   await page.getByRole("button", { name: "Install and restart" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Install and restart" })
+    .click();
   await expect(
-    page.getByText("Could not complete the update. Try again."),
+    page
+      .getByRole("dialog")
+      .getByText("Could not complete the update. Try again."),
   ).toBeVisible();
   let calls = await page.evaluate(() => (window as any).__testCalls);
   expect(
@@ -1330,9 +1362,9 @@ test("failed update installation never restarts and can be retried", async ({
     (window as any).__updateInstallFails = false;
   });
   await page
-    .getByRole("button", { name: "Check for updates", exact: true })
+    .getByRole("dialog")
+    .getByRole("button", { name: "Install and restart" })
     .click();
-  await page.getByRole("button", { name: "Install and restart" }).click();
   await expect(
     page.getByText("Update installed. Restart OFLH to finish."),
   ).toBeVisible();
@@ -1365,7 +1397,10 @@ test("update check failure offers release notes and recovers on retry", async ({
   await page
     .getByRole("button", { name: "Check for updates", exact: true })
     .click();
-  await expect(page.getByText("You’re up to date.")).toBeVisible();
+  await expect(
+    page.locator(".updates").getByText("You’re up to date."),
+  ).toBeVisible();
+  await expect(page.locator(".update-toast")).toHaveText(/You’re up to date/);
 });
 
 test("column filters submit typed predicates and F5 does not outline the entire grid", async ({
@@ -1964,4 +1999,176 @@ test("confirmed administrator retry uses its new receipt and never offers repeat
       .filter((call: any) => call.command === "terminate")
       .map((call: any) => call.args),
   ).toEqual([{ ticket: "captured-ticket" }, { ticket: "admin-ticket" }]);
+});
+
+test("gear is icon-only and themes submenu supports keyboard selection and persistence", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const gear = page.getByRole("button", { name: "Settings", exact: true });
+  await expect(gear).toHaveText("");
+  await gear.click();
+  const menu = page.getByRole("menu", { name: "Settings", exact: true });
+  await expect(
+    menu.getByRole("menuitem", { name: "Settings", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  const themes = menu.getByRole("menuitem", { name: "Themes", exact: true });
+  await expect(themes).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  const submenu = page.getByRole("menu", { name: "Themes", exact: true });
+  await expect(
+    submenu.getByRole("menuitemradio", { name: "Light", exact: true }),
+  ).toBeFocused();
+  await expect(submenu.getByRole("menuitemradio")).toHaveCount(5);
+  await page.screenshot({ path: "test-results/settings-themes-menu.png" });
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(menu).toHaveCount(0);
+  await expect(gear).toBeFocused();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "rider");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "rider");
+  await gear.click();
+  await themes.hover();
+  await expect(submenu).toBeVisible();
+  await submenu
+    .getByRole("menuitemradio", { name: "VS Code Dark", exact: true })
+    .hover();
+  await page.screenshot({ path: "test-results/settings-themes-dark.png" });
+  await submenu
+    .getByRole("menuitemradio", { name: "Rider Dark", exact: true })
+    .focus();
+  await page.keyboard.press("Escape");
+  await expect(submenu).toHaveCount(0);
+  await expect(themes).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+});
+
+test("manual update checks show a latest-version toast and failure feedback outside Settings", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const gear = page.getByRole("button", { name: "Settings", exact: true });
+  await expect(page.locator(".update-toast")).toHaveCount(0);
+  await gear.click();
+  await page
+    .getByRole("menuitem", { name: "Check for updates", exact: true })
+    .click();
+  await expect(page.locator(".update-toast")).toHaveText(/You’re up to date/);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).__updateCheckFails = true;
+  });
+  await gear.click();
+  await page
+    .getByRole("menuitem", { name: "Check for updates", exact: true })
+    .click();
+  await expect(page.locator(".update-toast")).toHaveText(
+    /Could not check for updates/,
+  );
+});
+
+test("hourly background checks discover updates quietly and retain the badge on network failure", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  const gear = page.getByRole("button", { name: "Settings", exact: true });
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (window as any).__testCalls.filter(
+            (call: any) => call.command === "plugin:updater|check",
+          ).length,
+      ),
+    )
+    .toBe(1);
+  await expect(gear.locator(".update-badge")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).__updateMetadata = {
+      rid: 1,
+      currentVersion: "0.5.0",
+      version: "9.9.9",
+      rawJson: {},
+    };
+  });
+  await page.clock.fastForward(60 * 60 * 1000);
+  await expect(gear.locator(".update-badge")).toHaveText("1");
+  await expect(page.locator(".update-toast")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).__updateCheckFails = true;
+  });
+  await page.clock.fastForward(60 * 60 * 1000);
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (window as any).__testCalls.filter(
+            (call: any) => call.command === "plugin:updater|check",
+          ).length,
+      ),
+    )
+    .toBe(3);
+  await expect(gear.locator(".update-badge")).toHaveText("1");
+  await expect(page.locator(".update-toast")).toHaveCount(0);
+  await gear.click();
+  await page
+    .getByRole("menuitem", { name: "New update available", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.clock.fastForward(2 * 60 * 60 * 1000);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "plugin:updater|check",
+        ).length,
+    ),
+  ).toBe(3);
+  await page.getByRole("dialog").getByRole("button", { name: "Later" }).click();
+  await expect(gear.locator(".update-badge")).toHaveText("1");
+});
+
+test("manual check opens update confirmation and release notes before installation", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    (window as any).__updateMetadata = {
+      rid: 1,
+      currentVersion: "0.5.0",
+      version: "9.9.9",
+      rawJson: {},
+    };
+  });
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page
+    .getByRole("menuitem", { name: "Check for updates", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "New update available" });
+  await expect(dialog).toBeVisible();
+  await expect(
+    dialog.getByText(/bug fixes, stability improvements, and new features/),
+  ).toBeVisible();
+  await page.screenshot({ path: "test-results/update-confirmation.png" });
+  await dialog.getByRole("button", { name: "View release notes" }).click();
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(calls.some((call: any) => call.command === "open_release_notes")).toBe(
+    true,
+  );
+  expect(
+    calls.some(
+      (call: any) => call.command === "plugin:updater|download_and_install",
+    ),
+  ).toBe(false);
+  await dialog.getByRole("button", { name: "Later" }).click();
+  await expect(
+    page
+      .getByRole("button", { name: "Settings", exact: true })
+      .locator(".update-badge"),
+  ).toHaveText("1");
 });

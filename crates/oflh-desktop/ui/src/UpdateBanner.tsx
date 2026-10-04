@@ -4,7 +4,12 @@ import { t } from "./i18n";
 
 import type { Updates } from "./useUpdates";
 
-export function UpdateBanner({ state, runCheck, activate }: Updates) {
+export function UpdateBanner({
+  state,
+  runCheck,
+  requestUpdate,
+  checking,
+}: Updates) {
   const viewReleaseNotes = () => void api.openReleaseNotes().catch(() => {});
   return (
     <section className="setting-section updates">
@@ -47,7 +52,7 @@ export function UpdateBanner({ state, runCheck, activate }: Updates) {
       </div>
       <div className="inline-actions">
         {(state.phase === "available" || state.phase === "install-failed") && (
-          <button onClick={() => void activate()}>
+          <button disabled={checking} onClick={requestUpdate}>
             <Download size={14} />{" "}
             {t(
               state.update.kind === "download"
@@ -59,7 +64,7 @@ export function UpdateBanner({ state, runCheck, activate }: Updates) {
         {state.phase !== "checking" &&
           state.phase !== "installing" &&
           state.phase !== "restart-required" && (
-            <button onClick={() => void runCheck()}>
+            <button disabled={checking} onClick={() => void runCheck()}>
               <RefreshCw size={14} /> {t("update.k_check_for_updates")}
             </button>
           )}

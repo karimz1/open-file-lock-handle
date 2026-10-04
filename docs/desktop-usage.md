@@ -143,8 +143,10 @@ results table.
 
 ## Appearance
 
-**Settings** at the bottom left offers Light, System, Rider Dark, VS Code Dark
-and OFLH Purple, plus font size. Your theme, font size and details width persist.
+The gear at the bottom left opens a menu with **Settings** and **Themes**.
+The Themes submenu offers Light, System, Rider Dark, VS Code Dark and OFLH Purple,
+with a check beside your current theme. Settings also offers font size. Your
+theme, font size and details width persist.
 The first launch offers a theme choice. The app remembers these settings between
 launches.
 
@@ -153,15 +155,25 @@ or follow your system language. Your preference is saved between launches.
 
 ## Updates
 
-OFLH Desktop checks for a newer release at startup. An available update adds a
-**1** badge to the Settings gear. Open the gear menu to choose **Settings** or
-update directly. The **Updates** section in Settings shows the same result and
-lets you check again.
+OFLH Desktop checks for a newer release at startup and every hour while open.
+These background checks stay quiet; an available update adds a **1** badge to
+the gear. Checks pause while you review an update dialog or install an update.
+A failed background check keeps any known update badge.
+
+Choose **Check for updates** in the gear menu for an immediate check. If you
+already have the latest version, a toast confirms it; a failed check also shows
+feedback. When a new version is found, a dialog offers release notes and asks
+whether to install it. You can also open this dialog from **New update available**
+in the gear menu. Choose **Later** to keep working; the badge stays visible.
+The **Updates** section in Settings shows the same result and lets you check again.
 
 On Windows and macOS, **Install and restart** downloads the signed update,
-installs it, and relaunches the app. On Linux, **Download update** opens the
-[download page](https://oflh.karimzouine.com/#download); install the new package
-or replace your extracted archive manually. A failed check can be retried.
+installs it, and relaunches the app after you confirm in the dialog. On Linux,
+the dialog explains that automatic installation is unavailable for this package.
+Choose **Go to download page** to open the
+[download page](https://oflh.karimzouine.com/#download) and download the latest
+version for your operating system; install the new package or replace your
+extracted archive manually. A failed check or installation can be retried.
 **About OFLH** links the installed version to its GitHub release; development
 and RC builds also provide a pipeline link.
 

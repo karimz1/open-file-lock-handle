@@ -458,6 +458,7 @@ const de: TranslationSchema<typeof en> = {
       "Unbekannte CPU- und Speicherwerte bleiben nicht verfügbar. Fehlende Berechtigungen können Prozesse verbergen. Ein normales Beenden wird niemals automatisch erzwungen. Beim Beenden eines Prozesses können ungespeicherte Daten verloren gehen.",
   },
   themes: {
+    k_themes: "Designs",
     k_bright_and_clear: "Hell und klar",
     k_choose_a_theme_or_follow_your_system:
       "Wähle ein Design oder übernimm die Systemeinstellung.",
@@ -475,6 +476,16 @@ const de: TranslationSchema<typeof en> = {
     k_vs_code_dark: "VS Code Dunkel",
   },
   update: {
+    k_new_update_available: "Neues Update verfügbar",
+    k_update_recommendation:
+      "Updates können Fehlerbehebungen, Stabilitätsverbesserungen und neue Funktionen enthalten. Wir empfehlen, die neueste Version zu installieren. Einzelheiten findest du in den Versionshinweisen.",
+    k_install_question:
+      "Möchtest du dieses Update installieren? OFLH startet nach der Installation neu.",
+    k_manual_download:
+      "Automatische Updates sind für dieses Linux-Paket nicht verfügbar. Besuche die Download-Seite und lade die App erneut herunter, um die neueste Version für dein Betriebssystem zu erhalten.",
+    k_go_to_download_page: "Zur Download-Seite",
+    k_later: "Später",
+
     k_notification: "Ein Update ist verfügbar.",
     k_download_update: "Update herunterladen",
     k_update_action_failed:
