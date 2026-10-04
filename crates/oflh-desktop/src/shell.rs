@@ -245,6 +245,16 @@ fn revisit(service: Desktop<'_>, id: u32) -> Result<Status, Failure> {
 }
 
 #[tauri::command]
+fn open_paypal(app: tauri::AppHandle) -> Result<(), Failure> {
+    app.opener()
+        .open_url(
+            "https://www.paypal.com/paypalme/KarimZouine972",
+            None::<&str>,
+        )
+        .map_err(integration)
+}
+
+#[tauri::command]
 fn open_project(app: tauri::AppHandle) -> Result<(), Failure> {
     app.opener()
         .open_url(
@@ -287,16 +297,6 @@ fn open_profile(app: tauri::AppHandle) -> Result<(), Failure> {
 fn open_donation(app: tauri::AppHandle) -> Result<(), Failure> {
     app.opener()
         .open_url("https://buymeacoffee.com/karimz1", None::<&str>)
-        .map_err(integration)
-}
-
-#[tauri::command]
-fn open_paypal(app: tauri::AppHandle) -> Result<(), Failure> {
-    app.opener()
-        .open_url(
-            "https://www.paypal.com/paypalme/KarimZouine972",
-            None::<&str>,
-        )
         .map_err(integration)
 }
 
@@ -400,7 +400,6 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             open_profile,
             open_donation,
             open_sponsors,
-            open_paypal,
             open_release_notes,
             open_issue,
             inspect,
@@ -422,6 +421,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             terminate,
             recent,
             remove_recent,
+            open_paypal,
             clear_recent,
             revisit
         ])

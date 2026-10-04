@@ -1117,6 +1117,29 @@ test("Donate explains all three support options and opens the selected destinati
   ).toHaveLength(2);
 });
 
+test("donation lightbox fits minimum windows and larger fonts", async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem("oflh-font-size", "24"));
+  await page.setViewportSize({ width: 860, height: 560 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Donate", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Support OFLH" });
+  await expect(dialog.locator(".support-option")).toHaveCount(3);
+  const fits = await dialog.evaluate((element) => ({
+    width: element.clientWidth,
+    contents: element.scrollWidth,
+    height: element.getBoundingClientRect().height,
+  }));
+  expect(fits.contents).toBeLessThanOrEqual(fits.width);
+  expect(fits.height).toBeLessThanOrEqual(560);
+  await dialog.getByRole("button", { name: "Continue to PayPal" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Donate", exact: true }),
+  ).toBeFocused();
+});
+
 test("Settings opens the exact PR and Actions run for this build", async ({
   page,
 }) => {
@@ -1897,27 +1920,4 @@ test("confirmed administrator retry uses its new receipt and never offers repeat
       .filter((call: any) => call.command === "terminate")
       .map((call: any) => call.args),
   ).toEqual([{ ticket: "captured-ticket" }, { ticket: "admin-ticket" }]);
-});
-
-test("donation lightbox fits minimum windows and larger fonts", async ({
-  page,
-}) => {
-  await page.addInitScript(() => localStorage.setItem("oflh-font-size", "24"));
-  await page.setViewportSize({ width: 860, height: 560 });
-  await page.goto("/");
-  await page.getByRole("button", { name: "Donate", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Support OFLH" });
-  await expect(dialog.locator(".support-option")).toHaveCount(3);
-  const fits = await dialog.evaluate((element) => ({
-    width: element.clientWidth,
-    contents: element.scrollWidth,
-    height: element.getBoundingClientRect().height,
-  }));
-  expect(fits.contents).toBeLessThanOrEqual(fits.width);
-  expect(fits.height).toBeLessThanOrEqual(560);
-  await dialog.getByRole("button", { name: "Continue to PayPal" }).click();
-  await expect(dialog).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Donate", exact: true }),
-  ).toBeFocused();
 });
