@@ -197,6 +197,21 @@ test.beforeEach(async ({ page }) => {
             return { revision: status.revision, total: rows.length, rows };
           }
           if (command === "page") {
+            if ((window as any).__wideCellsForTest) {
+              processRows[1400].name =
+                "OffscreenWorkerWithAnExceptionallyLongProcessName";
+              processRows[1400].path =
+                "/workspace/project/" +
+                "long-directory-name/".repeat(12) +
+                "fixture";
+              processRows[1400].memory = 123456789012345;
+            }
+
+            if ((window as any).__holdFitForTest && args.query.offset >= 200) {
+              await new Promise<void>((resolve) => {
+                (window as any).__releaseFitForTest = resolve;
+              });
+            }
             const rows = processRows.filter(
               (row) =>
                 (!args.query.text ||
@@ -1556,6 +1571,144 @@ test("column dividers remain visible without hover and resize with keyboard", as
   await expect
     .poll(async () => Number(await divider.getAttribute("aria-valuenow")))
     .toBeGreaterThan(widthBeforeDrag);
+});
+
+test("double-click auto-fit includes offscreen matches and preserves virtualization and sorting", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__wideCellsForTest = true;
+  });
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  await expect(grid.getByText("4000", { exact: true })).toBeVisible();
+  const process = page.getByRole("separator", {
+    name: "Resize Process column",
+    exact: true,
+  });
+  const path = page.getByRole("separator", {
+    name: "Resize Path column",
+    exact: true,
+  });
+  await process.dblclick();
+  await expect
+    .poll(async () => Number(await process.getAttribute("aria-valuenow")))
+    .toBeGreaterThan(350);
+  await path.scrollIntoViewIfNeeded();
+  await path.dblclick();
+  await expect
+    .poll(async () => Number(await path.getAttribute("aria-valuenow")))
+    .toBeGreaterThan(1000);
+  expect(await grid.getByRole("row").count()).toBeLessThan(60);
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls.some(
+      (call: any) => call.command === "page" && call.args.query.offset === 1400,
+    ),
+  ).toBe(true);
+  expect(
+    calls
+      .filter((call: any) => call.command === "page")
+      .every((call: any) => call.args.query.limit <= 200),
+  ).toBe(true);
+  expect(
+    calls
+      .filter((call: any) => call.command === "page")
+      .every((call: any) => call.args.query.sort === "relevance"),
+  ).toBe(true);
+  await page
+    .getByRole("textbox", { name: "Search loaded results" })
+    .fill("node");
+  await expect(grid.getByText("4001", { exact: true })).toBeVisible();
+  await process.scrollIntoViewIfNeeded();
+  await process.focus();
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(async () => Number(await process.getAttribute("aria-valuenow")))
+    .toBeLessThan(200);
+  await expect(process).toBeFocused();
+});
+
+test("auto-fit works for every file and port column and scales with the font", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  await expect(grid.getByText("4000", { exact: true })).toBeVisible();
+  for (const divider of await grid.getByRole("separator").all()) {
+    await divider.scrollIntoViewIfNeeded();
+    await divider.focus();
+    await page.keyboard.press("Enter");
+    await expect(divider).toHaveAttribute("aria-busy", "false");
+    expect(
+      Number(await divider.getAttribute("aria-valuenow")),
+    ).toBeGreaterThanOrEqual(70);
+  }
+  const name = page.getByRole("separator", {
+    name: "Resize Process column",
+    exact: true,
+  });
+  const small = Number(await name.getAttribute("aria-valuenow"));
+  await page.keyboard.press("Control+,");
+  await page
+    .getByRole("combobox", { name: "Size", exact: true })
+    .selectOption("24");
+  await page.keyboard.press("Control+1");
+  await expect(grid.getByText("4000", { exact: true })).toBeVisible();
+  await name.focus();
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(async () => Number(await name.getAttribute("aria-valuenow")))
+    .toBeGreaterThan(small);
+  await page.keyboard.press("Control+3");
+  await expect(grid.getByText("8080", { exact: true })).toBeVisible();
+  for (const divider of await grid.getByRole("separator").all()) {
+    await divider.scrollIntoViewIfNeeded();
+    await divider.focus();
+    await page.keyboard.press("Enter");
+    await expect(divider).toHaveAttribute("aria-busy", "false");
+    expect(
+      Number(await divider.getAttribute("aria-valuenow")),
+    ).toBeGreaterThanOrEqual(70);
+  }
+  await page.screenshot({ path: "test-results/columns-autofit.png" });
+});
+
+test("changing filters cancels an in-flight column auto-fit", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__wideCellsForTest = true;
+  });
+  await page.goto("/");
+  await expect(
+    page.getByRole("grid").getByText("4000", { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__holdFitForTest = true;
+  });
+  const divider = page.getByRole("separator", {
+    name: "Resize Process column",
+    exact: true,
+  });
+  await divider.focus();
+  await page.keyboard.press("Enter");
+  await expect(divider).toHaveAttribute("aria-busy", "true");
+  await expect
+    .poll(() => page.evaluate(() => !!(window as any).__releaseFitForTest))
+    .toBe(true);
+  await page
+    .getByRole("textbox", { name: "Search loaded results" })
+    .fill("node");
+  await expect(
+    page.getByRole("grid").getByText("4001", { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__holdFitForTest = false;
+    (window as any).__releaseFitForTest();
+  });
+  await expect(divider).toHaveAttribute("aria-busy", "false");
+  await expect(divider).toHaveAttribute("aria-valuenow", "220");
 });
 
 test("documentation screenshots use only synthetic inspection data", async ({
