@@ -539,7 +539,10 @@ test("reveal errors expose diagnostics and a reproducible issue draft", async ({
 test("auto refresh pauses while context actions are open", async ({ page }) => {
   await page.clock.install();
   await page.goto("/");
-  await page.getByLabel("Automatic refresh interval").selectOption("5");
+  await page
+    .getByRole("button", { name: "Automatic refresh interval" })
+    .click();
+  await page.getByRole("option", { name: "5s", exact: true }).click();
   const row = page.getByRole("grid").getByRole("row").nth(1);
   await row.click({ button: "right" });
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -617,7 +620,10 @@ test("recent targets can be searched, removed, and cleared", async ({
 });
 test("automatic refresh repeats at the selected interval", async ({ page }) => {
   await page.goto("/");
-  await page.getByLabel("Automatic refresh interval").selectOption("5");
+  await page
+    .getByRole("button", { name: "Automatic refresh interval" })
+    .click();
+  await page.getByRole("option", { name: "5s", exact: true }).click();
   await expect
     .poll(
       async () => {
@@ -653,7 +659,8 @@ test("automatic refresh is session-only and waits for a completed scan", async (
   await expect(page.getByRole("note")).toContainText(
     "manual refresh is often better for a focused check",
   );
-  await interval.selectOption("5");
+  await interval.click();
+  await page.getByRole("option", { name: "5s", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(() => localStorage.getItem("oflh-auto-reload-seconds")),
@@ -666,6 +673,80 @@ test("automatic refresh is session-only and waits for a completed scan", async (
     page.getByRole("button", { name: "Refresh", exact: true }),
   ).toBeDisabled();
 });
+test("automatic reload dropdown follows theme and font size and supports the keyboard", async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem("oflh-font-size", "24"));
+  await page.goto("/");
+  const interval = page.getByRole("button", {
+    name: "Automatic refresh interval",
+  });
+  for (const theme of ["rider", "light"]) {
+    await page.evaluate(
+      (theme) => (document.documentElement.dataset.theme = theme),
+      theme,
+    );
+    await interval.click();
+    const list = page.getByRole("listbox", {
+      name: "Automatic refresh interval",
+    });
+    await expect(list).toBeVisible();
+    const colors = await list.evaluate((element) => ({
+      background: getComputedStyle(element).backgroundColor,
+      text: getComputedStyle(element).color,
+      panel: getComputedStyle(document.querySelector(".auto-refresh-control")!)
+        .backgroundColor,
+      size: parseFloat(getComputedStyle(element).fontSize),
+    }));
+    expect(colors.background).toBe(colors.panel);
+    expect(colors.text).not.toBe(colors.background);
+    expect(colors.size).toBeGreaterThan(21);
+    await page.keyboard.press("Home");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect(interval).toHaveText("5s");
+    await expect(interval).toBeFocused();
+    await interval.click();
+    await page.keyboard.press("Escape");
+    await expect(list).toHaveCount(0);
+    await expect(interval).toBeFocused();
+    await interval.click();
+    await page.getByRole("heading", { name: "Processes", exact: true }).click();
+    await expect(list).toHaveCount(0);
+  }
+  await interval.click();
+  await page.keyboard.press("Tab");
+  await expect(
+    page.locator('summary[aria-label="Automatic refresh information"]'),
+  ).toBeFocused();
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await interval.click();
+  await page.screenshot({ path: "test-results/reload-large-font.png" });
+});
+
+test("automatic reload help closes outside and with Escape", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const help = page.locator(
+    'summary[aria-label="Automatic refresh information"]',
+  );
+  const note = page.getByRole("note");
+  await help.click();
+  await expect(note).toBeVisible();
+  await note.getByText("Automatic refresh", { exact: true }).click();
+  await expect(note).toBeVisible();
+  await page.getByRole("heading", { name: "Processes", exact: true }).click();
+  await expect(note).not.toBeVisible();
+  await help.click();
+  await page.keyboard.press("Escape");
+  await expect(note).not.toBeVisible();
+  await expect(help).toBeFocused();
+  await help.click();
+  await page.keyboard.press("Tab");
+  await expect(note).not.toBeVisible();
+});
+
 test("scan progress does not move the results grid", async ({ page }) => {
   await page.goto("/");
   const grid = page.getByRole("grid");

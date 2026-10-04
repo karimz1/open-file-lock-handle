@@ -19,7 +19,6 @@ import {
   Files,
   FolderOpen,
   History,
-  Info,
   Keyboard,
   Maximize2,
   Minimize2,
@@ -29,7 +28,6 @@ import {
   RefreshCw,
   Search,
   ShieldAlert,
-  Timer,
   Trash2,
   X,
   ZoomIn,
@@ -52,6 +50,7 @@ import { acceptStatus, initialStatus, selectKey } from "./state";
 import { Inspector } from "./Inspector";
 import { Modal } from "./Modal";
 import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
+import { AutoRefresh } from "./AutoRefresh";
 import {
   Table,
   fileColumns as fileColumnDefinitions,
@@ -95,7 +94,6 @@ const filterLabels: Record<keyof ColumnFilters, MessageKey> = {
   memory_max: "inspector.k_memory_max",
   evidence: "filters.k_evidence",
 };
-const autoReloadOptions = [0, 5, 10, 15, 30, 60] as const;
 function readHiddenColumns(): Set<ColumnKey> {
   try {
     const saved: unknown = JSON.parse(
@@ -748,46 +746,10 @@ export function App() {
         </div>
         <div className="header-actions">
           {status.revision > 0 && (
-            <>
-              <label className="auto-refresh-control">
-                <Timer size={14} />
-                <span>{t("app.k_auto")}</span>
-                <select
-                  aria-label={t("status.k_automatic_refresh_interval")}
-                  value={autoReloadSeconds}
-                  onChange={(event) =>
-                    setAutoReloadSeconds(Number(event.target.value))
-                  }
-                >
-                  {autoReloadOptions.map((seconds) => (
-                    <option key={seconds} value={seconds}>
-                      {seconds === 0 ? t("common.k_off") : `${seconds}s`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <details className="auto-refresh-info">
-                <summary
-                  aria-label={t("status.k_automatic_refresh_information")}
-                  title={t("status.k_about_automatic_refresh")}
-                >
-                  <Info size={15} />
-                </summary>
-                <div role="note">
-                  <strong>{t("status.k_automatic_refresh")}</strong>
-                  <p>
-                    {t(
-                      "inspection.k_off_by_default_choose_an_interval_to_re_fb2f1749",
-                    )}
-                  </p>
-                  <p>
-                    {t(
-                      "status.k_it_can_help_with_changing_processes_or_f5538b6f",
-                    )}
-                  </p>
-                </div>
-              </details>
-            </>
+            <AutoRefresh
+              value={autoReloadSeconds}
+              onChange={setAutoReloadSeconds}
+            />
           )}
           <button
             disabled={!status.revision}
