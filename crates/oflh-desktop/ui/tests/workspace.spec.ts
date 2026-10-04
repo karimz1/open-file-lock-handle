@@ -1053,6 +1053,29 @@ test("single-click rows open details and panel buttons close them", async ({
   ).toBe("1:0:exe");
 });
 
+test("donation lightbox fits minimum windows and larger fonts", async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem("oflh-font-size", "24"));
+  await page.setViewportSize({ width: 860, height: 560 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Donate", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Support OFLH" });
+  await expect(dialog.locator(".support-option")).toHaveCount(3);
+  const fits = await dialog.evaluate((element) => ({
+    width: element.clientWidth,
+    contents: element.scrollWidth,
+    height: element.getBoundingClientRect().height,
+  }));
+  expect(fits.contents).toBeLessThanOrEqual(fits.width);
+  expect(fits.height).toBeLessThanOrEqual(560);
+  await dialog.getByRole("button", { name: "Continue to PayPal" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Donate", exact: true }),
+  ).toBeFocused();
+});
+
 test("Donate explains all three support options and opens the selected destination", async ({
   page,
 }) => {
@@ -1079,6 +1102,12 @@ test("Donate explains all three support options and opens the selected destinati
   await expect(support).toContainText("Good for");
   await expect(support).toContainText("Trade-off");
   await expect(support).toContainText("company support");
+  await expect(support.locator(".support-option")).toHaveCount(3);
+  expect((await support.boundingBox())!.width).toBeGreaterThan(850);
+  await page.screenshot({ path: "test-results/donate-three-options.png" });
+  await support.getByRole("button", { name: "Continue to PayPal" }).click();
+  await footer.getByRole("button", { name: "Donate", exact: true }).click();
+  support = page.getByRole("dialog", { name: "Support OFLH" });
   await support
     .getByRole("button", { name: "Continue with Buy Me a Coffee" })
     .click();
@@ -1087,12 +1116,6 @@ test("Donate explains all three support options and opens the selected destinati
   await support
     .getByRole("button", { name: "Continue to GitHub Sponsors" })
     .click();
-  await footer.getByRole("button", { name: "Donate", exact: true }).click();
-  support = page.getByRole("dialog", { name: "Support OFLH" });
-  await expect(support.locator(".support-option")).toHaveCount(3);
-  expect((await support.boundingBox())!.width).toBeGreaterThan(850);
-  await page.screenshot({ path: "test-results/donate-three-options.png" });
-  await support.getByRole("button", { name: "Continue to PayPal" }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page.getByText(/There is no company behind it/)).toBeVisible();
   await page.getByRole("button", { name: "View project on GitHub" }).click();
@@ -1115,29 +1138,6 @@ test("Donate explains all three support options and opens the selected destinati
   expect(
     calls.filter((call: any) => call.command === "open_profile"),
   ).toHaveLength(2);
-});
-
-test("donation lightbox fits minimum windows and larger fonts", async ({
-  page,
-}) => {
-  await page.addInitScript(() => localStorage.setItem("oflh-font-size", "24"));
-  await page.setViewportSize({ width: 860, height: 560 });
-  await page.goto("/");
-  await page.getByRole("button", { name: "Donate", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Support OFLH" });
-  await expect(dialog.locator(".support-option")).toHaveCount(3);
-  const fits = await dialog.evaluate((element) => ({
-    width: element.clientWidth,
-    contents: element.scrollWidth,
-    height: element.getBoundingClientRect().height,
-  }));
-  expect(fits.contents).toBeLessThanOrEqual(fits.width);
-  expect(fits.height).toBeLessThanOrEqual(560);
-  await dialog.getByRole("button", { name: "Continue to PayPal" }).click();
-  await expect(dialog).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Donate", exact: true }),
-  ).toBeFocused();
 });
 
 test("Settings opens the exact PR and Actions run for this build", async ({
