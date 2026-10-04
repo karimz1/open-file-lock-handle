@@ -7,6 +7,31 @@ It does not publish automatically or overwrite a published release.
 
 For local builds, see [Development](development.md).
 
+## CI artifact storage
+
+Push and pull-request builds disable optional artifact uploads by default:
+CLI downloads, macOS/Windows desktop downloads, desktop validation receipts,
+and browser test reports. Linux desktop archives, DEBs, and RPMs still upload
+because the installation and archive smoke-test jobs download those exact
+packages. Every Actions artifact expires after one day, including release builds.
+Builds, signing checks, and native/package tests still run.
+
+For temporary downloads or browser test reports, manually run **CI** or
+**Desktop** from GitHub Actions with `upload_artifacts` enabled. The default is
+disabled; **Desktop**'s `administrator_only` mode does not produce packages.
+
+The **Release** workflow explicitly enables the uploads it needs to assemble
+the tested downloads. For downloads you want to keep, use an RC tag as described
+below. Files copied to the GitHub release page stay there independently of
+Actions artifact expiration. The workflow leaves the RC as a draft for review;
+publish it as a prerelease when it is ready to share. If intermediate artifacts
+have expired before a retry, rerun the entire Release workflow to rebuild them.
+
+These settings apply to new uploads; previously uploaded artifacts keep their
+existing expiry dates. See GitHub's documentation on
+[removing workflow artifacts](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/remove-workflow-artifacts)
+to reclaim existing storage.
+
 ## Prepare a release
 
 1. Set `workspace.package.version` in `Cargo.toml` and refresh `Cargo.lock` with

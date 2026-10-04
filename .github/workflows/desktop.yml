@@ -5,6 +5,10 @@ on:
     branches: [main, feature/oflh-desktop-rc]
   workflow_dispatch:
     inputs:
+      upload_artifacts:
+        description: Upload optional desktop downloads and UI reports with one-day retention
+        type: boolean
+        default: false
       administrator_only:
         description: Run only the six native administrator-recovery jobs
         type: boolean
@@ -16,6 +20,10 @@ on:
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
         required: false
     inputs:
+      upload_artifacts:
+        description: Upload all desktop downloads and receipts for downstream release jobs
+        type: boolean
+        default: false
       version:
         type: string
         default: dev
@@ -98,13 +106,13 @@ jobs:
       - run: npm run format:check && npm run build && npm test && npx playwright install --with-deps chrome && npm run test:ui
         working-directory: crates/oflh-desktop/ui
       - uses: actions/upload-artifact@v7
-        if: always()
+        if: ${{ always() && inputs.upload_artifacts }}
         with:
           name: desktop-ui-report
           path: |
             crates/oflh-desktop/ui/playwright-report/
             crates/oflh-desktop/ui/test-results/
-          retention-days: 7
+          retention-days: 1
   native:
     needs: frontend
     name: Desktop / ${{ matrix.label }}
@@ -225,6 +233,8 @@ jobs:
         env:
           OFLH_UPDATER_PACKAGE: ${{ github.workspace }}/desktop-dist/oflh-desktop.${{ matrix.os }}.${{ matrix.arch }}${{ matrix.os == 'windows' && '-installer.exe' || '.app.tar.gz' }}
         run: cargo test -p oflh-desktop --features updater-tests --locked --test updater actual_packaged_update_is_detected_and_downloaded -- --ignored
+      # Linux packages are required by the installation and archive smoke jobs,
+      # even when optional build uploads are disabled.
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'linux'
         with:
@@ -232,7 +242,7 @@ jobs:
           archive: false
           path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.tar.gz
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'linux'
         with:
@@ -240,7 +250,7 @@ jobs:
           archive: false
           path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.deb
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'linux'
         with:
@@ -248,48 +258,49 @@ jobs:
           archive: false
           path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.rpm
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
       - uses: actions/upload-artifact@v7
-        if: matrix.os == 'darwin'
+        if: inputs.upload_artifacts && matrix.os == 'darwin'
         with:
           archive: false
           path: desktop-dist/oflh-desktop.darwin.${{ matrix.arch }}.dmg
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
       - uses: actions/upload-artifact@v7
-        if: matrix.os == 'darwin'
+        if: inputs.upload_artifacts && matrix.os == 'darwin'
         with:
           archive: false
           path: desktop-dist/oflh-desktop.darwin.${{ matrix.arch }}.app.tar.gz
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
       - uses: actions/upload-artifact@v7
-        if: matrix.os == 'darwin'
+        if: inputs.upload_artifacts && matrix.os == 'darwin'
         with:
           archive: false
           path: desktop-dist/oflh-desktop.darwin.${{ matrix.arch }}.app.tar.gz.sig
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
       - uses: actions/upload-artifact@v7
-        if: matrix.os == 'windows'
+        if: inputs.upload_artifacts && matrix.os == 'windows'
         with:
           archive: false
           path: desktop-dist/oflh-desktop.windows.${{ matrix.arch }}-installer.exe
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
       - uses: actions/upload-artifact@v7
-        if: matrix.os == 'windows'
+        if: inputs.upload_artifacts && matrix.os == 'windows'
         with:
           archive: false
           path: desktop-dist/oflh-desktop.windows.${{ matrix.arch }}-installer.exe.sig
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
       - uses: actions/upload-artifact@v7
+        if: inputs.upload_artifacts
         with:
           name: desktop-receipt-${{ matrix.os }}-${{ matrix.arch }}
           path: desktop-dist/*.manifest
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
   package-smoke:
     needs: native
