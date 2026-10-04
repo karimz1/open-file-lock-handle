@@ -27,7 +27,6 @@ import {
   PanelLeftOpen,
   RefreshCw,
   Search,
-  Settings,
   ShieldAlert,
   Timer,
   Trash2,
@@ -51,7 +50,7 @@ import {
 import { acceptStatus, initialStatus, selectKey } from "./state";
 import { Inspector } from "./Inspector";
 import { Modal } from "./Modal";
-import { readTheme, ThemePicker } from "./Themes";
+import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
 import {
   Table,
   fileColumns as fileColumnDefinitions,
@@ -59,7 +58,11 @@ import {
   type ColumnKey,
 } from "./Table";
 import { ColumnFilterPanel } from "./ColumnFilters";
+import { AboutDialog } from "./AboutDialog";
+import { SettingsMenu } from "./SettingsMenu";
+import { useUpdates } from "./useUpdates";
 import { UpdateBanner } from "./UpdateBanner";
+import { UpdateFeedback } from "./UpdateFeedback";
 import {
   languageOptions,
   localePreference,
@@ -124,6 +127,9 @@ function formatFailureDetails(failure: unknown): string {
   return String(failure);
 }
 export function App() {
+  const updates = useUpdates();
+  const [showAbout, setShowAbout] = useState(false);
+
   const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
   const shortcut = (keys: string) => (
     <kbd className="shortcut" aria-hidden="true">
@@ -262,6 +268,7 @@ export function App() {
   );
   const [initialTheme] = useState(readTheme);
   const [theme, setTheme] = useState(initialTheme.theme);
+  const appliedTheme = useAppliedTheme(theme);
   const [showThemeWelcome, setShowThemeWelcome] = useState(
     initialTheme.firstUse,
   );
@@ -412,19 +419,13 @@ export function App() {
     };
   }, [focused, status.revision, report]);
   useEffect(() => {
-    const media = matchMedia("(prefers-color-scheme: dark)");
-    const update = () =>
-      (document.documentElement.dataset.theme =
-        theme === "system" ? (media.matches ? "vscode" : "light") : theme);
-    update();
-    media.addEventListener("change", update);
+    document.documentElement.dataset.theme = appliedTheme;
     try {
       if (!showThemeWelcome) localStorage.setItem("oflh-theme", theme);
     } catch {
       /* Theme still applies for this session. */
     }
-    return () => media.removeEventListener("change", update);
-  }, [theme, showThemeWelcome]);
+  }, [theme, appliedTheme, showThemeWelcome]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 2300);
@@ -888,32 +889,15 @@ export function App() {
               <br />
               {t("app.k_your_files")}
             </p>
-            <button
-              title={t("navigation.k_settings")}
-              className={view === "settings" ? "active" : ""}
-              onClick={() => changeView("settings")}
-            >
-              <Settings size={17} />
-              <span className="nav-label">{t("navigation.k_settings")}</span>
-            </button>
-            <button
-              className="github-link"
-              title={t("navigation.k_star_on_github")}
-              onClick={() => void api.openProject().catch(report)}
-            >
-              <Star size={14} />
-              <span className="nav-label">
-                {t("navigation.k_star_on_github")}
-              </span>
-              <ExternalLink size={12} className="nav-external-icon" />
-            </button>
-            <span className="version">
-              {status.version === "development"
-                ? t("app.k_development")
-                : status.version
-                  ? `v${status.version}`
-                  : "OFLH Desktop"}
-            </span>
+            <SettingsMenu
+              updates={updates}
+              openAbout={() => setShowAbout(true)}
+              theme={theme}
+              appliedTheme={appliedTheme}
+              onThemeChange={setTheme}
+              active={view === "settings"}
+              openSettings={() => changeView("settings")}
+            />
           </div>
         </nav>
         <main>
@@ -1532,7 +1516,11 @@ export function App() {
                     {t("themes.k_choose_a_theme_or_follow_your_system")}
                   </p>
                 </div>
-                <ThemePicker theme={theme} onChange={setTheme} />
+                <ThemePicker
+                  theme={theme}
+                  appliedTheme={appliedTheme}
+                  onChange={setTheme}
+                />
               </section>
               <section className="setting-section">
                 <div>
@@ -1597,7 +1585,7 @@ export function App() {
                   </button>
                 </div>
               </section>
-              <UpdateBanner />
+              <UpdateBanner {...updates} />
               <section className="setting-section">
                 <div>
                   <h3>{t("settings.k_interface_zoom")}</h3>
@@ -1656,27 +1644,26 @@ export function App() {
                     <ExternalLink size={14} />{" "}
                     {t("app.k_view_project_on_github")}
                   </button>
-                  {status.pull_request_url && (
-                    <button
-                      onClick={() => void api.openPullRequest().catch(report)}
-                    >
-                      <ExternalLink size={14} /> {t("app.k_view_pull_request")}
-                    </button>
-                  )}
-                  {status.build_url && (
-                    <button onClick={() => void api.openBuild().catch(report)}>
-                      <ExternalLink size={14} /> {t("app.k_view_actions_run")}
-                    </button>
-                  )}
+                  {!/^\d+\.\d+\.\d+$/.test(status.version) &&
+                    status.build_url && (
+                      <button
+                        onClick={() => void api.openBuild().catch(report)}
+                      >
+                        <ExternalLink size={14} /> {t("app.k_view_rc_pipeline")}
+                      </button>
+                    )}
                 </div>
                 <p className="muted about-version">
-                  OFLH Desktop {status.version} · {t("app.k_mit_license")}
+                  <button
+                    className="inline-link"
+                    onClick={() =>
+                      void api.openInstalledRelease().catch(report)
+                    }
+                  >
+                    {t("app.k_installed_version", { version: status.version })}
+                  </button>{" "}
+                  · {t("app.k_mit_license")}
                 </p>
-                {status.commit && (
-                  <p className="muted about-version">
-                    Commit <code>{status.commit.slice(0, 12)}</code>
-                  </p>
-                )}
               </section>
               <section className="setting-section shortcuts">
                 <h3>
@@ -1746,19 +1733,6 @@ export function App() {
                   </button>
                 </section>
               )}
-              <section className="setting-section">
-                <h3>{t("search.k_search_and_inspection")}</h3>
-                <p>
-                  {t(
-                    "support.k_search_runs_over_the_loaded_rust_snapsh_b52f0264",
-                  )}
-                </p>
-                <p className="muted">
-                  {t(
-                    "termination.k_unknown_cpu_and_memory_stay_unavailable_1ca3b23b",
-                  )}
-                </p>
-              </section>
             </div>
           )}
         </main>
@@ -1766,11 +1740,13 @@ export function App() {
       <footer className="statusbar">
         <span className="status-current" role="status">
           {status.scanning && <LoaderCircle size={13} className="spin" />}
-          {status.scanning
-            ? t("inspection.k_scanning")
-            : status.revision
-              ? t("inspection.k_inspection_complete")
-              : t("inspection.k_ready_to_inspect")}
+          <span className="status-current-label">
+            {status.scanning
+              ? t("inspection.k_scanning")
+              : status.revision
+                ? t("inspection.k_inspection_complete")
+                : t("inspection.k_ready_to_inspect")}
+          </span>
           {status.scanning && (
             <button
               className="status-cancel"
@@ -1801,6 +1777,15 @@ export function App() {
             , {t("app.k_built_in_spare_time")}
           </span>
           <button
+            className="footer-link footer-star"
+            title={t("navigation.k_star_on_github")}
+            aria-label={t("navigation.k_star_on_github")}
+            onClick={() => void api.openProject().catch(report)}
+          >
+            <Star size={14} aria-hidden="true" />
+            <span>{t("navigation.k_star_on_github")}</span>
+          </button>
+          <button
             className="footer-link"
             title={t("support.k_choose_how_to_support_oflh")}
             onClick={() => setShowSupport(true)}
@@ -1818,6 +1803,14 @@ export function App() {
           </div>
         </div>
       )}
+      {showAbout && (
+        <AboutDialog
+          status={status}
+          close={() => setShowAbout(false)}
+          report={report}
+        />
+      )}
+      <UpdateFeedback updates={updates} report={report} />
       {toast && (
         <div className="toast" role="status">
           <Check size={15} />
@@ -2038,7 +2031,11 @@ export function App() {
           close={() => setShowThemeWelcome(false)}
         >
           <p>{t("themes.k_choose_your_workspace_theme_preview_it_12e8b92b")}</p>
-          <ThemePicker theme={theme} onChange={setTheme} />
+          <ThemePicker
+            theme={theme}
+            appliedTheme={appliedTheme}
+            onChange={setTheme}
+          />
           <div className="modal-actions">
             <button
               className="primary"

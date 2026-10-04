@@ -84,7 +84,8 @@ test.beforeEach(async ({ page }) => {
         "Some processes could not be inspected because access was denied.",
       ],
       error: null,
-      version: "development",
+      version:
+        new URL(location.href).searchParams.get("version") ?? "development",
       commit: "0123456789abcdef0123456789abcdef01234567",
       build_url:
         "https://github.com/karimz1/open-file-lock-handle/actions/runs/1234567890",
@@ -129,6 +130,9 @@ test.beforeEach(async ({ page }) => {
             return 1;
           }
           if (command === "plugin:event|unlisten") return;
+          if (command === "update_mode")
+            return (window as any).__updateMode ?? "install";
+          if (command === "plugin:resources|close") return;
           if (command === "plugin:updater|check") {
             if ((window as any).__updateCheckFails)
               throw new Error("Synthetic update endpoint failure");
@@ -140,6 +144,7 @@ test.beforeEach(async ({ page }) => {
             return;
           }
           if (command === "plugin:process|restart") return;
+          if (command === "system_info") return { os: "linux", arch: "x86_64" };
           if (command === "status") return status;
           if (command === "recent") return recentTargets;
           if (command === "remove_recent") {
@@ -317,6 +322,9 @@ test.beforeEach(async ({ page }) => {
               "open_donation",
               "open_sponsors",
               "open_release_notes",
+              "open_installed_release",
+              "open_build",
+              "open_download",
               "open_issue",
             ].includes(command)
           )
@@ -354,10 +362,7 @@ test("virtualized workspace, theme, process details, keyboard and copy", async (
   ).toBeVisible();
   await page.getByRole("button", { name: "Close process details" }).click();
   await page.screenshot({ path: "test-results/workspace-light.png" });
-  await page
-    .getByRole("button", { name: "Settings", exact: true })
-    .first()
-    .click();
+  await page.keyboard.press("Control+,");
   await page.getByRole("button", { name: "VS Code Dark", exact: true }).click();
   await page.getByRole("button", { name: /^Processes/ }).click();
   await expect(grid.getByText("4000", { exact: true })).toBeVisible();
@@ -409,10 +414,7 @@ test("dark themes keep UI text and surface boundaries distinct", async ({
   page,
 }) => {
   await page.goto("/");
-  await page
-    .getByRole("button", { name: "Settings", exact: true })
-    .first()
-    .click();
+  await page.keyboard.press("Control+,");
   const contrast = (foreground: string, background: string) => {
     const luminance = (color: string) => {
       const channels = color
@@ -818,10 +820,7 @@ test("details splitter and font preferences resize and persist", async ({
   await page.mouse.move(box.x - 56, box.y + 40);
   await page.mouse.up();
   await expect(splitter).toHaveAttribute("aria-valuenow", "420");
-  await page
-    .getByRole("button", { name: "Settings", exact: true })
-    .first()
-    .click();
+  await page.keyboard.press("Control+,");
   await page
     .getByRole("combobox", { name: "Size", exact: true })
     .selectOption("18");
@@ -851,10 +850,7 @@ test("theme presets persist and ancestry reads from parent to highlighted proces
     ["VS Code Dark", "vscode"],
     ["OFLH Purple", "purple"],
   ]) {
-    await page
-      .getByRole("button", { name: "Settings", exact: true })
-      .first()
-      .click();
+    await page.keyboard.press("Control+,");
     const choice = page.getByRole("button", { name: label, exact: true });
     await choice.click();
     await expect(choice).toHaveAttribute("aria-pressed", "true");
@@ -1087,7 +1083,7 @@ test("Donate explains both support options and opens the selected destination", 
   await support
     .getByRole("button", { name: "Continue to GitHub Sponsors" })
     .click();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await expect(page.getByText(/There is no company behind it/)).toBeVisible();
   await page.getByRole("button", { name: "View project on GitHub" }).click();
   await page
@@ -1110,27 +1106,46 @@ test("Donate explains both support options and opens the selected destination", 
   ).toHaveLength(2);
 });
 
-test("Settings opens the exact PR and Actions run for this build", async ({
+test("About links the installed release and shows a pipeline only for RC builds", async ({
   page,
 }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await expect(page.getByText("Commit 0123456789ab")).toBeVisible();
-  await page.getByRole("button", { name: "View pull request" }).click();
-  await page.getByRole("button", { name: "View Actions run" }).click();
-
-  const calls = await page.evaluate(() => (window as any).__testCalls);
-  expect(calls.some((call: any) => call.command === "open_pull_request")).toBe(
-    true,
-  );
-  expect(calls.some((call: any) => call.command === "open_build")).toBe(true);
+  await page.goto("/?version=0.4.0");
+  await page.keyboard.press("Control+,");
+  await page.getByRole("button", { name: "Installed version 0.4.0" }).click();
+  await expect(
+    page.getByRole("button", { name: "View RC pipeline" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Search and inspection", { exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByText("Commit 0123456789ab")).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      (window as any).__testCalls.some(
+        (call: any) => call.command === "open_installed_release",
+      ),
+    ),
+  ).toBe(true);
+  await page.goto("/?version=0.5.0-rc.1");
+  await page.keyboard.press("Control+,");
+  await page.getByRole("button", { name: "View RC pipeline" }).click();
+  await expect(
+    page.getByRole("button", { name: "View pull request" }),
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      (window as any).__testCalls.some(
+        (call: any) => call.command === "open_build",
+      ),
+    ),
+  ).toBe(true);
 });
 
 test("developer settings can preview the diagnostic lightbox", async ({
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await page.getByRole("button", { name: "Show sample error" }).click();
   const errorBanner = page.getByRole("alert");
   await expect(errorBanner).toContainText(
@@ -1179,11 +1194,107 @@ test("termination preserves the captured owner port filter", async ({
   ).toBe("4000:18446744073709551615:0");
 });
 
+for (const mode of ["install", "download"] as const) {
+  test(`startup update badge and menu share state with Settings (${mode})`, async ({
+    page,
+  }) => {
+    await page.addInitScript((mode) => {
+      (window as any).__updateMode = mode;
+      (window as any).__updateMetadata = {
+        rid: 1,
+        currentVersion: "0.4.0",
+        version: "9.9.9",
+        rawJson: {},
+      };
+    }, mode);
+    await page.goto("/");
+    const gear = page.getByRole("button", { name: "Settings", exact: true });
+    await expect(gear.locator(".update-badge")).toHaveText("1");
+    await gear.click();
+    const menu = page.getByRole("menu", { name: "Settings" });
+    const action = "New update available";
+    await expect(menu.getByRole("menuitem", { name: action })).toBeVisible();
+    await page.screenshot({ path: `test-results/update-menu-${mode}.png` });
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+    await expect(gear).toBeFocused();
+    await gear.click();
+    await menu.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await expect(page.getByText("Update available: v9.9.9")).toBeVisible();
+    await page.keyboard.press("Control+1");
+    await gear.click();
+    await menu.getByRole("menuitem", { name: action }).click();
+    const dialog = page.getByRole("dialog", { name: "New update available" });
+    await expect(dialog).toBeVisible();
+    const versionColor = await dialog
+      .locator(".update-dialog-version strong")
+      .evaluate((element) => ({
+        heading: getComputedStyle(element).color,
+        body: getComputedStyle(element.closest("dialog")!).color,
+      }));
+    expect(versionColor.heading).toBe(versionColor.body);
+    const before = await page.evaluate(() => (window as any).__testCalls);
+    expect(
+      before.some(
+        (call: any) =>
+          call.command === "open_download" ||
+          call.command === "plugin:updater|download_and_install",
+      ),
+    ).toBe(false);
+    if (mode === "download")
+      await expect(
+        dialog.getByText(
+          /Automatic updates are not available for this Linux package/,
+        ),
+      ).toBeVisible();
+    await page.screenshot({ path: `test-results/update-dialog-${mode}.png` });
+    await dialog
+      .getByRole("button", {
+        name:
+          mode === "download" ? "Go to download page" : "Install and restart",
+      })
+      .click();
+    await expect(dialog).toHaveCount(0);
+    const calls = await page.evaluate(() => (window as any).__testCalls);
+    expect(
+      calls.filter((call: any) => call.command === "plugin:updater|check"),
+    ).toHaveLength(1);
+    if (mode === "download") {
+      expect(
+        calls.find((call: any) => call.command === "plugin:updater|check").args
+          .target,
+      ).toBe("windows-x86_64");
+      expect(calls.some((call: any) => call.command === "open_download")).toBe(
+        true,
+      );
+      expect(
+        calls.some((call: any) => call.command === "plugin:resources|close"),
+      ).toBe(true);
+      expect(
+        calls.some(
+          (call: any) => call.command === "plugin:updater|download_and_install",
+        ),
+      ).toBe(false);
+      expect(
+        calls.some((call: any) => call.command === "plugin:process|restart"),
+      ).toBe(false);
+      await expect(gear.locator(".update-badge")).toBeVisible();
+    } else {
+      await expect(gear.locator(".update-badge")).toHaveCount(0);
+      expect(
+        calls.some(
+          (call: any) => call.command === "plugin:updater|download_and_install",
+        ),
+      ).toBe(true);
+    }
+  });
+}
+
 test("Settings reports when no update is available and links to the releases page", async ({
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await expect(page.getByText("You’re up to date.")).toBeVisible();
   await page.getByRole("button", { name: "View release notes" }).click();
   const calls = await page.evaluate(() => (window as any).__testCalls);
@@ -1206,9 +1317,13 @@ test("Settings offers to install an announced update and relaunches after instal
     };
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await expect(page.getByText("Update available: v9.9.9")).toBeVisible();
   await page.getByRole("button", { name: "Install and restart" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Install and restart" })
+    .click();
   await expect(
     page.getByText("Update installed. Restart OFLH to finish."),
   ).toBeVisible();
@@ -1237,10 +1352,18 @@ test("failed update installation never restarts and can be retried", async ({
     (window as any).__updateInstallFails = true;
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await expect(page.getByText("Update available: v9.9.9-rc.1")).toBeVisible();
   await page.getByRole("button", { name: "Install and restart" }).click();
-  await expect(page.getByText("Could not check for updates")).toBeVisible();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Install and restart" })
+    .click();
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByText("Could not complete the update. Try again."),
+  ).toBeVisible();
   let calls = await page.evaluate(() => (window as any).__testCalls);
   expect(
     calls.some((call: any) => call.command === "plugin:process|restart"),
@@ -1249,9 +1372,9 @@ test("failed update installation never restarts and can be retried", async ({
     (window as any).__updateInstallFails = false;
   });
   await page
-    .getByRole("button", { name: "Check for updates", exact: true })
+    .getByRole("dialog")
+    .getByRole("button", { name: "Install and restart" })
     .click();
-  await page.getByRole("button", { name: "Install and restart" }).click();
   await expect(
     page.getByText("Update installed. Restart OFLH to finish."),
   ).toBeVisible();
@@ -1268,12 +1391,8 @@ test("update check failure offers release notes and recovers on retry", async ({
     (window as any).__updateCheckFails = true;
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await expect(
-    page.getByText(
-      "Automatic updates are not available for this package. Use the releases page instead.",
-    ),
-  ).toBeVisible();
+  await page.keyboard.press("Control+,");
+  await expect(page.getByText("Could not check for updates")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Install and restart" }),
   ).toHaveCount(0);
@@ -1288,7 +1407,10 @@ test("update check failure offers release notes and recovers on retry", async ({
   await page
     .getByRole("button", { name: "Check for updates", exact: true })
     .click();
-  await expect(page.getByText("You’re up to date.")).toBeVisible();
+  await expect(
+    page.locator(".updates").getByText("You’re up to date."),
+  ).toBeVisible();
+  await expect(page.locator(".update-toast")).toHaveText(/You’re up to date/);
 });
 
 test("column filters submit typed predicates and F5 does not outline the entire grid", async ({
@@ -1411,7 +1533,7 @@ test("documentation screenshots use only synthetic inspection data", async ({
 }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await page.getByRole("button", { name: "VS Code Dark", exact: true }).click();
   await page.getByRole("button", { name: /^Processes/ }).click();
   await page.getByRole("grid").getByRole("row").nth(1).click();
@@ -1448,7 +1570,8 @@ test("documentation screenshots use only synthetic inspection data", async ({
       usages: 18000,
       warnings: [],
       error: null,
-      version: "development",
+      version:
+        new URL(location.href).searchParams.get("version") ?? "development",
       commit: "0123456789abcdef0123456789abcdef01234567",
       build_url:
         "https://github.com/karimz1/open-file-lock-handle/actions/runs/1234567890",
@@ -1502,7 +1625,7 @@ test("documentation screenshots use only synthetic inspection data", async ({
   });
 });
 
-test("utility actions stay in the sidebar and fit the minimum window", async ({
+test("gear stays last in the sidebar and support actions fit the minimum window footer", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 860, height: 560 });
@@ -1519,7 +1642,8 @@ test("utility actions stay in the sidebar and fit the minimum window", async ({
   const columnMenu = page.getByRole("group", { name: "Visible columns" });
   const menuBounds = await columnMenu.boundingBox();
   expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(860);
-  for (const name of ["Star on GitHub", "Settings"]) {
+  await page.getByText("Columns", { exact: true }).click();
+  for (const name of ["Settings"]) {
     const button = page
       .getByRole("navigation")
       .getByRole("button", { name, exact: true });
@@ -1534,6 +1658,59 @@ test("utility actions stay in the sidebar and fit the minimum window", async ({
     expect(box!.x).toBeGreaterThanOrEqual(0);
     expect(box!.x + box!.width).toBeLessThanOrEqual(860);
   }
+  const sidebar = page.getByRole("navigation");
+  await expect(sidebar.locator(".sidebar-bottom > :last-child")).toHaveClass(
+    "settings-menu",
+  );
+  const gear = sidebar.getByRole("button", { name: "Settings", exact: true });
+  const star = footer.getByRole("button", {
+    name: "Star on GitHub",
+    exact: true,
+  });
+  await expect(star).toBeVisible();
+  await expect(
+    sidebar.getByRole("button", { name: "Star on GitHub", exact: true }),
+  ).toHaveCount(0);
+  const gearBounds = await gear.boundingBox();
+  const starBounds = await star.boundingBox();
+  const footerBox = await footer.boundingBox();
+  expect(gearBounds!.y + gearBounds!.height).toBeLessThanOrEqual(footerBox!.y);
+  expect(starBounds!.y).toBeGreaterThanOrEqual(footerBox!.y);
+  expect(starBounds!.x).toBeGreaterThan(860 / 2);
+  expect(starBounds!.x + starBounds!.width).toBeLessThanOrEqual(860);
+  await expect(sidebar.getByText("Development", { exact: true })).toHaveCount(
+    0,
+  );
+  await gear.click();
+  const menu = page.getByRole("menu", { name: "Settings", exact: true });
+  const popupBounds = await menu.boundingBox();
+  expect(popupBounds!.y).toBeGreaterThanOrEqual(0);
+  expect(popupBounds!.y + popupBounds!.height).toBeLessThanOrEqual(
+    gearBounds!.y + gearBounds!.height,
+  );
+  const headerBounds = await page.getByRole("banner").boundingBox();
+  expect(headerBounds!.y).toBe(0);
+  await page.screenshot({ path: "test-results/sidebar-bottom-gear.png" });
+  await page.keyboard.press("Escape");
+  await sidebar
+    .getByRole("button", { name: "Collapse sidebar", exact: true })
+    .click();
+  await expect(sidebar.locator(".sidebar-bottom > :last-child")).toHaveClass(
+    "settings-menu",
+  );
+  await expect(gear).toBeVisible();
+  await gear.click();
+  await expect(menu).toBeVisible();
+  await page.screenshot({
+    path: "test-results/sidebar-bottom-gear-collapsed.png",
+  });
+  await menu.getByRole("menuitem", { name: "Settings", exact: true }).click();
+  await expect(
+    page.getByRole("button", {
+      name: "Installed version development",
+      exact: true,
+    }),
+  ).toBeAttached();
   await expect(
     page.getByRole("navigation").getByRole("button", { name: "Donate" }),
   ).toHaveCount(0);
@@ -1583,23 +1760,19 @@ test("language setting switches languages and persists the preference", async ({
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await page.getByLabel("Language", { exact: true }).selectOption("de");
 
   await expect(page.locator("html")).toHaveAttribute("lang", "de");
   await expect(
     page.getByRole("button", { name: "Einstellungen", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Einstellungen", exact: true })
-    .click();
+  await page.keyboard.press("Control+,");
   const language = page.getByLabel("Sprache", { exact: true });
   await expect(language).toHaveValue("de");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("lang", "de");
-  await page
-    .getByRole("button", { name: "Einstellungen", exact: true })
-    .click();
+  await page.keyboard.press("Control+,");
   await page.getByLabel("Sprache", { exact: true }).selectOption("system");
 
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
@@ -1650,7 +1823,7 @@ test("Chinese language preference survives reload and can return to system defau
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await page.getByLabel("Language", { exact: true }).selectOption("zh");
   await expect(page.locator("html")).toHaveAttribute("lang", "zh");
   expect(await page.evaluate(() => localStorage.getItem("oflh-language"))).toBe(
@@ -1658,7 +1831,7 @@ test("Chinese language preference survives reload and can return to system defau
   );
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("lang", "zh");
-  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await expect(page.getByLabel("语言", { exact: true })).toHaveValue("zh");
   await expect(
     page.getByRole("option", { name: "简体中文", exact: true }),
@@ -1891,3 +2064,448 @@ test("confirmed administrator retry uses its new receipt and never offers repeat
       .map((call: any) => call.args),
   ).toEqual([{ ticket: "captured-ticket" }, { ticket: "admin-ticket" }]);
 });
+
+test("gear is icon-only and themes submenu supports keyboard selection and persistence", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const gear = page.getByRole("button", { name: "Settings", exact: true });
+  await expect(gear).toHaveText("");
+  await gear.click();
+  const menu = page.getByRole("menu", { name: "Settings", exact: true });
+  await expect(
+    menu.getByRole("menuitem", { name: "Settings", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  const themes = menu.getByRole("menuitem", { name: "Themes", exact: true });
+  await expect(themes).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  const submenu = page.getByRole("menu", { name: "Themes", exact: true });
+  await expect(
+    submenu.getByRole("menuitemradio", { name: "Light", exact: true }),
+  ).toBeFocused();
+  await expect(submenu.getByRole("menuitemradio")).toHaveCount(4);
+  await page.screenshot({ path: "test-results/settings-themes-menu.png" });
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(menu).toHaveCount(0);
+  await expect(gear).toBeFocused();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "rider");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "rider");
+  await gear.click();
+  await themes.hover();
+  await expect(submenu).toBeVisible();
+  await submenu
+    .getByRole("menuitemradio", { name: "VS Code Dark", exact: true })
+    .hover();
+  await page.screenshot({ path: "test-results/settings-themes-dark.png" });
+  await submenu
+    .getByRole("menuitemradio", { name: "Rider Dark", exact: true })
+    .focus();
+  await page.keyboard.press("Escape");
+  await expect(submenu).toHaveCount(0);
+  await expect(themes).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+});
+
+test("manual update checks show a latest-version toast and failure feedback outside Settings", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const gear = page.getByRole("button", { name: "Settings", exact: true });
+  await expect(page.locator(".update-toast")).toHaveCount(0);
+  await gear.click();
+  await page
+    .getByRole("menuitem", { name: "Check for updates", exact: true })
+    .click();
+  await expect(page.locator(".update-toast")).toHaveText(/You’re up to date/);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).__updateCheckFails = true;
+  });
+  await gear.click();
+  await page
+    .getByRole("menuitem", { name: "Check for updates", exact: true })
+    .click();
+  await expect(page.locator(".update-toast")).toHaveText(
+    /Could not check for updates/,
+  );
+});
+
+test("hourly background checks discover updates quietly and retain the badge on network failure", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  const gear = page.getByRole("button", { name: "Settings", exact: true });
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (window as any).__testCalls.filter(
+            (call: any) => call.command === "plugin:updater|check",
+          ).length,
+      ),
+    )
+    .toBe(1);
+  await expect(gear.locator(".update-badge")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).__updateMetadata = {
+      rid: 1,
+      currentVersion: "0.5.0",
+      version: "9.9.9",
+      rawJson: {},
+    };
+  });
+  await page.clock.fastForward(60 * 60 * 1000);
+  await expect(gear.locator(".update-badge")).toHaveText("1");
+  await expect(page.locator(".update-toast")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).__updateCheckFails = true;
+  });
+  await page.clock.fastForward(60 * 60 * 1000);
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (window as any).__testCalls.filter(
+            (call: any) => call.command === "plugin:updater|check",
+          ).length,
+      ),
+    )
+    .toBe(3);
+  await expect(gear.locator(".update-badge")).toHaveText("1");
+  await expect(page.locator(".update-toast")).toHaveCount(0);
+  await gear.click();
+  await page
+    .getByRole("menuitem", { name: "New update available", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.clock.fastForward(2 * 60 * 60 * 1000);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "plugin:updater|check",
+        ).length,
+    ),
+  ).toBe(3);
+  await page.getByRole("dialog").getByRole("button", { name: "Later" }).click();
+  await expect(gear.locator(".update-badge")).toHaveText("1");
+});
+
+test("manual check opens update confirmation and release notes before installation", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    (window as any).__updateMetadata = {
+      rid: 1,
+      currentVersion: "0.5.0",
+      version: "9.9.9",
+      rawJson: {},
+    };
+  });
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page
+    .getByRole("menuitem", { name: "Check for updates", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "New update available" });
+  await expect(dialog).toBeVisible();
+  await expect(
+    dialog.getByText(/bug fixes, stability improvements, and new features/),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText(/I recommend installing the latest version/),
+  ).toBeVisible();
+  await page.screenshot({ path: "test-results/update-confirmation.png" });
+  await dialog.getByRole("button", { name: "View release notes" }).click();
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(calls.some((call: any) => call.command === "open_release_notes")).toBe(
+    true,
+  );
+  expect(
+    calls.some(
+      (call: any) => call.command === "plugin:updater|download_and_install",
+    ),
+  ).toBe(false);
+  await dialog.getByRole("button", { name: "Later" }).click();
+  await expect(
+    page
+      .getByRole("button", { name: "Settings", exact: true })
+      .locator(".update-badge"),
+  ).toHaveText("1");
+});
+
+test("pointer-opened menus and termination dialogs do not pre-highlight actions, while keyboard focus stays visible", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const gear = page.getByRole("button", { name: "Settings", exact: true });
+  await gear.click();
+  const menu = page.getByRole("menu", { name: "Settings", exact: true });
+  const settings = menu.getByRole("menuitem", {
+    name: "Settings",
+    exact: true,
+  });
+  await expect(settings).toBeFocused();
+  await expect(settings).toHaveCSS("outline-style", "none");
+  const themes = menu.getByRole("menuitem", { name: "Themes", exact: true });
+  await themes.hover();
+  await expect(themes).toHaveCSS("outline-style", "none");
+  await themes.click();
+  const light = page.getByRole("menuitemradio", { name: "Light", exact: true });
+  await expect(light).toBeFocused();
+  await expect(light).toHaveCSS("outline-style", "none");
+  await page.keyboard.press("ArrowDown");
+  const rider = page.getByRole("menuitemradio", {
+    name: "Rider Dark",
+    exact: true,
+  });
+  await expect(rider).toBeFocused();
+  await expect(rider).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page
+    .getByRole("button", { name: "Force terminate…", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  const cancel = dialog.getByRole("button", { name: "Cancel", exact: true });
+  await expect(cancel).toBeFocused();
+  await expect(cancel).toHaveCSS("outline-style", "none");
+  await page.screenshot({
+    path: "test-results/pointer-termination-dialog.png",
+  });
+  await page.keyboard.press("Tab");
+  const terminate = dialog.getByRole("button", {
+    name: "Force terminate",
+    exact: true,
+  });
+  await expect(terminate).toBeFocused();
+  await expect(terminate).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Shift+Tab");
+  await expect(cancel).toBeFocused();
+  await expect(cancel).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Enter");
+  await expect(dialog).toHaveCount(0);
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(calls.some((call: any) => call.command === "terminate")).toBe(false);
+});
+
+test("System highlights the concrete theme and follows OS changes in cards and the menu", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/");
+  await page.keyboard.press("Control+,");
+  const system = page.getByRole("button", { name: "System", exact: true });
+  const vscode = page.getByRole("button", {
+    name: "VS Code Dark",
+    exact: true,
+  });
+  const light = page.getByRole("button", { name: "Light", exact: true });
+  await system.click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "vscode");
+  await expect(system).toHaveAttribute("aria-pressed", "true");
+  await expect(vscode).toHaveAttribute("aria-pressed", "true");
+  await expect(vscode).toHaveClass(/active/);
+  await expect(system).not.toHaveClass(/active/);
+  await expect(vscode.getByText("Used by System")).toBeVisible();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Themes", exact: true }).hover();
+  const submenu = page.getByRole("menu", { name: "Themes", exact: true });
+  const systemMode = submenu.getByRole("menuitemcheckbox", {
+    name: "System",
+    exact: true,
+  });
+  const vscodeItem = submenu.getByRole("menuitemradio", {
+    name: "VS Code Dark",
+    exact: true,
+  });
+  const lightItem = submenu.getByRole("menuitemradio", {
+    name: "Light",
+    exact: true,
+  });
+  await expect(systemMode).toHaveAttribute("aria-checked", "true");
+  await expect(vscodeItem).toHaveAttribute("aria-checked", "true");
+  await expect(
+    submenu.getByRole("menuitemradio", { checked: true }),
+  ).toHaveCount(1);
+  await page.screenshot({ path: "test-results/system-theme-dark.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(systemMode).toHaveAttribute("aria-checked", "true");
+  await expect(vscodeItem).toHaveAttribute("aria-checked", "false");
+  await expect(lightItem).toHaveAttribute("aria-checked", "true");
+  await expect(
+    submenu.getByRole("menuitemradio", { checked: true }),
+  ).toHaveCount(1);
+  await expect(light).toHaveAttribute("aria-pressed", "true");
+  await expect(light.getByText("Used by System")).toBeVisible();
+  await lightItem.click();
+  expect(await page.evaluate(() => localStorage.getItem("oflh-theme"))).toBe(
+    "light",
+  );
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+});
+
+test("System can be enabled from the menu and persists across launches", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/");
+  const gear = page.getByRole("button", { name: "Settings", exact: true });
+  await gear.click();
+  await page.getByRole("menuitem", { name: "Themes", exact: true }).hover();
+  await page
+    .getByRole("menuitemcheckbox", { name: "System", exact: true })
+    .click();
+  expect(await page.evaluate(() => localStorage.getItem("oflh-theme"))).toBe(
+    "system",
+  );
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "vscode");
+  await page.reload();
+  await gear.click();
+  await page.getByRole("menuitem", { name: "Themes", exact: true }).click();
+  const vscode = page.getByRole("menuitemradio", {
+    name: "VS Code Dark",
+    exact: true,
+  });
+  await expect(vscode).toBeFocused();
+  await expect(vscode).toHaveAttribute("aria-checked", "true");
+  await page
+    .getByRole("menuitemcheckbox", { name: "System", exact: true })
+    .click();
+  expect(await page.evaluate(() => localStorage.getItem("oflh-theme"))).toBe(
+    "vscode",
+  );
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "vscode");
+});
+
+for (const [locale, settings, star] of [
+  ["en", "Settings", "Star on GitHub"],
+  ["de", "Einstellungen", "Stern auf GitHub vergeben"],
+  ["zh", "设置", "在 GitHub 上点星"],
+]) {
+  for (const fontSize of [14, 24]) {
+    test(`GitHub star has a visible label and gear opens About above updates (${locale}, ${fontSize}px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 860, height: 560 });
+      await page.addInitScript(
+        ({ locale, fontSize }) => {
+          localStorage.setItem("oflh-language", locale);
+          localStorage.setItem("oflh-font-size", String(fontSize));
+          localStorage.setItem("oflh-theme", "vscode");
+        },
+        { locale, fontSize },
+      );
+      await page.goto("/?version=0.4.0");
+      const footer = page.getByRole("contentinfo");
+      const starButton = footer.getByRole("button", {
+        name: star,
+        exact: true,
+      });
+      await expect(starButton).toHaveText(star);
+      await expect(starButton).toBeVisible();
+      const starBounds = (await starButton.boundingBox())!;
+      expect(starBounds.x).toBeGreaterThanOrEqual(0);
+      expect(starBounds.x + starBounds.width).toBeLessThanOrEqual(860);
+      const footerWidth = await footer.evaluate((element) => ({
+        visible: element.clientWidth,
+        content: element.scrollWidth,
+      }));
+      expect(footerWidth.content).toBeLessThanOrEqual(footerWidth.visible);
+      const statusBounds = (await footer
+        .locator(".status-current")
+        .boundingBox())!;
+      const footerBounds = (await footer.boundingBox())!;
+      expect(statusBounds.y + statusBounds.height).toBeLessThanOrEqual(
+        footerBounds.y + footerBounds.height,
+      );
+      await starButton.click();
+      expect(
+        await page.evaluate(() =>
+          (window as any).__testCalls.some(
+            (call: any) => call.command === "open_project",
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        await page.evaluate(() =>
+          (window as any).__testCalls.some(
+            (call: any) => call.command === "open_donation",
+          ),
+        ),
+      ).toBe(false);
+      await page.getByRole("button", { name: settings, exact: true }).click();
+      const menu = page.getByRole("menu", { name: settings, exact: true });
+      const about =
+        locale === "de"
+          ? "Über OFLH"
+          : locale === "zh"
+            ? "关于 OFLH"
+            : "About OFLH";
+      const check =
+        locale === "de"
+          ? "Nach Updates suchen"
+          : locale === "zh"
+            ? "检查更新"
+            : "Check for updates";
+      expect(
+        (await menu.getByRole("menuitem").allTextContents()).slice(-2),
+      ).toEqual([about, check]);
+      if (locale === "de" && fontSize === 24)
+        await page.screenshot({ path: "test-results/gear-about-order-de.png" });
+      await menu.getByRole("menuitem", { name: about, exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: about, exact: true });
+      await expect(
+        dialog.getByText("Linux x86_64", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        dialog.getByText("0123456789abcdef0123456789abcdef01234567", {
+          exact: true,
+        }),
+      ).toBeVisible();
+      await dialog.getByRole("button", { name: "0.4.0", exact: true }).click();
+      expect(
+        await page.evaluate(() =>
+          (window as any).__testCalls.some(
+            (call: any) => call.command === "open_installed_release",
+          ),
+        ),
+      ).toBe(true);
+      const copyLabel =
+        locale === "de" ? "Kopieren" : locale === "zh" ? "复制" : "Copy";
+      await dialog
+        .getByRole("button", { name: copyLabel, exact: true })
+        .click();
+      const copied = await page.evaluate(
+        () =>
+          (window as any).__testCalls.find(
+            (call: any) => call.command === "copy_diagnostic",
+          )?.args.text,
+      );
+      expect(copied).toContain("Version: 0.4.0");
+      expect(copied).toContain(
+        "Commit: 0123456789abcdef0123456789abcdef01234567",
+      );
+      expect(copied).toContain("OS: Linux x86_64");
+      expect(copied).toContain("License: MIT");
+      if (locale === "de" && fontSize === 14)
+        await page.screenshot({ path: "test-results/about-dialog-de.png" });
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: settings, exact: true }),
+      ).toBeFocused();
+    });
+  }
+}

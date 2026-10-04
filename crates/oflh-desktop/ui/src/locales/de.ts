@@ -2,7 +2,16 @@ import type { TranslationSchema } from "../i18n/types";
 import en from "./en";
 
 const de: TranslationSchema<typeof en> = {
+  about: {
+    k_version: "Version",
+    k_commit: "Commit",
+    k_system: "System",
+    k_license: "Lizenz",
+    k_copied: "Informationen kopiert.",
+  },
   app: {
+    k_installed_version: "Installierte Version {{version}}",
+    k_view_rc_pipeline: "Pipeline für RC ansehen",
     k_2_right_click_a_process_row_or_open_its_details:
       "2. Eine Prozesszeile rechts anklicken (oder die Details öffnen).",
     k_3_choose: "3. Auswählen:",
@@ -294,7 +303,7 @@ const de: TranslationSchema<typeof en> = {
     k_processes: "Prozesse",
     k_processes_da2c4eba: "Prozesse",
     k_settings: "Einstellungen",
-    k_star_on_github: "GitHub-Projekt mit Stern versehen",
+    k_star_on_github: "Stern auf GitHub vergeben",
     k_workspace: "Arbeitsbereich",
     k_workspace_70398828: "ARBEITSBEREICH",
   },
@@ -456,6 +465,10 @@ const de: TranslationSchema<typeof en> = {
       "Unbekannte CPU- und Speicherwerte bleiben nicht verfügbar. Fehlende Berechtigungen können Prozesse verbergen. Ein normales Beenden wird niemals automatisch erzwungen. Beim Beenden eines Prozesses können ungespeicherte Daten verloren gehen.",
   },
   themes: {
+    k_system_uses_theme: "Folgt deinem Gerät · {{theme}}",
+    k_applied_by_system: "Vom System verwendet",
+
+    k_themes: "Designs",
     k_bright_and_clear: "Hell und klar",
     k_choose_a_theme_or_follow_your_system:
       "Wähle ein Design oder übernimm die Systemeinstellung.",
@@ -473,6 +486,20 @@ const de: TranslationSchema<typeof en> = {
     k_vs_code_dark: "VS Code Dunkel",
   },
   update: {
+    k_new_update_available: "Neues Update verfügbar",
+    k_update_recommendation:
+      "Updates können Fehlerbehebungen, Stabilitätsverbesserungen und neue Funktionen enthalten. Ich empfehle, die neueste Version zu installieren. Einzelheiten findest du in den Versionshinweisen.",
+    k_install_question:
+      "Möchtest du dieses Update installieren? OFLH startet nach der Installation neu.",
+    k_manual_download:
+      "Automatische Updates sind für dieses Linux-Paket nicht verfügbar. Besuche die Download-Seite und lade die App erneut herunter, um die neueste Version für dein Betriebssystem zu erhalten.",
+    k_go_to_download_page: "Zur Download-Seite",
+    k_later: "Später",
+
+    k_notification: "Ein Update ist verfügbar.",
+    k_download_update: "Update herunterladen",
+    k_update_action_failed:
+      "Das Update konnte nicht abgeschlossen werden. Erneut versuchen.",
     k_a_newer_version_is_available: "Eine neuere Version ist verfügbar.",
     k_check_for_updates: "Nach Updates suchen",
     k_checking_for_updates: "Suche nach Updates…",

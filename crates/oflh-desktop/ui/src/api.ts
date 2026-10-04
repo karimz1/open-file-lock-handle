@@ -110,6 +110,10 @@ export interface ActionResult {
   error: Failure | null;
 }
 export const api = {
+  systemInfo: () => invoke<{ os: string; arch: string }>("system_info"),
+  updateMode: () => invoke<"download" | "install">("update_mode"),
+  openDownload: () => invoke<void>("open_download"),
+  openInstalledRelease: () => invoke<void>("open_installed_release"),
   openBuild: () => invoke<void>("open_build"),
   openPullRequest: () => invoke<void>("open_pull_request"),
   donate: () => invoke<void>("open_donation"),
