@@ -143,10 +143,19 @@ results table.
 
 ## Appearance
 
-The gear at the bottom left opens a menu with **Settings** and **Themes**.
+The gear is the last item at the bottom left and opens a menu with **Settings**
+and **Themes**. The GitHub star sits at the bottom right next to **Donate**.
 The Themes submenu offers Light, System, Rider Dark, VS Code Dark and OFLH Purple,
-with a check beside your current theme. Settings also offers font size. Your
-theme, font size and details width persist.
+with a check beside the design currently in use. **System** follows your device:
+dark mode uses VS Code Dark, and light mode uses Light. The current design is
+marked **Used by System** while automatic appearance is enabled. Choosing a
+concrete design disables automatic appearance.
+
+Focus outlines appear during keyboard navigation, without pre-highlighting
+actions when you open a menu or dialog with the mouse. Process confirmations
+still default to Cancel.
+
+Settings also offers font size. Your theme, font size and details width persist.
 The first launch offers a theme choice. The app remembers these settings between
 launches.
 
@@ -174,8 +183,8 @@ Choose **Go to download page** to open the
 [download page](https://oflh.karimzouine.com/#download) and download the latest
 version for your operating system; install the new package or replace your
 extracted archive manually. A failed check or installation can be retried.
-**About OFLH** links the installed version to its GitHub release; development
-and RC builds also provide a pipeline link.
+The installed version appears in Settings under **About OFLH**, where it links
+to its GitHub release. Development and RC builds also provide a pipeline link.
 
 For OS limitations, see [platform support](platform-support.md). For build,
 testing and packaging details, see [development](development.md).

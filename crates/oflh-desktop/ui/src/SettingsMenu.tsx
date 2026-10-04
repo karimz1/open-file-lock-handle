@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronRight,
@@ -9,7 +9,7 @@ import {
   Settings,
 } from "lucide-react";
 import { t } from "./i18n";
-import { themes, type Theme } from "./Themes";
+import { themes, themeLabel, type AppliedTheme, type Theme } from "./Themes";
 import type { Updates } from "./useUpdates";
 
 export function SettingsMenu({
@@ -17,12 +17,14 @@ export function SettingsMenu({
   active,
   openSettings,
   theme,
+  appliedTheme,
   onThemeChange,
 }: {
   updates: Updates;
   active: boolean;
   openSettings: () => void;
   theme: Theme;
+  appliedTheme: AppliedTheme;
   onThemeChange: (theme: Theme) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -46,13 +48,17 @@ export function SettingsMenu({
     focusTheme.current = !themeMenu.current;
     setThemesOpen(true);
     themeMenu.current
-      ?.querySelector<HTMLButtonElement>('[aria-checked="true"]')
+      ?.querySelector<HTMLButtonElement>(
+        '[role="menuitemradio"][aria-checked="true"]',
+      )
       ?.focus();
   };
   useEffect(() => {
     if (themesOpen && focusTheme.current) {
       themeMenu.current
-        ?.querySelector<HTMLButtonElement>('[aria-checked="true"]')
+        ?.querySelector<HTMLButtonElement>(
+          '[role="menuitemradio"][aria-checked="true"]',
+        )
         ?.focus();
       focusTheme.current = false;
     }
@@ -206,29 +212,69 @@ export function SettingsMenu({
                 aria-label={t("themes.k_themes")}
               >
                 {themes.map(({ id, label, colors }) => (
-                  <button
-                    key={id}
-                    role="menuitemradio"
-                    aria-checked={theme === id}
-                    onClick={() => {
-                      onThemeChange(id);
-                      close();
-                    }}
-                  >
-                    <span
-                      className="menu-theme-swatch"
-                      aria-hidden="true"
-                      style={{ background: colors[0], borderColor: colors[2] }}
-                    />
-                    {t(label)}
-                    {theme === id && (
-                      <Check
-                        size={15}
-                        className="menu-chevron"
-                        aria-hidden="true"
-                      />
+                  <Fragment key={id}>
+                    {id === "light" && (
+                      <div className="settings-menu-rule" role="separator" />
                     )}
-                  </button>
+                    <button
+                      aria-label={t(label)}
+                      aria-describedby={
+                        id === "system" ||
+                        (theme === "system" && id === appliedTheme)
+                          ? `menu-theme-description-${id}`
+                          : undefined
+                      }
+                      role={
+                        id === "system" ? "menuitemcheckbox" : "menuitemradio"
+                      }
+                      aria-checked={
+                        id === "system"
+                          ? theme === "system"
+                          : appliedTheme === id
+                      }
+                      onClick={() => {
+                        onThemeChange(
+                          id === "system" && theme === "system"
+                            ? appliedTheme
+                            : id,
+                        );
+                        close();
+                      }}
+                    >
+                      <span
+                        className="menu-theme-swatch"
+                        aria-hidden="true"
+                        style={{
+                          background: colors[0],
+                          borderColor: colors[2],
+                        }}
+                      />
+                      <span className="menu-theme-label">
+                        {t(label)}
+                        {id === "system" && (
+                          <small id={`menu-theme-description-${id}`}>
+                            {theme === "system"
+                              ? t("themes.k_system_uses_theme", {
+                                  theme: themeLabel(appliedTheme),
+                                })
+                              : t("themes.k_follow_your_device")}
+                          </small>
+                        )}
+                        {theme === "system" && id === appliedTheme && (
+                          <small id={`menu-theme-description-${id}`}>
+                            {t("themes.k_applied_by_system")}
+                          </small>
+                        )}
+                      </span>
+                      {appliedTheme === id && (
+                        <Check
+                          size={15}
+                          className="menu-chevron"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </button>
+                  </Fragment>
                 ))}
               </div>
             )}

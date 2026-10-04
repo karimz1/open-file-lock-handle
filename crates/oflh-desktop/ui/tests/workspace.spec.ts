@@ -1615,7 +1615,7 @@ test("documentation screenshots use only synthetic inspection data", async ({
   });
 });
 
-test("utility actions stay in the sidebar and fit the minimum window", async ({
+test("gear stays last in the sidebar and support actions fit the minimum window footer", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 860, height: 560 });
@@ -1632,7 +1632,8 @@ test("utility actions stay in the sidebar and fit the minimum window", async ({
   const columnMenu = page.getByRole("group", { name: "Visible columns" });
   const menuBounds = await columnMenu.boundingBox();
   expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(860);
-  for (const name of ["Star on GitHub", "Settings"]) {
+  await page.getByText("Columns", { exact: true }).click();
+  for (const name of ["Settings"]) {
     const button = page
       .getByRole("navigation")
       .getByRole("button", { name, exact: true });
@@ -1647,6 +1648,59 @@ test("utility actions stay in the sidebar and fit the minimum window", async ({
     expect(box!.x).toBeGreaterThanOrEqual(0);
     expect(box!.x + box!.width).toBeLessThanOrEqual(860);
   }
+  const sidebar = page.getByRole("navigation");
+  await expect(sidebar.locator(".sidebar-bottom > :last-child")).toHaveClass(
+    "settings-menu",
+  );
+  const gear = sidebar.getByRole("button", { name: "Settings", exact: true });
+  const star = footer.getByRole("button", {
+    name: "Star on GitHub",
+    exact: true,
+  });
+  await expect(star).toBeVisible();
+  await expect(
+    sidebar.getByRole("button", { name: "Star on GitHub", exact: true }),
+  ).toHaveCount(0);
+  const gearBounds = await gear.boundingBox();
+  const starBounds = await star.boundingBox();
+  const footerBox = await footer.boundingBox();
+  expect(gearBounds!.y + gearBounds!.height).toBeLessThanOrEqual(footerBox!.y);
+  expect(starBounds!.y).toBeGreaterThanOrEqual(footerBox!.y);
+  expect(starBounds!.x).toBeGreaterThan(860 / 2);
+  expect(starBounds!.x + starBounds!.width).toBeLessThanOrEqual(860);
+  await expect(sidebar.getByText("Development", { exact: true })).toHaveCount(
+    0,
+  );
+  await gear.click();
+  const menu = page.getByRole("menu", { name: "Settings", exact: true });
+  const popupBounds = await menu.boundingBox();
+  expect(popupBounds!.y).toBeGreaterThanOrEqual(0);
+  expect(popupBounds!.y + popupBounds!.height).toBeLessThanOrEqual(
+    gearBounds!.y + gearBounds!.height,
+  );
+  const headerBounds = await page.getByRole("banner").boundingBox();
+  expect(headerBounds!.y).toBe(0);
+  await page.screenshot({ path: "test-results/sidebar-bottom-gear.png" });
+  await page.keyboard.press("Escape");
+  await sidebar
+    .getByRole("button", { name: "Collapse sidebar", exact: true })
+    .click();
+  await expect(sidebar.locator(".sidebar-bottom > :last-child")).toHaveClass(
+    "settings-menu",
+  );
+  await expect(gear).toBeVisible();
+  await gear.click();
+  await expect(menu).toBeVisible();
+  await page.screenshot({
+    path: "test-results/sidebar-bottom-gear-collapsed.png",
+  });
+  await menu.getByRole("menuitem", { name: "Settings", exact: true }).click();
+  await expect(
+    page.getByRole("button", {
+      name: "Installed version development",
+      exact: true,
+    }),
+  ).toBeAttached();
   await expect(
     page.getByRole("navigation").getByRole("button", { name: "Donate" }),
   ).toHaveCount(0);
@@ -2020,7 +2074,7 @@ test("gear is icon-only and themes submenu supports keyboard selection and persi
   await expect(
     submenu.getByRole("menuitemradio", { name: "Light", exact: true }),
   ).toBeFocused();
-  await expect(submenu.getByRole("menuitemradio")).toHaveCount(5);
+  await expect(submenu.getByRole("menuitemradio")).toHaveCount(4);
   await page.screenshot({ path: "test-results/settings-themes-menu.png" });
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
@@ -2154,6 +2208,9 @@ test("manual check opens update confirmation and release notes before installati
   await expect(
     dialog.getByText(/bug fixes, stability improvements, and new features/),
   ).toBeVisible();
+  await expect(
+    dialog.getByText(/I recommend installing the latest version/),
+  ).toBeVisible();
   await page.screenshot({ path: "test-results/update-confirmation.png" });
   await dialog.getByRole("button", { name: "View release notes" }).click();
   const calls = await page.evaluate(() => (window as any).__testCalls);
@@ -2171,4 +2228,153 @@ test("manual check opens update confirmation and release notes before installati
       .getByRole("button", { name: "Settings", exact: true })
       .locator(".update-badge"),
   ).toHaveText("1");
+});
+
+test("pointer-opened menus and termination dialogs do not pre-highlight actions, while keyboard focus stays visible", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const gear = page.getByRole("button", { name: "Settings", exact: true });
+  await gear.click();
+  const menu = page.getByRole("menu", { name: "Settings", exact: true });
+  const settings = menu.getByRole("menuitem", {
+    name: "Settings",
+    exact: true,
+  });
+  await expect(settings).toBeFocused();
+  await expect(settings).toHaveCSS("outline-style", "none");
+  const themes = menu.getByRole("menuitem", { name: "Themes", exact: true });
+  await themes.hover();
+  await expect(themes).toHaveCSS("outline-style", "none");
+  await themes.click();
+  const light = page.getByRole("menuitemradio", { name: "Light", exact: true });
+  await expect(light).toBeFocused();
+  await expect(light).toHaveCSS("outline-style", "none");
+  await page.keyboard.press("ArrowDown");
+  const rider = page.getByRole("menuitemradio", {
+    name: "Rider Dark",
+    exact: true,
+  });
+  await expect(rider).toBeFocused();
+  await expect(rider).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page
+    .getByRole("button", { name: "Force terminate…", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  const cancel = dialog.getByRole("button", { name: "Cancel", exact: true });
+  await expect(cancel).toBeFocused();
+  await expect(cancel).toHaveCSS("outline-style", "none");
+  await page.screenshot({
+    path: "test-results/pointer-termination-dialog.png",
+  });
+  await page.keyboard.press("Tab");
+  const terminate = dialog.getByRole("button", {
+    name: "Force terminate",
+    exact: true,
+  });
+  await expect(terminate).toBeFocused();
+  await expect(terminate).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Shift+Tab");
+  await expect(cancel).toBeFocused();
+  await expect(cancel).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Enter");
+  await expect(dialog).toHaveCount(0);
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(calls.some((call: any) => call.command === "terminate")).toBe(false);
+});
+
+test("System highlights the concrete theme and follows OS changes in cards and the menu", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/");
+  await page.keyboard.press("Control+,");
+  const system = page.getByRole("button", { name: "System", exact: true });
+  const vscode = page.getByRole("button", {
+    name: "VS Code Dark",
+    exact: true,
+  });
+  const light = page.getByRole("button", { name: "Light", exact: true });
+  await system.click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "vscode");
+  await expect(system).toHaveAttribute("aria-pressed", "true");
+  await expect(vscode).toHaveAttribute("aria-pressed", "true");
+  await expect(vscode).toHaveClass(/active/);
+  await expect(system).not.toHaveClass(/active/);
+  await expect(vscode.getByText("Used by System")).toBeVisible();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Themes", exact: true }).hover();
+  const submenu = page.getByRole("menu", { name: "Themes", exact: true });
+  const systemMode = submenu.getByRole("menuitemcheckbox", {
+    name: "System",
+    exact: true,
+  });
+  const vscodeItem = submenu.getByRole("menuitemradio", {
+    name: "VS Code Dark",
+    exact: true,
+  });
+  const lightItem = submenu.getByRole("menuitemradio", {
+    name: "Light",
+    exact: true,
+  });
+  await expect(systemMode).toHaveAttribute("aria-checked", "true");
+  await expect(vscodeItem).toHaveAttribute("aria-checked", "true");
+  await expect(
+    submenu.getByRole("menuitemradio", { checked: true }),
+  ).toHaveCount(1);
+  await page.screenshot({ path: "test-results/system-theme-dark.png" });
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(systemMode).toHaveAttribute("aria-checked", "true");
+  await expect(vscodeItem).toHaveAttribute("aria-checked", "false");
+  await expect(lightItem).toHaveAttribute("aria-checked", "true");
+  await expect(
+    submenu.getByRole("menuitemradio", { checked: true }),
+  ).toHaveCount(1);
+  await expect(light).toHaveAttribute("aria-pressed", "true");
+  await expect(light.getByText("Used by System")).toBeVisible();
+  await lightItem.click();
+  expect(await page.evaluate(() => localStorage.getItem("oflh-theme"))).toBe(
+    "light",
+  );
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+});
+
+test("System can be enabled from the menu and persists across launches", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/");
+  const gear = page.getByRole("button", { name: "Settings", exact: true });
+  await gear.click();
+  await page.getByRole("menuitem", { name: "Themes", exact: true }).hover();
+  await page
+    .getByRole("menuitemcheckbox", { name: "System", exact: true })
+    .click();
+  expect(await page.evaluate(() => localStorage.getItem("oflh-theme"))).toBe(
+    "system",
+  );
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "vscode");
+  await page.reload();
+  await gear.click();
+  await page.getByRole("menuitem", { name: "Themes", exact: true }).click();
+  const vscode = page.getByRole("menuitemradio", {
+    name: "VS Code Dark",
+    exact: true,
+  });
+  await expect(vscode).toBeFocused();
+  await expect(vscode).toHaveAttribute("aria-checked", "true");
+  await page
+    .getByRole("menuitemcheckbox", { name: "System", exact: true })
+    .click();
+  expect(await page.evaluate(() => localStorage.getItem("oflh-theme"))).toBe(
+    "vscode",
+  );
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "vscode");
 });

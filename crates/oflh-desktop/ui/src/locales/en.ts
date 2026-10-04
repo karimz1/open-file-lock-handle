@@ -444,6 +444,9 @@ const en = {
       "Unknown CPU and memory stay unavailable. Access permissions may hide processes. Normal termination never escalates to force termination. Unsaved work can be lost when stopping a process.",
   },
   themes: {
+    k_system_uses_theme: "Follows your device · {{theme}}",
+    k_applied_by_system: "Used by System",
+
     k_themes: "Themes",
     k_bright_and_clear: "Bright and clear",
     k_choose_a_theme_or_follow_your_system:
@@ -464,7 +467,7 @@ const en = {
   update: {
     k_new_update_available: "New update available",
     k_update_recommendation:
-      "Updates can include bug fixes, stability improvements, and new features. We recommend installing the latest version. See the release notes for details.",
+      "Updates can include bug fixes, stability improvements, and new features. I recommend installing the latest version. See the release notes for details.",
     k_install_question:
       "Would you like to install this update? OFLH will restart after installation.",
     k_manual_download:

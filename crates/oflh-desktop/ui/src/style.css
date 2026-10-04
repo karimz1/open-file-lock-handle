@@ -312,9 +312,7 @@ code {
 .sidebar.collapsed .nav-label,
 .sidebar.collapsed .nav-badge,
 .sidebar.collapsed kbd.shortcut,
-.sidebar.collapsed .sidebar-bottom p,
-.sidebar.collapsed .version,
-.sidebar.collapsed .nav-external-icon {
+.sidebar.collapsed .sidebar-bottom p {
   display: none;
 }
 .sidebar.collapsed > button,
@@ -378,11 +376,6 @@ code {
   padding: 18px 11px;
   color: var(--muted);
   font-size: 0.8462rem;
-}
-.version {
-  padding: 10px 11px 0;
-  color: var(--muted);
-  font-size: 0.7692rem;
 }
 main {
   flex: 1;
@@ -1459,23 +1452,6 @@ main {
   }
 }
 
-button[data-default-focus]:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.github-link {
-  color: var(--text);
-  background: var(--panel);
-  border-color: var(--border);
-  white-space: nowrap;
-  flex-shrink: 0;
-  font-size: 0.8462rem;
-}
-.github-link:hover {
-  color: var(--text);
-  border-color: var(--border);
-}
 .table-header > div:hover .resize-handle::after,
 .resize-handle:focus-visible::after {
   background: var(--accent);
@@ -2066,8 +2042,7 @@ kbd.shortcut {
   min-height: 34px;
   white-space: nowrap;
 }
-.settings-popup button:focus-visible,
-.theme-menu-group:has(.themes-submenu) > button {
+:root[data-input-mode="keyboard"] .settings-popup button:focus-visible {
   background: var(--hover);
   outline: 1px solid var(--accent);
   outline-offset: -1px;
@@ -2136,4 +2111,41 @@ kbd.shortcut {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* Keep utility actions inside the sidebar at the minimum window height. */
+@media (max-height: 660px) {
+  .sidebar,
+  .sidebar.collapsed {
+    padding-top: 12px;
+    gap: 4px;
+  }
+  .sidebar-rule {
+    margin: 10px 9px;
+  }
+  .sidebar-bottom p {
+    display: none;
+  }
+}
+
+:root[data-input-mode="pointer"]
+  :is(button, input, select, summary, [tabindex]):focus-visible {
+  outline: none;
+}
+.menu-theme-label {
+  display: grid;
+  text-align: left;
+  gap: 2px;
+}
+.menu-theme-label small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.theme-caption .system-theme-note {
+  color: var(--accent);
+}
+
+.footer-star {
+  width: 28px;
+  flex: none;
 }

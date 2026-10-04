@@ -50,7 +50,7 @@ import {
 import { acceptStatus, initialStatus, selectKey } from "./state";
 import { Inspector } from "./Inspector";
 import { Modal } from "./Modal";
-import { readTheme, ThemePicker } from "./Themes";
+import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
 import {
   Table,
   fileColumns as fileColumnDefinitions,
@@ -266,6 +266,7 @@ export function App() {
   );
   const [initialTheme] = useState(readTheme);
   const [theme, setTheme] = useState(initialTheme.theme);
+  const appliedTheme = useAppliedTheme(theme);
   const [showThemeWelcome, setShowThemeWelcome] = useState(
     initialTheme.firstUse,
   );
@@ -416,19 +417,13 @@ export function App() {
     };
   }, [focused, status.revision, report]);
   useEffect(() => {
-    const media = matchMedia("(prefers-color-scheme: dark)");
-    const update = () =>
-      (document.documentElement.dataset.theme =
-        theme === "system" ? (media.matches ? "vscode" : "light") : theme);
-    update();
-    media.addEventListener("change", update);
+    document.documentElement.dataset.theme = appliedTheme;
     try {
       if (!showThemeWelcome) localStorage.setItem("oflh-theme", theme);
     } catch {
       /* Theme still applies for this session. */
     }
-    return () => media.removeEventListener("change", update);
-  }, [theme, showThemeWelcome]);
+  }, [theme, appliedTheme, showThemeWelcome]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 2300);
@@ -895,28 +890,11 @@ export function App() {
             <SettingsMenu
               updates={updates}
               theme={theme}
+              appliedTheme={appliedTheme}
               onThemeChange={setTheme}
               active={view === "settings"}
               openSettings={() => changeView("settings")}
             />
-            <button
-              className="github-link"
-              title={t("navigation.k_star_on_github")}
-              onClick={() => void api.openProject().catch(report)}
-            >
-              <Star size={14} />
-              <span className="nav-label">
-                {t("navigation.k_star_on_github")}
-              </span>
-              <ExternalLink size={12} className="nav-external-icon" />
-            </button>
-            <span className="version">
-              {status.version === "development"
-                ? t("app.k_development")
-                : status.version
-                  ? `v${status.version}`
-                  : "OFLH Desktop"}
-            </span>
           </div>
         </nav>
         <main>
@@ -1535,7 +1513,11 @@ export function App() {
                     {t("themes.k_choose_a_theme_or_follow_your_system")}
                   </p>
                 </div>
-                <ThemePicker theme={theme} onChange={setTheme} />
+                <ThemePicker
+                  theme={theme}
+                  appliedTheme={appliedTheme}
+                  onChange={setTheme}
+                />
               </section>
               <section className="setting-section">
                 <div>
@@ -1790,6 +1772,14 @@ export function App() {
             , {t("app.k_built_in_spare_time")}
           </span>
           <button
+            className="footer-link footer-star"
+            title={t("navigation.k_star_on_github")}
+            aria-label={t("navigation.k_star_on_github")}
+            onClick={() => void api.openProject().catch(report)}
+          >
+            <Star size={14} aria-hidden="true" />
+          </button>
+          <button
             className="footer-link"
             title={t("support.k_choose_how_to_support_oflh")}
             onClick={() => setShowSupport(true)}
@@ -2028,7 +2018,11 @@ export function App() {
           close={() => setShowThemeWelcome(false)}
         >
           <p>{t("themes.k_choose_your_workspace_theme_preview_it_12e8b92b")}</p>
-          <ThemePicker theme={theme} onChange={setTheme} />
+          <ThemePicker
+            theme={theme}
+            appliedTheme={appliedTheme}
+            onChange={setTheme}
+          />
           <div className="modal-actions">
             <button
               className="primary"

@@ -458,6 +458,9 @@ const de: TranslationSchema<typeof en> = {
       "Unbekannte CPU- und Speicherwerte bleiben nicht verfügbar. Fehlende Berechtigungen können Prozesse verbergen. Ein normales Beenden wird niemals automatisch erzwungen. Beim Beenden eines Prozesses können ungespeicherte Daten verloren gehen.",
   },
   themes: {
+    k_system_uses_theme: "Folgt deinem Gerät · {{theme}}",
+    k_applied_by_system: "Vom System verwendet",
+
     k_themes: "Designs",
     k_bright_and_clear: "Hell und klar",
     k_choose_a_theme_or_follow_your_system:
@@ -478,7 +481,7 @@ const de: TranslationSchema<typeof en> = {
   update: {
     k_new_update_available: "Neues Update verfügbar",
     k_update_recommendation:
-      "Updates können Fehlerbehebungen, Stabilitätsverbesserungen und neue Funktionen enthalten. Wir empfehlen, die neueste Version zu installieren. Einzelheiten findest du in den Versionshinweisen.",
+      "Updates können Fehlerbehebungen, Stabilitätsverbesserungen und neue Funktionen enthalten. Ich empfehle, die neueste Version zu installieren. Einzelheiten findest du in den Versionshinweisen.",
     k_install_question:
       "Möchtest du dieses Update installieren? OFLH startet nach der Installation neu.",
     k_manual_download:

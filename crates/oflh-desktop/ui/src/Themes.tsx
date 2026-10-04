@@ -1,4 +1,5 @@
-import { Check } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, Monitor } from "lucide-react";
 import { t, type MessageKey } from "./i18n";
 type ThemeOption = {
   id: string;
@@ -39,6 +40,27 @@ export const themes = [
   },
 ] as const satisfies readonly ThemeOption[];
 export type Theme = (typeof themes)[number]["id"];
+export type AppliedTheme = Exclude<Theme, "system">;
+
+/** Keep the saved System preference separate from the concrete design it uses. */
+export function useAppliedTheme(theme: Theme): AppliedTheme {
+  const [systemDark, setSystemDark] = useState(
+    () => matchMedia("(prefers-color-scheme: dark)").matches,
+  );
+  useEffect(() => {
+    const media = matchMedia("(prefers-color-scheme: dark)");
+    const update = () => setSystemDark(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  return theme === "system" ? (systemDark ? "vscode" : "light") : theme;
+}
+
+export function themeLabel(theme: Theme): string {
+  const option = themes.find((option) => option.id === theme);
+  return option ? t(option.label) : theme;
+}
 
 export function readTheme(): { theme: Theme; firstUse: boolean } {
   try {
@@ -53,9 +75,11 @@ export function readTheme(): { theme: Theme; firstUse: boolean } {
 }
 export function ThemePicker({
   theme,
+  appliedTheme,
   onChange,
 }: {
   theme: Theme;
+  appliedTheme: AppliedTheme;
   onChange: (theme: Theme) => void;
 }) {
   return (
@@ -64,9 +88,15 @@ export function ThemePicker({
         <button
           key={id}
           aria-label={t(label)}
-          aria-pressed={theme === id}
-          className={theme === id ? "theme-choice active" : "theme-choice"}
-          onClick={() => onChange(id)}
+          aria-pressed={
+            id === "system" ? theme === "system" : appliedTheme === id
+          }
+          className={
+            appliedTheme === id ? "theme-choice active" : "theme-choice"
+          }
+          onClick={() =>
+            onChange(id === "system" && theme === "system" ? appliedTheme : id)
+          }
         >
           <span
             className="theme-preview"
@@ -81,9 +111,23 @@ export function ThemePicker({
           </span>
           <span className="theme-caption">
             <strong>{t(label)}</strong>
-            <small>{t(description)}</small>
+            <small>
+              {id === "system" && theme === "system"
+                ? t("themes.k_system_uses_theme", {
+                    theme: themeLabel(appliedTheme),
+                  })
+                : t(description)}
+            </small>
+            {theme === "system" && id === appliedTheme && (
+              <small className="system-theme-note">
+                {t("themes.k_applied_by_system")}
+              </small>
+            )}
           </span>
-          {theme === id && <Check size={16} aria-hidden="true" />}
+          {appliedTheme === id && <Check size={16} aria-hidden="true" />}
+          {theme === "system" && id === "system" && (
+            <Monitor size={16} aria-hidden="true" />
+          )}
         </button>
       ))}
     </div>

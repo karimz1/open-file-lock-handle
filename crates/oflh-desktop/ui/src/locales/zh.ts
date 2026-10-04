@@ -436,6 +436,9 @@ const zh: TranslationSchema<typeof en> = {
       "未知的 CPU 和内存指标保持不可用。访问权限可能隐藏进程。正常终止不会自动升级为强制终止。停止进程可能导致未保存的工作丢失。",
   },
   themes: {
+    k_system_uses_theme: "跟随设备 · {{theme}}",
+    k_applied_by_system: "系统当前使用",
+
     k_themes: "主题",
     k_bright_and_clear: "明亮清晰",
     k_choose_a_theme_or_follow_your_system: "选择主题或跟随系统设置。",
@@ -455,7 +458,7 @@ const zh: TranslationSchema<typeof en> = {
   update: {
     k_new_update_available: "有新版本可用",
     k_update_recommendation:
-      "更新可能包含错误修复、稳定性改进和新功能。建议安装最新版本。详情请查看发行说明。",
+      "更新可能包含错误修复、稳定性改进和新功能。我建议安装最新版本。详情请查看发行说明。",
     k_install_question: "要安装此更新吗？安装后 OFLH 将重新启动。",
     k_manual_download:
       "此 Linux 软件包不支持自动更新。请前往下载页面，重新下载适合你操作系统的最新版本。",
