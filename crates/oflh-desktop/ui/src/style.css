@@ -1300,9 +1300,9 @@ main {
 }
 .support-options {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 1rem;
+  margin-top: 1.2rem;
 }
 .support-option {
   display: flex;
@@ -1340,6 +1340,23 @@ main {
   white-space: normal;
   text-align: center;
 }
+
+.modal.support-modal {
+  width: min(72rem, calc(100vw - 3rem));
+  max-width: 72rem;
+  padding: 1.7rem;
+}
+.support-modal .support-option {
+  padding: 1.1rem;
+}
+.support-modal .support-option p {
+  font-size: 0.9231rem;
+}
+.support-modal .support-option button {
+  min-height: 2.8rem;
+  padding: 0.55rem 0.75rem;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;

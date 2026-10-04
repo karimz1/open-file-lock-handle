@@ -360,6 +360,8 @@ const zh: TranslationSchema<typeof en> = {
     k_updating_results: "正在更新结果…",
   },
   support: {
+    k_paypal_contribution: "通过 PayPal 进行捐助。",
+    k_continue_to_paypal: "前往 PayPal",
     k_a_simple_contribution_from_an_individual: "个人的一次简单支持。",
     k_any_wildcards_supported: "任意 · 支持通配符",
     k_buy_me_a_coffee: "Buy Me a Coffee",

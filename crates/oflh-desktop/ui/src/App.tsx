@@ -12,6 +12,7 @@ import {
   Check,
   Copy,
   Coffee,
+  CreditCard,
   ExternalLink,
   File,
   FileSearch,
@@ -544,11 +545,15 @@ export function App() {
     setConfirmation(null);
     void api.dismiss().catch(report);
   };
-  const chooseSupport = (destination: "coffee" | "sponsors") => {
+  const chooseSupport = (destination: "coffee" | "sponsors" | "paypal") => {
     setShowSupport(false);
-    void (destination === "coffee" ? api.donate() : api.openSponsors()).catch(
-      report,
-    );
+    void (
+      destination === "coffee"
+        ? api.donate()
+        : destination === "paypal"
+          ? api.openPaypal()
+          : api.openSponsors()
+    ).catch(report);
   };
   const terminate = () => {
     if (!confirmation || acting) return;
@@ -1840,6 +1845,7 @@ export function App() {
       )}
       {showSupport && (
         <Modal
+          className="support-modal"
           title={t("support.k_support_oflh")}
           close={() => setShowSupport(false)}
         >
@@ -1884,6 +1890,19 @@ export function App() {
                 onClick={() => chooseSupport("sponsors")}
               >
                 {t("support.k_continue_to_github_sponsors")}
+                <ExternalLink size={13} />
+              </button>
+            </section>
+            <section className="support-option">
+              <h3>
+                <CreditCard size={17} /> PayPal
+              </h3>
+              <p>{t("support.k_paypal_contribution")}</p>
+              <button
+                className="primary"
+                onClick={() => chooseSupport("paypal")}
+              >
+                {t("support.k_continue_to_paypal")}
                 <ExternalLink size={13} />
               </button>
             </section>
