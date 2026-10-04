@@ -82,6 +82,11 @@ Opening **Local ports** from details scopes results to that captured process.
 Refresh and termination preserve that scope: an empty result can confirm that the
 process's bindings disappeared. Clear the scope explicitly to see other owners.
 
+The **Auto** control can repeat a completed scan at a chosen interval. Its menu
+follows your theme and interface font size. Automatic refresh starts disabled
+and lasts only for the current session. The information popup closes when you
+click outside it, move focus away, or press Escape.
+
 ## Selection and copying
 
 Click a row for details. Ctrl/Cmd-click adds or removes a process. Shift-click
