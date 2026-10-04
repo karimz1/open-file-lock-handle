@@ -166,7 +166,8 @@ or follow your system language. Your preference is saved between launches.
 
 OFLH Desktop checks for a newer release at startup and every hour while open.
 These background checks stay quiet; an available update adds a **1** badge to
-the gear. Checks pause while you review an update dialog or install an update.
+the gear. The gear menu also shows the installed version. Checks pause while
+you review an update dialog or install an update.
 A failed background check keeps any known update badge.
 
 Choose **Check for updates** in the gear menu for an immediate check. If you

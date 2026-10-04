@@ -296,7 +296,7 @@ const de: TranslationSchema<typeof en> = {
     k_processes: "Prozesse",
     k_processes_da2c4eba: "Prozesse",
     k_settings: "Einstellungen",
-    k_star_on_github: "GitHub-Projekt mit Stern versehen",
+    k_star_on_github: "Stern auf GitHub vergeben",
     k_workspace: "Arbeitsbereich",
     k_workspace_70398828: "ARBEITSBEREICH",
   },

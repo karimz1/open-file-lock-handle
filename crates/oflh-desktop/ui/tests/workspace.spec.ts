@@ -1223,6 +1223,13 @@ for (const mode of ["install", "download"] as const) {
     await menu.getByRole("menuitem", { name: action }).click();
     const dialog = page.getByRole("dialog", { name: "New update available" });
     await expect(dialog).toBeVisible();
+    const versionColor = await dialog
+      .locator(".update-dialog-version strong")
+      .evaluate((element) => ({
+        heading: getComputedStyle(element).color,
+        body: getComputedStyle(element.closest("dialog")!).color,
+      }));
+    expect(versionColor.heading).toBe(versionColor.body);
     const before = await page.evaluate(() => (window as any).__testCalls);
     expect(
       before.some(
@@ -2378,3 +2385,82 @@ test("System can be enabled from the menu and persists across launches", async (
   );
   await expect(page.locator("html")).toHaveAttribute("data-theme", "vscode");
 });
+
+for (const [locale, settings, star, installed] of [
+  ["en", "Settings", "Star on GitHub", "Installed version 0.4.0"],
+  [
+    "de",
+    "Einstellungen",
+    "Stern auf GitHub vergeben",
+    "Installierte Version 0.4.0",
+  ],
+  ["zh", "设置", "在 GitHub 上点星", "已安装版本 0.4.0"],
+]) {
+  for (const fontSize of [14, 24]) {
+    test(`GitHub star has a visible label and gear shows the installed version (${locale}, ${fontSize}px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 860, height: 560 });
+      await page.addInitScript(
+        ({ locale, fontSize }) => {
+          localStorage.setItem("oflh-language", locale);
+          localStorage.setItem("oflh-font-size", String(fontSize));
+          localStorage.setItem("oflh-theme", "vscode");
+        },
+        { locale, fontSize },
+      );
+      await page.goto("/?version=0.4.0");
+      const footer = page.getByRole("contentinfo");
+      const starButton = footer.getByRole("button", {
+        name: star,
+        exact: true,
+      });
+      await expect(starButton).toHaveText(star);
+      await expect(starButton).toBeVisible();
+      const starBounds = (await starButton.boundingBox())!;
+      expect(starBounds.x).toBeGreaterThanOrEqual(0);
+      expect(starBounds.x + starBounds.width).toBeLessThanOrEqual(860);
+      const footerWidth = await footer.evaluate((element) => ({
+        visible: element.clientWidth,
+        content: element.scrollWidth,
+      }));
+      expect(footerWidth.content).toBeLessThanOrEqual(footerWidth.visible);
+      const statusBounds = (await footer
+        .locator(".status-current")
+        .boundingBox())!;
+      const footerBounds = (await footer.boundingBox())!;
+      expect(statusBounds.y + statusBounds.height).toBeLessThanOrEqual(
+        footerBounds.y + footerBounds.height,
+      );
+      await starButton.click();
+      expect(
+        await page.evaluate(() =>
+          (window as any).__testCalls.some(
+            (call: any) => call.command === "open_project",
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        await page.evaluate(() =>
+          (window as any).__testCalls.some(
+            (call: any) => call.command === "open_donation",
+          ),
+        ),
+      ).toBe(false);
+      await page.getByRole("button", { name: settings, exact: true }).click();
+      const menu = page.getByRole("menu", { name: settings, exact: true });
+      await expect(menu.locator(".settings-menu-version")).toHaveText(
+        installed,
+      );
+      await expect(menu.locator(".settings-menu-version")).toBeVisible();
+      await expect(menu.getByRole("menuitem", { name: installed })).toHaveCount(
+        0,
+      );
+      if (locale === "de" && fontSize === 24)
+        await page.screenshot({
+          path: "test-results/gear-installed-version-de.png",
+        });
+      await page.keyboard.press("Escape");
+    });
+  }
+}

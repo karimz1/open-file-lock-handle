@@ -975,6 +975,9 @@ main {
 }
 .footer-attribution,
 .status-metrics {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .footer-profile {
@@ -999,6 +1002,17 @@ main {
   display: flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
+}
+.status-current-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-current > svg,
+.status-cancel {
+  flex: none;
 }
 .content-page {
   padding: 32px;
@@ -2074,7 +2088,7 @@ kbd.shortcut {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: var(--accent);
+  color: var(--text);
   margin-bottom: 16px;
 }
 .update-dialog-status {
@@ -2145,7 +2159,15 @@ kbd.shortcut {
   color: var(--accent);
 }
 
-.footer-star {
-  width: 28px;
+.footer-link {
   flex: none;
+}
+.footer-star svg {
+  flex: none;
+}
+.settings-menu-version {
+  padding: 0.4rem 0.7rem;
+  color: var(--muted);
+  font-size: 0.8462rem;
+  overflow-wrap: anywhere;
 }

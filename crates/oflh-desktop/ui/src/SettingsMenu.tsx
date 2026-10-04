@@ -14,6 +14,7 @@ import type { Updates } from "./useUpdates";
 
 export function SettingsMenu({
   updates,
+  version,
   active,
   openSettings,
   theme,
@@ -21,6 +22,7 @@ export function SettingsMenu({
   onThemeChange,
 }: {
   updates: Updates;
+  version: string;
   active: boolean;
   openSettings: () => void;
   theme: Theme;
@@ -171,6 +173,7 @@ export function SettingsMenu({
           className="settings-popup"
           role="menu"
           aria-label={t("navigation.k_settings")}
+          aria-describedby={version ? "installed-menu-version" : undefined}
         >
           <button
             role="menuitem"
@@ -314,6 +317,17 @@ export function SettingsMenu({
               </span>
             )}
           </button>
+          {version && (
+            <>
+              <div className="settings-menu-rule" role="separator" />
+              <div
+                className="settings-menu-version"
+                id="installed-menu-version"
+              >
+                {t("app.k_installed_version", { version })}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

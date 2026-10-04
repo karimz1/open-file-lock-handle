@@ -889,6 +889,7 @@ export function App() {
             </p>
             <SettingsMenu
               updates={updates}
+              version={status.version}
               theme={theme}
               appliedTheme={appliedTheme}
               onThemeChange={setTheme}
@@ -1737,11 +1738,13 @@ export function App() {
       <footer className="statusbar">
         <span className="status-current" role="status">
           {status.scanning && <LoaderCircle size={13} className="spin" />}
-          {status.scanning
-            ? t("inspection.k_scanning")
-            : status.revision
-              ? t("inspection.k_inspection_complete")
-              : t("inspection.k_ready_to_inspect")}
+          <span className="status-current-label">
+            {status.scanning
+              ? t("inspection.k_scanning")
+              : status.revision
+                ? t("inspection.k_inspection_complete")
+                : t("inspection.k_ready_to_inspect")}
+          </span>
           {status.scanning && (
             <button
               className="status-cancel"
@@ -1778,6 +1781,7 @@ export function App() {
             onClick={() => void api.openProject().catch(report)}
           >
             <Star size={14} aria-hidden="true" />
+            <span>{t("navigation.k_star_on_github")}</span>
           </button>
           <button
             className="footer-link"
