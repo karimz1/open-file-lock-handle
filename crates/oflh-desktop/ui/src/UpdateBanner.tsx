@@ -1,54 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
 import { Download, LoaderCircle, RefreshCw, ShieldAlert } from "lucide-react";
-import { checkForUpdate, installUpdate, type Update } from "./updater";
 import { api } from "./api";
 import { t } from "./i18n";
 
-type UpdateState =
-  | { phase: "idle" }
-  | { phase: "checking" }
-  | { phase: "current" }
-  | { phase: "available"; update: Update }
-  | { phase: "installing" }
-  | { phase: "restart-required" }
-  | { phase: "unsupported" }
-  | { phase: "failed" };
+import type { Updates } from "./useUpdates";
 
-/** Settings-page section that checks the configured updater endpoint and
- * offers a silent install, falling back to the releases page when the
- * platform package (for example Linux .deb/.rpm) cannot self-update. */
-export function UpdateBanner() {
-  const [state, setState] = useState<UpdateState>({ phase: "idle" });
-
-  const runCheck = useCallback(async () => {
-    setState({ phase: "checking" });
-    try {
-      const update = await checkForUpdate();
-      setState(update ? { phase: "available", update } : { phase: "current" });
-    } catch {
-      // The updater plugin is unavailable on some packages (for example a
-      // Linux .deb/.rpm install); direct users to the releases page instead.
-      setState({ phase: "unsupported" });
-    }
-  }, []);
-
-  useEffect(() => {
-    void runCheck();
-  }, [runCheck]);
-
-  const install = useCallback(async () => {
-    if (state.phase !== "available") return;
-    setState({ phase: "installing" });
-    try {
-      await installUpdate(state.update);
-      setState({ phase: "restart-required" });
-    } catch {
-      setState({ phase: "failed" });
-    }
-  }, [state]);
-
+export function UpdateBanner({ state, runCheck, activate }: Updates) {
   const viewReleaseNotes = () => void api.openReleaseNotes().catch(() => {});
-
   return (
     <section className="setting-section updates">
       <div>
@@ -56,7 +13,7 @@ export function UpdateBanner() {
           <RefreshCw size={17} />
           {t("update.k_updates")}
         </h3>
-        {state.phase === "idle" || state.phase === "checking" ? (
+        {state.phase === "checking" ? (
           <p className="muted">
             <LoaderCircle size={14} className="spin" />{" "}
             {t("update.k_checking_for_updates")}
@@ -77,20 +34,26 @@ export function UpdateBanner() {
           </p>
         ) : state.phase === "restart-required" ? (
           <p>{t("update.k_update_installed_restart_oflh_to_finish")}</p>
-        ) : state.phase === "unsupported" ? (
-          <p className="muted">
-            {t("update.k_update_not_supported_on_this_package")}
-          </p>
         ) : (
           <p className="muted">
-            <ShieldAlert size={14} /> {t("update.k_update_check_failed")}
+            <ShieldAlert size={14} />{" "}
+            {t(
+              state.phase === "install-failed"
+                ? "update.k_update_action_failed"
+                : "update.k_update_check_failed",
+            )}
           </p>
         )}
       </div>
       <div className="inline-actions">
-        {state.phase === "available" && (
-          <button onClick={() => void install()}>
-            <Download size={14} /> {t("update.k_install_and_restart")}
+        {(state.phase === "available" || state.phase === "install-failed") && (
+          <button onClick={() => void activate()}>
+            <Download size={14} />{" "}
+            {t(
+              state.update.kind === "download"
+                ? "update.k_download_update"
+                : "update.k_install_and_restart",
+            )}
           </button>
         )}
         {state.phase !== "checking" &&

@@ -3,6 +3,8 @@ import en from "./en";
 
 const zh: TranslationSchema<typeof en> = {
   app: {
+    k_installed_version: "已安装版本 {{version}}",
+    k_view_rc_pipeline: "查看 RC 流水线",
     k_2_right_click_a_process_row_or_open_its_details:
       "2. 右键点击进程行（或打开详情）。",
     k_3_choose: "3. 选择",
@@ -450,6 +452,9 @@ const zh: TranslationSchema<typeof en> = {
     k_vs_code_dark: "VS Code 深色",
   },
   update: {
+    k_notification: "有可用更新。",
+    k_download_update: "下载更新",
+    k_update_action_failed: "无法完成更新。请重试。",
     k_a_newer_version_is_available: "有新版本可用。",
     k_check_for_updates: "检查更新",
     k_checking_for_updates: "正在检查更新…",

@@ -3,6 +3,8 @@ import en from "./en";
 
 const de: TranslationSchema<typeof en> = {
   app: {
+    k_installed_version: "Installierte Version {{version}}",
+    k_view_rc_pipeline: "Pipeline für RC ansehen",
     k_2_right_click_a_process_row_or_open_its_details:
       "2. Eine Prozesszeile rechts anklicken (oder die Details öffnen).",
     k_3_choose: "3. Auswählen:",
@@ -473,6 +475,10 @@ const de: TranslationSchema<typeof en> = {
     k_vs_code_dark: "VS Code Dunkel",
   },
   update: {
+    k_notification: "Ein Update ist verfügbar.",
+    k_download_update: "Update herunterladen",
+    k_update_action_failed:
+      "Das Update konnte nicht abgeschlossen werden. Erneut versuchen.",
     k_a_newer_version_is_available: "Eine neuere Version ist verfügbar.",
     k_check_for_updates: "Nach Updates suchen",
     k_checking_for_updates: "Suche nach Updates…",

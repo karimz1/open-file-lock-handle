@@ -27,7 +27,6 @@ import {
   PanelLeftOpen,
   RefreshCw,
   Search,
-  Settings,
   ShieldAlert,
   Timer,
   Trash2,
@@ -59,6 +58,8 @@ import {
   type ColumnKey,
 } from "./Table";
 import { ColumnFilterPanel } from "./ColumnFilters";
+import { SettingsMenu } from "./SettingsMenu";
+import { useUpdates } from "./useUpdates";
 import { UpdateBanner } from "./UpdateBanner";
 import {
   languageOptions,
@@ -124,6 +125,8 @@ function formatFailureDetails(failure: unknown): string {
   return String(failure);
 }
 export function App() {
+  const updates = useUpdates();
+
   const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
   const shortcut = (keys: string) => (
     <kbd className="shortcut" aria-hidden="true">
@@ -888,14 +891,11 @@ export function App() {
               <br />
               {t("app.k_your_files")}
             </p>
-            <button
-              title={t("navigation.k_settings")}
-              className={view === "settings" ? "active" : ""}
-              onClick={() => changeView("settings")}
-            >
-              <Settings size={17} />
-              <span className="nav-label">{t("navigation.k_settings")}</span>
-            </button>
+            <SettingsMenu
+              updates={updates}
+              active={view === "settings"}
+              openSettings={() => changeView("settings")}
+            />
             <button
               className="github-link"
               title={t("navigation.k_star_on_github")}
@@ -1597,7 +1597,7 @@ export function App() {
                   </button>
                 </div>
               </section>
-              <UpdateBanner />
+              <UpdateBanner {...updates} />
               <section className="setting-section">
                 <div>
                   <h3>{t("settings.k_interface_zoom")}</h3>
@@ -1656,27 +1656,26 @@ export function App() {
                     <ExternalLink size={14} />{" "}
                     {t("app.k_view_project_on_github")}
                   </button>
-                  {status.pull_request_url && (
-                    <button
-                      onClick={() => void api.openPullRequest().catch(report)}
-                    >
-                      <ExternalLink size={14} /> {t("app.k_view_pull_request")}
-                    </button>
-                  )}
-                  {status.build_url && (
-                    <button onClick={() => void api.openBuild().catch(report)}>
-                      <ExternalLink size={14} /> {t("app.k_view_actions_run")}
-                    </button>
-                  )}
+                  {!/^\d+\.\d+\.\d+$/.test(status.version) &&
+                    status.build_url && (
+                      <button
+                        onClick={() => void api.openBuild().catch(report)}
+                      >
+                        <ExternalLink size={14} /> {t("app.k_view_rc_pipeline")}
+                      </button>
+                    )}
                 </div>
                 <p className="muted about-version">
-                  OFLH Desktop {status.version} · {t("app.k_mit_license")}
+                  <button
+                    className="inline-link"
+                    onClick={() =>
+                      void api.openInstalledRelease().catch(report)
+                    }
+                  >
+                    {t("app.k_installed_version", { version: status.version })}
+                  </button>{" "}
+                  · {t("app.k_mit_license")}
                 </p>
-                {status.commit && (
-                  <p className="muted about-version">
-                    Commit <code>{status.commit.slice(0, 12)}</code>
-                  </p>
-                )}
               </section>
               <section className="setting-section shortcuts">
                 <h3>
@@ -1746,19 +1745,6 @@ export function App() {
                   </button>
                 </section>
               )}
-              <section className="setting-section">
-                <h3>{t("search.k_search_and_inspection")}</h3>
-                <p>
-                  {t(
-                    "support.k_search_runs_over_the_loaded_rust_snapsh_b52f0264",
-                  )}
-                </p>
-                <p className="muted">
-                  {t(
-                    "termination.k_unknown_cpu_and_memory_stay_unavailable_1ca3b23b",
-                  )}
-                </p>
-              </section>
             </div>
           )}
         </main>

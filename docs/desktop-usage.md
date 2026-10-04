@@ -153,12 +153,17 @@ or follow your system language. Your preference is saved between launches.
 
 ## Updates
 
-Settings also has an **Updates** section. OFLH Desktop checks for a newer
-release when you open Settings. On Windows and macOS installs, "Install and restart" downloads
-and installs the update, then relaunches the app. Other packages (for example
-Linux `.deb`/`.rpm` installs and manual `.tar.gz` archives) show "View release notes" instead; use your
-package manager or the [releases page](https://github.com/karimz1/open-file-lock-handle/releases)
-to update.
+OFLH Desktop checks for a newer release at startup. An available update adds a
+**1** badge to the Settings gear. Open the gear menu to choose **Settings** or
+update directly. The **Updates** section in Settings shows the same result and
+lets you check again.
+
+On Windows and macOS, **Install and restart** downloads the signed update,
+installs it, and relaunches the app. On Linux, **Download update** opens the
+[download page](https://oflh.karimzouine.com/#download); install the new package
+or replace your extracted archive manually. A failed check can be retried.
+**About OFLH** links the installed version to its GitHub release; development
+and RC builds also provide a pipeline link.
 
 For OS limitations, see [platform support](platform-support.md). For build,
 testing and packaging details, see [development](development.md).

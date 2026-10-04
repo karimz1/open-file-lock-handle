@@ -279,7 +279,7 @@ fn open_pull_request(app: tauri::AppHandle) -> Result<(), Failure> {
 #[tauri::command]
 fn open_profile(app: tauri::AppHandle) -> Result<(), Failure> {
     app.opener()
-        .open_url("https://github.com/karimz1", None::<&str>)
+        .open_url("https://www.karimzouine.com/", None::<&str>)
         .map_err(integration)
 }
 
@@ -294,6 +294,36 @@ fn open_donation(app: tauri::AppHandle) -> Result<(), Failure> {
 fn open_sponsors(app: tauri::AppHandle) -> Result<(), Failure> {
     app.opener()
         .open_url("https://github.com/sponsors/karimz1", None::<&str>)
+        .map_err(integration)
+}
+
+#[tauri::command]
+fn update_mode() -> &'static str {
+    if cfg!(target_os = "linux") {
+        "download"
+    } else {
+        "install"
+    }
+}
+
+#[tauri::command]
+fn open_download(app: tauri::AppHandle) -> Result<(), Failure> {
+    app.opener()
+        .open_url("https://oflh.karimzouine.com/#download", None::<&str>)
+        .map_err(integration)
+}
+
+fn installed_release_url(version: &str) -> Result<url::Url, url::ParseError> {
+    let mut url = url::Url::parse("https://github.com/karimz1/open-file-lock-handle/releases")?;
+    url.set_fragment(Some(&format!("release-v{version}")));
+    Ok(url)
+}
+
+#[tauri::command]
+fn open_installed_release(app: tauri::AppHandle) -> Result<(), Failure> {
+    let url = installed_release_url(oflh_core::display_version()).map_err(integration)?;
+    app.opener()
+        .open_url(url.as_str(), None::<&str>)
         .map_err(integration)
 }
 
@@ -390,6 +420,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             open_profile,
             open_donation,
             open_sponsors,
+            update_mode,
+            open_download,
+            open_installed_release,
             open_release_notes,
             open_issue,
             inspect,
@@ -421,6 +454,22 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod reveal_tests {
     use super::*;
+
+    #[test]
+    fn installed_version_links_to_its_release_anchor() {
+        assert_eq!(
+            installed_release_url("0.4.0").unwrap().as_str(),
+            "https://github.com/karimz1/open-file-lock-handle/releases#release-v0.4.0"
+        );
+        assert_eq!(
+            update_mode(),
+            if cfg!(target_os = "linux") {
+                "download"
+            } else {
+                "install"
+            }
+        );
+    }
 
     #[test]
     fn reveal_failure_falls_back_to_opening_the_containing_folder() {

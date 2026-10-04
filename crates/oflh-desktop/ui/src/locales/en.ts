@@ -1,5 +1,7 @@
 const en = {
   app: {
+    k_installed_version: "Installed version {{version}}",
+    k_view_rc_pipeline: "View RC pipeline",
     k_2_right_click_a_process_row_or_open_its_details:
       "2. Right-click a process row (or open its details).",
     k_3_choose: "3. Choose",
@@ -459,6 +461,9 @@ const en = {
     k_vs_code_dark: "VS Code Dark",
   },
   update: {
+    k_notification: "An update is available.",
+    k_download_update: "Download update",
+    k_update_action_failed: "Could not complete the update. Try again.",
     k_a_newer_version_is_available: "A newer version is available.",
     k_check_for_updates: "Check for updates",
     k_checking_for_updates: "Checking for updates…",

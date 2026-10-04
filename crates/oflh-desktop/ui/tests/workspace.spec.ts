@@ -84,7 +84,8 @@ test.beforeEach(async ({ page }) => {
         "Some processes could not be inspected because access was denied.",
       ],
       error: null,
-      version: "development",
+      version:
+        new URL(location.href).searchParams.get("version") ?? "development",
       commit: "0123456789abcdef0123456789abcdef01234567",
       build_url:
         "https://github.com/karimz1/open-file-lock-handle/actions/runs/1234567890",
@@ -129,6 +130,9 @@ test.beforeEach(async ({ page }) => {
             return 1;
           }
           if (command === "plugin:event|unlisten") return;
+          if (command === "update_mode")
+            return (window as any).__updateMode ?? "install";
+          if (command === "plugin:resources|close") return;
           if (command === "plugin:updater|check") {
             if ((window as any).__updateCheckFails)
               throw new Error("Synthetic update endpoint failure");
@@ -354,10 +358,7 @@ test("virtualized workspace, theme, process details, keyboard and copy", async (
   ).toBeVisible();
   await page.getByRole("button", { name: "Close process details" }).click();
   await page.screenshot({ path: "test-results/workspace-light.png" });
-  await page
-    .getByRole("button", { name: "Settings", exact: true })
-    .first()
-    .click();
+  await page.keyboard.press("Control+,");
   await page.getByRole("button", { name: "VS Code Dark", exact: true }).click();
   await page.getByRole("button", { name: /^Processes/ }).click();
   await expect(grid.getByText("4000", { exact: true })).toBeVisible();
@@ -409,10 +410,7 @@ test("dark themes keep UI text and surface boundaries distinct", async ({
   page,
 }) => {
   await page.goto("/");
-  await page
-    .getByRole("button", { name: "Settings", exact: true })
-    .first()
-    .click();
+  await page.keyboard.press("Control+,");
   const contrast = (foreground: string, background: string) => {
     const luminance = (color: string) => {
       const channels = color
@@ -818,10 +816,7 @@ test("details splitter and font preferences resize and persist", async ({
   await page.mouse.move(box.x - 56, box.y + 40);
   await page.mouse.up();
   await expect(splitter).toHaveAttribute("aria-valuenow", "420");
-  await page
-    .getByRole("button", { name: "Settings", exact: true })
-    .first()
-    .click();
+  await page.keyboard.press("Control+,");
   await page
     .getByRole("combobox", { name: "Size", exact: true })
     .selectOption("18");
@@ -851,10 +846,7 @@ test("theme presets persist and ancestry reads from parent to highlighted proces
     ["VS Code Dark", "vscode"],
     ["OFLH Purple", "purple"],
   ]) {
-    await page
-      .getByRole("button", { name: "Settings", exact: true })
-      .first()
-      .click();
+    await page.keyboard.press("Control+,");
     const choice = page.getByRole("button", { name: label, exact: true });
     await choice.click();
     await expect(choice).toHaveAttribute("aria-pressed", "true");
@@ -1087,7 +1079,7 @@ test("Donate explains both support options and opens the selected destination", 
   await support
     .getByRole("button", { name: "Continue to GitHub Sponsors" })
     .click();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await expect(page.getByText(/There is no company behind it/)).toBeVisible();
   await page.getByRole("button", { name: "View project on GitHub" }).click();
   await page
@@ -1110,27 +1102,46 @@ test("Donate explains both support options and opens the selected destination", 
   ).toHaveLength(2);
 });
 
-test("Settings opens the exact PR and Actions run for this build", async ({
+test("About links the installed release and shows a pipeline only for RC builds", async ({
   page,
 }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await expect(page.getByText("Commit 0123456789ab")).toBeVisible();
-  await page.getByRole("button", { name: "View pull request" }).click();
-  await page.getByRole("button", { name: "View Actions run" }).click();
-
-  const calls = await page.evaluate(() => (window as any).__testCalls);
-  expect(calls.some((call: any) => call.command === "open_pull_request")).toBe(
-    true,
-  );
-  expect(calls.some((call: any) => call.command === "open_build")).toBe(true);
+  await page.goto("/?version=0.4.0");
+  await page.keyboard.press("Control+,");
+  await page.getByRole("button", { name: "Installed version 0.4.0" }).click();
+  await expect(
+    page.getByRole("button", { name: "View RC pipeline" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Search and inspection", { exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByText("Commit 0123456789ab")).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      (window as any).__testCalls.some(
+        (call: any) => call.command === "open_installed_release",
+      ),
+    ),
+  ).toBe(true);
+  await page.goto("/?version=0.5.0-rc.1");
+  await page.keyboard.press("Control+,");
+  await page.getByRole("button", { name: "View RC pipeline" }).click();
+  await expect(
+    page.getByRole("button", { name: "View pull request" }),
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      (window as any).__testCalls.some(
+        (call: any) => call.command === "open_build",
+      ),
+    ),
+  ).toBe(true);
 });
 
 test("developer settings can preview the diagnostic lightbox", async ({
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await page.getByRole("button", { name: "Show sample error" }).click();
   const errorBanner = page.getByRole("alert");
   await expect(errorBanner).toContainText(
@@ -1183,7 +1194,7 @@ test("Settings reports when no update is available and links to the releases pag
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await expect(page.getByText("You’re up to date.")).toBeVisible();
   await page.getByRole("button", { name: "View release notes" }).click();
   const calls = await page.evaluate(() => (window as any).__testCalls);
@@ -1206,7 +1217,7 @@ test("Settings offers to install an announced update and relaunches after instal
     };
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await expect(page.getByText("Update available: v9.9.9")).toBeVisible();
   await page.getByRole("button", { name: "Install and restart" }).click();
   await expect(
@@ -1237,10 +1248,12 @@ test("failed update installation never restarts and can be retried", async ({
     (window as any).__updateInstallFails = true;
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await expect(page.getByText("Update available: v9.9.9-rc.1")).toBeVisible();
   await page.getByRole("button", { name: "Install and restart" }).click();
-  await expect(page.getByText("Could not check for updates")).toBeVisible();
+  await expect(
+    page.getByText("Could not complete the update. Try again."),
+  ).toBeVisible();
   let calls = await page.evaluate(() => (window as any).__testCalls);
   expect(
     calls.some((call: any) => call.command === "plugin:process|restart"),
@@ -1268,12 +1281,8 @@ test("update check failure offers release notes and recovers on retry", async ({
     (window as any).__updateCheckFails = true;
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await expect(
-    page.getByText(
-      "Automatic updates are not available for this package. Use the releases page instead.",
-    ),
-  ).toBeVisible();
+  await page.keyboard.press("Control+,");
+  await expect(page.getByText("Could not check for updates")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Install and restart" }),
   ).toHaveCount(0);
@@ -1411,7 +1420,7 @@ test("documentation screenshots use only synthetic inspection data", async ({
 }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await page.getByRole("button", { name: "VS Code Dark", exact: true }).click();
   await page.getByRole("button", { name: /^Processes/ }).click();
   await page.getByRole("grid").getByRole("row").nth(1).click();
@@ -1448,7 +1457,8 @@ test("documentation screenshots use only synthetic inspection data", async ({
       usages: 18000,
       warnings: [],
       error: null,
-      version: "development",
+      version:
+        new URL(location.href).searchParams.get("version") ?? "development",
       commit: "0123456789abcdef0123456789abcdef01234567",
       build_url:
         "https://github.com/karimz1/open-file-lock-handle/actions/runs/1234567890",
@@ -1583,23 +1593,19 @@ test("language setting switches languages and persists the preference", async ({
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await page.getByLabel("Language", { exact: true }).selectOption("de");
 
   await expect(page.locator("html")).toHaveAttribute("lang", "de");
   await expect(
     page.getByRole("button", { name: "Einstellungen", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Einstellungen", exact: true })
-    .click();
+  await page.keyboard.press("Control+,");
   const language = page.getByLabel("Sprache", { exact: true });
   await expect(language).toHaveValue("de");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("lang", "de");
-  await page
-    .getByRole("button", { name: "Einstellungen", exact: true })
-    .click();
+  await page.keyboard.press("Control+,");
   await page.getByLabel("Sprache", { exact: true }).selectOption("system");
 
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
@@ -1650,7 +1656,7 @@ test("Chinese language preference survives reload and can return to system defau
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await page.getByLabel("Language", { exact: true }).selectOption("zh");
   await expect(page.locator("html")).toHaveAttribute("lang", "zh");
   expect(await page.evaluate(() => localStorage.getItem("oflh-language"))).toBe(
@@ -1658,7 +1664,7 @@ test("Chinese language preference survives reload and can return to system defau
   );
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("lang", "zh");
-  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.keyboard.press("Control+,");
   await expect(page.getByLabel("语言", { exact: true })).toHaveValue("zh");
   await expect(
     page.getByRole("option", { name: "简体中文", exact: true }),
@@ -1891,3 +1897,71 @@ test("confirmed administrator retry uses its new receipt and never offers repeat
       .map((call: any) => call.args),
   ).toEqual([{ ticket: "captured-ticket" }, { ticket: "admin-ticket" }]);
 });
+
+for (const mode of ["install", "download"] as const) {
+  test(`startup update badge and menu share state with Settings (${mode})`, async ({
+    page,
+  }) => {
+    await page.addInitScript((mode) => {
+      (window as any).__updateMode = mode;
+      (window as any).__updateMetadata = {
+        rid: 1,
+        currentVersion: "0.4.0",
+        version: "9.9.9",
+        rawJson: {},
+      };
+    }, mode);
+    await page.goto("/");
+    const gear = page.getByRole("button", { name: "Settings", exact: true });
+    await expect(gear.locator(".update-badge")).toHaveText("1");
+    await gear.click();
+    const menu = page.getByRole("menu", { name: "Settings" });
+    const action =
+      mode === "download" ? "Download update" : "Install and restart";
+    await expect(
+      menu.getByRole("menuitem", { name: `${action} 1` }),
+    ).toBeVisible();
+    await page.screenshot({ path: `test-results/update-menu-${mode}.png` });
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+    await expect(gear).toBeFocused();
+    await gear.click();
+    await menu.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await expect(page.getByText("Update available: v9.9.9")).toBeVisible();
+    await page.keyboard.press("Control+1");
+    await gear.click();
+    await menu.getByRole("menuitem", { name: `${action} 1` }).click();
+    const calls = await page.evaluate(() => (window as any).__testCalls);
+    expect(
+      calls.filter((call: any) => call.command === "plugin:updater|check"),
+    ).toHaveLength(1);
+    if (mode === "download") {
+      expect(
+        calls.find((call: any) => call.command === "plugin:updater|check").args
+          .target,
+      ).toBe("windows-x86_64");
+      expect(calls.some((call: any) => call.command === "open_download")).toBe(
+        true,
+      );
+      expect(
+        calls.some((call: any) => call.command === "plugin:resources|close"),
+      ).toBe(true);
+      expect(
+        calls.some(
+          (call: any) => call.command === "plugin:updater|download_and_install",
+        ),
+      ).toBe(false);
+      expect(
+        calls.some((call: any) => call.command === "plugin:process|restart"),
+      ).toBe(false);
+      await expect(gear.locator(".update-badge")).toBeVisible();
+    } else {
+      await expect(gear.locator(".update-badge")).toHaveCount(0);
+      expect(
+        calls.some(
+          (call: any) => call.command === "plugin:updater|download_and_install",
+        ),
+      ).toBe(true);
+    }
+  });
+}
