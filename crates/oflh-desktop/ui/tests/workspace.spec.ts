@@ -1190,6 +1190,74 @@ test("termination preserves the captured owner port filter", async ({
   ).toBe("4000:18446744073709551615:0");
 });
 
+for (const mode of ["install", "download"] as const) {
+  test(`startup update badge and menu share state with Settings (${mode})`, async ({
+    page,
+  }) => {
+    await page.addInitScript((mode) => {
+      (window as any).__updateMode = mode;
+      (window as any).__updateMetadata = {
+        rid: 1,
+        currentVersion: "0.4.0",
+        version: "9.9.9",
+        rawJson: {},
+      };
+    }, mode);
+    await page.goto("/");
+    const gear = page.getByRole("button", { name: "Settings", exact: true });
+    await expect(gear.locator(".update-badge")).toHaveText("1");
+    await gear.click();
+    const menu = page.getByRole("menu", { name: "Settings" });
+    const action =
+      mode === "download" ? "Download update" : "Install and restart";
+    await expect(
+      menu.getByRole("menuitem", { name: `${action} 1` }),
+    ).toBeVisible();
+    await page.screenshot({ path: `test-results/update-menu-${mode}.png` });
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+    await expect(gear).toBeFocused();
+    await gear.click();
+    await menu.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await expect(page.getByText("Update available: v9.9.9")).toBeVisible();
+    await page.keyboard.press("Control+1");
+    await gear.click();
+    await menu.getByRole("menuitem", { name: `${action} 1` }).click();
+    const calls = await page.evaluate(() => (window as any).__testCalls);
+    expect(
+      calls.filter((call: any) => call.command === "plugin:updater|check"),
+    ).toHaveLength(1);
+    if (mode === "download") {
+      expect(
+        calls.find((call: any) => call.command === "plugin:updater|check").args
+          .target,
+      ).toBe("windows-x86_64");
+      expect(calls.some((call: any) => call.command === "open_download")).toBe(
+        true,
+      );
+      expect(
+        calls.some((call: any) => call.command === "plugin:resources|close"),
+      ).toBe(true);
+      expect(
+        calls.some(
+          (call: any) => call.command === "plugin:updater|download_and_install",
+        ),
+      ).toBe(false);
+      expect(
+        calls.some((call: any) => call.command === "plugin:process|restart"),
+      ).toBe(false);
+      await expect(gear.locator(".update-badge")).toBeVisible();
+    } else {
+      await expect(gear.locator(".update-badge")).toHaveCount(0);
+      expect(
+        calls.some(
+          (call: any) => call.command === "plugin:updater|download_and_install",
+        ),
+      ).toBe(true);
+    }
+  });
+}
+
 test("Settings reports when no update is available and links to the releases page", async ({
   page,
 }) => {
@@ -1897,71 +1965,3 @@ test("confirmed administrator retry uses its new receipt and never offers repeat
       .map((call: any) => call.args),
   ).toEqual([{ ticket: "captured-ticket" }, { ticket: "admin-ticket" }]);
 });
-
-for (const mode of ["install", "download"] as const) {
-  test(`startup update badge and menu share state with Settings (${mode})`, async ({
-    page,
-  }) => {
-    await page.addInitScript((mode) => {
-      (window as any).__updateMode = mode;
-      (window as any).__updateMetadata = {
-        rid: 1,
-        currentVersion: "0.4.0",
-        version: "9.9.9",
-        rawJson: {},
-      };
-    }, mode);
-    await page.goto("/");
-    const gear = page.getByRole("button", { name: "Settings", exact: true });
-    await expect(gear.locator(".update-badge")).toHaveText("1");
-    await gear.click();
-    const menu = page.getByRole("menu", { name: "Settings" });
-    const action =
-      mode === "download" ? "Download update" : "Install and restart";
-    await expect(
-      menu.getByRole("menuitem", { name: `${action} 1` }),
-    ).toBeVisible();
-    await page.screenshot({ path: `test-results/update-menu-${mode}.png` });
-    await page.keyboard.press("Escape");
-    await expect(menu).toHaveCount(0);
-    await expect(gear).toBeFocused();
-    await gear.click();
-    await menu.getByRole("menuitem", { name: "Settings", exact: true }).click();
-    await expect(page.getByText("Update available: v9.9.9")).toBeVisible();
-    await page.keyboard.press("Control+1");
-    await gear.click();
-    await menu.getByRole("menuitem", { name: `${action} 1` }).click();
-    const calls = await page.evaluate(() => (window as any).__testCalls);
-    expect(
-      calls.filter((call: any) => call.command === "plugin:updater|check"),
-    ).toHaveLength(1);
-    if (mode === "download") {
-      expect(
-        calls.find((call: any) => call.command === "plugin:updater|check").args
-          .target,
-      ).toBe("windows-x86_64");
-      expect(calls.some((call: any) => call.command === "open_download")).toBe(
-        true,
-      );
-      expect(
-        calls.some((call: any) => call.command === "plugin:resources|close"),
-      ).toBe(true);
-      expect(
-        calls.some(
-          (call: any) => call.command === "plugin:updater|download_and_install",
-        ),
-      ).toBe(false);
-      expect(
-        calls.some((call: any) => call.command === "plugin:process|restart"),
-      ).toBe(false);
-      await expect(gear.locator(".update-badge")).toBeVisible();
-    } else {
-      await expect(gear.locator(".update-badge")).toHaveCount(0);
-      expect(
-        calls.some(
-          (call: any) => call.command === "plugin:updater|download_and_install",
-        ),
-      ).toBe(true);
-    }
-  });
-}
