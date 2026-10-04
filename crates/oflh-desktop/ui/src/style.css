@@ -345,9 +345,7 @@ code {
 .sidebar.collapsed .nav-label,
 .sidebar.collapsed .nav-badge,
 .sidebar.collapsed kbd.shortcut,
-.sidebar.collapsed .sidebar-bottom p,
-.sidebar.collapsed .version,
-.sidebar.collapsed .nav-external-icon {
+.sidebar.collapsed .sidebar-bottom p {
   display: none;
 }
 .sidebar.collapsed > button,
@@ -411,11 +409,6 @@ code {
   padding: 18px 11px;
   color: var(--muted);
   font-size: 0.8462rem;
-}
-.version {
-  padding: 10px 11px 0;
-  color: var(--muted);
-  font-size: 0.7692rem;
 }
 main {
   flex: 1;
@@ -1015,6 +1008,9 @@ main {
 }
 .footer-attribution,
 .status-metrics {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .footer-profile {
@@ -1039,6 +1035,17 @@ main {
   display: flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
+}
+.status-current-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-current > svg,
+.status-cancel {
+  flex: none;
 }
 .content-page {
   padding: 32px;
@@ -1326,9 +1333,9 @@ main {
 }
 .support-options {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 1rem;
+  margin-top: 1.2rem;
 }
 .support-option {
   display: flex;
@@ -1366,6 +1373,23 @@ main {
   white-space: normal;
   text-align: center;
 }
+
+.modal.support-modal {
+  width: min(72rem, calc(100vw - 3rem));
+  max-width: 72rem;
+  padding: 1.7rem;
+}
+.support-modal .support-option {
+  padding: 1.1rem;
+}
+.support-modal .support-option p {
+  font-size: 0.9231rem;
+}
+.support-modal .support-option button {
+  min-height: 2.8rem;
+  padding: 0.55rem 0.75rem;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -1492,23 +1516,6 @@ main {
   }
 }
 
-button[data-default-focus]:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.github-link {
-  color: var(--text);
-  background: var(--panel);
-  border-color: var(--border);
-  white-space: nowrap;
-  flex-shrink: 0;
-  font-size: 0.8462rem;
-}
-.github-link:hover {
-  color: var(--text);
-  border-color: var(--border);
-}
 .table-header > div:hover .resize-handle::after,
 .resize-handle:focus-visible::after {
   background: var(--accent);
@@ -2017,4 +2024,223 @@ kbd.shortcut {
 .sidebar-bottom button.active {
   background: var(--accent-bg);
   color: var(--accent);
+}
+
+.settings-menu {
+  position: relative;
+}
+.sidebar-bottom .settings-trigger {
+  width: 40px;
+  height: 40px;
+  padding: 10px;
+  justify-content: center;
+}
+.settings-icon {
+  position: relative;
+  display: flex;
+  flex: none;
+}
+.update-badge {
+  position: absolute;
+  right: -8px;
+  bottom: -7px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--panel);
+  font-size: 10px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+.settings-popup {
+  position: absolute;
+  left: 44px;
+  bottom: 0;
+  z-index: 20;
+  width: max-content;
+  min-width: 245px;
+  max-width: 340px;
+  padding: 5px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  box-shadow: 0 8px 24px #0003;
+}
+.sidebar-bottom .settings-popup button {
+  width: 100%;
+  justify-content: flex-start;
+  color: var(--text);
+}
+.settings-menu-rule {
+  height: 1px;
+  margin: 5px;
+  background: var(--border);
+}
+.menu-update-count {
+  margin-left: auto;
+  color: var(--accent);
+}
+.sidebar.collapsed .settings-popup button {
+  justify-content: flex-start;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.theme-menu-group {
+  position: relative;
+}
+.settings-popup button {
+  min-height: 34px;
+  white-space: nowrap;
+}
+:root[data-input-mode="keyboard"] .settings-popup button:focus-visible {
+  background: var(--hover);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.menu-chevron {
+  margin-left: auto;
+}
+.themes-submenu {
+  left: calc(100% + 5px);
+  bottom: -5px;
+  min-width: 210px;
+}
+.themes-submenu::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -7px;
+  width: 7px;
+}
+.menu-theme-swatch {
+  width: 15px;
+  height: 15px;
+  border: 2px solid;
+  border-radius: 50%;
+  flex: none;
+}
+.update-dialog-version {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  margin-bottom: 16px;
+}
+.update-dialog-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+.update-toast {
+  max-width: calc(100vw - 32px);
+  align-items: center;
+}
+.update-toast .icon-button {
+  color: inherit;
+}
+@media (max-width: 600px) {
+  .settings-popup {
+    left: 0;
+    bottom: calc(100% + 6px);
+  }
+  .themes-submenu {
+    position: static;
+    min-width: 0;
+    margin: 4px 0 4px 16px;
+    box-shadow: none;
+  }
+  .update-dialog-version,
+  .modal-actions:has(.primary) {
+    flex-wrap: wrap;
+  }
+}
+
+.update-release-notes {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Keep utility actions inside the sidebar at the minimum window height. */
+@media (max-height: 660px) {
+  .sidebar,
+  .sidebar.collapsed {
+    padding-top: 12px;
+    gap: 4px;
+  }
+  .sidebar-rule {
+    margin: 10px 9px;
+  }
+  .sidebar-bottom p {
+    display: none;
+  }
+}
+
+:root[data-input-mode="pointer"]
+  :is(button, input, select, summary, [tabindex]):focus-visible {
+  outline: none;
+}
+.menu-theme-label {
+  display: grid;
+  text-align: left;
+  gap: 2px;
+}
+.menu-theme-label small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.theme-caption .system-theme-note {
+  color: var(--accent);
+}
+
+.footer-link {
+  flex: none;
+}
+.footer-star svg {
+  flex: none;
+}
+.about-dialog-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 1.3rem;
+  font-size: 1.3rem;
+}
+.about-dialog-details {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.6rem 1rem;
+  margin-bottom: 1.4rem;
+  font-size: 0.9231rem;
+}
+.about-dialog-details dt {
+  color: var(--muted);
+}
+.about-dialog-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.about-dialog-links {
+  margin-bottom: 1.4rem;
+}
+.about-dialog-links .inline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
 }

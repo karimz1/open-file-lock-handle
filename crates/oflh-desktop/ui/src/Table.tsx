@@ -10,6 +10,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { api, type Page, type Row, type Sort, type TableQuery } from "./api";
+import { columnText, columnMeasurer } from "./columnSizing";
 import { memory, compactPath } from "./state";
 import { t, tValue, type MessageKey } from "./i18n";
 export type ColumnKey =
@@ -73,6 +74,8 @@ export function Table(props: Props) {
     (column) =>
       column.key === "process" || !props.hiddenColumns.has(column.key),
   );
+  const fitRequest = useRef(0);
+  const [fitting, setFitting] = useState<ColumnKey | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const resizing = useRef<{
     key: ColumnKey;
@@ -80,7 +83,9 @@ export function Table(props: Props) {
     startX: number;
     startWidth: number;
   } | null>(null);
-  const [page, setPage] = useState<(Page & { offset: number }) | null>(null);
+  const [page, setPage] = useState<
+    (Page & { offset: number; queryKey: string }) | null
+  >(null);
   const [cursor, setCursor] = useState(0);
   const pendingNavigation = useRef<{ index: number; additive: boolean } | null>(
     null,
@@ -125,7 +130,7 @@ export function Table(props: Props) {
         .page(props.revision, { ...props.query, offset, limit: 200 })
         .then((result) => {
           if (active) {
-            setPage({ ...result, offset });
+            setPage({ ...result, offset, queryKey });
             props.onTotal(result.total);
           }
         })
@@ -146,6 +151,72 @@ export function Table(props: Props) {
       props.onSelect(row, pending.additive);
     }
   }, [page]);
+  useEffect(() => {
+    // Discard measurements after filters, snapshot, view, or font changes.
+    fitRequest.current++;
+    setFitting(null);
+  }, [
+    props.revision,
+    queryKey,
+    props.fontSize,
+    props.target,
+    props.hiddenColumns,
+  ]);
+  useEffect(
+    () => () => {
+      fitRequest.current++;
+    },
+    [],
+  );
+  const autoFit = async (column: ColumnDefinition) => {
+    if (!scroll.current) return;
+    const request = ++fitRequest.current;
+    setFitting(column.key);
+    try {
+      await document.fonts.ready;
+      if (request !== fitRequest.current || !scroll.current) return;
+      const measurement = columnMeasurer(
+        scroll.current,
+        columns.indexOf(column),
+        column.key,
+        t(column.label),
+      );
+      let offset = 0;
+      // The grid is virtualized. Walk bounded IPC pages so offscreen matches
+      // participate without creating DOM nodes for the complete snapshot.
+      do {
+        const result =
+          page?.offset === offset &&
+          page.revision === props.revision &&
+          page.queryKey === queryKey
+            ? page
+            : await api.page(props.revision, {
+                ...props.query,
+                offset,
+                limit: 200,
+              });
+        if (request !== fitRequest.current) return;
+        if (result.revision !== props.revision) return;
+        for (const row of result.rows)
+          measurement.include(
+            columnText(row, column.key, props.query.handles, props.target),
+          );
+        offset += result.rows.length;
+        if (!result.rows.length || offset >= result.total) break;
+        // Keep navigation and cancellation responsive between pages.
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      } while (request === fitRequest.current);
+      if (request === fitRequest.current)
+        setWidths((current) => ({
+          ...current,
+          [column.key]: measurement.width(),
+        }));
+    } catch (error) {
+      if (request === fitRequest.current) props.onError(error);
+    } finally {
+      if (request === fitRequest.current) setFitting(null);
+    }
+  };
   const rowAt = (index: number) => page?.rows[index - page.offset];
   const navigate = (event: KeyboardEvent<HTMLDivElement>) => {
     let index = cursor;
@@ -250,12 +321,27 @@ export function Table(props: Props) {
               aria-orientation="vertical"
               aria-valuenow={widthFor(column)}
               aria-valuemin={70}
+              aria-busy={fitting === column.key}
+              title={t("table.k_auto_fit_hint")}
+              onDoubleClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void autoFit(column);
+              }}
               tabIndex={0}
               className="resize-handle"
               onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void autoFit(column);
+                  return;
+                }
                 if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
                   event.preventDefault();
                   event.stopPropagation();
+                  fitRequest.current++;
+                  setFitting(null);
                   setWidths((current) => ({
                     ...current,
                     [column.key]: Math.max(
@@ -269,6 +355,8 @@ export function Table(props: Props) {
               onPointerDown={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
+                fitRequest.current++;
+                setFitting(null);
                 event.currentTarget.setPointerCapture(event.pointerId);
                 resizing.current = {
                   key: column.key,

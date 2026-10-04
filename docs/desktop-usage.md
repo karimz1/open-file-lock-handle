@@ -52,7 +52,9 @@ from previous launches. Folder scans include descendants.
 observations. Click a row to open details. Use the panel button or close button to
 close it. Table paths are shortened for readability. Full paths and copy/reveal
 actions are available in details. Drag column dividers or the details panel edge
-to resize.
+to resize. Double-click a column divider to fit that column to its heading and
+all matching values, including results outside the visible viewport. A focused
+divider also supports Enter to auto-fit and arrow keys to resize.
 
 Details show **Matching handles**, **Local ports**, and **Process ancestry**.
 The ancestry tree lists parents above the selected process. Click a parent to
@@ -148,8 +150,19 @@ results table.
 
 ## Appearance
 
-**Settings** at the bottom left offers Light, System, Rider Dark, VS Code Dark
-and OFLH Purple, plus font size. Your theme, font size and details width persist.
+The gear is the last item at the bottom left and opens a menu with **Settings**
+and **Themes**. The GitHub star sits at the bottom right next to **Donate**.
+The Themes submenu offers Light, System, Rider Dark, VS Code Dark and OFLH Purple,
+with a check beside the design currently in use. **System** follows your device:
+dark mode uses VS Code Dark, and light mode uses Light. The current design is
+marked **Used by System** while automatic appearance is enabled. Choosing a
+concrete design disables automatic appearance.
+
+Focus outlines appear during keyboard navigation, without pre-highlighting
+actions when you open a menu or dialog with the mouse. Process confirmations
+still default to Cancel.
+
+Settings also offers font size. Your theme, font size and details width persist.
 The first launch offers a theme choice. The app remembers these settings between
 launches.
 
@@ -158,12 +171,35 @@ or follow your system language. Your preference is saved between launches.
 
 ## Updates
 
-Settings also has an **Updates** section. OFLH Desktop checks for a newer
-release when you open Settings. On Windows and macOS installs, "Install and restart" downloads
-and installs the update, then relaunches the app. Other packages (for example
-Linux `.deb`/`.rpm` installs and manual `.tar.gz` archives) show "View release notes" instead; use your
-package manager or the [releases page](https://github.com/karimz1/open-file-lock-handle/releases)
-to update.
+OFLH Desktop checks for a newer release at startup and every hour while open.
+These background checks stay quiet; an available update adds a **1** badge to
+the gear. **About OFLH** sits above the update action at the bottom of the gear
+menu. Its dialog shows the installed version, commit (when available), system,
+and license, with an option to copy these details. Checks pause while
+you review an update dialog or install an update.
+A failed background check keeps any known update badge.
+
+Choose **Check for updates** in the gear menu for an immediate check. If you
+already have the latest version, a toast confirms it; a failed check also shows
+feedback. When a new version is found, a dialog offers release notes and asks
+whether to install it. You can also open this dialog from **New update available**
+in the gear menu. Choose **Later** to keep working; the badge stays visible.
+The **Updates** section in Settings shows the same result and lets you check again.
+
+On Windows and macOS, **Install and restart** downloads the signed update,
+installs it, and relaunches the app after you confirm in the dialog. On Linux,
+the dialog explains that automatic installation is unavailable for this package.
+Choose **Go to download page** to open the
+[download page](https://oflh.karimzouine.com/#download) and download the latest
+version for your operating system; install the new package or replace your
+extracted archive manually. A failed check or installation can be retried.
+The installed version appears in Settings under **About OFLH**, where it links
+to its GitHub release. Development and RC builds also provide a pipeline link.
 
 For OS limitations, see [platform support](platform-support.md). For build,
 testing and packaging details, see [development](development.md).
+
+## Support OFLH
+
+Choose **Donate** to open the support dialog, then choose Buy Me a Coffee,
+GitHub Sponsors, or PayPal. The selected service opens in your browser.
