@@ -381,6 +381,7 @@ const en = {
     k_trade_off: "Trade-off:",
   },
   table: {
+    k_auto_fit_hint: "Double-click or press Enter to fit column to contents",
     k_columns: "Columns",
     k_deleted: "deleted",
     k_file_was_deleted: "File was deleted",

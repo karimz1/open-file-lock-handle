@@ -394,6 +394,8 @@ const de: TranslationSchema<typeof en> = {
     k_trade_off: "Zu beachten:",
   },
   table: {
+    k_auto_fit_hint:
+      "Doppelklicken oder Enter drücken, um die Spalte an den Inhalt anzupassen",
     k_columns: "Spalten",
     k_deleted: "gelöscht",
     k_file_was_deleted: "Datei wurde gelöscht",
