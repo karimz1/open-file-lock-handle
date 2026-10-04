@@ -297,6 +297,20 @@ fn open_sponsors(app: tauri::AppHandle) -> Result<(), Failure> {
         .map_err(integration)
 }
 
+#[derive(Serialize)]
+struct SystemInfo {
+    os: &'static str,
+    arch: &'static str,
+}
+
+#[tauri::command]
+fn system_info() -> SystemInfo {
+    SystemInfo {
+        os: std::env::consts::OS,
+        arch: std::env::consts::ARCH,
+    }
+}
+
 #[tauri::command]
 fn update_mode() -> &'static str {
     if cfg!(target_os = "linux") {
@@ -420,6 +434,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             open_profile,
             open_donation,
             open_sponsors,
+            system_info,
             update_mode,
             open_download,
             open_installed_release,

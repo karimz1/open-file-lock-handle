@@ -2,6 +2,13 @@ import type { TranslationSchema } from "../i18n/types";
 import en from "./en";
 
 const de: TranslationSchema<typeof en> = {
+  about: {
+    k_version: "Version",
+    k_commit: "Commit",
+    k_system: "System",
+    k_license: "Lizenz",
+    k_copied: "Informationen kopiert.",
+  },
   app: {
     k_installed_version: "Installierte Version {{version}}",
     k_view_rc_pipeline: "Pipeline für RC ansehen",

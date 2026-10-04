@@ -1,4 +1,11 @@
 const en = {
+  about: {
+    k_version: "Version",
+    k_commit: "Commit",
+    k_system: "System",
+    k_license: "License",
+    k_copied: "Details copied.",
+  },
   app: {
     k_installed_version: "Installed version {{version}}",
     k_view_rc_pipeline: "View RC pipeline",

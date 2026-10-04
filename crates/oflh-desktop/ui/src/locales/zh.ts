@@ -2,6 +2,13 @@ import type { TranslationSchema } from "../i18n/types";
 import en from "./en";
 
 const zh: TranslationSchema<typeof en> = {
+  about: {
+    k_version: "版本",
+    k_commit: "提交",
+    k_system: "系统",
+    k_license: "许可证",
+    k_copied: "信息已复制。",
+  },
   app: {
     k_installed_version: "已安装版本 {{version}}",
     k_view_rc_pipeline: "查看 RC 流水线",

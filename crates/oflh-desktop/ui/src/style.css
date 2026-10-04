@@ -2165,9 +2165,32 @@ kbd.shortcut {
 .footer-star svg {
   flex: none;
 }
-.settings-menu-version {
-  padding: 0.4rem 0.7rem;
+.about-dialog-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 1.3rem;
+  font-size: 1.3rem;
+}
+.about-dialog-details {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.6rem 1rem;
+  margin-bottom: 1.4rem;
+  font-size: 0.9231rem;
+}
+.about-dialog-details dt {
   color: var(--muted);
-  font-size: 0.8462rem;
+}
+.about-dialog-details dd {
+  margin: 0;
   overflow-wrap: anywhere;
+}
+.about-dialog-links {
+  margin-bottom: 1.4rem;
+}
+.about-dialog-links .inline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
 }

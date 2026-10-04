@@ -144,6 +144,7 @@ test.beforeEach(async ({ page }) => {
             return;
           }
           if (command === "plugin:process|restart") return;
+          if (command === "system_info") return { os: "linux", arch: "x86_64" };
           if (command === "status") return status;
           if (command === "recent") return recentTargets;
           if (command === "remove_recent") {
@@ -321,6 +322,8 @@ test.beforeEach(async ({ page }) => {
               "open_donation",
               "open_sponsors",
               "open_release_notes",
+              "open_installed_release",
+              "open_build",
               "open_download",
               "open_issue",
             ].includes(command)
@@ -2386,18 +2389,13 @@ test("System can be enabled from the menu and persists across launches", async (
   await expect(page.locator("html")).toHaveAttribute("data-theme", "vscode");
 });
 
-for (const [locale, settings, star, installed] of [
-  ["en", "Settings", "Star on GitHub", "Installed version 0.4.0"],
-  [
-    "de",
-    "Einstellungen",
-    "Stern auf GitHub vergeben",
-    "Installierte Version 0.4.0",
-  ],
-  ["zh", "设置", "在 GitHub 上点星", "已安装版本 0.4.0"],
+for (const [locale, settings, star] of [
+  ["en", "Settings", "Star on GitHub"],
+  ["de", "Einstellungen", "Stern auf GitHub vergeben"],
+  ["zh", "设置", "在 GitHub 上点星"],
 ]) {
   for (const fontSize of [14, 24]) {
-    test(`GitHub star has a visible label and gear shows the installed version (${locale}, ${fontSize}px)`, async ({
+    test(`GitHub star has a visible label and gear opens About above updates (${locale}, ${fontSize}px)`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: 860, height: 560 });
@@ -2449,18 +2447,65 @@ for (const [locale, settings, star, installed] of [
       ).toBe(false);
       await page.getByRole("button", { name: settings, exact: true }).click();
       const menu = page.getByRole("menu", { name: settings, exact: true });
-      await expect(menu.locator(".settings-menu-version")).toHaveText(
-        installed,
-      );
-      await expect(menu.locator(".settings-menu-version")).toBeVisible();
-      await expect(menu.getByRole("menuitem", { name: installed })).toHaveCount(
-        0,
-      );
+      const about =
+        locale === "de"
+          ? "Über OFLH"
+          : locale === "zh"
+            ? "关于 OFLH"
+            : "About OFLH";
+      const check =
+        locale === "de"
+          ? "Nach Updates suchen"
+          : locale === "zh"
+            ? "检查更新"
+            : "Check for updates";
+      expect(
+        (await menu.getByRole("menuitem").allTextContents()).slice(-2),
+      ).toEqual([about, check]);
       if (locale === "de" && fontSize === 24)
-        await page.screenshot({
-          path: "test-results/gear-installed-version-de.png",
-        });
+        await page.screenshot({ path: "test-results/gear-about-order-de.png" });
+      await menu.getByRole("menuitem", { name: about, exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: about, exact: true });
+      await expect(
+        dialog.getByText("Linux x86_64", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        dialog.getByText("0123456789abcdef0123456789abcdef01234567", {
+          exact: true,
+        }),
+      ).toBeVisible();
+      await dialog.getByRole("button", { name: "0.4.0", exact: true }).click();
+      expect(
+        await page.evaluate(() =>
+          (window as any).__testCalls.some(
+            (call: any) => call.command === "open_installed_release",
+          ),
+        ),
+      ).toBe(true);
+      const copyLabel =
+        locale === "de" ? "Kopieren" : locale === "zh" ? "复制" : "Copy";
+      await dialog
+        .getByRole("button", { name: copyLabel, exact: true })
+        .click();
+      const copied = await page.evaluate(
+        () =>
+          (window as any).__testCalls.find(
+            (call: any) => call.command === "copy_diagnostic",
+          )?.args.text,
+      );
+      expect(copied).toContain("Version: 0.4.0");
+      expect(copied).toContain(
+        "Commit: 0123456789abcdef0123456789abcdef01234567",
+      );
+      expect(copied).toContain("OS: Linux x86_64");
+      expect(copied).toContain("License: MIT");
+      if (locale === "de" && fontSize === 14)
+        await page.screenshot({ path: "test-results/about-dialog-de.png" });
       await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: settings, exact: true }),
+      ).toBeFocused();
     });
   }
 }

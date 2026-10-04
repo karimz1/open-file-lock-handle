@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Download,
   LoaderCircle,
+  Info,
   Palette,
   RefreshCw,
   Settings,
@@ -14,7 +15,7 @@ import type { Updates } from "./useUpdates";
 
 export function SettingsMenu({
   updates,
-  version,
+  openAbout,
   active,
   openSettings,
   theme,
@@ -22,7 +23,7 @@ export function SettingsMenu({
   onThemeChange,
 }: {
   updates: Updates;
-  version: string;
+  openAbout: () => void;
   active: boolean;
   openSettings: () => void;
   theme: Theme;
@@ -173,7 +174,6 @@ export function SettingsMenu({
           className="settings-popup"
           role="menu"
           aria-label={t("navigation.k_settings")}
-          aria-describedby={version ? "installed-menu-version" : undefined}
         >
           <button
             role="menuitem"
@@ -285,6 +285,17 @@ export function SettingsMenu({
           <div className="settings-menu-rule" role="separator" />
           <button
             role="menuitem"
+            onMouseEnter={() => setThemesOpen(false)}
+            onClick={() => {
+              close();
+              openAbout();
+            }}
+          >
+            <Info size={15} />
+            {t("settings.k_about_oflh")}
+          </button>
+          <button
+            role="menuitem"
             disabled={busy || state.phase === "restart-required"}
             onMouseEnter={() => setThemesOpen(false)}
             onClick={() => {
@@ -317,17 +328,6 @@ export function SettingsMenu({
               </span>
             )}
           </button>
-          {version && (
-            <>
-              <div className="settings-menu-rule" role="separator" />
-              <div
-                className="settings-menu-version"
-                id="installed-menu-version"
-              >
-                {t("app.k_installed_version", { version })}
-              </div>
-            </>
-          )}
         </div>
       )}
     </div>

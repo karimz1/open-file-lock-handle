@@ -58,6 +58,7 @@ import {
   type ColumnKey,
 } from "./Table";
 import { ColumnFilterPanel } from "./ColumnFilters";
+import { AboutDialog } from "./AboutDialog";
 import { SettingsMenu } from "./SettingsMenu";
 import { useUpdates } from "./useUpdates";
 import { UpdateBanner } from "./UpdateBanner";
@@ -127,6 +128,7 @@ function formatFailureDetails(failure: unknown): string {
 }
 export function App() {
   const updates = useUpdates();
+  const [showAbout, setShowAbout] = useState(false);
 
   const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
   const shortcut = (keys: string) => (
@@ -889,7 +891,7 @@ export function App() {
             </p>
             <SettingsMenu
               updates={updates}
-              version={status.version}
+              openAbout={() => setShowAbout(true)}
               theme={theme}
               appliedTheme={appliedTheme}
               onThemeChange={setTheme}
@@ -1800,6 +1802,13 @@ export function App() {
             <p>{t("inspection.k_one_target_at_a_time")}</p>
           </div>
         </div>
+      )}
+      {showAbout && (
+        <AboutDialog
+          status={status}
+          close={() => setShowAbout(false)}
+          report={report}
+        />
       )}
       <UpdateFeedback updates={updates} report={report} />
       {toast && (
