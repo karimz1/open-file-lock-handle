@@ -113,6 +113,7 @@ export const api = {
   openBuild: () => invoke<void>("open_build"),
   openPullRequest: () => invoke<void>("open_pull_request"),
   donate: () => invoke<void>("open_donation"),
+  openPaypal: () => invoke<void>("open_paypal"),
   openSponsors: () => invoke<void>("open_sponsors"),
   openProfile: () => invoke<void>("open_profile"),
   openIssue: (title: string, body: string) =>

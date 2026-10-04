@@ -162,3 +162,8 @@ to update.
 
 For OS limitations, see [platform support](platform-support.md). For build,
 testing and packaging details, see [development](development.md).
+
+## Support OFLH
+
+Choose **Donate** to open the support dialog, then choose Buy Me a Coffee,
+GitHub Sponsors, or PayPal. The selected service opens in your browser.

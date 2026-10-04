@@ -368,6 +368,8 @@ const de: TranslationSchema<typeof en> = {
     k_updating_results: "Ergebnisse werden aktualisiert …",
   },
   support: {
+    k_paypal_contribution: "Einen Beitrag über PayPal senden.",
+    k_continue_to_paypal: "Weiter zu PayPal",
     k_a_simple_contribution_from_an_individual:
       "einen einfachen Beitrag von Einzelpersonen.",
     k_any_wildcards_supported: "Beliebig · Platzhalter unterstützt",

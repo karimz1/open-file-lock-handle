@@ -291,6 +291,16 @@ fn open_donation(app: tauri::AppHandle) -> Result<(), Failure> {
 }
 
 #[tauri::command]
+fn open_paypal(app: tauri::AppHandle) -> Result<(), Failure> {
+    app.opener()
+        .open_url(
+            "https://www.paypal.com/paypalme/KarimZouine972",
+            None::<&str>,
+        )
+        .map_err(integration)
+}
+
+#[tauri::command]
 fn open_sponsors(app: tauri::AppHandle) -> Result<(), Failure> {
     app.opener()
         .open_url("https://github.com/sponsors/karimz1", None::<&str>)
@@ -390,6 +400,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             open_profile,
             open_donation,
             open_sponsors,
+            open_paypal,
             open_release_notes,
             open_issue,
             inspect,

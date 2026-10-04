@@ -1053,7 +1053,7 @@ test("single-click rows open details and panel buttons close them", async ({
   ).toBe("1:0:exe");
 });
 
-test("Donate explains both support options and opens the selected destination", async ({
+test("Donate explains all three support options and opens the selected destination", async ({
   page,
 }) => {
   await page.goto("/");
@@ -1087,6 +1087,12 @@ test("Donate explains both support options and opens the selected destination", 
   await support
     .getByRole("button", { name: "Continue to GitHub Sponsors" })
     .click();
+  await footer.getByRole("button", { name: "Donate", exact: true }).click();
+  support = page.getByRole("dialog", { name: "Support OFLH" });
+  await expect(support.locator(".support-option")).toHaveCount(3);
+  expect((await support.boundingBox())!.width).toBeGreaterThan(850);
+  await page.screenshot({ path: "test-results/donate-three-options.png" });
+  await support.getByRole("button", { name: "Continue to PayPal" }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page.getByText(/There is no company behind it/)).toBeVisible();
   await page.getByRole("button", { name: "View project on GitHub" }).click();
@@ -1101,6 +1107,7 @@ test("Donate explains both support options and opens the selected destination", 
   expect(
     calls.filter((call: any) => call.command === "open_donation"),
   ).toHaveLength(1);
+  expect(calls.some((call: any) => call.command === "open_paypal")).toBe(true);
   expect(calls.some((call: any) => call.command === "open_project")).toBe(true);
   expect(
     calls.filter((call: any) => call.command === "open_sponsors"),
@@ -1890,4 +1897,27 @@ test("confirmed administrator retry uses its new receipt and never offers repeat
       .filter((call: any) => call.command === "terminate")
       .map((call: any) => call.args),
   ).toEqual([{ ticket: "captured-ticket" }, { ticket: "admin-ticket" }]);
+});
+
+test("donation lightbox fits minimum windows and larger fonts", async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem("oflh-font-size", "24"));
+  await page.setViewportSize({ width: 860, height: 560 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Donate", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Support OFLH" });
+  await expect(dialog.locator(".support-option")).toHaveCount(3);
+  const fits = await dialog.evaluate((element) => ({
+    width: element.clientWidth,
+    contents: element.scrollWidth,
+    height: element.getBoundingClientRect().height,
+  }));
+  expect(fits.contents).toBeLessThanOrEqual(fits.width);
+  expect(fits.height).toBeLessThanOrEqual(560);
+  await dialog.getByRole("button", { name: "Continue to PayPal" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Donate", exact: true }),
+  ).toBeFocused();
 });

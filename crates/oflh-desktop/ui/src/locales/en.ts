@@ -355,6 +355,8 @@ const en = {
     k_updating_results: "Updating results…",
   },
   support: {
+    k_paypal_contribution: "Send a contribution through PayPal.",
+    k_continue_to_paypal: "Continue to PayPal",
     k_a_simple_contribution_from_an_individual:
       "a simple contribution from an individual.",
     k_any_wildcards_supported: "Any · wildcards supported",
