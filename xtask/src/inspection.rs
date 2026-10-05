@@ -24,11 +24,44 @@ fn summarize(profiles: &[Value]) -> Result<String> {
     }
     let mut seen = BTreeSet::new();
     let mut rows = Vec::new();
+    let mut root_rows = Vec::new();
     for profile in profiles {
         let os = profile["os"].as_str().ok_or("missing OS")?;
         let arch = profile["arch"].as_str().ok_or("missing architecture")?;
         if profile["schema"] != 1 || !TARGETS.contains(&(os, arch)) || !seen.insert((os, arch)) {
             return Err("unexpected or duplicate native profile".into());
+        }
+        if let Some(root) = profile.get("whole_root") {
+            let result = |side: &str| -> Result<String> {
+                let outcome = root[side]["outcome"]
+                    .as_str()
+                    .ok_or("missing root outcome")?;
+                if ![
+                    "completed",
+                    "budget_cancelled",
+                    "budget_or_failure",
+                    "failed",
+                ]
+                .contains(&outcome)
+                {
+                    return Err("unexpected root outcome".into());
+                }
+                let elapsed = root[side]["elapsed_ms"]
+                    .as_f64()
+                    .filter(|value| value.is_finite() && *value >= 0.0)
+                    .ok_or("invalid root timing")?;
+                Ok(format!("{elapsed:.3} ({outcome})"))
+            };
+            let cap = if os == "windows" {
+                "10,000-file cap; partial coverage"
+            } else {
+                "process references; no disk traversal"
+            };
+            root_rows.push(format!(
+                "| {os} | {arch} | {} | {} | {cap} |",
+                result("baseline")?,
+                result("candidate")?
+            ));
         }
         let fixtures = profile["fixtures"].as_array().ok_or("missing fixtures")?;
         if fixtures.len() != 2 {
@@ -64,10 +97,22 @@ fn summarize(profiles: &[Value]) -> Result<String> {
         }
     }
     rows.sort();
+    root_rows.sort();
+    let root_report = if root_rows.is_empty() {
+        String::new()
+    } else {
+        if root_rows.len() != 6 {
+            return Err("expected six whole-root diagnostics".into());
+        }
+        format!(
+            "\n## Whole-root diagnostics\n\nOne live-system scan per implementation with a two-minute budget. Coverage is not equivalent or stable across implementations/OSes; cancelled work is not a completed scan or a speedup. Native calls may finish after cancellation is requested.\n\n| OS | Architecture | Base ms / outcome | Candidate ms / outcome | Scope |\n|---|---|---:|---:|---|\n{}\n",
+            root_rows.join("\n")
+        )
+    };
     Ok(format!(
         "# Native inspection comparison\n\nSame held-file fixtures and verified observations on each native runner. Timings are milliseconds; ratio is candidate / baseline (lower is faster). Shared runners and different OS evidence prevent cross-OS speed rankings. Five samples describe this run, not a stable performance guarantee.\n\n| OS | Architecture | Fixture | Base median | Candidate median | Candidate p95 | Ratio |\n|---|---|---|---:|---:|---:|---:|\n{}\n\nEach fixture has 2,048 files in 16 directories. Sparse holds 8 files; dense holds 128. The JSON artifacts include native work counters and Restart Manager/module timings. Whole-drive coverage remains limited on Windows; unused filesystem size does not drive Unix process enumeration.\n",
         rows.join("\n")
-    ))
+    ) + &root_report)
 }
 
 pub(super) fn write_summary(input: &Path, output: &Path) -> Result<()> {
@@ -98,6 +143,18 @@ mod tests {
             .iter()
             .map(|(os, arch)| json!({"schema":1,"os":os,"arch":arch,"fixtures":fixtures}))
             .collect()
+    }
+    #[test]
+    fn root_diagnostics_do_not_turn_cancelled_work_into_a_speedup() {
+        let mut profiles = profiles();
+        for profile in &mut profiles {
+            profile["whole_root"] = json!({"baseline":{"outcome":"completed","elapsed_ms":90},"candidate":{"outcome":"budget_cancelled","elapsed_ms":120000}});
+        }
+        let summary = summarize(&profiles).unwrap();
+        assert!(summary.contains("budget_cancelled"));
+        assert!(summary.contains("cancelled work is not a completed scan or a speedup"));
+        profiles[0].as_object_mut().unwrap().remove("whole_root");
+        assert!(summarize(&profiles).is_err());
     }
     #[test]
     fn requires_six_unique_native_targets_and_equivalent_coverage() {

@@ -3,13 +3,13 @@
   "fixtures": [
     {
       "baseline": {
-        "median_ms": 79.966,
-        "p95_ms": 80.5,
+        "median_ms": 98.327,
+        "p95_ms": 98.906,
         "samples": 5
       },
       "candidate": {
-        "median_ms": 80.590837,
-        "p95_ms": 80.722118,
+        "median_ms": 94.802843,
+        "p95_ms": 97.275506,
         "samples": 5
       },
       "counters": {
@@ -18,10 +18,10 @@
         "files": 0,
         "module_snapshot_ms": 0.0,
         "module_snapshots": 0,
-        "processes": 512,
+        "processes": 532,
         "resource_queries": 0,
         "resource_query_ms": 0.0,
-        "resources": 51491
+        "resources": 57904
       },
       "coverage_rows": 8,
       "equivalent_fixture_coverage": true,
@@ -31,13 +31,13 @@
     },
     {
       "baseline": {
-        "median_ms": 81.154,
-        "p95_ms": 81.946,
+        "median_ms": 97.024,
+        "p95_ms": 99.357,
         "samples": 5
       },
       "candidate": {
-        "median_ms": 82.157424,
-        "p95_ms": 82.509537,
+        "median_ms": 95.794762,
+        "p95_ms": 96.913823,
         "samples": 5
       },
       "counters": {
@@ -46,10 +46,10 @@
         "files": 0,
         "module_snapshot_ms": 0.0,
         "module_snapshots": 0,
-        "processes": 512,
+        "processes": 532,
         "resource_queries": 0,
         "resource_query_ms": 0.0,
-        "resources": 51611
+        "resources": 58024
       },
       "coverage_rows": 128,
       "equivalent_fixture_coverage": true,
@@ -59,5 +59,33 @@
     }
   ],
   "os": "linux",
-  "schema": 1
+  "schema": 1,
+  "whole_root": {
+    "baseline": {
+      "elapsed_ms": 152.418,
+      "outcome": "completed"
+    },
+    "budget_seconds": 120,
+    "candidate": {
+      "directory_cap_reached": false,
+      "elapsed_ms": 152.209151,
+      "outcome": "completed",
+      "processes": 128,
+      "usages": 40646,
+      "warning_count": 2
+    },
+    "counters": {
+      "directories": 0,
+      "file_identity_queries": 0,
+      "files": 0,
+      "module_snapshot_ms": 0.0,
+      "module_snapshots": 0,
+      "processes": 531,
+      "resource_queries": 0,
+      "resource_query_ms": 0.0,
+      "resources": 57878
+    },
+    "equivalent_coverage": false,
+    "scope": "root process references; no disk traversal"
+  }
 }

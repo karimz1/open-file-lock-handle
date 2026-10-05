@@ -210,38 +210,129 @@ fn profile(name: &str, held: usize, baseline: Option<&Path>) -> Result<Value> {
     }
     Ok(result)
 }
-fn main() -> Result<()> {
-    let mut arguments = std::env::args_os().skip(1);
-    if let Some(first) = arguments.next() {
-        if first == "--fixture" {
-            let root = arguments.next().ok_or("fixture path missing")?;
-            let held = arguments
-                .next()
-                .ok_or("fixture count missing")?
-                .to_str()
-                .ok_or("invalid count")?
-                .parse()?;
-            return hold_fixture(Path::new(&root), held);
+/// Whole-root results describe each backend's scope; they cannot assert equivalent
+/// observations from a live machine. A budget is cancellation, never a faster scan.
+fn root_diagnostic(baseline: Option<&Path>, budget: std::time::Duration) -> Result<Value> {
+    let target = Target::new(if cfg!(windows) { "C:\\" } else { "/" })?;
+    let cancel = Cancellation::default();
+    let worker_cancel = cancel.clone();
+    let (finished, receiver) = std::sync::mpsc::sync_channel(1);
+    let timer = std::thread::spawn(move || {
+        if receiver.recv_timeout(budget).is_err() {
+            worker_cancel.cancel();
         }
-        if first != "--baseline" {
-            return Err("usage: inspection_profile [--baseline scan_bench]".into());
+    });
+    let mut backend = oflh_platform::native()?;
+    let started = Instant::now();
+    let snapshot = backend.scan(&target, &cancel);
+    let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+    let _ = finished.send(());
+    timer.join().map_err(|_| "root budget worker failed")?;
+    let candidate = match snapshot {
+        Ok(snapshot) => json!({"outcome":"completed","elapsed_ms":elapsed,
+            "processes":snapshot.processes.len(),
+            "usages":snapshot.processes.iter().map(|process| process.usages.len()).sum::<usize>(),
+            "warning_count":snapshot.warnings.len(),
+            "directory_cap_reached":snapshot.warnings.iter().any(|warning| warning.contains("limited to 10,000 files"))}),
+        Err(oflh_core::Error::Cancelled) => {
+            json!({"outcome":"budget_cancelled","elapsed_ms":elapsed})
         }
-        let baseline = PathBuf::from(arguments.next().ok_or("baseline binary missing")?);
-        println!(
-            "{}",
-            serde_json::to_string_pretty(
-                &json!({"schema":1,"os":std::env::consts::OS,"arch":std::env::consts::ARCH,
-            "fixtures":[profile("sparse",8,Some(&baseline))?,profile("dense",128,Some(&baseline))?]})
-            )?
+        Err(_) => json!({"outcome":"failed","elapsed_ms":elapsed}),
+    };
+    let mut result = json!({"scope":if cfg!(windows) {"C drive; directory resources capped at 10000 files"} else {"root process references; no disk traversal"},
+        "budget_seconds":budget.as_secs(),"equivalent_coverage":false,"candidate":candidate,"counters":counters(cancel.progress())});
+    if let Some(binary) = baseline {
+        let mut child = Fixture(
+            Command::new(binary)
+                .arg(&target.path)
+                .arg("1")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()?,
         );
-    } else {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(
-                &json!({"schema":1,"os":std::env::consts::OS,"arch":std::env::consts::ARCH,
-            "fixtures":[profile("sparse",8,None)?,profile("dense",128,None)?]})
-            )?
-        );
+        let output = child.0.stdout.take().ok_or("baseline stdout missing")?;
+        let reader = std::thread::spawn(move || {
+            let mut text = String::new();
+            use std::io::Read;
+            BufReader::new(output)
+                .read_to_string(&mut text)
+                .map(|_| text)
+        });
+        let started = Instant::now();
+        let completed = loop {
+            if let Some(status) = child.0.try_wait()? {
+                break status.success();
+            }
+            if started.elapsed() >= budget {
+                child.0.kill()?;
+                child.0.wait()?;
+                break false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        let output = reader
+            .join()
+            .map_err(|_| "baseline output worker failed")??;
+        let timing = output
+            .split_whitespace()
+            .find_map(|part| part.strip_prefix("median_ms="))
+            .and_then(|value| value.parse::<f64>().ok());
+        result["baseline"] = if completed {
+            json!({"outcome":"completed","elapsed_ms":timing})
+        } else {
+            json!({"outcome":"budget_or_failure","elapsed_ms":started.elapsed().as_secs_f64()*1000.0})
+        };
     }
+    Ok(result)
+}
+fn main() -> Result<()> {
+    let mut arguments = std::env::args_os().skip(1).peekable();
+    if arguments
+        .peek()
+        .is_some_and(|argument| argument == "--fixture")
+    {
+        arguments.next();
+        let root = arguments.next().ok_or("fixture path missing")?;
+        let held = arguments
+            .next()
+            .ok_or("fixture count missing")?
+            .to_str()
+            .ok_or("invalid count")?
+            .parse()?;
+        return hold_fixture(Path::new(&root), held);
+    }
+    let mut baseline = None;
+    let mut whole_disk = false;
+    let mut budget_seconds = 120;
+    while let Some(argument) = arguments.next() {
+        if argument == "--baseline" {
+            baseline = Some(PathBuf::from(
+                arguments.next().ok_or("baseline binary missing")?,
+            ));
+        } else if argument == "--whole-disk" {
+            whole_disk = true;
+        } else if argument == "--budget-seconds" {
+            budget_seconds = arguments
+                .next()
+                .ok_or("budget missing")?
+                .to_str()
+                .ok_or("invalid budget")?
+                .parse::<u64>()?;
+        } else {
+            return Err("usage: inspection_profile [--baseline scan_bench] [--whole-disk] [--budget-seconds 120]".into());
+        }
+    }
+    if !(1..=600).contains(&budget_seconds) {
+        return Err("budget must be between 1 and 600 seconds".into());
+    }
+    let mut result = json!({"schema":1,"os":std::env::consts::OS,"arch":std::env::consts::ARCH,
+        "fixtures":[profile("sparse",8,baseline.as_deref())?,profile("dense",128,baseline.as_deref())?]});
+    if whole_disk {
+        result["whole_root"] = root_diagnostic(
+            baseline.as_deref(),
+            std::time::Duration::from_secs(budget_seconds),
+        )?;
+    }
+    println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
 }

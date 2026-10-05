@@ -83,7 +83,7 @@ jobs:
       - name: Compare native inspection with equivalent fixture coverage
         run: |
           mkdir -p inspection-profiles
-          ./target/release/examples/inspection_profile${{ matrix.os == 'windows' && '.exe' || '' }} --baseline .profile-base/target/release/examples/scan_bench${{ matrix.os == 'windows' && '.exe' || '' }} > inspection-profiles/${{ matrix.os }}-${{ matrix.arch }}.json
+          ./target/release/examples/inspection_profile${{ matrix.os == 'windows' && '.exe' || '' }} --baseline .profile-base/target/release/examples/scan_bench${{ matrix.os == 'windows' && '.exe' || '' }} --whole-disk --budget-seconds 120 > inspection-profiles/${{ matrix.os }}-${{ matrix.arch }}.json
       - name: Upload native inspection measurements
         uses: actions/upload-artifact@v7
         with:

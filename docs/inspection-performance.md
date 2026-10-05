@@ -35,3 +35,9 @@ The scanner groups up to 1,024 files instead of 128. Empty batches need one quer
 [Microsoft documents expensive registry writes in resource registration](https://learn.microsoft.com/en-us/windows/win32/api/restartmanager/nf-restartmanager-rmregisterresources). The larger grouping reduces registration count in unused areas, but occupied areas still require expensive queries. Inspect a narrower folder for complete Windows resource coverage. Changing to system-wide handle enumeration would require another backend design with verified ABI layouts, safe handling of blocking name queries and equivalent native coverage; it is not justified solely by faster timings on different hardware.
 
 Local Linux measurements are recorded in [the synthetic profile](measurements/inspection-linux-2026-10-05.json). Windows and macOS performance claims require their native CI artifacts. This fixture does not reproduce every C-drive permission, network, antivirus or filesystem condition.
+
+## Whole-root diagnostics
+
+Add `--whole-disk --budget-seconds 120` to profile `/` on Linux/macOS or `C:\` on Windows. CI includes this extreme case alongside the stable fixtures. Each implementation gets one scan with a two-minute budget. The candidate requests cooperative cancellation; an already running native call may finish later. The baseline process is stopped if it exceeds the budget. Cancelled/failed scans are reported as such, with aggregate candidate work counters; they are never counted as completed scans or improvements.
+
+These are backend root inspections, not equivalent traversal of every disk file. Unix enumerates visible process references. Windows retains the 10,000-file resource cap and permission warnings. Live processes also change between runs, so the root diagnostic does not claim equal inspection coverage. Use the stable synthetic fixtures for base/candidate speed comparisons and the root diagnostic to find extreme costs or cancellation limits.
