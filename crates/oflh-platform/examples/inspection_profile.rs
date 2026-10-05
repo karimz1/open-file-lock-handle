@@ -132,7 +132,11 @@ fn baseline_timing(binary: &Path, target: &Path) -> Result<f64> {
 fn profile(name: &str, held: usize, baseline: Option<&Path>) -> Result<Value> {
     let directory = tempfile::tempdir()?;
     for index in 0..2048 {
-        let path = file_path(directory.path(), index);
+        let path = if name == "idle" {
+            directory.path().join(format!("unused-{index:05}.bin"))
+        } else {
+            file_path(directory.path(), index)
+        };
         fs::create_dir_all(path.parent().ok_or("missing fixture parent")?)?;
         fs::write(path, [0u8; 64])?;
     }
@@ -326,7 +330,7 @@ fn main() -> Result<()> {
         return Err("budget must be between 1 and 600 seconds".into());
     }
     let mut result = json!({"schema":1,"os":std::env::consts::OS,"arch":std::env::consts::ARCH,
-        "fixtures":[profile("sparse",8,baseline.as_deref())?,profile("dense",128,baseline.as_deref())?]});
+        "fixtures":[profile("sparse",8,baseline.as_deref())?,profile("dense",128,baseline.as_deref())?,profile("idle",0,baseline.as_deref())?]});
     if whole_disk {
         result["whole_root"] = root_diagnostic(
             baseline.as_deref(),

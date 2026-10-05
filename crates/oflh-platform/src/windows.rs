@@ -642,7 +642,8 @@ unsafe extern "system" fn close_window(hwnd: HWND, param: isize) -> i32 {
 }
 // Empty areas need only one expensive registration per batch. Occupied batches
 // still split to singleton files: a batch user does not prove use of every file.
-const RESOURCE_BATCH_SIZE: usize = 1024;
+const RESOURCE_BATCH_SIZE: usize = 128;
+const MAX_RESOURCE_BATCH_SIZE: usize = 1024;
 const DIRECTORY_FILE_LIMIT: usize = 10_000;
 fn collect_resource_users(
     target: &Target,
@@ -652,12 +653,14 @@ fn collect_resource_users(
 ) -> Result<()> {
     cancel.set_phase(InspectionPhase::Files);
     let mut cache = HashMap::new();
-    let mut batch = Vec::with_capacity(RESOURCE_BATCH_SIZE);
+    let mut batch = Vec::with_capacity(MAX_RESOURCE_BATCH_SIZE);
+    let mut batch_size = RESOURCE_BATCH_SIZE;
     let mut count = 0;
     let mut stack = vec![target.path.clone()];
     while let Some(path) = stack.pop() {
         cancel.check()?;
         if target.directory {
+            batch_size = RESOURCE_BATCH_SIZE;
             cancel.record(InspectionCounter::Directories, 1);
             let entries = match std::fs::read_dir(&path) {
                 Ok(entries) => entries,
@@ -681,9 +684,15 @@ fn collect_resource_users(
                 } else if kind.is_file() {
                     batch.push(entry.path());
                     count += 1;
-                    if batch.len() == RESOURCE_BATCH_SIZE {
-                        correlate(&batch, snapshot, &mut cache, limited, cancel)?;
-                        batch.clear()
+                    if batch.len() == batch_size {
+                        flush_resource_batch(
+                            &mut batch,
+                            &mut batch_size,
+                            snapshot,
+                            &mut cache,
+                            limited,
+                            cancel,
+                        )?;
                     }
                     if count >= DIRECTORY_FILE_LIMIT {
                         break;
@@ -693,6 +702,16 @@ fn collect_resource_users(
         } else {
             batch.push(path);
             count += 1
+        }
+        if !batch.is_empty() {
+            flush_resource_batch(
+                &mut batch,
+                &mut batch_size,
+                snapshot,
+                &mut cache,
+                limited,
+                cancel,
+            )?;
         }
         if count >= DIRECTORY_FILE_LIMIT {
             snapshot.warnings.push(
@@ -708,13 +727,31 @@ fn collect_resource_users(
     Ok(())
 }
 
+fn flush_resource_batch(
+    batch: &mut Vec<PathBuf>,
+    batch_size: &mut usize,
+    snapshot: &mut Snapshot,
+    cache: &mut HashMap<Identity, Process>,
+    limited: &mut usize,
+    cancel: &Cancellation,
+) -> Result<()> {
+    let occupied = correlate(batch, snapshot, cache, limited, cancel)?;
+    *batch_size = if occupied {
+        RESOURCE_BATCH_SIZE
+    } else {
+        (*batch_size * 2).min(MAX_RESOURCE_BATCH_SIZE)
+    };
+    batch.clear();
+    Ok(())
+}
+
 fn correlate(
     paths: &[PathBuf],
     snapshot: &mut Snapshot,
     cache: &mut HashMap<Identity, Process>,
     limited: &mut usize,
     cancel: &Cancellation,
-) -> Result<()> {
+) -> Result<bool> {
     cancel.check()?;
     let mut apps = match rm_users(paths, cancel) {
         Ok(a) => a,
@@ -731,19 +768,20 @@ fn correlate(
                     .warnings
                     .push(format!("Restart Manager query failed: {error}"));
             }
-            return Ok(());
+            return Ok(true);
         }
     };
     // Self users are never emitted, so self-only batches need no subdivision.
     apps.retain(|app| app.Process.dwProcessId != std::process::id());
     if apps.is_empty() {
         cancel.record(InspectionCounter::Files, paths.len() as u64);
-        return Ok(());
+        return Ok(false);
     }
     if paths.len() > 1 {
         let mid = paths.len() / 2;
         correlate(&paths[..mid], snapshot, cache, limited, cancel)?;
-        return correlate(&paths[mid..], snapshot, cache, limited, cancel);
+        correlate(&paths[mid..], snapshot, cache, limited, cancel)?;
+        return Ok(true);
     }
     cancel.record(InspectionCounter::Files, 1);
     let lock = sharing(&paths[0]);
@@ -794,7 +832,7 @@ fn correlate(
         }
         snapshot.processes.push(process);
     }
-    Ok(())
+    Ok(true)
 }
 
 pub(super) fn port_identity(pid: u32) -> Result<Identity> {
@@ -872,7 +910,7 @@ mod inspection_tests {
     fn self_only_resources_do_not_subdivide_or_publish_users() {
         let directory = tempfile::tempdir().unwrap();
         let mut held = Vec::new();
-        for index in 0..RESOURCE_BATCH_SIZE {
+        for index in 0..MAX_RESOURCE_BATCH_SIZE {
             let path = directory.path().join(format!("self-{index:04}.bin"));
             std::fs::write(&path, [0; 64]).unwrap();
             held.push(
@@ -895,9 +933,9 @@ mod inspection_tests {
         .unwrap();
         assert_eq!(limited, 0);
         assert!(snapshot.processes.is_empty());
-        assert_eq!(cancel.progress().resource_queries, 1);
-        assert_eq!(cancel.progress().files, RESOURCE_BATCH_SIZE as u64);
-        assert_eq!(held.len(), RESOURCE_BATCH_SIZE);
+        assert_eq!(cancel.progress().resource_queries, 4);
+        assert_eq!(cancel.progress().files, MAX_RESOURCE_BATCH_SIZE as u64);
+        assert_eq!(held.len(), MAX_RESOURCE_BATCH_SIZE);
     }
     #[test]
     fn identity_cache_preserves_alias_matching_and_is_scoped_to_one_scan() {
@@ -940,10 +978,7 @@ mod coverage_limit_tests {
         )
         .unwrap();
         assert_eq!(cancel.progress().files, DIRECTORY_FILE_LIMIT as u64);
-        assert_eq!(
-            cancel.progress().resource_queries,
-            DIRECTORY_FILE_LIMIT.div_ceil(RESOURCE_BATCH_SIZE) as u64
-        );
+        assert!(cancel.progress().resource_queries <= 16);
         assert!(
             snapshot
                 .warnings

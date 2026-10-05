@@ -4,7 +4,7 @@ Linux and macOS enumerate process references rather than every file below a fold
 
 ## Native comparison
 
-`inspection_profile` is a developer example; its helpers and dependencies are excluded from `cargo build --release --locked --bin oflh`. It creates 2,048 synthetic files in 16 folders and holds 8 files for the sparse fixture or 128 for the dense fixture in a separate process. Each held file must be discovered. The candidate must retain exactly the baseline's fixture observations, including relation, access, deletion and lock evidence, before timings are accepted.
+`inspection_profile` is a developer example; its helpers and dependencies are excluded from `cargo build --release --locked --bin oflh`. It creates 2,048 synthetic files in 16 folders and holds 8 files for the sparse fixture or 128 for the dense fixture in a separate process. The idle fixture has 2,048 unused files in one directory. Each held file must be discovered. The candidate must retain exactly the baseline's fixture observations, including relation, access, deletion and lock evidence, before timings are accepted.
 
 Build `scan_bench` on the baseline revision, then run from the candidate checkout:
 
@@ -30,9 +30,9 @@ Counters belong to one cancellation token. Clones share the same progress; a new
 
 ## Windows changes and remaining costs
 
-The scanner groups up to 1,024 files instead of 128. Empty batches need one query; occupied batches still split down to individual files because a batch user is not evidence that it uses every file. Self-only batches stop immediately because the scanner excludes itself from results. Repeated module paths reuse file-identity probes within one scan; the next scan starts a fresh cache. Process birth identities are still checked before publication and before actions.
+The scanner starts with 128 files and doubles the batch size up to 1,024 after an empty result. Occupied or unavailable results return to 128. Each directory starts a fresh batch sequence. Empty batches need one query; occupied batches still split down to individual files because a batch user is not evidence that it uses every file. Self-only batches stop immediately because the scanner excludes itself from results. Repeated module paths reuse file-identity probes within one scan; the next scan starts a fresh cache. Process birth identities are still checked before publication and before actions.
 
-[Microsoft documents expensive registry writes in resource registration](https://learn.microsoft.com/en-us/windows/win32/api/restartmanager/nf-restartmanager-rmregisterresources). The larger grouping reduces registration count in unused areas, but occupied areas still require expensive queries. Inspect a narrower folder for complete Windows resource coverage. Changing to system-wide handle enumeration would require another backend design with verified ABI layouts, safe handling of blocking name queries and equivalent native coverage; it is not justified solely by faster timings on different hardware.
+[Microsoft documents expensive registry writes in resource registration](https://learn.microsoft.com/en-us/windows/win32/api/restartmanager/nf-restartmanager-rmregisterresources). Adaptive grouping reduces registration count in unused areas, but occupied areas still require expensive queries. Initial native measurements showed fixed 1,024-file batches regressed Windows sparse/dense cases by about 9–36%; the scanner therefore keeps small batches in occupied regions rather than applying a global increase. Inspect a narrower folder for complete Windows resource coverage. Changing to system-wide handle enumeration would require another backend design with verified ABI layouts, safe handling of blocking name queries and equivalent native coverage; it is not justified solely by faster timings on different hardware.
 
 Local Linux measurements are recorded in [the synthetic profile](measurements/inspection-linux-2026-10-05.json). Windows and macOS performance claims require their native CI artifacts. This fixture does not reproduce every C-drive permission, network, antivirus or filesystem condition.
 

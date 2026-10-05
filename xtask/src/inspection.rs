@@ -64,8 +64,8 @@ fn summarize(profiles: &[Value]) -> Result<String> {
             ));
         }
         let fixtures = profile["fixtures"].as_array().ok_or("missing fixtures")?;
-        if fixtures.len() != 2 {
-            return Err("expected sparse and dense fixtures".into());
+        if fixtures.len() != 3 {
+            return Err("expected sparse, dense and idle fixtures".into());
         }
         let mut fixture_names = BTreeSet::new();
         for fixture in fixtures {
@@ -73,6 +73,7 @@ fn summarize(profiles: &[Value]) -> Result<String> {
             let held = match name {
                 "sparse" => 8,
                 "dense" => 128,
+                "idle" => 0,
                 _ => return Err("unexpected fixture".into()),
             };
             if !fixture_names.insert(name)
@@ -110,7 +111,7 @@ fn summarize(profiles: &[Value]) -> Result<String> {
         )
     };
     Ok(format!(
-        "# Native inspection comparison\n\nSame held-file fixtures and verified observations on each native runner. Timings are milliseconds; ratio is candidate / baseline (lower is faster). Shared runners and different OS evidence prevent cross-OS speed rankings. Five samples describe this run, not a stable performance guarantee.\n\n| OS | Architecture | Fixture | Base median | Candidate median | Candidate p95 | Ratio |\n|---|---|---|---:|---:|---:|---:|\n{}\n\nEach fixture has 2,048 files in 16 directories. Sparse holds 8 files; dense holds 128. The JSON artifacts include native work counters and Restart Manager/module timings. Whole-drive coverage remains limited on Windows; unused filesystem size does not drive Unix process enumeration.\n",
+        "# Native inspection comparison\n\nSame held-file fixtures and verified observations on each native runner. Timings are milliseconds; ratio is candidate / baseline (lower is faster). Shared runners and different OS evidence prevent cross-OS speed rankings. Five samples describe this run, not a stable performance guarantee.\n\n| OS | Architecture | Fixture | Base median | Candidate median | Candidate p95 | Ratio |\n|---|---|---|---:|---:|---:|---:|\n{}\n\nEach fixture has 2,048 files. Sparse/dense use 16 directories and hold 8/128 files; idle holds none in one directory. The JSON artifacts include native work counters and Restart Manager/module timings. Whole-drive coverage remains limited on Windows; unused filesystem size does not drive Unix process enumeration.\n",
         rows.join("\n")
     ) + &root_report)
 }
@@ -132,9 +133,9 @@ mod tests {
     use super::*;
     use serde_json::json;
     fn profiles() -> Vec<Value> {
-        let fixtures = ["sparse", "dense"].map(|name| {
+        let fixtures = ["sparse", "dense", "idle"].map(|name| {
             json!({"fixture":name,"files":2048,
-                "held_files":if name == "sparse" {8} else {128},"coverage_rows":128,
+                "held_files":if name == "sparse" {8} else if name == "dense" {128} else {0},"coverage_rows":128,
                 "equivalent_fixture_coverage":true,
                 "baseline":{"samples":5,"median_ms":20,"p95_ms":22},
                 "candidate":{"samples":5,"median_ms":10,"p95_ms":12}})
@@ -160,7 +161,7 @@ mod tests {
     fn requires_six_unique_native_targets_and_equivalent_coverage() {
         let valid = profiles();
         let summary = summarize(&valid).unwrap();
-        assert_eq!(summary.matches("0.500").count(), 12);
+        assert_eq!(summary.matches("0.500").count(), 18);
         assert!(summarize(&valid[..5]).is_err());
         let mut duplicate = valid.clone();
         duplicate[0] = duplicate[1].clone();
