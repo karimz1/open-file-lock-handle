@@ -40,6 +40,18 @@ The scanner starts with 128 files and doubles the batch size up to 1,024 after a
 
 Local Linux measurements are recorded in [the synthetic profile](measurements/inspection-linux-2026-10-05.json). Windows and macOS performance claims require their native CI artifacts. This fixture does not reproduce every C-drive permission, network, antivirus or filesystem condition.
 
+## Direct Windows discovery experiments
+
+`windows_native_probe` tests the native file-user query separately from the production backend. It requires the opt-in `native-query-experiment` feature, which the distributed CLI and desktop do not enable. Its dedicated workflow runs on Windows x86-64 and ARM64 and uploads aggregate synthetic results. Run it on a native Windows development machine with:
+
+```sh
+cargo run --release --locked -p oflh-platform --example windows_native_probe --features native-query-experiment
+```
+
+The probe measures discovery of 128 held files among 2,048 files, then checks 160 processes sharing one file against both the direct query and the current backend. Discovery timings exclude process metadata, birth validation, mappings and lock evidence; they must not be presented as complete inspection speedups. It reads file metadata, not file contents. Variable-length native results are checked against the SDK layout and returned byte count; an exceeded buffer budget is an error, never a truncated list.
+
+[Microsoft reserves `FileProcessIdsUsingFileInformation` for system use](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/ne-wdm-_file_information_class). A successful experiment does not establish a supported API contract or justify replacing the backend. A reliable design still needs explicit failure handling, native coverage tests, process birth validation and a strategy for huge folders that avoids walking every unused file. Track these decisions in [the Windows algorithm investigation](https://github.com/karimz1/open-file-lock-handle/issues/62).
+
 ## Whole-root diagnostics
 
 Add `--whole-disk --budget-seconds 120` to profile `/` on Linux/macOS or `C:\` on Windows. CI includes this extreme case alongside the stable fixtures. Each implementation gets one scan with a two-minute budget. The candidate requests cooperative cancellation; an already running native call may finish later. The baseline process is stopped if it exceeds the budget. Cancelled/failed scans are reported as such, with aggregate candidate work counters; they are never counted as completed scans or improvements.
