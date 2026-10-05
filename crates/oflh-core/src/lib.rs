@@ -3,7 +3,9 @@
 #![deny(missing_docs)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
+mod inspection;
 mod path;
+pub use inspection::{InspectionCounter, InspectionPhase, InspectionProgress, InspectionTimer};
 /// Full SemVer version shared by both frontends.
 pub const VERSION: &str = match option_env!("OFLH_VERSION") {
     Some(version) => version,
@@ -97,18 +99,41 @@ pub fn io(operation: &'static str, source: std::io::Error) -> Error {
 
 /// Cheap, clonable cooperative cancellation shared with one background operation.
 #[derive(Clone, Default)]
-pub struct Cancellation(Arc<AtomicBool>);
+pub struct Cancellation(Arc<OperationState>);
+
+#[derive(Default)]
+struct OperationState {
+    cancelled: AtomicBool,
+    progress: inspection::ProgressState,
+}
 
 impl Cancellation {
+    /// Read approximate progress for this operation without locking the worker.
+    pub fn progress(&self) -> InspectionProgress {
+        self.0.progress.read()
+    }
+    /// Publish the current stage without scheduling UI work.
+    pub fn set_phase(&self, phase: InspectionPhase) {
+        self.0.progress.phase(phase);
+    }
+    /// Add native work to this operation's counters. Never implies proven ownership.
+    pub fn record(&self, counter: InspectionCounter, amount: u64) {
+        self.0.progress.add(counter, amount);
+    }
+    /// Measure one native operation, including error paths.
+    pub fn measure(&self, counter: InspectionCounter) -> InspectionTimer {
+        InspectionTimer::new(self.clone(), counter)
+    }
+
     /// Request cancellation. Native calls already in progress may finish first.
     pub fn cancel(&self) {
         // The flag publishes no associated data, so relaxed ordering is sufficient.
-        self.0.store(true, Ordering::Relaxed);
+        self.0.cancelled.store(true, Ordering::Relaxed);
     }
 
     /// Return a typed cancellation error at an operation boundary.
     pub fn check(&self) -> Result<()> {
-        if self.0.load(Ordering::Relaxed) {
+        if self.0.cancelled.load(Ordering::Relaxed) {
             Err(Error::Cancelled)
         } else {
             Ok(())

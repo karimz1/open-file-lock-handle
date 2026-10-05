@@ -190,14 +190,41 @@ fn file_id(path: &Path) -> Option<(u32, u64)> {
         (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
     ))
 }
-fn matches(target: &Target, target_id: Option<(u32, u64)>, path: &Path) -> bool {
-    if target.directory {
-        return target.contains(path);
+/// Cache metadata probes within one scan; lifetime validation remains fresh.
+struct FileMatcher<'a> {
+    target: &'a Target,
+    target_id: Option<(u32, u64)>,
+    identities: HashMap<PathBuf, Option<(u32, u64)>>,
+}
+impl<'a> FileMatcher<'a> {
+    fn new(target: &'a Target, cancel: &Cancellation) -> Self {
+        let target_id = if target.directory {
+            None
+        } else {
+            cancel.record(InspectionCounter::FileIdentityQueries, 1);
+            file_id(&target.path)
+        };
+        Self {
+            target,
+            target_id,
+            identities: HashMap::new(),
+        }
     }
-    if let (Some(a), Some(b)) = (target_id, file_id(path)) {
-        a == b
-    } else {
-        target.matches(path, None)
+    fn matches(&mut self, path: &Path, cancel: &Cancellation) -> bool {
+        if self.target.directory {
+            return self.target.contains(path);
+        }
+        let Some(target_id) = self.target_id else {
+            return self.target.matches(path, None);
+        };
+        let candidate = *self.identities.entry(path.to_owned()).or_insert_with(|| {
+            cancel.record(InspectionCounter::FileIdentityQueries, 1);
+            file_id(path)
+        });
+        candidate.map_or_else(
+            || self.target.matches(path, None),
+            |identity| target_id == identity,
+        )
     }
 }
 struct Session(u32);
@@ -207,7 +234,10 @@ impl Drop for Session {
         unsafe { RmEndSession(self.0) };
     }
 }
-fn rm_users(paths: &[PathBuf]) -> Result<Vec<RM_PROCESS_INFO>> {
+fn rm_users(paths: &[PathBuf], cancel: &Cancellation) -> Result<Vec<RM_PROCESS_INFO>> {
+    cancel.check()?;
+    cancel.record(InspectionCounter::ResourceQueries, 1);
+    let _timer = cancel.measure(InspectionCounter::ResourceQueryMicros);
     if paths.is_empty() {
         return Ok(Vec::new());
     }
@@ -248,8 +278,10 @@ fn rm_users(paths: &[PathBuf]) -> Result<Vec<RM_PROCESS_INFO>> {
             std::io::Error::from_raw_os_error(code as i32),
         ));
     }
+    cancel.check()?;
     let mut records = Vec::<RM_PROCESS_INFO>::new();
     for _ in 0..5 {
+        cancel.check()?;
         let mut needed = 0;
         let mut count = records.len() as u32;
         let mut reboot = 0;
@@ -342,6 +374,7 @@ fn process_snapshot() -> Result<(Handle, PROCESSENTRY32W)> {
 impl Backend for Native {
     fn scan(&mut self, target: &Target, cancel: &Cancellation) -> Result<Snapshot> {
         cancel.check()?;
+        cancel.set_phase(InspectionPhase::Processes);
         let mut snapshot = Snapshot {
             warnings: vec![
                 "Windows: CWD, directory handles and deleted files are not visible. Sharing conflicts are per file; reported users are not proven lock owners. Byte-range locks are not enumerated.".into(),
@@ -350,11 +383,7 @@ impl Backend for Native {
         };
         let mut limited = 0;
         let mut parents = HashMap::new();
-        let target_id = if target.directory {
-            None
-        } else {
-            file_id(&target.path)
-        };
+        let mut matcher = FileMatcher::new(target, cancel);
         let (handle, mut entry) = process_snapshot()?;
         // SAFETY: initialized size field and live snapshot handle.
         let mut ok = unsafe { Process32FirstW(handle.0, &mut entry) };
@@ -363,9 +392,10 @@ impl Backend for Native {
             let pid = entry.th32ProcessID;
             parents.insert(pid, entry.th32ParentProcessID);
             if pid > 0 && pid != std::process::id() {
+                cancel.record(InspectionCounter::Processes, 1);
                 if let Ok(mut process) = read_process(pid) {
                     if !process.executable.as_os_str().is_empty()
-                        && matches(target, target_id, &process.executable)
+                        && matcher.matches(&process.executable, cancel)
                     {
                         process.usages.push(Usage {
                             path: process.executable.clone(),
@@ -376,6 +406,9 @@ impl Backend for Native {
                     }
                     let mut modules = Err(Error::Unavailable("module snapshot unavailable".into()));
                     for _ in 0..3 {
+                        cancel.check()?;
+                        cancel.record(InspectionCounter::ModuleSnapshots, 1);
+                        let timer = cancel.measure(InspectionCounter::ModuleSnapshotMicros);
                         // SAFETY: documented Toolhelp flags, observed positive PID.
                         modules = Handle::new(
                             unsafe {
@@ -386,6 +419,7 @@ impl Backend for Native {
                             },
                             "snapshot modules",
                         );
+                        drop(timer);
                         if !matches!(
                             &modules,
                             Err(Error::Io { source, .. })
@@ -403,8 +437,9 @@ impl Backend for Native {
                         let mut next = unsafe { Module32FirstW(modules.0, &mut module) };
                         while next != 0 {
                             cancel.check()?;
+                            cancel.record(InspectionCounter::Resources, 1);
                             let path = path(&module.szExePath);
-                            if matches(target, target_id, &path) {
+                            if matcher.matches(&path, cancel) {
                                 process.usages.push(Usage {
                                     path,
                                     relation: Relation::Mapped,
@@ -438,56 +473,7 @@ impl Backend for Native {
                 std::io::Error::from_raw_os_error(code as i32),
             ));
         }
-        let mut cache = HashMap::new();
-        let mut batch = Vec::with_capacity(128);
-        let mut count = 0;
-        let mut stack = vec![target.path.clone()];
-        while let Some(path) = stack.pop() {
-            cancel.check()?;
-            if target.directory {
-                let entries = match std::fs::read_dir(&path) {
-                    Ok(entries) => entries,
-                    Err(_) => {
-                        limited += 1;
-                        continue;
-                    }
-                };
-                for entry in entries {
-                    cancel.check()?;
-                    let Ok(entry) = entry else {
-                        limited += 1;
-                        continue;
-                    };
-                    let Ok(kind) = entry.file_type() else {
-                        limited += 1;
-                        continue;
-                    };
-                    if kind.is_dir() {
-                        stack.push(entry.path())
-                    } else if kind.is_file() {
-                        batch.push(entry.path());
-                        count += 1;
-                        if batch.len() == 128 {
-                            correlate(&batch, &mut snapshot, &mut cache, &mut limited, cancel)?;
-                            batch.clear()
-                        }
-                        if count >= 10_000 {
-                            break;
-                        }
-                    }
-                }
-            } else {
-                batch.push(path);
-                count += 1
-            }
-            if count >= 10_000 {
-                snapshot.warnings.push("Directory scan limited to 10,000 files. Narrow the target for complete coverage.".into());
-                break;
-            }
-        }
-        if !batch.is_empty() {
-            correlate(&batch, &mut snapshot, &mut cache, &mut limited, cancel)?
-        }
+        collect_resource_users(target, &mut snapshot, &mut limited, cancel)?;
         snapshot.normalize();
         for process in &mut snapshot.processes {
             cancel.check()?;
@@ -654,6 +640,74 @@ unsafe extern "system" fn close_window(hwnd: HWND, param: isize) -> i32 {
     }
     1
 }
+// Empty areas need only one expensive registration per batch. Occupied batches
+// still split to singleton files: a batch user does not prove use of every file.
+const RESOURCE_BATCH_SIZE: usize = 1024;
+const DIRECTORY_FILE_LIMIT: usize = 10_000;
+fn collect_resource_users(
+    target: &Target,
+    snapshot: &mut Snapshot,
+    limited: &mut usize,
+    cancel: &Cancellation,
+) -> Result<()> {
+    cancel.set_phase(InspectionPhase::Files);
+    let mut cache = HashMap::new();
+    let mut batch = Vec::with_capacity(RESOURCE_BATCH_SIZE);
+    let mut count = 0;
+    let mut stack = vec![target.path.clone()];
+    while let Some(path) = stack.pop() {
+        cancel.check()?;
+        if target.directory {
+            cancel.record(InspectionCounter::Directories, 1);
+            let entries = match std::fs::read_dir(&path) {
+                Ok(entries) => entries,
+                Err(_) => {
+                    *limited += 1;
+                    continue;
+                }
+            };
+            for entry in entries {
+                cancel.check()?;
+                let Ok(entry) = entry else {
+                    *limited += 1;
+                    continue;
+                };
+                let Ok(kind) = entry.file_type() else {
+                    *limited += 1;
+                    continue;
+                };
+                if kind.is_dir() {
+                    stack.push(entry.path())
+                } else if kind.is_file() {
+                    batch.push(entry.path());
+                    count += 1;
+                    if batch.len() == RESOURCE_BATCH_SIZE {
+                        correlate(&batch, snapshot, &mut cache, limited, cancel)?;
+                        batch.clear()
+                    }
+                    if count >= DIRECTORY_FILE_LIMIT {
+                        break;
+                    }
+                }
+            }
+        } else {
+            batch.push(path);
+            count += 1
+        }
+        if count >= DIRECTORY_FILE_LIMIT {
+            snapshot.warnings.push(
+                "Directory scan limited to 10,000 files. Narrow the target for complete coverage."
+                    .into(),
+            );
+            break;
+        }
+    }
+    if !batch.is_empty() {
+        correlate(&batch, snapshot, &mut cache, limited, cancel)?;
+    }
+    Ok(())
+}
+
 fn correlate(
     paths: &[PathBuf],
     snapshot: &mut Snapshot,
@@ -662,14 +716,28 @@ fn correlate(
     cancel: &Cancellation,
 ) -> Result<()> {
     cancel.check()?;
-    let apps = match rm_users(paths) {
+    let mut apps = match rm_users(paths, cancel) {
         Ok(a) => a,
-        Err(_) => {
+        Err(Error::Cancelled) => return Err(Error::Cancelled),
+        Err(error) => {
             *limited += 1;
+            cancel.record(InspectionCounter::Files, paths.len() as u64);
+            if !snapshot
+                .warnings
+                .iter()
+                .any(|warning| warning.starts_with("Restart Manager query failed:"))
+            {
+                snapshot
+                    .warnings
+                    .push(format!("Restart Manager query failed: {error}"));
+            }
             return Ok(());
         }
     };
+    // Self users are never emitted, so self-only batches need no subdivision.
+    apps.retain(|app| app.Process.dwProcessId != std::process::id());
     if apps.is_empty() {
+        cancel.record(InspectionCounter::Files, paths.len() as u64);
         return Ok(());
     }
     if paths.len() > 1 {
@@ -677,6 +745,7 @@ fn correlate(
         correlate(&paths[..mid], snapshot, cache, limited, cancel)?;
         return correlate(&paths[mid..], snapshot, cache, limited, cancel);
     }
+    cancel.record(InspectionCounter::Files, 1);
     let lock = sharing(&paths[0]);
     for app in apps {
         let identity = Identity {
@@ -794,4 +863,92 @@ pub(super) fn launch_elevated(executable: &Path, arguments: &str) -> Result<u32>
         ));
     }
     Ok(code)
+}
+
+#[cfg(test)]
+mod inspection_tests {
+    use super::*;
+    #[test]
+    fn self_only_resources_do_not_subdivide_or_publish_users() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut held = Vec::new();
+        for index in 0..RESOURCE_BATCH_SIZE {
+            let path = directory.path().join(format!("self-{index:04}.bin"));
+            std::fs::write(&path, [0; 64]).unwrap();
+            held.push(
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(path)
+                    .unwrap(),
+            );
+        }
+        let cancel = Cancellation::default();
+        let mut snapshot = Snapshot::default();
+        let mut limited = 0;
+        collect_resource_users(
+            &Target::new(directory.path()).unwrap(),
+            &mut snapshot,
+            &mut limited,
+            &cancel,
+        )
+        .unwrap();
+        assert_eq!(limited, 0);
+        assert!(snapshot.processes.is_empty());
+        assert_eq!(cancel.progress().resource_queries, 1);
+        assert_eq!(cancel.progress().files, RESOURCE_BATCH_SIZE as u64);
+        assert_eq!(held.len(), RESOURCE_BATCH_SIZE);
+    }
+    #[test]
+    fn identity_cache_preserves_alias_matching_and_is_scoped_to_one_scan() {
+        let directory = tempfile::tempdir().unwrap();
+        let original = directory.path().join("original.bin");
+        let alias = directory.path().join("alias.bin");
+        std::fs::write(&original, [0; 64]).unwrap();
+        std::fs::hard_link(&original, &alias).unwrap();
+        let target = Target::new(&original).unwrap();
+        let cancel = Cancellation::default();
+        let mut matcher = FileMatcher::new(&target, &cancel);
+        for _ in 0..10 {
+            assert!(matcher.matches(&alias, &cancel));
+        }
+        assert_eq!(cancel.progress().file_identity_queries, 2);
+        // A new scan observes a replaced alias rather than reusing cached metadata.
+        std::fs::remove_file(&alias).unwrap();
+        std::fs::write(&alias, [1; 64]).unwrap();
+        let mut matcher = FileMatcher::new(&target, &cancel);
+        assert!(!matcher.matches(&alias, &cancel));
+    }
+}
+
+#[cfg(test)]
+mod coverage_limit_tests {
+    use super::*;
+    #[test]
+    fn directory_file_cap_remains_visible_and_bounded() {
+        let directory = tempfile::tempdir().unwrap();
+        for index in 0..=DIRECTORY_FILE_LIMIT {
+            std::fs::write(directory.path().join(format!("unused-{index:05}.bin")), []).unwrap();
+        }
+        let cancel = Cancellation::default();
+        let mut snapshot = Snapshot::default();
+        collect_resource_users(
+            &Target::new(directory.path()).unwrap(),
+            &mut snapshot,
+            &mut 0,
+            &cancel,
+        )
+        .unwrap();
+        assert_eq!(cancel.progress().files, DIRECTORY_FILE_LIMIT as u64);
+        assert_eq!(
+            cancel.progress().resource_queries,
+            DIRECTORY_FILE_LIMIT.div_ceil(RESOURCE_BATCH_SIZE) as u64
+        );
+        assert!(
+            snapshot
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("limited to 10,000 files"))
+        );
+    }
 }

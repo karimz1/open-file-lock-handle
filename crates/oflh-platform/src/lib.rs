@@ -108,6 +108,7 @@ fn apply_metrics(snapshot: &mut Snapshot, metrics: Vec<(Identity, Metrics)>) {
 /// Inspect local TCP listeners and UDP bindings using native APIs.
 /// Run on a worker thread; process ownership is checked against birth identities.
 pub fn scan_ports(cancel: &Cancellation) -> Result<Snapshot> {
+    cancel.set_phase(InspectionPhase::Ports);
     #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     {
         ports::scan(cancel)

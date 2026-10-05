@@ -3076,6 +3076,7 @@ dependencies = [
  "netstat2",
  "oflh-core",
  "rustix",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "windows-sys 0.61.2",

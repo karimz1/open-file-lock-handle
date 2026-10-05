@@ -38,3 +38,7 @@ cargo test -p oflh-desktop --features updater-tests --locked
 Updater tests use a local HTTP server and synthetic signed payloads. Desktop CI
 also validates each Windows/macOS updater package after bundling; see
 [Updater regression coverage](releasing.md#updater-regression-coverage).
+
+## Native inspection profiles
+
+See [inspection performance](inspection-performance.md) for equivalent-coverage fixture comparisons, native CI artifacts and the meaning of progress counters.

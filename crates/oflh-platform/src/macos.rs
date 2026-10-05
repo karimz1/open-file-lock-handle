@@ -177,6 +177,7 @@ pub struct Native {
 }
 impl Backend for Native {
     fn scan(&mut self, target: &Target, cancel: &Cancellation) -> Result<Snapshot> {
+        cancel.set_phase(InspectionPhase::Processes);
         cancel.check()?;
         let pids = process_ids(cancel)?;
         let mut snapshot = Snapshot {
@@ -193,11 +194,13 @@ impl Backend for Native {
                 continue;
             }
             let pid = pid as u32;
+            cancel.record(InspectionCounter::Processes, 1);
             let Ok((mut process, uid)) = read_process(pid) else {
                 limited += 1;
                 continue;
             };
             let mut partial = false;
+            let mut resources_inspected = 0;
             let exe = process.executable.clone();
             add(
                 &mut process,
@@ -242,6 +245,7 @@ impl Backend for Native {
                     unsafe { fds.set_len(returned as usize / size_of::<libc::proc_fdinfo>()) };
                     for descriptor in fds {
                         cancel.check()?;
+                        resources_inspected += 1;
                         if descriptor.proc_fdtype != 1 {
                             continue;
                         }
@@ -286,6 +290,7 @@ impl Backend for Native {
                 let Ok(region) = info::<Region>(pid, address) else {
                     break;
                 };
+                resources_inspected += 1;
                 let flags = region.info.protection;
                 let access = if flags & 4 != 0 {
                     Access::Execute
@@ -316,6 +321,7 @@ impl Backend for Native {
                     partial = true
                 }
             }
+            cancel.record(InspectionCounter::Resources, resources_inspected);
             if partial {
                 limited += 1
             }

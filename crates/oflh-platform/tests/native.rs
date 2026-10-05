@@ -464,3 +464,61 @@ fn independent_c_fixture() {
         );
     }
 }
+
+#[test]
+fn directory_batches_keep_distinct_native_file_users_and_progress() {
+    let directory = tempfile::tempdir().unwrap();
+    let first = directory.path().join("first");
+    let second = directory.path().join("second");
+    fs::create_dir_all(&first).unwrap();
+    fs::create_dir_all(&second).unwrap();
+    for index in 0..1100 {
+        fs::write(first.join(format!("unused-{index:04}.bin")), [0; 64]).unwrap();
+    }
+    let first_file = first.join("held ü.bin");
+    let second_file = second.join("held with spaces.bin");
+    fs::write(&first_file, [0; 4096]).unwrap();
+    fs::write(&second_file, [0; 4096]).unwrap();
+    let first_child = start(&first_file, "open");
+    let second_child = start(&second_file, "open");
+    let mut backend = native().unwrap();
+    let first_observation = process(&mut *backend, &first_file, first_child.0.id());
+    let second_observation = process(&mut *backend, &second_file, second_child.0.id());
+    let cancel = Cancellation::default();
+    let snapshot = backend
+        .scan(&Target::new(directory.path()).unwrap(), &cancel)
+        .unwrap();
+    for expected in [&first_observation, &second_observation] {
+        let observed = snapshot
+            .processes
+            .iter()
+            .find(|process| process.identity == expected.identity)
+            .unwrap();
+        for usage in expected
+            .usages
+            .iter()
+            .filter(|usage| usage.relation != Relation::Cwd)
+        {
+            assert!(
+                observed.usages.contains(usage),
+                "directory lost a single-file observation: {usage:?}"
+            );
+        }
+    }
+    let progress = cancel.progress();
+    assert!(progress.processes > 0);
+    assert!(progress.resources > 0);
+    #[cfg(windows)]
+    {
+        assert_eq!(progress.files, 1102);
+        assert_eq!(progress.directories, 3);
+        assert!(progress.resource_queries > 1 && progress.resource_queries < 128);
+        assert_eq!(progress.file_identity_queries, 0);
+    }
+    #[cfg(unix)]
+    {
+        // Unix enumerates process references; it does not walk unused disk files.
+        assert_eq!(progress.files, 0);
+        assert_eq!(progress.directories, 0);
+    }
+}

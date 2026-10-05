@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 mod desktop;
+mod inspection;
 mod release;
 mod signing;
 use semver::{BuildMetadata, Prerelease, Version};
@@ -254,6 +255,7 @@ fn run() -> Result<()> {
             "--config",
             "--payload",
             "--signature",
+            "--input",
         ]
         .contains(&key.as_str())
         {
@@ -270,6 +272,12 @@ fn run() -> Result<()> {
             .map(String::as_str)
             .ok_or_else(|| format!("missing {name}"))
     };
+    if action == "inspection-summary" {
+        return inspection::write_summary(
+            Path::new(required("--input")?),
+            Path::new(required("--output")?),
+        );
+    }
     let tag = if action == "verify-updater-signature" {
         "dev"
     } else {

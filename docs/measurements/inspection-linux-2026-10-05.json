@@ -1,0 +1,63 @@
+{
+  "arch": "x86_64",
+  "fixtures": [
+    {
+      "baseline": {
+        "median_ms": 79.966,
+        "p95_ms": 80.5,
+        "samples": 5
+      },
+      "candidate": {
+        "median_ms": 80.590837,
+        "p95_ms": 80.722118,
+        "samples": 5
+      },
+      "counters": {
+        "directories": 0,
+        "file_identity_queries": 0,
+        "files": 0,
+        "module_snapshot_ms": 0.0,
+        "module_snapshots": 0,
+        "processes": 512,
+        "resource_queries": 0,
+        "resource_query_ms": 0.0,
+        "resources": 51491
+      },
+      "coverage_rows": 8,
+      "equivalent_fixture_coverage": true,
+      "files": 2048,
+      "fixture": "sparse",
+      "held_files": 8
+    },
+    {
+      "baseline": {
+        "median_ms": 81.154,
+        "p95_ms": 81.946,
+        "samples": 5
+      },
+      "candidate": {
+        "median_ms": 82.157424,
+        "p95_ms": 82.509537,
+        "samples": 5
+      },
+      "counters": {
+        "directories": 0,
+        "file_identity_queries": 0,
+        "files": 0,
+        "module_snapshot_ms": 0.0,
+        "module_snapshots": 0,
+        "processes": 512,
+        "resource_queries": 0,
+        "resource_query_ms": 0.0,
+        "resources": 51611
+      },
+      "coverage_rows": 128,
+      "equivalent_fixture_coverage": true,
+      "files": 2048,
+      "fixture": "dense",
+      "held_files": 128
+    }
+  ],
+  "os": "linux",
+  "schema": 1
+}
