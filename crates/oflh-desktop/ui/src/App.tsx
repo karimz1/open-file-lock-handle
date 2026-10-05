@@ -5,6 +5,7 @@ import {
   Activity,
   ChevronDown,
   Columns3,
+  MoveHorizontal,
   SlidersHorizontal,
   Star,
   LoaderCircle,
@@ -202,6 +203,8 @@ export function App() {
     });
   };
   const [showColumns, setShowColumns] = useState(false);
+  const [fitAllRequest, setFitAllRequest] = useState(0);
+  const [columnsFitting, setColumnsFitting] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
@@ -1145,6 +1148,15 @@ export function App() {
                       {t("filters.k_column_filters")}
                       {columnCount ? ` (${columnCount})` : ""}
                     </button>
+                    <button
+                      title={t("table.k_fit_all_columns_hint")}
+                      aria-controls="results-grid"
+                      disabled={status.scanning || columnsFitting}
+                      onClick={() => setFitAllRequest((current) => current + 1)}
+                    >
+                      <MoveHorizontal size={14} />{" "}
+                      {t("table.k_fit_all_columns")}
+                    </button>
                     <span className="muted result-count">
                       {total} {t("app.k_results")}
                     </span>
@@ -1268,6 +1280,8 @@ export function App() {
                   )}
                   <div className="results-workspace">
                     <Table
+                      fitAllRequest={fitAllRequest}
+                      onFittingChange={setColumnsFitting}
                       fontSize={fontSize}
                       target={status.target}
                       expandedKey={

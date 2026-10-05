@@ -54,7 +54,7 @@ close it. Table paths are shortened for readability. Full paths and copy/reveal
 actions are available in details. Drag column dividers or the details panel edge
 to resize. Double-click a column divider to fit that column to its heading and
 all matching values, including results outside the visible viewport. A focused
-divider also supports Enter to auto-fit and arrow keys to resize.
+divider supports arrow keys for manual resizing. **Fit all columns** in the grid toolbar fits every visible column in one pass through the matching rows. Enter on a divider does not fit columns.
 
 Details show **Matching handles**, **Local ports**, and **Process ancestry**.
 The ancestry tree lists parents above the selected process. Click a parent to

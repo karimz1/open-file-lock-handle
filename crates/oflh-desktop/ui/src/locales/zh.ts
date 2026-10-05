@@ -397,7 +397,9 @@ const zh: TranslationSchema<typeof en> = {
     k_trade_off: "注意事项：",
   },
   table: {
-    k_auto_fit_hint: "双击或按 Enter 键以按内容调整列宽",
+    k_auto_fit_hint: "双击以按内容调整列宽",
+    k_fit_all_columns: "调整所有列宽",
+    k_fit_all_columns_hint: "根据所有匹配行调整所有可见列宽",
     k_focus_mode_hint:
       "专注模式：侧栏已收起，额外面板已隐藏。按 {{shortcut}} 恢复完整布局。",
     k_maximize_grid: "最大化表格",

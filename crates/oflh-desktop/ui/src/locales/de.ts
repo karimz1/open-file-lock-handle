@@ -418,8 +418,10 @@ const de: TranslationSchema<typeof en> = {
     k_trade_off: "Zu beachten:",
   },
   table: {
-    k_auto_fit_hint:
-      "Doppelklicken oder Enter drücken, um die Spalte an den Inhalt anzupassen",
+    k_auto_fit_hint: "Doppelklicken, um die Spalte an den Inhalt anzupassen",
+    k_fit_all_columns: "Alle Spalten anpassen",
+    k_fit_all_columns_hint:
+      "Alle sichtbaren Spalten an alle passenden Zeilen anpassen",
     k_columns: "Spalten",
     k_deleted: "gelöscht",
     k_file_was_deleted: "Datei wurde gelöscht",
