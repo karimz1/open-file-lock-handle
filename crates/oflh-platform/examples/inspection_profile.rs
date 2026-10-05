@@ -110,7 +110,7 @@ fn counters(progress: InspectionProgress) -> Value {
         "files":progress.files,"directories":progress.directories,
         "resource_queries":progress.resource_queries,"resource_query_ms":progress.resource_query_micros as f64 / 1000.0,
         "module_snapshots":progress.module_snapshots,"module_snapshot_ms":progress.module_snapshot_micros as f64 / 1000.0,
-        "file_identity_queries":progress.file_identity_queries})
+        "file_identity_queries":progress.file_identity_queries,"resource_workers":progress.resource_workers})
 }
 fn summarize(mut timings: Vec<f64>) -> Value {
     timings.sort_by(f64::total_cmp);

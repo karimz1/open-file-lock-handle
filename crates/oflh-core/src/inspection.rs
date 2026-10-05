@@ -33,7 +33,7 @@ pub enum InspectionCounter {
     Directories,
     /// Restart Manager resource queries (Windows only).
     ResourceQueries,
-    /// Time spent in Restart Manager, in microseconds.
+    /// Sum of Restart Manager call durations, in microseconds; parallel calls overlap.
     ResourceQueryMicros,
     /// Module snapshot attempts (Windows only).
     ModuleSnapshots,
@@ -41,6 +41,8 @@ pub enum InspectionCounter {
     ModuleSnapshotMicros,
     /// File identity probes (Windows only).
     FileIdentityQueries,
+    /// Resource workers started for this inspection (Windows only).
+    ResourceWorkers,
 }
 
 /// Small, approximate live view, read without blocking the native worker.
@@ -67,12 +69,14 @@ pub struct InspectionProgress {
     pub module_snapshot_micros: u64,
     /// File identity probes.
     pub file_identity_queries: u64,
+    /// Bounded resource workers started; zero on Unix.
+    pub resource_workers: u64,
 }
 
 #[derive(Default)]
 pub(crate) struct ProgressState {
     phase: AtomicU8,
-    counters: [AtomicU64; 9],
+    counters: [AtomicU64; 10],
 }
 impl ProgressState {
     pub(crate) fn phase(&self, phase: InspectionPhase) {
@@ -102,6 +106,7 @@ impl ProgressState {
             module_snapshots: counters[6],
             module_snapshot_micros: counters[7],
             file_identity_queries: counters[8],
+            resource_workers: counters[9],
         }
     }
 }

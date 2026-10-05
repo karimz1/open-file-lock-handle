@@ -393,11 +393,9 @@ fn native_parent_termination() {
         std::thread::sleep(Duration::from_millis(50));
     }
 }
-#[test]
-fn independent_c_fixture() {
-    let dir = tempfile::tempdir().unwrap();
+fn compile_c_fixture(directory: &Path) -> PathBuf {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/lock-fixture.c");
-    let exe = dir.path().join(if cfg!(windows) {
+    let exe = directory.join(if cfg!(windows) {
         "fixture.exe"
     } else {
         "fixture"
@@ -426,7 +424,7 @@ fn independent_c_fixture() {
         .cargo_metadata(false)
         .get_compiler();
     let mut command = compiler.to_command();
-    command.current_dir(dir.path());
+    command.current_dir(directory);
     if compiler.is_like_msvc() {
         command.arg(&source).arg(format!("/Fe:{}", exe.display()));
     } else {
@@ -438,6 +436,13 @@ fn independent_c_fixture() {
             .expect("C compiler required for independent interoperability test")
             .success()
     );
+    exe
+}
+
+#[test]
+fn independent_c_fixture() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = compile_c_fixture(dir.path());
     for mode in ["open", "read", "write", "range"] {
         let path = dir.path().join("external.dat");
         fs::write(&path, vec![0; 4096]).unwrap();
@@ -521,4 +526,52 @@ fn directory_batches_keep_distinct_native_file_users_and_progress() {
         assert_eq!(progress.files, 0);
         assert_eq!(progress.directories, 0);
     }
+}
+
+#[test]
+fn directory_inspection_retains_more_than_150_distinct_native_users() {
+    let directory = tempfile::tempdir().unwrap();
+    let executable = compile_c_fixture(directory.path());
+    let data = directory.path().join("data");
+    fs::create_dir(&data).unwrap();
+    let path = data.join("shared.bin");
+    fs::write(&path, [0; 64]).unwrap();
+    let expected_path = Target::new(&path).unwrap().path;
+    let mut children = Vec::new();
+    for _ in 0..160 {
+        let mut child = ChildGuard(
+            Command::new(&executable)
+                .arg("open")
+                .arg(&path)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::inherit())
+                .spawn()
+                .unwrap(),
+        );
+        ready(&mut child.0);
+        children.push(child);
+    }
+    let snapshot = native()
+        .unwrap()
+        .scan(&Target::new(&data).unwrap(), &Cancellation::default())
+        .unwrap();
+    let observed: std::collections::BTreeSet<_> = snapshot
+        .processes
+        .iter()
+        .filter(|process| {
+            process
+                .usages
+                .iter()
+                .any(|usage| usage.path == expected_path)
+        })
+        .map(|process| process.identity.pid)
+        .collect();
+    for child in &children {
+        assert!(
+            observed.contains(&child.0.id()),
+            "native directory inspection lost one of 160 live fixture users"
+        );
+    }
+    assert!(observed.len() >= 160);
 }
