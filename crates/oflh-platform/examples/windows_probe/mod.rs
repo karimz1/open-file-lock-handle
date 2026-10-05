@@ -18,6 +18,7 @@ use windows_sys::{
     Win32::{Foundation::*, Storage::FileSystem::*, System::IO::IO_STATUS_BLOCK},
 };
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+mod handles;
 
 struct FileHandle(HANDLE);
 impl Drop for FileHandle {
@@ -212,6 +213,7 @@ fn profile_discovery() -> Result<Value> {
     Ok(
         json!({"files":2048,"held_files":128,"found_held_files":observed,"samples":samples.len(),
         "discovery_median_ms":samples[samples.len()/2],
+        "handle_discovery":handles::isolated(root.path(), &[child.0.id()])?,
         "scope":"file user discovery only; excludes metadata, modules, locks and process identity validation"}),
     )
 }
@@ -232,12 +234,26 @@ fn profile_many_users() -> Result<Value> {
     let backend = fixture_coverage(root.path(), &children)?;
     Ok(
         json!({"expected_fixture_users":160,"native_query_found":found,
-        "native_query_ms":elapsed,"backend":backend}),
+        "native_query_ms":elapsed,"backend":backend,
+        "handle_discovery":handles::isolated(root.path(), &children.iter().map(|child| child.0.id()).collect::<Vec<_>>())?}),
     )
 }
 
 pub(super) fn run() -> Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "--handles-worker") {
+        let root = Path::new(args.get(1).ok_or("missing handle probe root")?);
+        let pids = args
+            .get(2)
+            .ok_or("missing fixture identities")?
+            .to_str()
+            .ok_or("invalid fixture identities")?
+            .split(',')
+            .map(str::parse)
+            .collect::<std::result::Result<Vec<u32>, _>>()?;
+        println!("{}", handles::inspect(root, &pids)?);
+        return Ok(());
+    }
     if args.first().is_some_and(|arg| arg == "--hold") {
         return hold_files(
             Path::new(args.get(1).ok_or("missing fixture root")?),
