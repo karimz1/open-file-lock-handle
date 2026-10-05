@@ -660,6 +660,18 @@ fn collect_resource_users(
     while let Some(path) = stack.pop() {
         cancel.check()?;
         if target.directory {
+            // Carry small tails across folders. Flushing every tiny directory
+            // turns a root scan into thousands of expensive registrations.
+            if batch.len() >= RESOURCE_BATCH_SIZE {
+                flush_resource_batch(
+                    &mut batch,
+                    &mut batch_size,
+                    snapshot,
+                    &mut cache,
+                    limited,
+                    cancel,
+                )?;
+            }
             batch_size = RESOURCE_BATCH_SIZE;
             cancel.record(InspectionCounter::Directories, 1);
             let entries = match std::fs::read_dir(&path) {
@@ -702,16 +714,6 @@ fn collect_resource_users(
         } else {
             batch.push(path);
             count += 1
-        }
-        if !batch.is_empty() {
-            flush_resource_batch(
-                &mut batch,
-                &mut batch_size,
-                snapshot,
-                &mut cache,
-                limited,
-                cancel,
-            )?;
         }
         if count >= DIRECTORY_FILE_LIMIT {
             snapshot.warnings.push(
@@ -906,6 +908,29 @@ pub(super) fn launch_elevated(executable: &Path, arguments: &str) -> Result<u32>
 #[cfg(test)]
 mod inspection_tests {
     use super::*;
+    #[test]
+    fn small_directories_share_batches_instead_of_registering_each_file() {
+        let directory = tempfile::tempdir().unwrap();
+        for index in 0..256 {
+            let folder = directory.path().join(format!("small-{index:04}"));
+            std::fs::create_dir(&folder).unwrap();
+            std::fs::write(folder.join("unused.bin"), [0; 64]).unwrap();
+        }
+        let cancel = Cancellation::default();
+        let mut snapshot = Snapshot::default();
+        let mut limited = 0;
+        collect_resource_users(
+            &Target::new(directory.path()).unwrap(),
+            &mut snapshot,
+            &mut limited,
+            &cancel,
+        )
+        .unwrap();
+        assert_eq!(limited, 0);
+        assert_eq!(cancel.progress().directories, 257);
+        assert_eq!(cancel.progress().files, 256);
+        assert_eq!(cancel.progress().resource_queries, 2);
+    }
     #[test]
     fn self_only_resources_do_not_subdivide_or_publish_users() {
         let directory = tempfile::tempdir().unwrap();
