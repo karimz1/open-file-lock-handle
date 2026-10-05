@@ -583,10 +583,15 @@ fn directory_inspection_retains_more_than_150_distinct_native_users() {
     assert_eq!(
         missing,
         0,
-        "native directory inspection lost fixture users: matched={}, identities={}, warnings={}",
+        "native directory inspection lost fixture users: matched={}, identities={}, warnings={}, resource_errors={:?}",
         observed.len(),
         observed_identities,
-        snapshot.warnings.len()
+        snapshot.warnings.len(),
+        snapshot
+            .warnings
+            .iter()
+            .filter(|warning| warning.starts_with("Restart Manager query failed:"))
+            .collect::<Vec<_>>()
     );
     assert!(observed.len() >= 160);
 }
