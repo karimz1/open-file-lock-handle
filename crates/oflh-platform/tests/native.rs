@@ -567,11 +567,26 @@ fn directory_inspection_retains_more_than_150_distinct_native_users() {
         })
         .map(|process| process.identity.pid)
         .collect();
-    for child in &children {
-        assert!(
-            observed.contains(&child.0.id()),
-            "native directory inspection lost one of 160 live fixture users"
-        );
-    }
+    let missing = children
+        .iter()
+        .filter(|child| !observed.contains(&child.0.id()))
+        .count();
+    let observed_identities = children
+        .iter()
+        .filter(|child| {
+            snapshot
+                .processes
+                .iter()
+                .any(|process| process.identity.pid == child.0.id())
+        })
+        .count();
+    assert_eq!(
+        missing,
+        0,
+        "native directory inspection lost fixture users: matched={}, identities={}, warnings={}",
+        observed.len(),
+        observed_identities,
+        snapshot.warnings.len()
+    );
     assert!(observed.len() >= 160);
 }
