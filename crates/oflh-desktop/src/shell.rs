@@ -405,6 +405,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::DragDrop(event) = event {
+                if window.state::<Arc<Service>>().status().scanning {
+                    return;
+                }
                 match event {
                     tauri::DragDropEvent::Enter { .. } => {
                         let _ = window.emit("drag-active", true);

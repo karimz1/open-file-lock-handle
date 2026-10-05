@@ -91,6 +91,21 @@ jobs:
           path: inspection-profiles/*.json
           if-no-files-found: error
           retention-days: 14
+      - name: Profile large desktop grid queries
+        run: |
+          mkdir -p .profile-base/crates/oflh-desktop/examples
+          cp crates/oflh-desktop/examples/grid_profile.rs .profile-base/crates/oflh-desktop/examples/grid_profile.rs
+          cargo build --release --locked --manifest-path .profile-base/Cargo.toml -p oflh-desktop --example grid_profile
+          cargo build --release --locked -p oflh-desktop --example grid_profile
+          mkdir -p grid-profiles
+          ./target/release/examples/grid_profile${{ matrix.os == 'windows' && '.exe' || '' }} --baseline .profile-base/target/release/examples/grid_profile${{ matrix.os == 'windows' && '.exe' || '' }} > grid-profiles/${{ matrix.os }}-${{ matrix.arch }}.json
+      - name: Upload desktop grid measurements
+        uses: actions/upload-artifact@v7
+        with:
+          name: grid-profile-${{ matrix.os }}-${{ matrix.arch }}
+          path: grid-profiles/*.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Set traceable build identity
         run: |
           cargo xtask ci-version --version "$RELEASE_TAG" --commit "$BUILD_COMMIT" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" --repository "$GITHUB_REPOSITORY" --server-url "$GITHUB_SERVER_URL" --pr-number "$PR_NUMBER" --github-env "$GITHUB_ENV"

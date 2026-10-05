@@ -145,8 +145,9 @@ unavailable to the unprivileged UI even after a successful privileged request.
 The full shortcut list is shown in Settings and beside relevant controls. Press
 `F5` or `Ctrl/Cmd+R` to refresh. Choose an automatic refresh interval beside the
 Refresh button. Automatic scans pause during active scans and process-action
-confirmations. Scan progress and Cancel stay in the footer without moving the
-results table.
+confirmations. A progress panel blocks workspace actions during inspection,
+shows elapsed time and work counts, and offers Cancel. The results table keeps
+its position underneath it. See [long-running inspections](#long-running-inspections).
 
 ## Appearance
 
@@ -203,3 +204,9 @@ testing and packaging details, see [development](development.md).
 
 Choose **Donate** to open the support dialog, then choose Buy Me a Coffee,
 GitHub Sponsors, or PayPal. The selected service opens in your browser.
+
+## Long-running inspections
+
+While an inspection is running, a modal progress panel blocks workspace actions and reload shortcuts. It shows elapsed time, the current stage and native work counts. The total is unknown; the bar does not imply a percentage. Windows file counts are distinct from descriptors, mappings or module references. Results may still be partial because of permissions or platform limits.
+
+Use **Cancel** to keep the previous accepted results and stop the current request cooperatively. A native call already running can finish later; its results cannot replace the accepted snapshot. F5, automatic refresh and other targets cannot restart an active inspection. Automatic refresh waits a full selected interval after completion or cancellation.

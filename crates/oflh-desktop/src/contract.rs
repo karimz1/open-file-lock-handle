@@ -85,6 +85,10 @@ pub struct Status {
     pub revision: u32,
     /// Whether a scan is queued or running.
     pub scanning: bool,
+    /// Elapsed inspection time; frozen when the request completes or is cancelled.
+    pub elapsed_ms: u64,
+    /// Approximate native work attempted; totals and coverage are not implied.
+    pub progress: ScanProgress,
     /// Sanitized display path of the last successful target.
     pub target: String,
     /// Number of observed process lifetimes.
@@ -107,8 +111,39 @@ pub struct Status {
     pub pull_request_url: &'static str,
 }
 
+/// Live work counters, distinct from the accepted snapshot's result counts.
+#[derive(Clone, Debug, Serialize)]
+pub struct ScanProgress {
+    /// Processes, files, ports or indexing stage.
+    pub phase: &'static str,
+    /// Process inspection attempts.
+    pub processes: u64,
+    /// Descriptor, mapping and module inspection attempts (not unique files).
+    pub resources: u64,
+    /// Files checked by Windows resource discovery; zero on Unix.
+    pub files: u64,
+    /// Directories visited on Windows; zero on Unix.
+    pub directories: u64,
+}
+impl From<oflh_core::InspectionProgress> for ScanProgress {
+    fn from(progress: oflh_core::InspectionProgress) -> Self {
+        Self {
+            phase: match progress.phase {
+                oflh_core::InspectionPhase::Processes => "processes",
+                oflh_core::InspectionPhase::Files => "files",
+                oflh_core::InspectionPhase::Ports => "ports",
+                oflh_core::InspectionPhase::Indexing => "indexing",
+            },
+            processes: progress.processes,
+            resources: progress.resources,
+            files: progress.files,
+            directories: progress.directories,
+        }
+    }
+}
+
 /// A backend query over the loaded snapshot, not a new system scan.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct TableQuery {
     /// Independent filters on displayed columns, applied before paging and selection.
@@ -174,7 +209,7 @@ pub enum EvidenceFilter {
     None,
 }
 /// Ordering for a loaded snapshot query.
-#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Sort {
     #[default]
