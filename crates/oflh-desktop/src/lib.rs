@@ -5,6 +5,7 @@
 
 pub mod contract;
 pub mod dataset;
+mod path_text;
 mod recent;
 pub mod service;
 #[cfg(feature = "desktop")]
