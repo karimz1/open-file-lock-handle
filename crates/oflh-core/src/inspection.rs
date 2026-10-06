@@ -11,7 +11,7 @@ pub enum InspectionPhase {
     /// Enumerating process references, descriptors and mappings.
     #[default]
     Processes,
-    /// Walking files and correlating resource users (Windows only).
+    /// Inspecting file handles or correlating resource users (Windows only).
     Files,
     /// Collecting local port bindings.
     Ports,
@@ -27,7 +27,7 @@ pub enum InspectionCounter {
     Processes,
     /// Descriptors, mappings or modules visited; not unique files.
     Resources,
-    /// Files submitted for resource inspection (Windows only).
+    /// Matching files observed, or files submitted for fallback resource inspection (Windows only).
     Files,
     /// Directories visited (Windows only).
     Directories,
@@ -45,6 +45,16 @@ pub enum InspectionCounter {
     ResourceWorkers,
     /// Native file-user fallback queries (Windows only).
     NativeFileUserQueries,
+    /// Native handle snapshot attempts.
+    NativeHandleSnapshots,
+    /// Native handle snapshot duration in microseconds.
+    NativeHandleSnapshotMicros,
+    /// Disk-file handle path queries.
+    NativeHandleNames,
+    /// Process memory-region queries, including unmapped regions.
+    MemoryRegions,
+    /// Data-mapping path queries.
+    MappedNames,
 }
 
 /// Small, approximate live view, read without blocking the native worker.
@@ -57,7 +67,7 @@ pub struct InspectionProgress {
     pub processes: u64,
     /// Descriptor, mapping and module inspection attempts.
     pub resources: u64,
-    /// Files submitted for Windows resource inspection.
+    /// Matching Windows file paths, or files submitted for fallback inspection.
     pub files: u64,
     /// Windows directories visited.
     pub directories: u64,
@@ -75,12 +85,22 @@ pub struct InspectionProgress {
     pub resource_workers: u64,
     /// Queries to the native file-user fallback; not Restart Manager calls.
     pub native_file_user_queries: u64,
+    /// Native handle snapshot attempts.
+    pub native_handle_snapshots: u64,
+    /// Native handle snapshot duration in microseconds.
+    pub native_handle_snapshot_micros: u64,
+    /// Disk-file handle path queries.
+    pub native_handle_names: u64,
+    /// Process memory-region queries, including unmapped regions.
+    pub memory_regions: u64,
+    /// Data-mapping path queries.
+    pub mapped_names: u64,
 }
 
 #[derive(Default)]
 pub(crate) struct ProgressState {
     phase: AtomicU8,
-    counters: [AtomicU64; 11],
+    counters: [AtomicU64; 16],
 }
 impl ProgressState {
     pub(crate) fn phase(&self, phase: InspectionPhase) {
@@ -112,6 +132,11 @@ impl ProgressState {
             file_identity_queries: counters[8],
             resource_workers: counters[9],
             native_file_user_queries: counters[10],
+            native_handle_snapshots: counters[11],
+            native_handle_snapshot_micros: counters[12],
+            native_handle_names: counters[13],
+            memory_regions: counters[14],
+            mapped_names: counters[15],
         }
     }
 }

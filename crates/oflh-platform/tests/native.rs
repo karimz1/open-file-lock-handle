@@ -1,6 +1,8 @@
 //! Real OS contracts. Helpers exist only in this test executable, never in oflh.
 use oflh_core::*;
-use oflh_platform::{Backend, native};
+use oflh_platform::Backend;
+#[cfg(not(windows))]
+use oflh_platform::native;
 use std::{
     fs::{self, OpenOptions},
     io::{BufRead, BufReader, Write},
@@ -10,6 +12,28 @@ use std::{
     time::Duration,
 };
 struct ChildGuard(Child);
+#[cfg(windows)]
+fn native() -> Result<Box<dyn Backend>> {
+    oflh_platform::native_with_inspection_helper(
+        oflh_platform::inspection_helper::InspectionHelperCommand::new(
+            std::env::current_exe().unwrap(),
+            ["--exact", "native_inspection_helper", "--nocapture"]
+                .map(std::ffi::OsString::from)
+                .to_vec(),
+        ),
+    )
+}
+#[cfg(windows)]
+#[test]
+fn native_inspection_helper() {
+    if std::env::var_os("OFLH_NATIVE_HANDLE_HELPER").is_none() {
+        return;
+    }
+    let result = oflh_platform::inspection_helper::run_stdio();
+    // Leave no test-harness trailer in the private binary stream. Native RAII
+    // resources and stdout have already been dropped by run_stdio.
+    std::process::exit(if result.is_ok() { 0 } else { 1 });
+}
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         let _ = self.0.kill();
@@ -64,6 +88,11 @@ fn fixture_helper() {
     };
     let path = PathBuf::from(path);
     let mode = std::env::var("OFLH_MODE").unwrap();
+    #[cfg(windows)]
+    if matches!(mode.as_str(), "mapped-closed" | "directory" | "deleted") {
+        windows_reference_fixture(&path, &mode);
+        return;
+    }
     if mode == "parent" {
         let mut child = Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "fixture_helper", "--nocapture"])
@@ -504,8 +533,21 @@ fn directory_batches_keep_distinct_native_file_users_and_progress() {
             .iter()
             .filter(|usage| usage.relation != Relation::Cwd)
         {
+            #[cfg(windows)]
+            let matches = observed.usages.iter().any(|candidate| {
+                let mut expected = usage.clone();
+                if matches!(
+                    expected.relation,
+                    Relation::RestartManager | Relation::NativeFileUser
+                ) {
+                    expected.relation = Relation::Open;
+                }
+                *candidate == expected
+            });
+            #[cfg(not(windows))]
+            let matches = observed.usages.contains(usage);
             assert!(
-                observed.usages.contains(usage),
+                matches,
                 "directory lost a single-file observation: {usage:?}"
             );
         }
@@ -515,9 +557,11 @@ fn directory_batches_keep_distinct_native_file_users_and_progress() {
     assert!(progress.resources > 0);
     #[cfg(windows)]
     {
-        assert_eq!(progress.files, 1102);
-        assert_eq!(progress.directories, 3);
-        assert!(progress.resource_queries > 1 && progress.resource_queries < 128);
+        assert_eq!(progress.files, 2);
+        assert_eq!(progress.directories, 0);
+        assert_eq!(progress.resource_queries, 0);
+        assert_eq!(progress.native_handle_snapshots, 1);
+        assert!(progress.native_handle_names > 0 && progress.memory_regions > 0);
         assert_eq!(progress.file_identity_queries, 0);
     }
     #[cfg(unix)]
@@ -594,4 +638,185 @@ fn directory_inspection_retains_more_than_150_distinct_native_users() {
             .collect::<Vec<_>>()
     );
     assert!(observed.len() >= 160);
+}
+
+#[cfg(windows)]
+fn windows_reference_fixture(path: &Path, mode: &str) {
+    use std::os::windows::{
+        fs::OpenOptionsExt,
+        io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    };
+    use windows_sys::Win32::{Foundation::*, Storage::FileSystem::*, System::Memory::*};
+    let file = OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(if mode == "directory" {
+            FILE_FLAG_BACKUP_SEMANTICS
+        } else {
+            0
+        })
+        .open(path)
+        .unwrap();
+    struct View(MEMORY_MAPPED_VIEW_ADDRESS);
+    impl Drop for View {
+        fn drop(&mut self) {
+            // SAFETY: exactly the live view returned by MapViewOfFile, unmapped once.
+            unsafe { UnmapViewOfFile(self.0) };
+        }
+    }
+    let view = if mode == "mapped-closed" {
+        // SAFETY: owned file with 4096 bytes, read-only unnamed mapping, valid inputs.
+        let section = unsafe {
+            CreateFileMappingW(
+                file.as_raw_handle(),
+                std::ptr::null(),
+                PAGE_READONLY,
+                0,
+                0,
+                std::ptr::null(),
+            )
+        };
+        assert!(!section.is_null() && section != INVALID_HANDLE_VALUE);
+        // SAFETY: a newly returned section handle transfers to exactly one RAII owner.
+        let section = unsafe { OwnedHandle::from_raw_handle(section) };
+        // SAFETY: live mapping section, read-only bounded view of the fixture file.
+        let view = unsafe { MapViewOfFile(section.as_raw_handle(), FILE_MAP_READ, 0, 0, 4096) };
+        assert!(!view.Value.is_null());
+        drop(section);
+        Some(View(view))
+    } else {
+        None
+    };
+    if mode == "deleted" {
+        fs::remove_file(path).unwrap();
+    }
+    let held_file = if mode == "mapped-closed" {
+        drop(file);
+        None
+    } else {
+        Some(file)
+    };
+    println!("OFLH READY {}", std::process::id());
+    std::io::stdout().flush().unwrap();
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line).unwrap();
+    drop(view);
+    drop(held_file);
+}
+
+#[cfg(windows)]
+#[test]
+fn handle_scan_finds_late_files_without_traversal_or_ten_thousand_file_cap() {
+    let directory = tempfile::tempdir().unwrap();
+    for index in 0..10_050 {
+        fs::write(
+            directory.path().join(format!("file-{index:05}.bin")),
+            [0; 4096],
+        )
+        .unwrap();
+    }
+    let held = directory.path().join("file-10049.bin");
+    let child = start(&held, "open");
+    let cancel = Cancellation::default();
+    let snapshot = native()
+        .unwrap()
+        .scan(&Target::new(directory.path()).unwrap(), &cancel)
+        .unwrap();
+    let expected = Target::new(&held).unwrap().path;
+    assert!(snapshot.processes.iter().any(|process| {
+        process.identity.pid == child.0.id()
+            && process
+                .usages
+                .iter()
+                .any(|usage| usage.path == expected && usage.relation == Relation::Open)
+    }));
+    let progress = cancel.progress();
+    assert_eq!(progress.files, 1);
+    assert_eq!(progress.directories, 0);
+    assert_eq!(progress.resource_queries, 0);
+    assert_eq!(progress.native_handle_snapshots, 1);
+    assert!(
+        !snapshot
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("10,000") || warning.contains("helper"))
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn directory_handle_and_closed_file_mapping_remain_visible() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("mapping ü.bin");
+    fs::write(&path, [0; 4096]).unwrap();
+    let mapped = start(&path, "mapped-closed");
+    let held_directory = start(directory.path(), "directory");
+    let snapshot = native()
+        .unwrap()
+        .scan(
+            &Target::new(directory.path()).unwrap(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+    let expected = Target::new(&path).unwrap().path;
+    let process = snapshot
+        .processes
+        .iter()
+        .find(|process| process.identity.pid == mapped.0.id())
+        .unwrap();
+    assert!(process.usages.iter().any(|usage| usage.path == expected
+        && usage.relation == Relation::Mapped
+        && usage.access == Access::Mapped));
+    assert!(
+        !process
+            .usages
+            .iter()
+            .any(|usage| usage.path == expected && usage.relation == Relation::Open)
+    );
+    let expected = Target::new(directory.path()).unwrap().path;
+    assert!(
+        snapshot
+            .processes
+            .iter()
+            .any(|process| process.identity.pid == held_directory.0.id()
+                && process.usages.iter().any(|usage| usage.path == expected
+                    && usage.relation == Relation::Open
+                    && usage.access == Access::Directory))
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn directory_inspection_retains_an_outside_opened_hard_link_and_deleted_reference() {
+    let fixture = tempfile::tempdir().unwrap();
+    let directory = fixture.path().join("inspected");
+    fs::create_dir(&directory).unwrap();
+    let outside = fixture.path().join("outside.bin");
+    let alias = directory.join("alias.bin");
+    let deleted = directory.join("deleted.bin");
+    fs::write(&outside, [0; 4096]).unwrap();
+    fs::hard_link(&outside, &alias).unwrap();
+    fs::write(&deleted, [0; 4096]).unwrap();
+    let alias_child = start(&outside, "open");
+    let deleted_child = start(&deleted, "deleted");
+    let target = Target::new(&directory).unwrap();
+    let expected_alias = Target::new(&alias).unwrap().path;
+    let expected_deleted = target.path.join("deleted.bin");
+    let snapshot = native()
+        .unwrap()
+        .scan(&target, &Cancellation::default())
+        .unwrap();
+    assert!(snapshot.processes.iter().any(|process| {
+        process.identity.pid == alias_child.0.id()
+            && process
+                .usages
+                .iter()
+                .any(|usage| usage.path == expected_alias && usage.relation == Relation::Open)
+    }));
+    assert!(snapshot.processes.iter().any(|process| {
+        process.identity.pid == deleted_child.0.id()
+            && process.usages.iter().any(|usage| {
+                usage.path == expected_deleted && usage.relation == Relation::Open && usage.deleted
+            })
+    }));
 }

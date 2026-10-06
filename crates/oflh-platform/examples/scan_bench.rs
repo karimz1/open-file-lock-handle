@@ -2,6 +2,9 @@
 use oflh_core::{Cancellation, Snapshot, Target};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(result) = oflh_platform::inspection_helper::dispatch() {
+        return Ok(result?);
+    }
     let mut arguments = std::env::args_os().skip(1);
     let target = Target::new(arguments.next().unwrap_or_else(|| ".".into()))?;
     let mode = arguments.next().unwrap_or_else(|| "20".into());

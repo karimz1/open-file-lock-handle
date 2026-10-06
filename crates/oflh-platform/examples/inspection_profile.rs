@@ -1,5 +1,13 @@
 //! Reproducible, privacy-safe native fixture profiler. Never linked into the app.
 use oflh_core::{Cancellation, InspectionProgress, Snapshot, Target};
+
+fn coverage_source(source: &str) -> &str {
+    if cfg!(windows) && matches!(source, "open" | "restart manager" | "native file user") {
+        "file user"
+    } else {
+        source
+    }
+}
 use serde_json::{Value, json};
 use std::{
     collections::BTreeSet,
@@ -75,7 +83,7 @@ fn coverage(snapshot: &Snapshot, pid: u32, root: &Path) -> BTreeSet<String> {
                 format!(
                     "{}\t{}\t{}\t{}\t{}",
                     path.display(),
-                    usage.relation.label(),
+                    coverage_source(usage.relation.label()),
                     usage.access.label(),
                     usage.deleted,
                     usage
@@ -100,7 +108,12 @@ fn baseline_coverage(binary: &Path, target: &Path, pid: u32) -> Result<BTreeSet<
             && fields[0].parse::<u32>()? == pid
             && let Ok(path) = Path::new(fields[2]).strip_prefix(target)
         {
-            rows.insert(format!("{}\t{}", path.display(), fields[3..].join("\t")));
+            rows.insert(format!(
+                "{}\t{}\t{}",
+                path.display(),
+                coverage_source(fields[3]),
+                fields[4..].join("\t")
+            ));
         }
     }
     Ok(rows)
@@ -111,7 +124,10 @@ fn counters(progress: InspectionProgress) -> Value {
         "resource_queries":progress.resource_queries,"resource_query_ms":progress.resource_query_micros as f64 / 1000.0,
         "module_snapshots":progress.module_snapshots,"module_snapshot_ms":progress.module_snapshot_micros as f64 / 1000.0,
         "file_identity_queries":progress.file_identity_queries,"resource_workers":progress.resource_workers,
-        "native_file_user_queries":progress.native_file_user_queries})
+        "native_file_user_queries":progress.native_file_user_queries,
+        "native_handle_snapshots":progress.native_handle_snapshots,
+        "native_handle_snapshot_ms":progress.native_handle_snapshot_micros as f64 / 1000.0,
+        "native_handle_names":progress.native_handle_names,"memory_regions":progress.memory_regions,"mapped_names":progress.mapped_names})
 }
 fn summarize(mut timings: Vec<f64>) -> Value {
     timings.sort_by(f64::total_cmp);
@@ -244,7 +260,8 @@ fn root_diagnostic(baseline: Option<&Path>, budget: std::time::Duration) -> Resu
         }
         Err(_) => json!({"outcome":"failed","elapsed_ms":elapsed}),
     };
-    let mut result = json!({"scope":if cfg!(windows) {"C drive; directory resources capped at 10000 files"} else {"root process references; no disk traversal"},
+    let mut result = json!({"scope":"root process references; subject to permissions and native failures",
+        "candidate_scope":if cfg!(windows) && cancel.progress().resource_queries > 0 {"limited Restart Manager fallback; 10,000-file cap"} else {"process references; no disk traversal"},
         "budget_seconds":budget.as_secs(),"equivalent_coverage":false,"candidate":candidate,"counters":counters(cancel.progress())});
     if let Some(binary) = baseline {
         let mut child = Fixture(
@@ -291,6 +308,9 @@ fn root_diagnostic(baseline: Option<&Path>, budget: std::time::Duration) -> Resu
     Ok(result)
 }
 fn main() -> Result<()> {
+    if let Some(result) = oflh_platform::inspection_helper::dispatch() {
+        return Ok(result?);
+    }
     let mut arguments = std::env::args_os().skip(1).peekable();
     if arguments
         .peek()

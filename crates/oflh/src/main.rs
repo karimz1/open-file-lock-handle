@@ -75,6 +75,9 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Argu
 }
 
 fn run() -> Result<(), CliError> {
+    if let Some(result) = oflh_platform::inspection_helper::dispatch() {
+        return Ok(result?);
+    }
     let arguments = parse_arguments(std::env::args_os().skip(1))?;
     if arguments.help {
         println!(

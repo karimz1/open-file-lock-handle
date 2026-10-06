@@ -14,6 +14,8 @@ use windows_sys::Win32::{
     UI::WindowsAndMessaging::*,
 };
 mod file_users;
+pub(crate) mod handles;
+pub(crate) mod helper_job;
 struct Handle(HANDLE);
 impl Handle {
     fn new(handle: HANDLE, operation: &'static str) -> Result<Self> {
@@ -359,6 +361,15 @@ fn sharing(path: &Path) -> Option<LockEvidence> {
 #[derive(Default)]
 pub struct Native {
     sampler: Sampler,
+    helper: Option<crate::inspection_helper::InspectionHelperCommand>,
+}
+impl Native {
+    pub(crate) fn with_helper(helper: crate::inspection_helper::InspectionHelperCommand) -> Self {
+        Self {
+            helper: Some(helper),
+            ..Self::default()
+        }
+    }
 }
 fn process_snapshot() -> Result<(Handle, PROCESSENTRY32W)> {
     // SAFETY: valid snapshot flags; API returns an owned handle.
@@ -378,7 +389,7 @@ impl Backend for Native {
         cancel.set_phase(InspectionPhase::Processes);
         let mut snapshot = Snapshot {
             warnings: vec![
-                "Windows: CWD, directory handles and deleted files are not visible. Sharing conflicts are per file; reported users are not proven lock owners. Byte-range locks are not enumerated.".into(),
+                "Windows: CWD classification and byte-range locks are not enumerated. Protected processes, unresolved native paths and mapping aliases can limit coverage. Sharing conflicts are per file; reported users are not proven lock owners.".into(),
             ],
             ..Snapshot::default()
         };
@@ -474,7 +485,17 @@ impl Backend for Native {
                 std::io::Error::from_raw_os_error(code as i32),
             ));
         }
-        collect_resource_users(target, &mut snapshot, &mut limited, cancel)?;
+        if target.directory {
+            collect_handle_users(
+                self.helper.as_ref(),
+                target,
+                &mut snapshot,
+                &mut limited,
+                cancel,
+            )?;
+        } else {
+            collect_resource_users(target, &mut snapshot, &mut limited, cancel)?;
+        }
         snapshot.normalize();
         for process in &mut snapshot.processes {
             cancel.check()?;
@@ -646,6 +667,164 @@ unsafe extern "system" fn close_window(hwnd: HWND, param: isize) -> i32 {
 const RESOURCE_BATCH_SIZE: usize = 128;
 const MAX_RESOURCE_BATCH_SIZE: usize = 1024;
 const DIRECTORY_FILE_LIMIT: usize = 10_000;
+fn record_handle_progress(
+    previous: crate::inspection_protocol::Progress,
+    current: crate::inspection_protocol::Progress,
+    cancel: &Cancellation,
+) {
+    // The transport rejects backwards counters before delivering a frame.
+    for (counter, amount) in [
+        (
+            InspectionCounter::Resources,
+            current.handles - previous.handles + current.mapped_names - previous.mapped_names,
+        ),
+        (
+            InspectionCounter::NativeHandleNames,
+            current.names - previous.names,
+        ),
+        (
+            InspectionCounter::MemoryRegions,
+            current.regions - previous.regions,
+        ),
+        (
+            InspectionCounter::MappedNames,
+            current.mapped_names - previous.mapped_names,
+        ),
+        (
+            InspectionCounter::NativeHandleSnapshots,
+            current.snapshots - previous.snapshots,
+        ),
+        (
+            InspectionCounter::NativeHandleSnapshotMicros,
+            current.snapshot_micros - previous.snapshot_micros,
+        ),
+    ] {
+        cancel.record(counter, amount);
+    }
+}
+
+fn collect_handle_users(
+    configured: Option<&crate::inspection_helper::InspectionHelperCommand>,
+    target: &Target,
+    snapshot: &mut Snapshot,
+    limited: &mut usize,
+    cancel: &Cancellation,
+) -> Result<()> {
+    use crate::{inspection_protocol::*, inspection_transport::Outcome};
+    cancel.set_phase(InspectionPhase::Files);
+    let configuration = configured.cloned().map_or_else(
+        crate::inspection_helper::InspectionHelperCommand::current,
+        Ok,
+    )?;
+    let request = Request {
+        path: target.path.as_os_str().encode_wide().collect(),
+        owner: read_identity(std::process::id())?,
+    };
+    let mut previous = Progress::default();
+    let mut observed = HashMap::<Identity, Vec<Usage>>::new();
+    let mut files = std::collections::HashSet::new();
+    let mut warnings = std::collections::BTreeMap::<(Failure, Option<i32>), u64>::new();
+    cancel.record(
+        InspectionCounter::ResourceWorkers,
+        handles::worker_count() as u64,
+    );
+    let outcome =
+        crate::inspection_transport::inspect(&configuration, request, cancel, |message| {
+            cancel.check()?;
+            match message {
+                Message::Observation(observation) => {
+                    let path = path(&observation.path);
+                    // Treat helper data as observations, never as unchecked action targets.
+                    if !target.contains(&path) {
+                        return Err(Error::Unavailable(
+                            "inspection helper returned a path outside the target".into(),
+                        ));
+                    }
+                    if !observation.directory && files.insert(path.clone()) {
+                        cancel.record(InspectionCounter::Files, 1);
+                    }
+                    let usages = observed.entry(observation.identity).or_default();
+                    let usage = Usage {
+                        path,
+                        relation: if observation.mapped {
+                            Relation::Mapped
+                        } else {
+                            Relation::Open
+                        },
+                        access: if observation.directory {
+                            Access::Directory
+                        } else if observation.mapped {
+                            Access::Mapped
+                        } else {
+                            Access::Unknown
+                        },
+                        deleted: observation.deleted,
+                        lock: None,
+                    };
+                    if let Some(kind) = observation.sharing {
+                        usages.push(Usage {
+                            relation: Relation::Locked,
+                            access: Access::Unknown,
+                            lock: Some(LockEvidence::SharingConflict(kind)),
+                            ..usage.clone()
+                        });
+                    }
+                    usages.push(usage);
+                }
+                Message::Progress(progress) => {
+                    record_handle_progress(previous, progress, cancel);
+                    previous = progress;
+                }
+                Message::Warning {
+                    operation,
+                    code,
+                    count,
+                } => {
+                    *warnings.entry((operation, code)).or_default() += count;
+                }
+                _ => {
+                    return Err(Error::Unavailable(
+                        "invalid delivered helper message".into(),
+                    ));
+                }
+            }
+            Ok(())
+        })?;
+    for (identity, usages) in observed {
+        cancel.check()?;
+        match read_process(identity.pid) {
+            Ok(mut process)
+                if process.identity == identity
+                    && read_identity(identity.pid).is_ok_and(|current| current == identity) =>
+            {
+                process.usages = usages;
+                snapshot.processes.push(process);
+            }
+            _ => *limited += 1,
+        }
+    }
+    for ((operation, code), count) in warnings {
+        snapshot.warnings.push(format!(
+            "Windows partial inspection: {count} {} attempts unavailable{}.",
+            operation.label(),
+            code.map_or_else(String::new, |code| format!(" (OS code {code})"))
+        ));
+    }
+    match outcome {
+        Outcome::Complete => Ok(()),
+        Outcome::Partial(error) => {
+            snapshot
+                .warnings
+                .push(format!("Windows handle inspection incomplete: {error}"));
+            Ok(())
+        }
+        Outcome::Unavailable(error) => {
+            snapshot.warnings.push(format!("Windows handle inspection unavailable: {error}; using limited Restart Manager fallback."));
+            collect_resource_users(target, snapshot, limited, cancel)
+        }
+    }
+}
+
 fn collect_resource_users(
     target: &Target,
     snapshot: &mut Snapshot,

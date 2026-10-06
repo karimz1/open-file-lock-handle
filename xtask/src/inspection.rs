@@ -52,7 +52,9 @@ fn summarize(profiles: &[Value]) -> Result<String> {
                     .ok_or("invalid root timing")?;
                 Ok(format!("{elapsed:.3} ({outcome})"))
             };
-            let cap = if os == "windows" {
+            let cap = if let Some(scope) = root["candidate_scope"].as_str() {
+                scope
+            } else if os == "windows" {
                 "10,000-file cap; partial coverage"
             } else {
                 "process references; no disk traversal"
@@ -111,7 +113,7 @@ fn summarize(profiles: &[Value]) -> Result<String> {
         )
     };
     Ok(format!(
-        "# Native inspection comparison\n\nSame held-file fixtures and verified observations on each native runner. Timings are milliseconds; ratio is candidate / baseline (lower is faster). Shared runners and different OS evidence prevent cross-OS speed rankings. Five samples describe this run, not a stable performance guarantee.\n\n| OS | Architecture | Fixture | Base median | Candidate median | Candidate p95 | Ratio |\n|---|---|---|---:|---:|---:|---:|\n{}\n\nEach fixture has 2,048 files. Sparse/dense use 16 directories and hold 8/128 files; idle holds none in one directory. The JSON artifacts include native work counters and Restart Manager/module timings. Whole-drive coverage remains limited on Windows; unused filesystem size does not drive Unix process enumeration.\n",
+        "# Native inspection comparison\n\nSame held-file fixtures and verified observations on each native runner. Timings are milliseconds; ratio is candidate / baseline (lower is faster). Shared runners and different OS evidence prevent cross-OS speed rankings. Five samples describe this run, not a stable performance guarantee.\n\n| OS | Architecture | Fixture | Base median | Candidate median | Candidate p95 | Ratio |\n|---|---|---|---:|---:|---:|---:|\n{}\n\nEach fixture has 2,048 files. Sparse/dense use 16 directories and hold 8/128 files; idle holds none in one directory. The JSON artifacts include native work counters and Restart Manager/module timings. Whole-root scope is reported separately: permissions, native failures and live process changes prevent equivalent coverage claims. Unused filesystem size does not drive process-reference enumeration.\n",
         rows.join("\n")
     ) + &root_report)
 }

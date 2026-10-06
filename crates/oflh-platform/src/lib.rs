@@ -2,6 +2,11 @@
 #![deny(missing_docs)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 pub mod elevation;
+pub mod inspection_helper;
+#[cfg(any(windows, test))]
+mod inspection_protocol;
+#[cfg(any(windows, test))]
+mod inspection_transport;
 use oflh_core::*;
 use std::collections::HashMap;
 #[cfg(not(target_os = "linux"))]
@@ -54,6 +59,23 @@ pub fn native() -> Result<Box<dyn Backend>> {
     #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
         Err(Error::Unavailable("unsupported operating system".into()))
+    }
+}
+
+/// Construct a scanner with a headless helper command supplied by its embedding binary.
+/// Windows helpers must call [`inspection_helper::run_stdio`] before normal startup.
+/// Other platforms inspect process references directly and ignore this command.
+pub fn native_with_inspection_helper(
+    helper: inspection_helper::InspectionHelperCommand,
+) -> Result<Box<dyn Backend>> {
+    #[cfg(windows)]
+    {
+        Ok(Box::new(windows::Native::with_helper(helper)))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = helper;
+        native()
     }
 }
 #[derive(Default)]
