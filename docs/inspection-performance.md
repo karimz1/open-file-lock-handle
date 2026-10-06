@@ -25,6 +25,7 @@ CI runs the comparison on native Linux, macOS and Windows, on both x86-64 and AR
 - `resource_queries` and `resource_query_ms`: Restart Manager calls, including resource registration, retries and failed calls.
 - `module_snapshots` and `module_snapshot_ms`: Windows module snapshot attempts and their duration.
 - `file_identity_queries`: Windows metadata opens used to compare file identity, including the target probe.
+- `native_file_user_queries`: native compatibility queries after Restart Manager error 6, including buffer retries.
 
 Counters belong to one cancellation token. Clones share the same progress; a new inspection starts with empty counters. Reads are approximate and monotonic, without a lock on the worker. Native calls already running can finish before cancellation is observed. Counts are work attempted, not proof of complete coverage.
 
@@ -40,7 +41,9 @@ The scanner starts with 128 files and doubles the batch size up to 1,024 after a
 
 Local Linux measurements are recorded in [the synthetic profile](measurements/inspection-linux-2026-10-05.json). Windows and macOS performance claims require their native CI artifacts. This fixture does not reproduce every C-drive permission, network, antivirus or filesystem condition.
 
-## Direct Windows discovery experiments
+## Windows completeness recovery and discovery experiments
+
+The native 160-process regression found that Restart Manager returns error 6 (`ERROR_INVALID_HANDLE`) for a file shared by many users on the tested Windows runners. Successful resource queries keep their existing evidence. Failed groups are split down to individual files, where the scanner attempts `FileProcessIdsUsingFileInformation`. It captures process births before this PID-only query and verifies them before publication. Recovered rows say `native file user`; sharing-conflict evidence remains separate and owner uncertainty is preserved. The original error and use of this reserved query remain visible in warnings. Unsupported queries produce explicit partial-result warnings, never a shortened list presented as complete.
 
 `windows_native_probe` tests the native file-user query separately from the production backend. It requires the opt-in `native-query-experiment` feature, which the distributed CLI and desktop do not enable. Its dedicated workflow runs on Windows x86-64 and ARM64 and uploads aggregate synthetic results. Run it on a native Windows development machine with:
 
@@ -50,11 +53,11 @@ cargo run --release --locked -p oflh-platform --example windows_native_probe --f
 
 The probe measures discovery of 128 held files among 2,048 files, then checks 160 processes sharing one file against both the direct query and the current backend. Discovery timings exclude process metadata, birth validation, mappings and lock evidence; they must not be presented as complete inspection speedups. It reads file metadata, not file contents. Variable-length native results are checked against the SDK layout and returned byte count; an exceeded buffer budget is an error, never a truncated list.
 
-[Microsoft reserves `FileProcessIdsUsingFileInformation` for system use](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/ne-wdm-_file_information_class). A successful experiment does not establish a supported API contract or justify replacing the backend. A reliable design still needs explicit failure handling, native coverage tests, process birth validation and a strategy for huge folders that avoids walking every unused file. Track these decisions in [the Windows algorithm investigation](https://github.com/karimz1/open-file-lock-handle/issues/62).
+[Microsoft reserves `FileProcessIdsUsingFileInformation` for system use](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/ne-wdm-_file_information_class). Its production use is limited to compatibility recovery after Restart Manager error 6, with explicit warnings and failures. It does not replace normal discovery or remove the folder traversal cap. A strategy for huge folders still needs to avoid walking every unused file. Track these decisions in [the Windows algorithm investigation](https://github.com/karimz1/open-file-lock-handle/issues/62).
 
 The same probe also experiments with one system-wide handle snapshot and parallel inspection of open disk handles. It derives the file object type from its own live metadata handle, verifies the [phnt native record layout](https://github.com/winsiderss/phnt/blob/master/ntexapi.h), duplicates handles into owned guards and rejects observations after the source process exits or its birth identity changes. It does not cache results by kernel object address. Permission failures and handles that disappear are counted explicitly. This scope omits mappings whose file handles have closed, modules and lock evidence; it is not a complete replacement backend.
 
-Native handle-path queries can block, so this experiment runs in a separate helper process with a 30-second budget. A budget outcome is not a completed scan. The parent terminates only its own experimental helper, never an inspected application. [Microsoft warns that `NtQuerySystemInformation` can change](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntquerysysteminformation); the snapshot ABI and buffer extents are checked before any record is read. Neither experimental query is enabled in application builds.
+Native handle-path queries can block, so this experiment runs in a separate helper process with a 30-second budget. A budget outcome is not a completed scan. The parent terminates only its own experimental helper, never an inspected application. [Microsoft warns that `NtQuerySystemInformation` can change](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntquerysysteminformation); the snapshot ABI and buffer extents are checked before any record is read. The handle-first experiment is not enabled in application builds.
 
 ## Whole-root diagnostics
 

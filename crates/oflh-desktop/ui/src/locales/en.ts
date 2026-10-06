@@ -73,6 +73,7 @@ const en = {
     k_reference: "reference",
     k_remove: "Remove",
     k_restart_manager: "restart manager",
+    k_native_file_user: "native file user",
     k_results: "results",
     k_reveal_in_file_manager: "Reveal in file manager",
     k_sharing_conflict_delete_denied_reported_9ec719fc:

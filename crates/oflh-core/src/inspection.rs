@@ -43,6 +43,8 @@ pub enum InspectionCounter {
     FileIdentityQueries,
     /// Resource workers started for this inspection (Windows only).
     ResourceWorkers,
+    /// Native file-user fallback queries (Windows only).
+    NativeFileUserQueries,
 }
 
 /// Small, approximate live view, read without blocking the native worker.
@@ -71,12 +73,14 @@ pub struct InspectionProgress {
     pub file_identity_queries: u64,
     /// Bounded resource workers started; zero on Unix.
     pub resource_workers: u64,
+    /// Queries to the native file-user fallback; not Restart Manager calls.
+    pub native_file_user_queries: u64,
 }
 
 #[derive(Default)]
 pub(crate) struct ProgressState {
     phase: AtomicU8,
-    counters: [AtomicU64; 10],
+    counters: [AtomicU64; 11],
 }
 impl ProgressState {
     pub(crate) fn phase(&self, phase: InspectionPhase) {
@@ -107,6 +111,7 @@ impl ProgressState {
             module_snapshot_micros: counters[7],
             file_identity_queries: counters[8],
             resource_workers: counters[9],
+            native_file_user_queries: counters[10],
         }
     }
 }

@@ -76,6 +76,7 @@ const zh: TranslationSchema<typeof en> = {
     k_reference: "引用",
     k_remove: "移除",
     k_restart_manager: "重启管理器",
+    k_native_file_user: "Windows 文件使用者",
     k_results: "结果",
     k_reveal_in_file_manager: "在文件管理器中显示",
     k_sharing_conflict_delete_denied_reported_9ec719fc:

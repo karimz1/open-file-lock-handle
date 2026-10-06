@@ -14,7 +14,7 @@ Press `?` for the full scan details.
 | --- | --- | --- |
 | Linux | `/proc`: file descriptors, CWD, executable, mapped files, deleted-but-open files | `SIGTERM` with `pidfd` identity validation |
 | macOS | `libproc`: vnode descriptors, CWD, executable, mapped files | `SIGTERM` after start-time validation |
-| Windows | Restart Manager, Toolhelp modules and executables | `WM_CLOSE` for process windows |
+| Windows | Restart Manager, native file-user recovery, Toolhelp modules and executables | `WM_CLOSE` for process windows |
 
 Actions revalidate PID and process birth identity before signaling. Linux uses
 an owned pidfd; Windows force termination uses a validated process handle. macOS
@@ -22,6 +22,11 @@ checks start time before signaling, but its APIs leave a narrow exit/PID-reuse r
 
 Windows console and service processes may require explicit force termination.
 Windows discovery does not cover CWD, directory handles, or deleted files.
+When Restart Manager returns error 6, the scanner attempts a native file-user
+query and labels recovered observations `native file user`. This query is
+reserved by Microsoft; unsupported filesystems or failed queries retain explicit
+warnings. Each recovered PID must match a process birth captured before the query
+and checked again before publication. Neither source proves lock ownership.
 On Linux, other mount namespaces may require running `oflh` inside the relevant
 container. Elevated privileges can improve visibility but do not remove every
 platform limitation.

@@ -219,6 +219,8 @@ pub enum Relation {
     Locked,
     /// Windows Restart Manager identified a resource user, not a proven lock owner.
     RestartManager,
+    /// Windows native file-user query identified a user, not a proven lock owner.
+    NativeFileUser,
 }
 
 impl Relation {
@@ -231,6 +233,7 @@ impl Relation {
             Self::Mapped => "mapped",
             Self::Locked => "locked",
             Self::RestartManager => "restart manager",
+            Self::NativeFileUser => "native file user",
         }
     }
 }

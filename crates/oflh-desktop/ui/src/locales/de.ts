@@ -75,6 +75,7 @@ const de: TranslationSchema<typeof en> = {
     k_reference: "Referenz",
     k_remove: "Entfernen",
     k_restart_manager: "Restart Manager",
+    k_native_file_user: "Nutzer laut Windows-Dateiabfrage",
     k_results: "Ergebnisse",
     k_reveal_in_file_manager: "Im Dateimanager anzeigen",
     k_pid: "PID",

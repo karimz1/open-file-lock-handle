@@ -13,6 +13,7 @@ use windows_sys::Win32::{
     System::{Diagnostics::ToolHelp::*, ProcessStatus::*, RestartManager::*, Threading::*},
     UI::WindowsAndMessaging::*,
 };
+mod file_users;
 struct Handle(HANDLE);
 impl Handle {
     fn new(handle: HANDLE, operation: &'static str) -> Result<Self> {
@@ -980,6 +981,10 @@ fn correlate(
     let mut apps = match rm_users(paths, cancel) {
         Ok(a) => a,
         Err(Error::Cancelled) => return Err(Error::Cancelled),
+        Err(error) if recoverable_resource_error(&error) => {
+            recover_resource_group(paths, snapshot, cache, limited, cancel, &error)?;
+            return Ok(true);
+        }
         Err(error) => {
             *limited += 1;
             cancel.record(InspectionCounter::Files, paths.len() as u64);
@@ -1057,6 +1062,100 @@ fn correlate(
         snapshot.processes.push(process);
     }
     Ok(true)
+}
+
+fn recoverable_resource_error(error: &Error) -> bool {
+    matches!(error, Error::Io { source, .. } if source.raw_os_error() == Some(ERROR_INVALID_HANDLE as i32))
+}
+
+fn recover_resource_group(
+    paths: &[PathBuf],
+    snapshot: &mut Snapshot,
+    cache: &mut HashMap<Identity, Process>,
+    limited: &mut usize,
+    cancel: &Cancellation,
+    original_error: &Error,
+) -> Result<()> {
+    // Restart Manager rejects some large user lists with error 6. Split
+    // a failed group before recovery so no user is assigned to every file.
+    if paths.len() > 1 {
+        let middle = paths.len() / 2;
+        correlate(&paths[..middle], snapshot, cache, limited, cancel)?;
+        correlate(&paths[middle..], snapshot, cache, limited, cancel)?;
+    } else {
+        match recover_native_file_users(&paths[0], snapshot, cancel) {
+            Ok(unavailable) => {
+                *limited += unavailable;
+                let warning = format!(
+                    "Restart Manager query failed: {original_error}; native file-user fallback recovered this file (reserved Windows query; users are not proven lock owners)."
+                );
+                if !snapshot.warnings.contains(&warning) {
+                    snapshot.warnings.push(warning);
+                }
+            }
+            Err(Error::Cancelled) => return Err(Error::Cancelled),
+            Err(recovery) => {
+                *limited += 1;
+                let warning = format!(
+                    "Restart Manager query failed: {original_error}; native file-user fallback failed: {recovery}"
+                );
+                if !snapshot.warnings.contains(&warning) {
+                    snapshot.warnings.push(warning);
+                }
+            }
+        }
+        cancel.record(InspectionCounter::Files, 1);
+    }
+    Ok(())
+}
+
+fn recover_native_file_users(
+    path: &Path,
+    snapshot: &mut Snapshot,
+    cancel: &Cancellation,
+) -> Result<usize> {
+    // Capture births before the PID-only query. A later PID reuse must never bind
+    // an old resource observation to a different lifetime or action target.
+    let identities = file_users::capture_identities(cancel)?;
+    let users = file_users::query(path, cancel)?;
+    let lock = sharing(path);
+    let mut unavailable = 0;
+    for pid in users {
+        cancel.check()?;
+        if pid == std::process::id() || pid == 0 {
+            continue;
+        }
+        let Some(identity) = identities.get(&pid) else {
+            unavailable += 1;
+            continue;
+        };
+        let mut process = match read_process(pid) {
+            Ok(process) if process.identity == *identity => process,
+            _ => {
+                unavailable += 1;
+                continue;
+            }
+        };
+        process.usages.push(Usage {
+            path: path.to_owned(),
+            relation: Relation::NativeFileUser,
+            ..Usage::default()
+        });
+        if let Some(lock) = &lock {
+            process.usages.push(Usage {
+                path: path.to_owned(),
+                relation: Relation::Locked,
+                lock: Some(lock.clone()),
+                ..Usage::default()
+            });
+        }
+        if read_identity(pid).is_ok_and(|current| current == *identity) {
+            snapshot.processes.push(process);
+        } else {
+            unavailable += 1;
+        }
+    }
+    Ok(unavailable)
 }
 
 pub(super) fn port_identity(pid: u32) -> Result<Identity> {
@@ -1335,5 +1434,41 @@ mod resource_worker_tests {
         assert!(
             matches!(result, Err(Error::Unavailable(message)) if message == "resource inspection worker panicked")
         );
+    }
+}
+
+#[cfg(test)]
+mod native_recovery_tests {
+    use super::*;
+
+    #[test]
+    fn recovery_is_limited_to_invalid_handle_errors() {
+        assert!(recoverable_resource_error(&io(
+            "query resource users",
+            std::io::Error::from_raw_os_error(6)
+        )));
+        assert!(!recoverable_resource_error(&io(
+            "query resource users",
+            std::io::Error::from_raw_os_error(5)
+        )));
+        assert!(!recoverable_resource_error(&Error::Cancelled));
+        assert!(!recoverable_resource_error(&Error::Unavailable(
+            "changing resources".into()
+        )));
+    }
+
+    #[test]
+    fn cancelled_recovery_stops_before_opening_native_resources() {
+        let cancel = Cancellation::default();
+        cancel.cancel();
+        assert!(matches!(
+            file_users::capture_identities(&cancel),
+            Err(Error::Cancelled)
+        ));
+        assert!(matches!(
+            file_users::query(Path::new("missing-fixture-file"), &cancel),
+            Err(Error::Cancelled)
+        ));
+        assert_eq!(cancel.progress().native_file_user_queries, 0);
     }
 }
