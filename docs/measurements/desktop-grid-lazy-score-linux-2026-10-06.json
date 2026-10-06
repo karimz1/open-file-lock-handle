@@ -1,0 +1,25 @@
+{
+  "arch": "x86_64",
+  "baseline": {
+    "indexing_ms": 35.817924,
+    "initial_search_ms": 40.038416,
+    "page_median_ms": 0.139071,
+    "page_p95_ms": 0.144781,
+    "pages": 100,
+    "processes": 500,
+    "rows": 50000,
+    "schema": 1
+  },
+  "candidate": {
+    "indexing_ms": 34.102187,
+    "initial_search_ms": 3.5723249999999998,
+    "page_median_ms": 0.13869199999999998,
+    "page_p95_ms": 0.14510099999999998,
+    "pages": 100,
+    "processes": 500,
+    "rows": 50000,
+    "schema": 1
+  },
+  "os": "linux",
+  "schema": 1
+}
