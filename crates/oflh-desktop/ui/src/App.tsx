@@ -49,7 +49,6 @@ import {
 } from "./api";
 import { acceptStatus, initialStatus, selectKey } from "./state";
 import { InspectionOverlay } from "./InspectionOverlay";
-import { BackgroundInspection } from "./BackgroundInspection";
 import { Inspector } from "./Inspector";
 import { Modal } from "./Modal";
 import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
@@ -65,6 +64,7 @@ import { AboutDialog } from "./AboutDialog";
 import { SettingsMenu } from "./SettingsMenu";
 import { useUpdates } from "./useUpdates";
 import { UpdateBanner } from "./UpdateBanner";
+import { BackgroundInspection } from "./BackgroundInspection";
 import { UpdateFeedback } from "./UpdateFeedback";
 import {
   languageOptions,
@@ -1773,29 +1773,34 @@ export function App() {
         </main>
       </div>
       <footer className="statusbar">
-        {backgroundScan && scanBusy ? (
-          <BackgroundInspection
-            status={status}
-            starting={startingScan}
-            complete={apply}
-          />
-        ) : (
-          <span className="status-current" role="status">
-            {status.scanning && <LoaderCircle size={13} className="spin" />}
-            <span className="status-current-label">
-              {status.scanning
-                ? t("inspection.k_scanning")
-                : status.revision
-                  ? t(
-                      backgroundScan &&
-                        status.revision > backgroundRevision.current
-                        ? "inspection.k_results_refreshed"
-                        : "inspection.k_inspection_complete",
-                    )
-                  : t("inspection.k_ready_to_inspect")}
-            </span>
-          </span>
-        )}
+        <span
+          className="status-current"
+          role={backgroundScan && scanBusy ? undefined : "status"}
+        >
+          {backgroundScan && scanBusy ? (
+            <BackgroundInspection
+              status={status}
+              starting={startingScan}
+              complete={apply}
+            />
+          ) : (
+            <>
+              {status.scanning && <LoaderCircle size={13} className="spin" />}
+              <span className="status-current-label">
+                {status.scanning
+                  ? t("inspection.k_scanning")
+                  : status.revision
+                    ? t(
+                        backgroundScan &&
+                          status.revision > backgroundRevision.current
+                          ? "inspection.k_results_refreshed"
+                          : "inspection.k_inspection_complete",
+                      )
+                    : t("inspection.k_ready_to_inspect")}
+              </span>
+            </>
+          )}
+        </span>
         <span className="status-metrics">
           {status.processes} {t("status.k_file_users")} · {status.usages}{" "}
           {t("status.k_file_usages_d01933d6")} · {status.ports}{" "}

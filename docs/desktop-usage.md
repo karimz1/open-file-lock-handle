@@ -213,7 +213,9 @@ GitHub Sponsors, or PayPal. The selected service opens in your browser.
 
 ## Long-running inspections
 
-For a new target or manual refresh, a modal progress panel blocks workspace actions and reload shortcuts. It shows elapsed time, the current stage and native work counts. The total is unknown; the bar does not imply a percentage. Windows file counts are distinct from descriptors, mappings or module references. Results may still be partial because of permissions or platform limits.
+While an inspection is running, a modal progress panel blocks workspace actions and reload shortcuts. It shows elapsed time, the current stage and native work counts. The total is unknown; the bar does not imply a percentage. Windows file counts are distinct from descriptors, mappings or module references. Results may still be partial because of permissions or platform limits.
+This modal panel applies to opening a new target or manually refreshing. Automatic
+refresh uses the footer described in [Keyboard and refresh](#keyboard-and-refresh).
 
 Use **Cancel** to keep the previous accepted results and stop the current request cooperatively. A native call already running can finish later; its results cannot replace the accepted snapshot. F5, automatic refresh and other targets cannot restart an active inspection. Automatic refresh waits a full selected interval after completion or cancellation.
 
