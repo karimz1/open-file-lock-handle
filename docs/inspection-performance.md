@@ -2,6 +2,38 @@
 
 Linux, macOS and the Windows folder backend enumerate process references instead of every unused file below a folder. Windows uses an owned headless helper for live disk handles and data mappings, alongside existing executable/module discovery. Healthy folder inspection has no 10,000-file cap or process-count cutoff. Permissions, native-query failures and unsupported paths remain explicit limitations; observations do not prove lock ownership. Individual files retain Restart Manager and the identity-aware native recovery backend. An embedding binary without a helper uses an explicitly limited Restart Manager folder fallback.
 
+## Recorded Windows results
+
+The final handle backend was compared with the parallel Restart Manager backend
+from PR #63 on native GitHub runners. Five alternating timed samples after one
+warmup preserved equivalent synthetic fixture evidence:
+
+| Target | Fixture | Baseline median | Handle backend median |
+| --- | --- | ---: | ---: |
+| Windows x64 | 2,048 files, 8 held | 795.589 ms | 310.709 ms |
+| Windows x64 | 2,048 files, 128 held | 3,302.953 ms | 315.291 ms |
+| Windows x64 | 2,048 unused files | 215.860 ms | 302.405 ms |
+| Windows ARM64 | 2,048 files, 8 held | 989.248 ms | 345.099 ms |
+| Windows ARM64 | 2,048 files, 128 held | 5,383.856 ms | 353.413 ms |
+| Windows ARM64 | 2,048 unused files | 213.727 ms | 353.960 ms |
+
+These measurements improve occupied folders while adding about 87–140 ms for
+the empty fixture. Process-reference work is independent of unused entry count;
+it still visits accessible system references for an empty target. The native
+[x64 data](measurements/inspection-windows-x64-2026-10-06.json) and
+[ARM64 data](measurements/inspection-windows-arm64-2026-10-06.json) preserve counters,
+sample counts and p95 timings from [the final Windows CI run](https://github.com/karimz1/open-file-lock-handle/actions/runs/37474997933).
+Shared-runner measurements are diagnostic and do not promise these latencies on
+every machine, filesystem or filter driver.
+
+Single whole-`C:\` diagnostics finished in 352.474 ms on x64 and 509.999 ms on
+ARM64, without a helper stall or directory cap. They returned 137/144 visible
+users, 8,754/10,241 references, and 10/9 warnings respectively. Live roots have
+changing, permission-limited and unequal coverage: their baseline timings do
+not establish a speedup ratio, complete access to protected processes, or an OS
+speed ranking. [Issue 62 records the design goals, discovered sharing-probe stall,
+coverage gates and future profiling targets](https://github.com/karimz1/open-file-lock-handle/issues/62#issuecomment-6018347156).
+
 ## Native comparison
 
 `inspection_profile` is a developer example; its helpers and dependencies are excluded from `cargo build --release --locked --bin oflh`. It creates 2,048 synthetic files in 16 folders and holds 8 files for the sparse fixture or 128 for the dense fixture in a separate process. The idle fixture has 2,048 unused files in one directory. Each held file must be discovered. The candidate must retain the same fixture users, paths, access, deletion and sharing-conflict evidence before timings are accepted. Windows `open`, `restart manager` and `native file user` sources are compared as file-user associations; their different evidence sources remain distinct in application rows. Other relations remain exact. This comparison does not certify arbitrary live-system coverage; independent native regressions cover additional handle and mapping cases.
@@ -31,7 +63,7 @@ Counters belong to one cancellation token. Clones share the same progress; a new
 
 ## Windows changes and remaining costs
 
-The limited Restart Manager fallback uses a bounded pool of two workers per logical CPU, capped at eight, with at most two queued 128-file batches per worker. Enumeration and resource queries overlap. Each worker owns its process metadata cache and native sessions; no query runs under the queue lock. Every worker is joined before results are published. Cancellation stops dispatch and queued work, while a native call already running can finish later. `resource_workers` records the actual worker count; `resource_query_ms` sums overlapping calls and can exceed scan elapsed time. This is an algorithm experiment whose native timing artifacts determine whether it should be retained.
+The limited Restart Manager fallback uses a bounded pool of two workers per logical CPU, capped at eight, with at most two queued 128-file batches per worker. Enumeration and resource queries overlap. Each worker owns its process metadata cache and native sessions; no query runs under the queue lock. Every worker is joined before results are published. Cancellation stops dispatch and queued work, while a native call already running can finish later. `resource_workers` records the actual worker count; `resource_query_ms` sums overlapping calls and can exceed scan elapsed time. Its native comparisons are recorded in [PR #63](https://github.com/karimz1/open-file-lock-handle/pull/63); the handle backend removes folder traversal from healthy production inspection.
 
 Parallel directory batches stay at 128 to avoid excessive subdivisions in occupied areas. Single-file inspection and the serial regression helper retain the following adaptive policy.
 
@@ -53,7 +85,7 @@ cargo run --release --locked -p oflh-platform --example windows_native_probe --f
 
 The probe measures discovery of 128 held files among 2,048 files, then checks 160 processes sharing one file against both the direct query and the current backend. Discovery timings exclude process metadata, birth validation, mappings and lock evidence; they must not be presented as complete inspection speedups. It reads file metadata, not file contents. Variable-length native results are checked against the SDK layout and returned byte count; an exceeded buffer budget is an error, never a truncated list.
 
-[Microsoft reserves `FileProcessIdsUsingFileInformation` for system use](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/ne-wdm-_file_information_class). Its production use is limited to compatibility recovery after Restart Manager error 6, with explicit warnings and failures. It remains the individual-file/fallback compatibility path; the handle backend supplies uncapped folder discovery. A strategy for huge folders still needs to avoid walking every unused file. Track these decisions in [the Windows algorithm investigation](https://github.com/karimz1/open-file-lock-handle/issues/62).
+[Microsoft reserves `FileProcessIdsUsingFileInformation` for system use](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/ne-wdm-_file_information_class). Its production use is limited to compatibility recovery after Restart Manager error 6, with explicit warnings and failures. It remains the individual-file/fallback compatibility path; the handle backend supplies uncapped folder discovery without walking unused files. Track these decisions in [the Windows algorithm investigation](https://github.com/karimz1/open-file-lock-handle/issues/62).
 
 The same probe also experiments with one system-wide handle snapshot and parallel inspection of open disk handles. It derives the file object type from its own live metadata handle, verifies the [phnt native record layout](https://github.com/winsiderss/phnt/blob/master/ntexapi.h), duplicates handles into owned guards and rejects observations after the source process exits or its birth identity changes. It does not cache results by kernel object address. Permission failures and handles that disappear are counted explicitly. This scope omits mappings whose file handles have closed, modules and lock evidence; it is not a complete replacement backend.
 
@@ -132,8 +164,9 @@ offline-file and other native failures remain explicit unknown evidence with
 original status codes. An independent read/handle oplock fixture deliberately
 withholds break acknowledgment and requires complete folder discovery without a
 false sharing-conflict row. Other filesystem/filter calls can still block, so
-the owned-helper stall protection remains. Native profiling must validate this
-change before a whole-drive improvement is claimed.
+the owned-helper stall protection remains. The recorded native diagnostics above
+finished without the previously observed sharing-probe stall; they do not certify
+that every filesystem/filter operation will finish promptly.
 
 ## macOS process workers and phase profiling
 
@@ -151,8 +184,8 @@ The profiler reports `process_workers`, `process_metadata_ms`, `descriptor_ms`,
 mappings, and lock probes. Concurrent durations are summed
 and can exceed elapsed time; they identify work, not a sequential breakdown of
 latency. Native six-target CI compares the same held-file fixtures against the PR
-base. Concurrency is under evaluation until those measurements and native
-regressions pass; no macOS speedup is inferred from Linux worker tests. Track the
+base and requires native regressions on both macOS architectures. No macOS
+speedup is inferred from Linux worker tests. Track the
 results and further decisions in [the macOS investigation](https://github.com/karimz1/open-file-lock-handle/issues/66).
 
 ## Desktop search and navigation

@@ -1,0 +1,150 @@
+{
+  "arch": "aarch64",
+  "fixtures": [
+    {
+      "baseline": {
+        "median_ms": 989.248,
+        "p95_ms": 1007.342,
+        "samples": 5
+      },
+      "candidate": {
+        "median_ms": 345.0994,
+        "p95_ms": 349.7996,
+        "samples": 5
+      },
+      "counters": {
+        "directories": 0,
+        "file_identity_queries": 0,
+        "files": 8,
+        "mapped_names": 5835,
+        "memory_regions": 120501,
+        "module_snapshot_ms": 46.328,
+        "module_snapshots": 149,
+        "native_file_user_queries": 0,
+        "native_handle_names": 1461,
+        "native_handle_snapshot_ms": 8.934,
+        "native_handle_snapshots": 1,
+        "processes": 149,
+        "resource_queries": 0,
+        "resource_query_ms": 0.0,
+        "resource_workers": 8,
+        "resources": 14868
+      },
+      "coverage_rows": 16,
+      "equivalent_fixture_coverage": true,
+      "files": 2048,
+      "fixture": "sparse",
+      "held_files": 8
+    },
+    {
+      "baseline": {
+        "median_ms": 5383.856,
+        "p95_ms": 5525.629,
+        "samples": 5
+      },
+      "candidate": {
+        "median_ms": 353.41319999999996,
+        "p95_ms": 357.8866,
+        "samples": 5
+      },
+      "counters": {
+        "directories": 0,
+        "file_identity_queries": 0,
+        "files": 128,
+        "mapped_names": 5855,
+        "memory_regions": 121835,
+        "module_snapshot_ms": 50.977,
+        "module_snapshots": 149,
+        "native_file_user_queries": 0,
+        "native_handle_names": 1573,
+        "native_handle_snapshot_ms": 9.143,
+        "native_handle_snapshots": 1,
+        "processes": 149,
+        "resource_queries": 0,
+        "resource_query_ms": 0.0,
+        "resource_workers": 8,
+        "resources": 15098
+      },
+      "coverage_rows": 256,
+      "equivalent_fixture_coverage": true,
+      "files": 2048,
+      "fixture": "dense",
+      "held_files": 128
+    },
+    {
+      "baseline": {
+        "median_ms": 213.727,
+        "p95_ms": 242.705,
+        "samples": 5
+      },
+      "candidate": {
+        "median_ms": 353.9601,
+        "p95_ms": 379.6686,
+        "samples": 5
+      },
+      "counters": {
+        "directories": 0,
+        "file_identity_queries": 0,
+        "files": 0,
+        "mapped_names": 5854,
+        "memory_regions": 121223,
+        "module_snapshot_ms": 48.063,
+        "module_snapshots": 149,
+        "native_file_user_queries": 0,
+        "native_handle_names": 1450,
+        "native_handle_snapshot_ms": 9.008,
+        "native_handle_snapshots": 1,
+        "processes": 149,
+        "resource_queries": 0,
+        "resource_query_ms": 0.0,
+        "resource_workers": 8,
+        "resources": 14914
+      },
+      "coverage_rows": 0,
+      "equivalent_fixture_coverage": true,
+      "files": 2048,
+      "fixture": "idle",
+      "held_files": 0
+    }
+  ],
+  "os": "windows",
+  "schema": 1,
+  "whole_root": {
+    "baseline": {
+      "elapsed_ms": 48915.664,
+      "outcome": "completed"
+    },
+    "budget_seconds": 120,
+    "candidate": {
+      "directory_cap_reached": false,
+      "elapsed_ms": 509.99859999999995,
+      "helper_stalled": false,
+      "outcome": "completed",
+      "processes": 144,
+      "stalled_operations": [],
+      "usages": 10241,
+      "warning_count": 9
+    },
+    "candidate_scope": "process references; no disk traversal",
+    "counters": {
+      "directories": 0,
+      "file_identity_queries": 0,
+      "files": 839,
+      "mapped_names": 5833,
+      "memory_regions": 120941,
+      "module_snapshot_ms": 48.819,
+      "module_snapshots": 148,
+      "native_file_user_queries": 0,
+      "native_handle_names": 1447,
+      "native_handle_snapshot_ms": 8.879,
+      "native_handle_snapshots": 1,
+      "processes": 148,
+      "resource_queries": 0,
+      "resource_query_ms": 0.0,
+      "resource_workers": 8,
+      "resources": 14848
+    },
+    "equivalent_coverage": false,
+    "scope": "root process references; subject to permissions and native failures"
+  }
+}
