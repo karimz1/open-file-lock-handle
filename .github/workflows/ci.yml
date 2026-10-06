@@ -63,6 +63,8 @@ jobs:
           cargo fmt --all --check
           cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Unit and native lock tests
+        env:
+          OFLH_TRACE_NATIVE_TESTS: '1'
         run: cargo test --workspace --exclude oflh --locked
       - name: Real terminal workflow
         run: cargo test -p oflh --locked

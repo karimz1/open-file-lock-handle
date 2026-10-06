@@ -12,6 +12,65 @@ use std::{
     time::Duration,
 };
 struct ChildGuard(Child);
+
+/// Optional CI breadcrumbs contain aggregate work only. They neither cancel
+/// native work nor change test scheduling; a blocked call remains a test failure.
+trait NativeTestScan: Backend {
+    #[track_caller]
+    fn traced_scan(&mut self, target: &Target, cancel: &Cancellation) -> Result<Snapshot> {
+        if std::env::var_os("OFLH_TRACE_NATIVE_TESTS").is_none() {
+            return self.scan(target, cancel);
+        }
+        static NEXT_SCAN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let scan = NEXT_SCAN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let line = std::panic::Location::caller().line();
+        let started = std::time::Instant::now();
+        native_trace(format_args!(
+            "OFLH native test scan {scan} line {line}: starting"
+        ));
+        std::thread::scope(|scope| {
+            let (finished, receiver) = mpsc::sync_channel(1);
+            let _finish = FinishTrace(finished);
+            scope.spawn(move || {
+                while matches!(
+                    receiver.recv_timeout(Duration::from_secs(5)),
+                    Err(mpsc::RecvTimeoutError::Timeout)
+                ) {
+                    native_trace(format_args!(
+                        "OFLH native test scan {scan}: elapsed_ms={} progress={:?}",
+                        started.elapsed().as_millis(),
+                        cancel.progress()
+                    ));
+                }
+            });
+            let result = self.scan(target, cancel);
+            native_trace(format_args!(
+                "OFLH native test scan {scan}: finished success={} elapsed_ms={} progress={:?}",
+                result.is_ok(),
+                started.elapsed().as_millis(),
+                cancel.progress()
+            ));
+            result
+        })
+    }
+}
+impl<Scanner: Backend + ?Sized> NativeTestScan for Scanner {}
+
+fn native_trace(message: std::fmt::Arguments<'_>) {
+    // Write directly to stderr: libtest's per-test capture otherwise withholds
+    // the very breadcrumbs needed when a test cannot finish. Logging failures
+    // must not replace the inspection result or alter its evidence.
+    let _ = writeln!(std::io::stderr().lock(), "{message}");
+}
+
+struct FinishTrace(mpsc::SyncSender<()>);
+impl Drop for FinishTrace {
+    fn drop(&mut self) {
+        // Release the observer on completion and unwinding before scope joins it.
+        // Capacity one guarantees this single completion message cannot block.
+        let _ = self.0.send(());
+    }
+}
 #[cfg(windows)]
 fn native() -> Result<Box<dyn Backend>> {
     oflh_platform::native_with_inspection_helper(
@@ -74,7 +133,9 @@ fn start(path: &Path, mode: &str) -> ChildGuard {
 }
 fn process(backend: &mut dyn Backend, path: &Path, pid: u32) -> Process {
     let target = Target::new(path).unwrap();
-    let result = backend.scan(&target, &Cancellation::default()).unwrap();
+    let result = backend
+        .traced_scan(&target, &Cancellation::default())
+        .unwrap();
     result
         .processes
         .into_iter()
@@ -294,7 +355,9 @@ fn native_lock_modes_and_release() {
         let target = Target::new(&path).unwrap();
         let until = std::time::Instant::now() + Duration::from_secs(5);
         loop {
-            let r = backend.scan(&target, &Cancellation::default()).unwrap();
+            let r = backend
+                .traced_scan(&target, &Cancellation::default())
+                .unwrap();
             if !r.processes.iter().any(|p| {
                 p.identity.pid == child.0.id() && p.usages.iter().any(|u| u.lock.is_some())
             }) {
@@ -318,7 +381,7 @@ fn native_cancellation_and_protection() {
     let c = Cancellation::default();
     c.cancel();
     assert!(matches!(
-        b.scan(&Target::new(".").unwrap(), &c),
+        b.traced_scan(&Target::new(".").unwrap(), &c),
         Err(Error::Cancelled)
     ));
     for pid in [0, 1, std::process::id()] {
@@ -374,7 +437,7 @@ fn deleted_replacement_and_hardlink() {
     assert!(p.usages.iter().any(|u| u.deleted));
     fs::write(&path, vec![1; 4096]).unwrap();
     let result = b
-        .scan(&Target::new(&path).unwrap(), &Cancellation::default())
+        .traced_scan(&Target::new(&path).unwrap(), &Cancellation::default())
         .unwrap();
     assert!(
         !result
@@ -419,7 +482,7 @@ fn native_parent_termination() {
     let until = std::time::Instant::now() + Duration::from_secs(10);
     loop {
         let r = b
-            .scan(&Target::new(&path).unwrap(), &Cancellation::default())
+            .traced_scan(&Target::new(&path).unwrap(), &Cancellation::default())
             .unwrap();
         if !r
             .processes
@@ -533,7 +596,7 @@ fn directory_batches_keep_distinct_native_file_users_and_progress() {
     let second_observation = process(&mut *backend, &second_file, second_child.0.id());
     let cancel = Cancellation::default();
     let snapshot = backend
-        .scan(&Target::new(directory.path()).unwrap(), &cancel)
+        .traced_scan(&Target::new(directory.path()).unwrap(), &cancel)
         .unwrap();
     for expected in [&first_observation, &second_observation] {
         let observed = snapshot
@@ -611,7 +674,7 @@ fn directory_inspection_retains_more_than_150_distinct_native_users() {
     }
     let snapshot = native()
         .unwrap()
-        .scan(&Target::new(&data).unwrap(), &Cancellation::default())
+        .traced_scan(&Target::new(&data).unwrap(), &Cancellation::default())
         .unwrap();
     let observed: std::collections::BTreeSet<_> = snapshot
         .processes
@@ -923,7 +986,7 @@ fn handle_scan_finds_late_files_without_traversal_or_ten_thousand_file_cap() {
     let cancel = Cancellation::default();
     let snapshot = native()
         .unwrap()
-        .scan(&Target::new(directory.path()).unwrap(), &cancel)
+        .traced_scan(&Target::new(directory.path()).unwrap(), &cancel)
         .unwrap();
     let expected = Target::new(&held).unwrap().path;
     assert!(snapshot.processes.iter().any(|process| {
@@ -956,7 +1019,7 @@ fn directory_handle_and_closed_file_mapping_remain_visible() {
     let held_directory = start(directory.path(), "directory");
     let snapshot = native()
         .unwrap()
-        .scan(
+        .traced_scan(
             &Target::new(directory.path()).unwrap(),
             &Cancellation::default(),
         )
@@ -997,7 +1060,7 @@ fn directory_sharing_probe_does_not_wait_for_an_unacknowledged_oplock_break() {
     let child = start(&path, "oplock");
     let snapshot = native()
         .unwrap()
-        .scan(
+        .traced_scan(
             &Target::new(directory.path()).unwrap(),
             &Cancellation::default(),
         )
@@ -1041,7 +1104,7 @@ fn directory_inspection_keeps_read_only_write_only_and_metadata_only_handles() {
     }
     let snapshot = native()
         .unwrap()
-        .scan(
+        .traced_scan(
             &Target::new(directory.path()).unwrap(),
             &Cancellation::default(),
         )
@@ -1085,7 +1148,7 @@ fn directory_inspection_retains_an_outside_opened_hard_link_and_deleted_referenc
     let expected_deleted = target.path.join("deleted.bin");
     let snapshot = native()
         .unwrap()
-        .scan(&target, &Cancellation::default())
+        .traced_scan(&target, &Cancellation::default())
         .unwrap();
     assert!(snapshot.processes.iter().any(|process| {
         process.identity.pid == alias_child.0.id()
