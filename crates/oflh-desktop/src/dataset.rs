@@ -242,18 +242,33 @@ impl Dataset {
             // As in the TUI, metadata may satisfy terms, but all remaining terms
             // must match one observation rather than unrelated paths in the same process.
             let file_query = query.file_terms(&index.metadata, &mut scratch);
+            // Metadata is immutable across usages. Ranking is needed only for
+            // relevance ordering, and its metadata score is shared by this process.
+            let relevance = request.sort == Sort::Relevance;
+            let metadata_score = if relevance && request.handles {
+                query.score(&index.metadata, &mut scratch)
+            } else {
+                0
+            };
             for (usage_index, fields) in index.usages.iter().enumerate() {
                 if request.locks_only && process.usages[usage_index].lock.is_none() {
                     continue;
                 }
                 if file_query.matches(fields, &mut scratch) {
                     if !request.handles {
-                        matches.push((process_index, None, index.score(&query, &mut scratch)));
+                        let score = if relevance {
+                            index.score(&query, &mut scratch)
+                        } else {
+                            0
+                        };
+                        matches.push((process_index, None, score));
                         break;
                     }
-                    let score = query
-                        .score(fields, &mut scratch)
-                        .max(query.score(&index.metadata, &mut scratch));
+                    let score = if relevance {
+                        query.score(fields, &mut scratch).max(metadata_score)
+                    } else {
+                        0
+                    };
                     matches.push((process_index, Some(usage_index), score));
                 }
             }
@@ -635,6 +650,66 @@ mod tests {
                 warnings: vec![],
             },
         )
+    }
+    #[test]
+    fn relevance_and_column_sorts_keep_metadata_and_file_matches_with_stable_order() {
+        let dataset = Dataset::new(
+            1,
+            Snapshot {
+                processes: [
+                    (10, "worker", "z", "zzz.bin"),
+                    (20, "other", "a", "worker.bin"),
+                ]
+                .into_iter()
+                .map(|(pid, name, exe, file)| Process {
+                    identity: Identity {
+                        pid,
+                        started: 10,
+                        ..Identity::default()
+                    },
+                    name: name.into(),
+                    executable: PathBuf::from(format!("/fixture/{exe}")),
+                    usages: vec![Usage {
+                        path: PathBuf::from(format!("/fixture/{file}")),
+                        ..Usage::default()
+                    }],
+                    ..Process::default()
+                })
+                .collect(),
+                warnings: vec![],
+            },
+        );
+        for handles in [false, true] {
+            for (sort, expected) in [
+                (Sort::Relevance, [10, 20]),
+                (Sort::Pid, [10, 20]),
+                (Sort::Name, [20, 10]),
+                (Sort::Path, [20, 10]),
+                (Sort::Cpu, [10, 20]),
+                (Sort::Memory, [10, 20]),
+            ] {
+                let mut query = TableQuery {
+                    handles,
+                    sort,
+                    text: "worker".into(),
+                    limit: 200,
+                    ..TableQuery::default()
+                };
+                for descending in [false, true] {
+                    query.descending = descending;
+                    let page = dataset.page(&query).unwrap();
+                    assert_eq!(page.total, 2);
+                    let mut expected = expected;
+                    if descending && !matches!(sort, Sort::Cpu | Sort::Memory) {
+                        expected.reverse();
+                    }
+                    assert_eq!(
+                        page.rows.iter().map(|row| row.pid).collect::<Vec<_>>(),
+                        expected
+                    );
+                }
+            }
+        }
     }
     #[test]
     fn column_filters_disambiguate_shared_paths_and_bound_unknown_metrics() {
