@@ -34,7 +34,7 @@ jobs:
     needs: lockfile
     name: Native Rust TUI + scanner / ${{ matrix.label }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 25
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -63,6 +63,8 @@ jobs:
           cargo fmt --all --check
           cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Unit and native lock tests
+        env:
+          OFLH_TRACE_NATIVE_TESTS: '1'
         run: cargo test --workspace --exclude oflh --locked
       - name: Real terminal workflow
         run: cargo test -p oflh --locked
@@ -70,6 +72,42 @@ jobs:
         run: |
           cargo test -p oflh --test terminal --locked
           cargo test -p oflh --test terminal --locked
+      - name: Check out comparison baseline
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha || 'main' }}
+          path: .profile-base
+          persist-credentials: false
+      - name: Build native fixture profilers
+        run: |
+          cargo build --release --locked --manifest-path .profile-base/Cargo.toml -p oflh-platform --example scan_bench
+          cargo build --release --locked -p oflh-platform --example inspection_profile
+      - name: Compare native inspection with equivalent fixture coverage
+        run: |
+          mkdir -p inspection-profiles
+          ./target/release/examples/inspection_profile${{ matrix.os == 'windows' && '.exe' || '' }} --baseline .profile-base/target/release/examples/scan_bench${{ matrix.os == 'windows' && '.exe' || '' }} --whole-disk --budget-seconds 120 > inspection-profiles/${{ matrix.os }}-${{ matrix.arch }}.json
+      - name: Upload native inspection measurements
+        uses: actions/upload-artifact@v7
+        with:
+          name: inspection-profile-${{ matrix.os }}-${{ matrix.arch }}
+          path: inspection-profiles/*.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Profile large desktop grid queries
+        run: |
+          mkdir -p .profile-base/crates/oflh-desktop/examples
+          cp crates/oflh-desktop/examples/grid_profile.rs .profile-base/crates/oflh-desktop/examples/grid_profile.rs
+          cargo build --release --locked --manifest-path .profile-base/Cargo.toml -p oflh-desktop --example grid_profile
+          cargo build --release --locked -p oflh-desktop --example grid_profile
+          mkdir -p grid-profiles
+          ./target/release/examples/grid_profile${{ matrix.os == 'windows' && '.exe' || '' }} --baseline .profile-base/target/release/examples/grid_profile${{ matrix.os == 'windows' && '.exe' || '' }} > grid-profiles/${{ matrix.os }}-${{ matrix.arch }}.json
+      - name: Upload desktop grid measurements
+        uses: actions/upload-artifact@v7
+        with:
+          name: grid-profile-${{ matrix.os }}-${{ matrix.arch }}
+          path: grid-profiles/*.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Set traceable build identity
         run: |
           cargo xtask ci-version --version "$RELEASE_TAG" --commit "$BUILD_COMMIT" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" --repository "$GITHUB_REPOSITORY" --server-url "$GITHUB_SERVER_URL" --pr-number "$PR_NUMBER" --github-env "$GITHUB_ENV"
@@ -87,3 +125,23 @@ jobs:
           path: dist/oflh-cli.*
           if-no-files-found: error
           retention-days: 1
+  inspection-summary:
+    name: Compare six native inspection profiles
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: inspection-profile-*
+          path: inspection-profiles
+          merge-multiple: true
+      - name: Summarize native coverage and timings
+        run: cargo xtask inspection-summary --input inspection-profiles --output inspection-summary.md
+      - name: Publish comparison in the workflow summary
+        run: cat inspection-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: inspection-summary
+          path: inspection-summary.md
+          retention-days: 14

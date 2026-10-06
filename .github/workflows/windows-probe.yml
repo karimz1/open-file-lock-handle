@@ -1,0 +1,44 @@
+name: Windows discovery experiments
+on:
+  pull_request:
+    paths:
+      - 'crates/oflh-platform/examples/windows_native_probe.rs'
+      - 'crates/oflh-platform/examples/windows_probe/**'
+      - 'crates/oflh-platform/Cargo.toml'
+      - '.github/workflows/windows-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    name: Native discovery / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: windows-2025 }
+          - { arch: arm64, runner: windows-11-arm }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pinned Rust toolchain
+        run: rustup show
+      - name: Check experimental native boundary
+        run: |
+          cargo clippy --locked -p oflh-platform --example windows_native_probe --features native-query-experiment -- -D warnings
+          cargo test --locked -p oflh-platform --example windows_native_probe --features native-query-experiment
+      - name: Measure synthetic discovery only
+        run: |
+          cargo build --release --locked -p oflh-platform --example windows_native_probe --features native-query-experiment
+          mkdir -p windows-probes
+          ./target/release/examples/windows_native_probe.exe > windows-probes/windows-${{ matrix.arch }}.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-discovery-probe-${{ matrix.arch }}
+          path: windows-probes/*.json
+          if-no-files-found: error
+          retention-days: 14

@@ -76,6 +76,14 @@ test.beforeEach(async ({ page }) => {
       generation: 1,
       revision: 1,
       scanning: false,
+      elapsed_ms: 0,
+      progress: {
+        phase: "processes",
+        processes: 0,
+        resources: 0,
+        files: 0,
+        directories: 0,
+      },
       target: "/workspace/project",
       processes: 1500,
       ports: 2,
@@ -145,7 +153,28 @@ test.beforeEach(async ({ page }) => {
           }
           if (command === "plugin:process|restart") return;
           if (command === "system_info") return { os: "linux", arch: "x86_64" };
-          if (command === "status") return status;
+          if (command === "status") {
+            if (status.scanning) {
+              status = {
+                ...status,
+                elapsed_ms: status.elapsed_ms + 250,
+                progress: {
+                  phase: "files",
+                  files: status.progress.files + 128,
+                  resources: 512,
+                  processes: 32,
+                  directories: 4,
+                },
+              };
+            }
+            return status;
+          }
+          if (command === "cancel")
+            return (status = {
+              ...status,
+              generation: status.generation + 1,
+              scanning: false,
+            });
           if (command === "recent") return recentTargets;
           if (command === "remove_recent") {
             recentTargets = recentTargets.filter(
@@ -158,11 +187,16 @@ test.beforeEach(async ({ page }) => {
             return;
           }
           if (command === "refresh" && (window as any).__holdRefreshForTest) {
-            return (status = {
+            const acknowledgement = (status = {
               ...status,
               generation: status.generation + 1,
               scanning: true,
             });
+            if ((window as any).__delayRefreshAck)
+              return new Promise((resolve) => {
+                (window as any).__ackRefresh = () => resolve(acknowledgement);
+              });
+            return acknowledgement;
           }
           if (command === "reveal" && (window as any).__failReveal) {
             throw {
@@ -348,6 +382,8 @@ test.beforeEach(async ({ page }) => {
         },
       },
       __emitTestEvent(event: string, payload: unknown) {
+        if (event === "scan-status" && payload && typeof payload === "object")
+          status = { ...status, ...payload };
         for (const [id, callback] of callbacks) {
           if (callbackEvents.get(id) === event) {
             callback({ event, id, payload });
@@ -749,14 +785,16 @@ test("automatic reload help closes outside and with Escape", async ({
 
 test("scan progress does not move the results grid", async ({ page }) => {
   await page.goto("/");
-  const grid = page.getByRole("grid");
+  const grid = page.locator(".table-scroll");
   const before = await grid.boundingBox();
   await page.evaluate(() => {
     (window as any).__holdRefreshForTest = true;
   });
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(
-    page.getByRole("status").filter({ hasText: "Scanning" }),
+    page
+      .getByRole("dialog")
+      .getByRole("heading", { name: "Scanning", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Cancel", exact: true }),
@@ -1703,7 +1741,7 @@ test("double-click auto-fit includes offscreen matches and preserves virtualizat
   await expect(grid.getByText("4001", { exact: true })).toBeVisible();
   await process.scrollIntoViewIfNeeded();
   await process.focus();
-  await page.keyboard.press("Enter");
+  await process.dblclick();
   await expect
     .poll(async () => Number(await process.getAttribute("aria-valuenow")))
     .toBeLessThan(200);
@@ -1719,7 +1757,7 @@ test("auto-fit works for every file and port column and scales with the font", a
   for (const divider of await grid.getByRole("separator").all()) {
     await divider.scrollIntoViewIfNeeded();
     await divider.focus();
-    await page.keyboard.press("Enter");
+    await divider.dblclick();
     await expect(divider).toHaveAttribute("aria-busy", "false");
     expect(
       Number(await divider.getAttribute("aria-valuenow")),
@@ -1737,7 +1775,7 @@ test("auto-fit works for every file and port column and scales with the font", a
   await page.keyboard.press("Control+1");
   await expect(grid.getByText("4000", { exact: true })).toBeVisible();
   await name.focus();
-  await page.keyboard.press("Enter");
+  await name.dblclick();
   await expect
     .poll(async () => Number(await name.getAttribute("aria-valuenow")))
     .toBeGreaterThan(small);
@@ -1746,7 +1784,7 @@ test("auto-fit works for every file and port column and scales with the font", a
   for (const divider of await grid.getByRole("separator").all()) {
     await divider.scrollIntoViewIfNeeded();
     await divider.focus();
-    await page.keyboard.press("Enter");
+    await divider.dblclick();
     await expect(divider).toHaveAttribute("aria-busy", "false");
     expect(
       Number(await divider.getAttribute("aria-valuenow")),
@@ -1773,7 +1811,7 @@ test("changing filters cancels an in-flight column auto-fit", async ({
     exact: true,
   });
   await divider.focus();
-  await page.keyboard.press("Enter");
+  await divider.dblclick();
   await expect(divider).toHaveAttribute("aria-busy", "true");
   await expect
     .poll(() => page.evaluate(() => !!(window as any).__releaseFitForTest))
@@ -2773,3 +2811,233 @@ for (const [locale, settings, star] of [
     });
   }
 }
+
+test("inspection barrier blocks manual and automatic reloads, shows work, and resumes after cancellation", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page
+    .getByRole("button", { name: "Automatic refresh interval" })
+    .click();
+  await page.getByRole("option", { name: "5s", exact: true }).click();
+  await page.evaluate(() => {
+    (window as any).__holdRefreshForTest = true;
+  });
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Scanning", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("progressbar")).not.toHaveAttribute(
+    "aria-valuenow",
+  );
+  await page.keyboard.press("F5");
+  await page.keyboard.press("Control+r");
+  await page.keyboard.press("Control+o");
+  await page.keyboard.press("Escape");
+  await page.clock.runFor(6100);
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("files checked");
+  await expect(dialog).toContainText("512 references checked");
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "refresh",
+        ).length,
+    ),
+  ).toBe(1);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "choose",
+        ).length,
+    ),
+  ).toBe(0);
+  await page.screenshot({ path: "test-results/inspection-progress.png" });
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await page.clock.runFor(4900);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "refresh",
+        ).length,
+    ),
+  ).toBe(1);
+  await page.clock.runFor(200);
+  await expect(dialog).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "refresh",
+        ).length,
+    ),
+  ).toBe(2);
+});
+
+test("delayed scan acknowledgment cannot allow a second reload or resurrect completed work", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    (window as any).__holdRefreshForTest = true;
+    (window as any).__delayRefreshAck = true;
+  });
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Scanning", exact: true });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("F5");
+  await page.keyboard.press("Control+r");
+  await page.evaluate(() => {
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 2,
+      revision: 1,
+      scanning: false,
+      elapsed_ms: 1200,
+    });
+    (window as any).__ackRefresh();
+  });
+  await expect(dialog).not.toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "refresh",
+        ).length,
+    ),
+  ).toBe(1);
+});
+
+test("keyboard navigation crosses IPC page boundaries without displaying stale search rows", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  await expect(grid.getByText("4000", { exact: true })).toBeVisible();
+  await grid.focus();
+  await page.keyboard.press("End");
+  await expect(grid.locator('[data-cursor="true"]')).toContainText("5499");
+  await page.keyboard.press("Home");
+  await expect(grid.locator('[data-cursor="true"]')).toContainText("4000");
+  await page
+    .getByRole("textbox", { name: "Search loaded results" })
+    .fill("node");
+  await expect(grid.getByText("4001", { exact: true })).toBeVisible();
+  await expect(grid.getByText("4000", { exact: true })).not.toBeVisible();
+  expect(await grid.getByRole("row").count()).toBeLessThan(60);
+});
+
+test("Enter on a column divider does not fit or open a row", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const divider = page.getByRole("separator", {
+    name: "Resize Process column",
+    exact: true,
+  });
+  await expect(divider).toHaveAttribute(
+    "title",
+    "Double-click to fit column to contents",
+  );
+  const width = await divider.getAttribute("aria-valuenow");
+  const count = await page.evaluate(
+    () =>
+      (window as any).__testCalls.filter((call: any) => call.command === "page")
+        .length,
+  );
+  await divider.focus();
+  await page.keyboard.press("Enter");
+  await expect(divider).toHaveAttribute("aria-valuenow", width!);
+  await expect(divider).toHaveAttribute("aria-busy", "false");
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "page",
+        ).length,
+    ),
+  ).toBe(count);
+  await expect(page.locator(".inspector")).not.toBeVisible();
+});
+
+test("Fit all columns includes offscreen content in one bounded traversal and skips hidden columns", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__wideCellsForTest = true;
+    localStorage.setItem("oflh-hidden-columns", JSON.stringify(["cpu"]));
+  });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const before = await page.evaluate(() => (window as any).__testCalls.length);
+  await page
+    .getByRole("button", { name: "Fit all columns", exact: true })
+    .click();
+  const process = page.getByRole("separator", {
+    name: "Resize Process column",
+    exact: true,
+  });
+  const path = page.getByRole("separator", {
+    name: "Resize Path column",
+    exact: true,
+  });
+  await expect
+    .poll(async () => Number(await process.getAttribute("aria-valuenow")))
+    .toBeGreaterThan(350);
+  await expect
+    .poll(async () => Number(await path.getAttribute("aria-valuenow")))
+    .toBeGreaterThan(1000);
+  await expect(
+    page.getByRole("separator", { name: "Resize CPU column", exact: true }),
+  ).toHaveCount(0);
+  const offsets = await page.evaluate(
+    (start) =>
+      (window as any).__testCalls
+        .slice(start)
+        .filter((call: any) => call.command === "page")
+        .map((call: any) => call.args.query.offset),
+    before,
+  );
+  expect(offsets).toEqual([200, 400, 600, 800, 1000, 1200, 1400]);
+  expect(await page.getByRole("grid").getByRole("row").count()).toBeLessThan(
+    60,
+  );
+  await page.screenshot({ path: "test-results/fit-all-columns.png" });
+});
+
+test("a filter change cancels all-column fitting without applying stale widths", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const divider = page.getByRole("separator", {
+    name: "Resize Process column",
+    exact: true,
+  });
+  const width = await divider.getAttribute("aria-valuenow");
+  await page.evaluate(() => {
+    (window as any).__holdFitForTest = true;
+  });
+  await page
+    .getByRole("button", { name: "Fit all columns", exact: true })
+    .click();
+  await expect(divider).toHaveAttribute("aria-busy", "true");
+  await expect
+    .poll(() => page.evaluate(() => !!(window as any).__releaseFitForTest))
+    .toBe(true);
+  await page
+    .getByRole("textbox", { name: "Search loaded results" })
+    .fill("node");
+  await expect(page.getByText("300 results", { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__holdFitForTest = false;
+    (window as any).__releaseFitForTest();
+  });
+  await expect(divider).toHaveAttribute("aria-busy", "false");
+  await expect(divider).toHaveAttribute("aria-valuenow", width!);
+});

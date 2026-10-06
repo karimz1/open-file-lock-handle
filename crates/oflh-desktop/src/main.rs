@@ -2,6 +2,9 @@
 #![forbid(unsafe_code)]
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(result) = oflh_platform::inspection_helper::dispatch() {
+        return Ok(result?);
+    }
     if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--version")) {
         println!("{}", oflh_core::version_report("oflh-desktop"));
         return Ok(());

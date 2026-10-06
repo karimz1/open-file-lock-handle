@@ -7,7 +7,14 @@ use oflh_core::{
 use std::{
     cmp::Ordering,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
 };
+
+type RowMatch = (usize, Option<usize>, u32);
+struct CachedQuery {
+    query: TableQuery,
+    rows: Arc<[RowMatch]>,
+}
 
 /// Snapshot-owned search cache. Cloning the surrounding Arc is cheap for IPC commands.
 pub struct Dataset {
@@ -18,6 +25,8 @@ pub struct Dataset {
     indices: Vec<ProcessIndex>,
     port_indices: Vec<Vec<oflh_core::ports::PortIndex>>,
     identities: std::collections::HashMap<String, usize>,
+    query_cache: Mutex<Option<CachedQuery>>,
+    counts: (usize, usize, usize),
 }
 impl Dataset {
     /// Build an immutable snapshot and its reusable indices.
@@ -40,13 +49,64 @@ impl Dataset {
                     .collect()
             })
             .collect();
+        let counts = (
+            snapshot
+                .processes
+                .iter()
+                .filter(|process| !process.usages.is_empty())
+                .count(),
+            snapshot
+                .processes
+                .iter()
+                .map(|process| process.ports.len())
+                .sum(),
+            snapshot
+                .processes
+                .iter()
+                .map(|process| process.usages.len())
+                .sum(),
+        );
         Self {
+            query_cache: Mutex::new(None),
+            counts,
             port_indices,
             identities,
             revision,
             snapshot,
             indices,
         }
+    }
+    /// File users in the accepted snapshot, computed once during indexing.
+    pub fn file_users(&self) -> usize {
+        self.counts.0
+    }
+    /// Local bindings in the accepted snapshot.
+    pub fn port_count(&self) -> usize {
+        self.counts.1
+    }
+    /// Target-matching observations in the accepted snapshot.
+    pub fn usage_count(&self) -> usize {
+        self.counts.2
+    }
+    /// One snapshot-local query cache bounds memory while reusing search/sort
+    /// results across viewport pages, selection and content-width measurements.
+    fn cached_matches(&self, request: &TableQuery) -> Result<Arc<[RowMatch]>, Failure> {
+        let mut query = request.clone();
+        query.offset = 0;
+        query.limit = 0;
+        let mut cache = self
+            .query_cache
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(cached) = cache.as_ref().filter(|cached| cached.query == query) {
+            return Ok(cached.rows.clone());
+        }
+        let rows: Arc<[RowMatch]> = self.matched(&query)?.into();
+        *cache = Some(CachedQuery {
+            query,
+            rows: rows.clone(),
+        });
+        Ok(rows)
     }
     /// Resolve a captured lifetime key without accepting a PID-only substitute.
     pub fn process(&self, key: &str) -> Result<(usize, &Process), Failure> {
@@ -182,18 +242,33 @@ impl Dataset {
             // As in the TUI, metadata may satisfy terms, but all remaining terms
             // must match one observation rather than unrelated paths in the same process.
             let file_query = query.file_terms(&index.metadata, &mut scratch);
+            // Metadata is immutable across usages. Ranking is needed only for
+            // relevance ordering, and its metadata score is shared by this process.
+            let relevance = request.sort == Sort::Relevance;
+            let metadata_score = if relevance && request.handles {
+                query.score(&index.metadata, &mut scratch)
+            } else {
+                0
+            };
             for (usage_index, fields) in index.usages.iter().enumerate() {
                 if request.locks_only && process.usages[usage_index].lock.is_none() {
                     continue;
                 }
                 if file_query.matches(fields, &mut scratch) {
                     if !request.handles {
-                        matches.push((process_index, None, index.score(&query, &mut scratch)));
+                        let score = if relevance {
+                            index.score(&query, &mut scratch)
+                        } else {
+                            0
+                        };
+                        matches.push((process_index, None, score));
                         break;
                     }
-                    let score = query
-                        .score(fields, &mut scratch)
-                        .max(query.score(&index.metadata, &mut scratch));
+                    let score = if relevance {
+                        query.score(fields, &mut scratch).max(metadata_score)
+                    } else {
+                        0
+                    };
                     matches.push((process_index, Some(usage_index), score));
                 }
             }
@@ -316,9 +391,9 @@ impl Dataset {
     pub fn keys(&self, request: &TableQuery) -> Result<Vec<String>, Failure> {
         let mut seen = std::collections::HashSet::new();
         let keys: Vec<_> = self
-            .matched(request)?
-            .into_iter()
-            .map(|(index, _, _)| identity_key(self.snapshot.processes[index].identity))
+            .cached_matches(request)?
+            .iter()
+            .map(|(index, _, _)| identity_key(self.snapshot.processes[*index].identity))
             .filter(|key| seen.insert(key.clone()))
             .collect();
         if keys.len() > 10000 {
@@ -330,10 +405,11 @@ impl Dataset {
     }
     /// Return at most 200 sorted rows; the full native snapshot remains in Rust.
     pub fn page(&self, request: &TableQuery) -> Result<Page, Failure> {
-        let matches = self.matched(request)?;
+        let matches = self.cached_matches(request)?;
         let total = matches.len();
         let rows = matches
-            .into_iter()
+            .iter()
+            .copied()
             .skip(request.offset)
             .take(request.limit.clamp(1, 200))
             .map(|(process, usage, _)| {
@@ -574,6 +650,66 @@ mod tests {
                 warnings: vec![],
             },
         )
+    }
+    #[test]
+    fn relevance_and_column_sorts_keep_metadata_and_file_matches_with_stable_order() {
+        let dataset = Dataset::new(
+            1,
+            Snapshot {
+                processes: [
+                    (10, "worker", "z", "zzz.bin"),
+                    (20, "other", "a", "worker.bin"),
+                ]
+                .into_iter()
+                .map(|(pid, name, exe, file)| Process {
+                    identity: Identity {
+                        pid,
+                        started: 10,
+                        ..Identity::default()
+                    },
+                    name: name.into(),
+                    executable: PathBuf::from(format!("/fixture/{exe}")),
+                    usages: vec![Usage {
+                        path: PathBuf::from(format!("/fixture/{file}")),
+                        ..Usage::default()
+                    }],
+                    ..Process::default()
+                })
+                .collect(),
+                warnings: vec![],
+            },
+        );
+        for handles in [false, true] {
+            for (sort, expected) in [
+                (Sort::Relevance, [10, 20]),
+                (Sort::Pid, [10, 20]),
+                (Sort::Name, [20, 10]),
+                (Sort::Path, [20, 10]),
+                (Sort::Cpu, [10, 20]),
+                (Sort::Memory, [10, 20]),
+            ] {
+                let mut query = TableQuery {
+                    handles,
+                    sort,
+                    text: "worker".into(),
+                    limit: 200,
+                    ..TableQuery::default()
+                };
+                for descending in [false, true] {
+                    query.descending = descending;
+                    let page = dataset.page(&query).unwrap();
+                    assert_eq!(page.total, 2);
+                    let mut expected = expected;
+                    if descending && !matches!(sort, Sort::Cpu | Sort::Memory) {
+                        expected.reverse();
+                    }
+                    assert_eq!(
+                        page.rows.iter().map(|row| row.pid).collect::<Vec<_>>(),
+                        expected
+                    );
+                }
+            }
+        }
     }
     #[test]
     fn column_filters_disambiguate_shared_paths_and_bound_unknown_metrics() {
@@ -921,6 +1057,123 @@ mod port_tests {
                 .details(&row.process_key)
                 .unwrap()
                 .can_inspect_folder
+        );
+    }
+}
+
+#[cfg(test)]
+mod query_cache_tests {
+    use super::*;
+    use oflh_core::{Identity, Usage};
+    fn large_dataset(revision: u32) -> Dataset {
+        Dataset::new(
+            revision,
+            Snapshot {
+                processes: (0..1000)
+                    .map(|index| Process {
+                        identity: Identity {
+                            pid: 4000 + index,
+                            started: 10,
+                            started_sub: 0,
+                        },
+                        name: format!("worker-{index:04}"),
+                        usages: (0..20)
+                            .map(|usage| Usage {
+                                path: PathBuf::from(format!(
+                                    "/fixture/{index:04}/file-{usage:02}.bin"
+                                )),
+                                ..Usage::default()
+                            })
+                            .collect(),
+                        ..Process::default()
+                    })
+                    .collect(),
+                warnings: vec![],
+            },
+        )
+    }
+    #[test]
+    fn pages_and_selection_reuse_the_full_query_without_aliasing_filter_changes() {
+        let dataset = large_dataset(1);
+        let mut query = TableQuery {
+            handles: true,
+            sort: Sort::Pid,
+            ..TableQuery::default()
+        };
+        let original = dataset.cached_matches(&query).unwrap();
+        assert_eq!(original.len(), 20000);
+        query.offset = 199;
+        query.limit = 2;
+        assert!(Arc::ptr_eq(
+            &original,
+            &dataset.cached_matches(&query).unwrap()
+        ));
+        let boundary = dataset.page(&query).unwrap();
+        assert_eq!(boundary.total, 20000);
+        assert_eq!(boundary.rows.len(), 2);
+        assert_eq!(boundary.rows[0].pid, 4009);
+        assert_eq!(boundary.rows[1].pid, 4010);
+        assert_eq!(dataset.keys(&query).unwrap().len(), 1000);
+        assert!(Arc::ptr_eq(
+            &original,
+            &dataset.cached_matches(&query).unwrap()
+        ));
+        query.columns.pid = Some(4010);
+        let filtered = dataset.cached_matches(&query).unwrap();
+        assert_eq!(filtered.len(), 20);
+        assert!(!Arc::ptr_eq(&original, &filtered));
+        query.columns.pid = None;
+        query.descending = true;
+        assert_eq!(
+            dataset
+                .page(&TableQuery { offset: 0, ..query })
+                .unwrap()
+                .rows[0]
+                .pid,
+            4999
+        );
+        let refreshed = large_dataset(2);
+        assert!(!Arc::ptr_eq(
+            &original,
+            &refreshed
+                .cached_matches(&TableQuery {
+                    handles: true,
+                    sort: Sort::Pid,
+                    ..TableQuery::default()
+                })
+                .unwrap()
+        ));
+        assert_eq!(refreshed.usage_count(), 20000);
+    }
+    #[test]
+    fn cached_queries_do_not_bypass_validation_or_leak_between_ports_and_files() {
+        let dataset = large_dataset(1);
+        dataset.page(&TableQuery::default()).unwrap();
+        let ports = dataset
+            .page(&TableQuery {
+                ports: true,
+                ..TableQuery::default()
+            })
+            .unwrap();
+        assert_eq!(ports.total, 0);
+        assert!(
+            dataset
+                .page(&TableQuery {
+                    text: "a".repeat(4097),
+                    ..TableQuery::default()
+                })
+                .is_err()
+        );
+        assert!(
+            dataset
+                .page(&TableQuery {
+                    columns: ColumnFilters {
+                        cpu_min: Some(f64::NAN),
+                        ..ColumnFilters::default()
+                    },
+                    ..TableQuery::default()
+                })
+                .is_err()
         );
     }
 }

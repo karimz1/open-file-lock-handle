@@ -10,6 +10,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { api, type Page, type Row, type Sort, type TableQuery } from "./api";
+import { createPageLoader } from "./pageLoader";
 import { columnText, columnMeasurer } from "./columnSizing";
 import { memory, compactPath } from "./state";
 import { t, tValue, type MessageKey } from "./i18n";
@@ -30,6 +31,8 @@ export interface ColumnDefinition {
   width: number;
 }
 interface Props {
+  fitAllRequest: number;
+  onFittingChange: (fitting: boolean) => void;
   fontSize: number;
   target: string;
   expandedKey: string | null;
@@ -75,7 +78,13 @@ export function Table(props: Props) {
       column.key === "process" || !props.hiddenColumns.has(column.key),
   );
   const fitRequest = useRef(0);
-  const [fitting, setFitting] = useState<ColumnKey | null>(null);
+  const loader = useRef(createPageLoader());
+  const [fitting, setFitting] = useState<ColumnKey | "all" | null>(null);
+  useEffect(
+    () => props.onFittingChange(fitting !== null),
+    [fitting, props.onFittingChange],
+  );
+  useEffect(() => () => props.onFittingChange(false), [props.onFittingChange]);
   const scroll = useRef<HTMLDivElement>(null);
   const resizing = useRef<{
     key: ColumnKey;
@@ -86,10 +95,18 @@ export function Table(props: Props) {
   const [page, setPage] = useState<
     (Page & { offset: number; queryKey: string }) | null
   >(null);
+  const queryKey = JSON.stringify({ ...props.query, offset: 0 });
+  const currentPage =
+    page?.revision === props.revision && page.queryKey === queryKey
+      ? page
+      : null;
   const [cursor, setCursor] = useState(0);
-  const pendingNavigation = useRef<{ index: number; additive: boolean } | null>(
-    null,
-  );
+  const pendingNavigation = useRef<{
+    index: number;
+    additive: boolean;
+    revision: number;
+    queryKey: string;
+  } | null>(null);
   const [widths, setWidths] = useState<Record<ColumnKey, number>>({
     process: 220,
     pid: 84,
@@ -107,7 +124,7 @@ export function Table(props: Props) {
   const minWidth = columns.reduce((sum, column) => sum + widthFor(column), 0);
   const rowHeight = Math.round((38 * props.fontSize) / 13);
   const virtual = useVirtualizer({
-    count: page?.total ?? 0,
+    count: currentPage?.total ?? 0,
     getScrollElement: () => scroll.current,
     estimateSize: () => rowHeight,
     overscan: 10,
@@ -116,8 +133,15 @@ export function Table(props: Props) {
     virtual.measure();
   }, [props.fontSize, props.query.handles]);
   const items = virtual.getVirtualItems();
-  const offset = Math.floor((items[0]?.index ?? 0) / 100) * 100;
-  const queryKey = JSON.stringify({ ...props.query, offset: 0 });
+  const firstVisible = items[0]?.index ?? 0;
+  const lastVisible = items.at(-1)?.index ?? firstVisible;
+  // Retain a page while it covers the complete visible/overscan window.
+  const offset =
+    currentPage &&
+    firstVisible >= currentPage.offset &&
+    lastVisible < currentPage.offset + currentPage.rows.length
+      ? currentPage.offset
+      : Math.floor(firstVisible / 100) * 100;
   useEffect(() => {
     scroll.current?.scrollTo({ top: 0 });
     setCursor(0);
@@ -126,31 +150,40 @@ export function Table(props: Props) {
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {
-      api
-        .page(props.revision, { ...props.query, offset, limit: 200 })
-        .then((result) => {
+      loader.current.request(
+        props.revision,
+        { ...props.query, offset, limit: 200 },
+        (result) => {
           if (active) {
             setPage({ ...result, offset, queryKey });
             props.onTotal(result.total);
           }
-        })
-        .catch((error) => {
+        },
+        (error) => {
           if (active) props.onError(error);
-        });
+        },
+      );
     }, 45);
     return () => {
       active = false;
       clearTimeout(timer);
+      loader.current.cancel();
     };
   }, [props.revision, queryKey, offset]); // Snapshot/compiled query/viewport are the request identity.
   useEffect(() => {
     const pending = pendingNavigation.current;
-    const row = pending && page?.rows[pending.index - page.offset];
-    if (pending && row) {
+    const row =
+      pending && currentPage?.rows[pending.index - currentPage.offset];
+    if (
+      pending &&
+      row &&
+      pending.revision === props.revision &&
+      pending.queryKey === queryKey
+    ) {
       pendingNavigation.current = null;
       props.onSelect(row, pending.additive);
     }
-  }, [page]);
+  }, [page, props.revision, queryKey]);
   useEffect(() => {
     // Discard measurements after filters, snapshot, view, or font changes.
     fitRequest.current++;
@@ -168,19 +201,22 @@ export function Table(props: Props) {
     },
     [],
   );
-  const autoFit = async (column: ColumnDefinition) => {
+  const autoFit = async (fitColumns: ColumnDefinition[]) => {
     if (!scroll.current) return;
     const request = ++fitRequest.current;
-    setFitting(column.key);
+    setFitting(fitColumns.length === 1 ? fitColumns[0].key : "all");
     try {
       await document.fonts.ready;
       if (request !== fitRequest.current || !scroll.current) return;
-      const measurement = columnMeasurer(
-        scroll.current,
-        columns.indexOf(column),
-        column.key,
-        t(column.label),
-      );
+      const measurements = fitColumns.map((column) => ({
+        column,
+        measurement: columnMeasurer(
+          scroll.current!,
+          columns.indexOf(column),
+          column.key,
+          t(column.label),
+        ),
+      }));
       let offset = 0;
       // The grid is virtualized. Walk bounded IPC pages so offscreen matches
       // participate without creating DOM nodes for the complete snapshot.
@@ -197,10 +233,13 @@ export function Table(props: Props) {
               });
         if (request !== fitRequest.current) return;
         if (result.revision !== props.revision) return;
-        for (const row of result.rows)
-          measurement.include(
-            columnText(row, column.key, props.query.handles, props.target),
-          );
+        for (const row of result.rows) {
+          for (const { column, measurement } of measurements) {
+            measurement.include(
+              columnText(row, column.key, props.query.handles, props.target),
+            );
+          }
+        }
         offset += result.rows.length;
         if (!result.rows.length || offset >= result.total) break;
         // Keep navigation and cancellation responsive between pages.
@@ -209,7 +248,12 @@ export function Table(props: Props) {
       if (request === fitRequest.current)
         setWidths((current) => ({
           ...current,
-          [column.key]: measurement.width(),
+          ...Object.fromEntries(
+            measurements.map(({ column, measurement }) => [
+              column.key,
+              measurement.width(),
+            ]),
+          ),
         }));
     } catch (error) {
       if (request === fitRequest.current) props.onError(error);
@@ -217,13 +261,20 @@ export function Table(props: Props) {
       if (request === fitRequest.current) setFitting(null);
     }
   };
-  const rowAt = (index: number) => page?.rows[index - page.offset];
+  const previousFitAllRequest = useRef(props.fitAllRequest);
+  useEffect(() => {
+    if (previousFitAllRequest.current === props.fitAllRequest) return;
+    previousFitAllRequest.current = props.fitAllRequest;
+    void autoFit(columns);
+  }, [props.fitAllRequest]);
+  const rowAt = (index: number) =>
+    currentPage?.rows[index - currentPage.offset];
   const navigate = (event: KeyboardEvent<HTMLDivElement>) => {
     let index = cursor;
     if (event.key === "ArrowDown") index++;
     else if (event.key === "ArrowUp") index--;
     else if (event.key === "Home") index = 0;
-    else if (event.key === "End") index = (page?.total ?? 1) - 1;
+    else if (event.key === "End") index = (currentPage?.total ?? 1) - 1;
     else if (event.key === "Enter") {
       const row = rowAt(cursor);
       if (row) props.onOpen(row);
@@ -241,15 +292,22 @@ export function Table(props: Props) {
       return;
     } else return;
     event.preventDefault();
-    index = Math.max(0, Math.min((page?.total ?? 1) - 1, index));
+    index = Math.max(0, Math.min((currentPage?.total ?? 1) - 1, index));
     setCursor(index);
     virtual.scrollToIndex(index);
     const row = rowAt(index);
     if (row) props.onSelect(row, event.shiftKey);
-    else pendingNavigation.current = { index, additive: event.shiftKey };
+    else
+      pendingNavigation.current = {
+        index,
+        additive: event.shiftKey,
+        revision: props.revision,
+        queryKey,
+      };
   };
   return (
     <div
+      id="results-grid"
       className="table-scroll"
       ref={scroll}
       role="grid"
@@ -260,7 +318,7 @@ export function Table(props: Props) {
             ? t("inspector.k_matching_file_usages_selection_applies_56df1d76")
             : t("inspector.k_processes_using_this_target")
       }
-      aria-rowcount={(page?.total ?? 0) + 1}
+      aria-rowcount={(currentPage?.total ?? 0) + 1}
       aria-colcount={columns.length}
       aria-multiselectable
       aria-activedescendant={
@@ -321,12 +379,12 @@ export function Table(props: Props) {
               aria-orientation="vertical"
               aria-valuenow={widthFor(column)}
               aria-valuemin={70}
-              aria-busy={fitting === column.key}
+              aria-busy={fitting === "all" || fitting === column.key}
               title={t("table.k_auto_fit_hint")}
               onDoubleClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                void autoFit(column);
+                void autoFit([column]);
               }}
               tabIndex={0}
               className="resize-handle"
@@ -334,7 +392,7 @@ export function Table(props: Props) {
                 if (event.key === "Enter") {
                   event.preventDefault();
                   event.stopPropagation();
-                  void autoFit(column);
+                  // Enter on a divider must not fit a column or open a grid row.
                   return;
                 }
                 if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
@@ -386,12 +444,12 @@ export function Table(props: Props) {
           </div>
         ))}
       </div>
-      {!page ? (
+      {!currentPage ? (
         <div className="empty">
           <Search size={28} />
           <h3>{t("table.k_loading_results")}</h3>
         </div>
-      ) : page.total === 0 ? (
+      ) : currentPage.total === 0 ? (
         <div className="empty">
           <FileSearch size={32} />
           <h3>

@@ -75,6 +75,7 @@ const de: TranslationSchema<typeof en> = {
     k_reference: "Referenz",
     k_remove: "Entfernen",
     k_restart_manager: "Restart Manager",
+    k_native_file_user: "Nutzer laut Windows-Dateiabfrage",
     k_results: "Ergebnisse",
     k_reveal_in_file_manager: "Im Dateimanager anzeigen",
     k_pid: "PID",
@@ -197,6 +198,19 @@ const de: TranslationSchema<typeof en> = {
     k_search_recent_targets: "Zuletzt verwendete Ziele durchsuchen",
   },
   inspection: {
+    k_checking_process_references: "Prozessreferenzen werden geprüft",
+    k_checking_files: "Dateien werden geprüft",
+    k_checking_ports: "Lokale Ports werden geprüft",
+    k_preparing_results: "Ergebnisse werden vorbereitet",
+    k_reload_paused: "Neuladen ist bis zum Ende der Untersuchung pausiert.",
+    k_starting_inspection: "Untersuchung wird gestartet…",
+    k_files_checked: "{{count}} Dateien geprüft",
+    k_references_checked: "{{count}} Referenzen geprüft",
+    k_processes_checked: "{{count}} Prozesse geprüft",
+    k_unknown_total: "Die Gesamtzahl ist während der Untersuchung unbekannt.",
+    k_progress_unavailable:
+      "Fortschritt ist vorübergehend nicht verfügbar. Die Untersuchung läuft weiter.",
+
     k_1_open_oflh_desktop_and_inspect_a_file_or_folder:
       "1. OFLH Desktop öffnen und eine Datei oder einen Ordner untersuchen.",
     k_a_clear_view_of_files_in_use:
@@ -405,8 +419,10 @@ const de: TranslationSchema<typeof en> = {
     k_trade_off: "Zu beachten:",
   },
   table: {
-    k_auto_fit_hint:
-      "Doppelklicken oder Enter drücken, um die Spalte an den Inhalt anzupassen",
+    k_auto_fit_hint: "Doppelklicken, um die Spalte an den Inhalt anzupassen",
+    k_fit_all_columns: "Alle Spalten anpassen",
+    k_fit_all_columns_hint:
+      "Alle sichtbaren Spalten an alle passenden Zeilen anpassen",
     k_columns: "Spalten",
     k_deleted: "gelöscht",
     k_file_was_deleted: "Datei wurde gelöscht",

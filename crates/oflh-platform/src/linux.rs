@@ -89,6 +89,7 @@ fn permission(error: &std::io::Error, restricted: &mut bool) {
 }
 impl Backend for Native {
     fn scan(&mut self, target: &Target, cancel: &Cancellation) -> Result<Snapshot> {
+        cancel.set_phase(InspectionPhase::Processes);
         let mut snapshot = Snapshot::default();
         let mut denied = 0;
         let mut foreign = 0;
@@ -107,6 +108,7 @@ impl Backend for Native {
             if pid == std::process::id() {
                 continue;
             }
+            cancel.record(InspectionCounter::Processes, 1);
             let stats = match stat(pid) {
                 Ok(stats) => stats,
                 Err(Error::Io { source, .. }) => {
@@ -125,6 +127,7 @@ impl Backend for Native {
                 continue;
             }
             let mut restricted = false;
+            let mut resources_inspected = 0;
             let mut process = Process {
                 identity: stats.identity,
                 name: stats.name,
@@ -172,6 +175,7 @@ impl Backend for Native {
                     for descriptor in fds {
                         cancel.check()?;
                         let Ok(descriptor) = descriptor else { continue };
+                        resources_inspected += 1;
                         let reference = descriptor.path();
                         let path = match fs::read_link(&reference) {
                             Ok(process) => process,
@@ -257,6 +261,7 @@ impl Backend for Native {
                             }
                         }
                         if let Some((path, access, dev, ino)) = mapping(&line) {
+                            resources_inspected += 1;
                             let (path, deleted) = deleted_path(&base, path);
                             if target.directory {
                                 if !target.contains(&path) {
@@ -280,6 +285,7 @@ impl Backend for Native {
                     }
                 }
             }
+            cancel.record(InspectionCounter::Resources, resources_inspected);
             if restricted {
                 denied += 1
             }

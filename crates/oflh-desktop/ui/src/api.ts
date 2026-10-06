@@ -9,6 +9,14 @@ export interface Status {
   generation: number;
   revision: number;
   scanning: boolean;
+  elapsed_ms: number;
+  progress: {
+    phase: "processes" | "files" | "ports" | "indexing";
+    processes: number;
+    resources: number;
+    files: number;
+    directories: number;
+  };
   target: string;
   processes: number;
   ports: number;
