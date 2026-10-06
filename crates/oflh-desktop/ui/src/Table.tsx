@@ -36,16 +36,17 @@ interface Props {
   fontSize: number;
   target: string;
   expandedKey: string | null;
-  onToggle: (row: Row) => void;
+  onToggle: (row: Row, revision: number) => void;
   revision: number;
   query: TableQuery;
   hiddenColumns: Set<ColumnKey>;
   selected: Set<string>;
   focused: string | null;
-  onSelect: (row: Row, additive: boolean) => void;
-  onOpen: (row: Row) => void;
-  onContext: (row: Row) => void;
+  onSelect: (row: Row, additive: boolean, revision: number) => void;
+  onOpen: (row: Row, revision: number) => void;
+  onContext: (row: Row, revision: number) => void;
   onSort: (sort: Sort) => void;
+  onPage: (page: Page) => void;
   onTotal: (total: number) => void;
   onError: (error: unknown) => void;
 }
@@ -93,14 +94,18 @@ export function Table(props: Props) {
     startWidth: number;
   } | null>(null);
   const [page, setPage] = useState<
-    (Page & { offset: number; queryKey: string }) | null
+    (Page & { offset: number; queryKey: string; target: string }) | null
   >(null);
   const queryKey = JSON.stringify({ ...props.query, offset: 0 });
+  // Keep the accepted viewport during a same-target refresh. A different query
+  // or target must never inherit stale matches. Actions retain the page revision.
+  const displayPage =
+    page?.queryKey === queryKey && page.target === props.target ? page : null;
   const currentPage =
-    page?.revision === props.revision && page.queryKey === queryKey
-      ? page
-      : null;
+    displayPage?.revision === props.revision ? displayPage : null;
   const [cursor, setCursor] = useState(0);
+  const viewport = useRef({ page: displayPage, cursor });
+  viewport.current = { page: displayPage, cursor };
   const pendingNavigation = useRef<{
     index: number;
     additive: boolean;
@@ -124,7 +129,7 @@ export function Table(props: Props) {
   const minWidth = columns.reduce((sum, column) => sum + widthFor(column), 0);
   const rowHeight = Math.round((38 * props.fontSize) / 13);
   const virtual = useVirtualizer({
-    count: currentPage?.total ?? 0,
+    count: displayPage?.total ?? 0,
     getScrollElement: () => scroll.current,
     estimateSize: () => rowHeight,
     overscan: 10,
@@ -137,16 +142,16 @@ export function Table(props: Props) {
   const lastVisible = items.at(-1)?.index ?? firstVisible;
   // Retain a page while it covers the complete visible/overscan window.
   const offset =
-    currentPage &&
-    firstVisible >= currentPage.offset &&
-    lastVisible < currentPage.offset + currentPage.rows.length
-      ? currentPage.offset
+    displayPage &&
+    firstVisible >= displayPage.offset &&
+    lastVisible < displayPage.offset + displayPage.rows.length
+      ? displayPage.offset
       : Math.floor(firstVisible / 100) * 100;
   useEffect(() => {
     scroll.current?.scrollTo({ top: 0 });
     setCursor(0);
     pendingNavigation.current = null;
-  }, [queryKey]);
+  }, [props.target, queryKey]);
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {
@@ -155,7 +160,17 @@ export function Table(props: Props) {
         { ...props.query, offset, limit: 200 },
         (result) => {
           if (active) {
-            setPage({ ...result, offset, queryKey });
+            const previous = viewport.current;
+            const oldCursor =
+              previous.page?.rows[previous.cursor - previous.page.offset]?.key;
+            if (oldCursor) {
+              const nextCursor = result.rows.findIndex(
+                (row) => row.key === oldCursor,
+              );
+              if (nextCursor >= 0) setCursor(offset + nextCursor);
+            }
+            setPage({ ...result, offset, queryKey, target: props.target });
+            props.onPage(result);
             props.onTotal(result.total);
           }
         },
@@ -169,7 +184,7 @@ export function Table(props: Props) {
       clearTimeout(timer);
       loader.current.cancel();
     };
-  }, [props.revision, queryKey, offset]); // Snapshot/compiled query/viewport are the request identity.
+  }, [props.revision, props.target, queryKey, offset]); // Snapshot/compiled query/viewport are the request identity.
   useEffect(() => {
     const pending = pendingNavigation.current;
     const row =
@@ -181,7 +196,7 @@ export function Table(props: Props) {
       pending.queryKey === queryKey
     ) {
       pendingNavigation.current = null;
-      props.onSelect(row, pending.additive);
+      props.onSelect(row, pending.additive, currentPage!.revision);
     }
   }, [page, props.revision, queryKey]);
   useEffect(() => {
@@ -268,35 +283,35 @@ export function Table(props: Props) {
     void autoFit(columns);
   }, [props.fitAllRequest]);
   const rowAt = (index: number) =>
-    currentPage?.rows[index - currentPage.offset];
+    displayPage?.rows[index - displayPage.offset];
   const navigate = (event: KeyboardEvent<HTMLDivElement>) => {
     let index = cursor;
     if (event.key === "ArrowDown") index++;
     else if (event.key === "ArrowUp") index--;
     else if (event.key === "Home") index = 0;
-    else if (event.key === "End") index = (currentPage?.total ?? 1) - 1;
+    else if (event.key === "End") index = (displayPage?.total ?? 1) - 1;
     else if (event.key === "Enter") {
       const row = rowAt(cursor);
-      if (row) props.onOpen(row);
+      if (row) props.onOpen(row, displayPage!.revision);
       event.preventDefault();
       return;
     } else if (event.key === " ") {
       const row = rowAt(cursor);
-      if (row) props.onSelect(row, true);
+      if (row) props.onSelect(row, true, displayPage!.revision);
       event.preventDefault();
       return;
     } else if (event.key === "F10" && event.shiftKey) {
       const row = rowAt(cursor);
-      if (row) props.onContext(row);
+      if (row) props.onContext(row, displayPage!.revision);
       event.preventDefault();
       return;
     } else return;
     event.preventDefault();
-    index = Math.max(0, Math.min((currentPage?.total ?? 1) - 1, index));
+    index = Math.max(0, Math.min((displayPage?.total ?? 1) - 1, index));
     setCursor(index);
     virtual.scrollToIndex(index);
     const row = rowAt(index);
-    if (row) props.onSelect(row, event.shiftKey);
+    if (row) props.onSelect(row, event.shiftKey, displayPage!.revision);
     else
       pendingNavigation.current = {
         index,
@@ -318,8 +333,9 @@ export function Table(props: Props) {
             ? t("inspector.k_matching_file_usages_selection_applies_56df1d76")
             : t("inspector.k_processes_using_this_target")
       }
-      aria-rowcount={(currentPage?.total ?? 0) + 1}
+      aria-rowcount={(displayPage?.total ?? 0) + 1}
       aria-colcount={columns.length}
+      aria-busy={!currentPage}
       aria-multiselectable
       aria-activedescendant={
         items.some((item) => item.index === cursor)
@@ -444,12 +460,12 @@ export function Table(props: Props) {
           </div>
         ))}
       </div>
-      {!currentPage ? (
+      {!displayPage ? (
         <div className="empty">
           <Search size={28} />
           <h3>{t("table.k_loading_results")}</h3>
         </div>
-      ) : currentPage.total === 0 ? (
+      ) : displayPage.total === 0 ? (
         <div className="empty">
           <FileSearch size={32} />
           <h3>
@@ -480,7 +496,7 @@ export function Table(props: Props) {
             const row = rowAt(item.index);
             return (
               <div
-                key={item.key}
+                key={row?.key ?? item.key}
                 id={`result-row-${item.index}`}
                 role="row"
                 data-cursor={item.index === cursor}
@@ -502,14 +518,17 @@ export function Table(props: Props) {
                     props.onSelect(
                       row,
                       event.ctrlKey || event.metaKey || event.shiftKey,
+                      displayPage!.revision,
                     );
                   }
                 }}
-                onDoubleClick={() => row && props.onOpen(row)}
+                onDoubleClick={() =>
+                  row && props.onOpen(row, displayPage!.revision)
+                }
                 onContextMenu={(event) => {
                   if (row) {
                     event.preventDefault();
-                    props.onContext(row);
+                    props.onContext(row, displayPage!.revision);
                   }
                 }}
               >
@@ -528,7 +547,7 @@ export function Table(props: Props) {
                         aria-expanded={props.expandedKey === row.key}
                         onClick={(event) => {
                           event.stopPropagation();
-                          props.onToggle(row);
+                          props.onToggle(row, displayPage!.revision);
                         }}
                         onDoubleClick={(event) => event.stopPropagation()}
                       >

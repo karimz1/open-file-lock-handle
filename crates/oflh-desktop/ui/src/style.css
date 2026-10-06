@@ -2306,3 +2306,29 @@ kbd.shortcut {
     animation: none;
   }
 }
+
+/* Quiet refresh occupies the existing footer; progress never shifts the grid. */
+.background-inspection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.background-inspection > button {
+  min-height: 24px;
+  flex: none;
+  padding: 2px 6px;
+  font-size: inherit;
+}
+.background-elapsed {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.background-error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.detail-refresh-note {
+  padding: 8px 0;
+}

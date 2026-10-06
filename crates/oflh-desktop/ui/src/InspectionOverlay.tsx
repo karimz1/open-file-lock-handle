@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { LoaderCircle } from "lucide-react";
-import { api, errorMessage, type Status } from "./api";
-import { acceptStatus } from "./state";
+import { type Status } from "./api";
+import { useInspectionProgress } from "./useInspectionProgress";
 import { t, type MessageKey } from "./i18n";
 
 const phaseMessages: Record<string, MessageKey> = {
@@ -20,9 +20,6 @@ export function InspectionOverlay({
   complete: (status: Status) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [live, setLive] = useState(status);
-  const [error, setError] = useState("");
-  const [cancelling, setCancelling] = useState(false);
   useEffect(() => {
     const element = dialog.current!;
     const previous = document.activeElement as HTMLElement | null;
@@ -33,46 +30,11 @@ export function InspectionOverlay({
       if (previous?.isConnected) previous.focus();
     };
   }, []);
-  useEffect(() => {
-    setLive(status);
-    if (!status.scanning) return;
-    let active = true;
-    let timer: ReturnType<typeof setTimeout>;
-    // One request at a time, only while scanning. Progress updates are local to
-    // this dialog so the grid does not rerender on every polling tick.
-    const poll = async () => {
-      try {
-        const incoming = await api.status();
-        if (!active) return;
-        if (incoming.generation >= status.generation) {
-          setLive((current) => acceptStatus(current, incoming));
-          setError("");
-          if (!incoming.scanning) {
-            complete(incoming);
-            return;
-          }
-        }
-      } catch {
-        if (active) setError(t("inspection.k_progress_unavailable"));
-      }
-      if (active) timer = setTimeout(poll, 250);
-    };
-    timer = setTimeout(poll, 250);
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [status.generation, status.scanning, complete]);
-  const cancel = async () => {
-    if (starting || cancelling) return;
-    setCancelling(true);
-    try {
-      complete(await api.cancel());
-    } catch (failure) {
-      setError(errorMessage(failure));
-      setCancelling(false);
-    }
-  };
+  const { live, error, cancelling, cancel } = useInspectionProgress(
+    status,
+    starting,
+    complete,
+  );
   return (
     <dialog
       ref={dialog}
