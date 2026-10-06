@@ -121,3 +121,16 @@ stall deadline. Root profiling labels helper failures and capped fallback result
 outcome explicit; a returned partial snapshot is not completed native discovery.
 Native minimal-rights fixtures separately require read-only, write-only and
 metadata-only users to survive folder inspection without invented access modes.
+
+Whole-drive diagnostics identified a sharing-probe stall on the x64 runner.
+Folder probes now open existing files through `NtCreateFile` with
+`FILE_COMPLETE_IF_OPLOCKED`, maximal sharing and `FILE_OPEN_NO_RECALL`.
+[Microsoft documents the immediate oplock-break completion](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ntcreatefile).
+The probe closes alternate-success handles without reading or writing content,
+and records only `STATUS_SHARING_VIOLATION` as sharing evidence. Permission,
+offline-file and other native failures remain explicit unknown evidence with
+original status codes. An independent read/handle oplock fixture deliberately
+withholds break acknowledgment and requires complete folder discovery without a
+false sharing-conflict row. Other filesystem/filter calls can still block, so
+the owned-helper stall protection remains. Native profiling must validate this
+change before a whole-drive improvement is claimed.

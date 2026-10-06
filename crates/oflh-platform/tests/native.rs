@@ -89,6 +89,11 @@ fn fixture_helper() {
     let path = PathBuf::from(path);
     let mode = std::env::var("OFLH_MODE").unwrap();
     #[cfg(windows)]
+    if mode == "oplock" {
+        windows_oplock_fixture(&path);
+        return;
+    }
+    #[cfg(windows)]
     if matches!(
         mode.as_str(),
         "mapped-closed"
@@ -648,6 +653,111 @@ fn directory_inspection_retains_more_than_150_distinct_native_users() {
     assert!(observed.len() >= 160);
 }
 
+/// Hold a read/handle oplock and deliberately do not acknowledge a break until
+/// the parent closes stdin. Every asynchronous buffer stays owned until drained.
+#[cfg(windows)]
+fn windows_oplock_fixture(path: &Path) {
+    use std::os::windows::{
+        fs::OpenOptionsExt,
+        io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    };
+    use windows_sys::Win32::{
+        Foundation::*,
+        Storage::FileSystem::*,
+        System::{IO::*, Ioctl::*, Threading::*},
+    };
+    let file = OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_OVERLAPPED)
+        .open(path)
+        .unwrap();
+    // SAFETY: unnamed manual-reset event with valid arguments, newly owned.
+    let event = unsafe { CreateEventW(std::ptr::null(), 1, 0, std::ptr::null()) };
+    assert!(!event.is_null() && event != INVALID_HANDLE_VALUE);
+    // SAFETY: exactly one owner of the event returned above.
+    let event = unsafe { OwnedHandle::from_raw_handle(event) };
+    struct PendingOplock {
+        file: std::fs::File,
+        _event: OwnedHandle,
+        input: Box<REQUEST_OPLOCK_INPUT_BUFFER>,
+        output: Box<REQUEST_OPLOCK_OUTPUT_BUFFER>,
+        overlapped: Box<OVERLAPPED>,
+        pending: bool,
+    }
+    impl Drop for PendingOplock {
+        fn drop(&mut self) {
+            if !self.pending {
+                return;
+            }
+            // SAFETY: live file and stable async storage; cancel may race a
+            // completed break. Always drain before these owned fields drop.
+            unsafe { CancelIoEx(self.file.as_raw_handle(), &*self.overlapped) };
+            let mut returned = 0;
+            // SAFETY: same file/OVERLAPPED, exact output, wait for completion.
+            unsafe {
+                GetOverlappedResult(
+                    self.file.as_raw_handle(),
+                    &*self.overlapped,
+                    &mut returned,
+                    1,
+                )
+            };
+        }
+    }
+    let overlapped = Box::new(OVERLAPPED {
+        hEvent: event.as_raw_handle(),
+        ..OVERLAPPED::default()
+    });
+    let mut operation = PendingOplock {
+        file,
+        _event: event,
+        pending: false,
+        overlapped,
+        input: Box::new(REQUEST_OPLOCK_INPUT_BUFFER {
+            StructureVersion: REQUEST_OPLOCK_CURRENT_VERSION as u16,
+            StructureLength: std::mem::size_of::<REQUEST_OPLOCK_INPUT_BUFFER>() as u16,
+            RequestedOplockLevel: OPLOCK_LEVEL_CACHE_READ | OPLOCK_LEVEL_CACHE_HANDLE,
+            Flags: REQUEST_OPLOCK_INPUT_FLAG_REQUEST,
+        }),
+        output: Box::new(REQUEST_OPLOCK_OUTPUT_BUFFER::default()),
+    };
+    let mut returned = 0;
+    // SAFETY: live overlapped file/event, exact SDK input/output extents, boxes
+    // keep all addresses stable until cancellation and completion below.
+    let result = unsafe {
+        DeviceIoControl(
+            operation.file.as_raw_handle(),
+            FSCTL_REQUEST_OPLOCK,
+            (&mut *operation.input as *mut REQUEST_OPLOCK_INPUT_BUFFER).cast(),
+            std::mem::size_of::<REQUEST_OPLOCK_INPUT_BUFFER>() as u32,
+            (&mut *operation.output as *mut REQUEST_OPLOCK_OUTPUT_BUFFER).cast(),
+            std::mem::size_of::<REQUEST_OPLOCK_OUTPUT_BUFFER>() as u32,
+            &mut returned,
+            &mut *operation.overlapped,
+        )
+    };
+    let code = if result == 0 {
+        // SAFETY: capture the immediate DeviceIoControl status before any calls.
+        unsafe { GetLastError() }
+    } else {
+        0
+    };
+    operation.pending = result == 0 && code == ERROR_IO_PENDING;
+    assert_eq!(result, 0);
+    assert_eq!(code, ERROR_IO_PENDING);
+    assert_eq!(
+        // SAFETY: owned event, zero timeout verifies the request awaits a break.
+        unsafe { WaitForSingleObject(operation._event.as_raw_handle(), 0) },
+        WAIT_TIMEOUT
+    );
+    println!("OFLH READY {}", std::process::id());
+    std::io::stdout().flush().unwrap();
+    let mut line = String::new();
+    let _ = std::io::stdin().read_line(&mut line);
+    drop(operation);
+}
+
 #[cfg(windows)]
 fn windows_reference_fixture(path: &Path, mode: &str) {
     use std::os::windows::{
@@ -875,6 +985,46 @@ fn directory_handle_and_closed_file_mapping_remain_visible() {
                 && process.usages.iter().any(|usage| usage.path == expected
                     && usage.relation == Relation::Open
                     && usage.access == Access::Directory))
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn directory_sharing_probe_does_not_wait_for_an_unacknowledged_oplock_break() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("oplock.bin");
+    fs::write(&path, [0; 4096]).unwrap();
+    let child = start(&path, "oplock");
+    let snapshot = native()
+        .unwrap()
+        .scan(
+            &Target::new(directory.path()).unwrap(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+    let expected = Target::new(&path).unwrap().path;
+    let process = snapshot
+        .processes
+        .iter()
+        .find(|process| process.identity.pid == child.0.id())
+        .expect("oplock holder missing");
+    assert!(
+        process
+            .usages
+            .iter()
+            .any(|usage| usage.path == expected && usage.relation == Relation::Open)
+    );
+    assert!(
+        !process.usages.iter().any(|usage| usage.path == expected
+            && matches!(usage.lock, Some(LockEvidence::SharingConflict(_)))),
+        "an oplock is not a sharing denial"
+    );
+    assert!(
+        !snapshot.warnings.iter().any(|warning| warning
+            .starts_with("Windows handle inspection incomplete:")
+            || warning.starts_with("Windows handle inspection unavailable:")),
+        "sharing probe waited for the holder: {:?}",
+        snapshot.warnings
     );
 }
 

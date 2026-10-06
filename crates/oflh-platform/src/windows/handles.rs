@@ -85,6 +85,12 @@ impl Drop for ActivityGuard<'_> {
         self.current.store(self.previous, Ordering::Relaxed);
     }
 }
+struct Reference<'a> {
+    path: &'a Path,
+    directory: bool,
+    mapped: bool,
+    deleted: bool,
+}
 struct Context<'a> {
     target: &'a Target,
     devices: &'a names::DevicePaths,
@@ -105,17 +111,27 @@ impl Context<'_> {
         &self,
         identity: Identity,
         process: &Handle,
-        path: &Path,
-        directory: bool,
-        mapped: bool,
-        deleted: bool,
+        reference: Reference<'_>,
+        failures: &mut Failures,
     ) -> Result<()> {
         self.cancel.check()?;
+        let Reference {
+            path,
+            directory,
+            mapped,
+            deleted,
+        } = reference;
         let sharing = if directory || deleted {
             None
         } else {
             let _activity = self.operation(NativeOperation::Sharing);
-            self.sharing.inspect(path)
+            match self.sharing.inspect(path) {
+                Ok(evidence) => evidence,
+                Err(error) => {
+                    failures.note(Failure::Sharing, &error);
+                    None
+                }
+            }
         };
         // The owned process handle pins this birth identity. A terminated process
         // is rejected before emission; the caller verifies the birth again.
@@ -234,7 +250,17 @@ fn inspect_handles(
             continue;
         }
         if context.target.contains(&observed) {
-            context.publish(identity, pinned, &observed, info.Directory, false, deleted)?;
+            context.publish(
+                identity,
+                pinned,
+                Reference {
+                    path: &observed,
+                    directory: info.Directory,
+                    mapped: false,
+                    deleted,
+                },
+                failures,
+            )?;
         } else if deleted {
             // POSIX unlink can move a live handle's native name into an NTFS
             // tombstone directory. Its old parent cannot be inferred safely.
@@ -250,7 +276,17 @@ fn inspect_handles(
             match aliases {
                 Ok(aliases) => {
                     for alias in aliases {
-                        context.publish(identity, pinned, &alias, false, false, false)?;
+                        context.publish(
+                            identity,
+                            pinned,
+                            Reference {
+                                path: &alias,
+                                directory: false,
+                                mapped: false,
+                                deleted: false,
+                            },
+                            failures,
+                        )?;
                     }
                 }
                 Err(error) => failures.note(Failure::Alias, &error),
