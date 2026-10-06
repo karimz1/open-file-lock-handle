@@ -29,6 +29,7 @@ pub(crate) struct Progress {
     pub mapped_names: u64,
     pub snapshots: u64,
     pub snapshot_micros: u64,
+    pub workers: u64,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(u8)]
@@ -151,6 +152,7 @@ pub(crate) fn write_message(writer: &mut impl Write, message: &Message) -> Resul
                 progress.mapped_names,
                 progress.snapshots,
                 progress.snapshot_micros,
+                progress.workers,
             ] {
                 bytes.extend(value.to_le_bytes());
             }
@@ -277,6 +279,7 @@ fn decode(bytes: &[u8]) -> Result<Message> {
             mapped_names: decoder.number()?,
             snapshots: decoder.number()?,
             snapshot_micros: decoder.number()?,
+            workers: decoder.number()?,
         }),
         4 => {
             let operation = match decoder.byte()? {

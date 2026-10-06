@@ -15,7 +15,7 @@ mod names;
 mod snapshot;
 
 #[derive(Default)]
-struct Stats([AtomicU64; 7]);
+struct Stats([AtomicU64; 8]);
 impl Stats {
     fn add(&self, index: usize, amount: u64) {
         self.0[index].fetch_add(amount, Ordering::Relaxed);
@@ -30,6 +30,7 @@ impl Stats {
             mapped_names: values[4],
             snapshots: values[5],
             snapshot_micros: values[6],
+            workers: values[7],
         }
     }
 }
@@ -178,14 +179,14 @@ fn inspect_handles(
         };
         let deleted = info.DeletePending || info.NumberOfLinks == 0;
         context.stats.add(2, 1);
-        let observed = match names::final_path(&handle, deleted) {
+        let observed = match names::final_path(&handle, deleted, context.target) {
             Ok(path) => path,
             Err(error) => {
                 failures.note(Failure::Path, &error);
                 continue;
             }
         };
-        if !seen.insert(observed.clone()) {
+        if !seen.insert((observed.clone(), info.Directory, deleted)) {
             continue;
         }
         if context.target.contains(&observed) {
@@ -372,7 +373,10 @@ fn execute(request: crate::inspection_protocol::Request, output: &mut impl Write
                     failures.send(&sender)
                 });
             match thread {
-                Ok(thread) => threads.push(thread),
+                Ok(thread) => {
+                    stats.add(7, 1);
+                    threads.push(thread);
+                }
                 Err(error) => {
                     cancel.cancel();
                     drop(receiver);

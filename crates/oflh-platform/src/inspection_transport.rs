@@ -179,14 +179,13 @@ fn consume(
     stall_limit: Duration,
 ) -> Result<Outcome> {
     let mut greeted = false;
-    let mut last_progress = Instant::now();
-    let mut previous = Progress::default();
+    let mut watch = WorkWatch::new(Instant::now());
     let failure = loop {
         cancel.check()?;
         match receiver.recv_timeout(Duration::from_millis(25)) {
             Ok(Ok(Message::Hello)) if !greeted => {
                 greeted = true;
-                last_progress = Instant::now();
+                watch.note_output(Instant::now());
             }
             Ok(Ok(Message::Failed { code, reason })) => {
                 break code.map_or_else(
@@ -220,17 +219,13 @@ fn consume(
                 );
             }
             Ok(Ok(Message::Progress(progress))) if greeted => {
-                if !monotonic(previous, progress) {
-                    break Error::Unavailable("inspection helper counters moved backwards".into());
+                if let Err(error) = watch.note_progress(progress, Instant::now()) {
+                    break error;
                 }
-                if progress != previous {
-                    last_progress = Instant::now();
-                }
-                previous = progress;
                 receive(Message::Progress(progress))?;
             }
             Ok(Ok(message @ (Message::Observation(_) | Message::Warning { .. }))) if greeted => {
-                last_progress = Instant::now();
+                watch.note_output(Instant::now());
                 receive(message)?;
             }
             Ok(Ok(_)) => break Error::Unavailable("unexpected inspection helper message".into()),
@@ -241,7 +236,7 @@ fn consume(
             Err(RecvTimeoutError::Timeout) => {}
         }
         let limit = if greeted { stall_limit } else { startup_limit };
-        if last_progress.elapsed() >= limit {
+        if watch.expired(Instant::now(), limit) {
             break Error::Unavailable(
                 "inspection helper stalled; partial observations retained".into(),
             );
@@ -254,6 +249,38 @@ fn consume(
     })
 }
 
+/// Watch actual work rather than heartbeat traffic or total scan time.
+struct WorkWatch {
+    last_work: Instant,
+    previous: Progress,
+}
+impl WorkWatch {
+    fn new(now: Instant) -> Self {
+        Self {
+            last_work: now,
+            previous: Progress::default(),
+        }
+    }
+    fn note_output(&mut self, now: Instant) {
+        self.last_work = now;
+    }
+    fn note_progress(&mut self, current: Progress, now: Instant) -> Result<()> {
+        if !monotonic(self.previous, current) {
+            return Err(Error::Unavailable(
+                "inspection helper counters moved backwards".into(),
+            ));
+        }
+        if current != self.previous {
+            self.last_work = now;
+        }
+        self.previous = current;
+        Ok(())
+    }
+    fn expired(&self, now: Instant, limit: Duration) -> bool {
+        now.saturating_duration_since(self.last_work) >= limit
+    }
+}
+
 fn monotonic(previous: Progress, current: Progress) -> bool {
     previous.processes <= current.processes
         && previous.handles <= current.handles
@@ -262,6 +289,7 @@ fn monotonic(previous: Progress, current: Progress) -> bool {
         && previous.mapped_names <= current.mapped_names
         && previous.snapshots <= current.snapshots
         && previous.snapshot_micros <= current.snapshot_micros
+        && previous.workers <= current.workers
 }
 
 #[cfg(test)]
@@ -375,7 +403,7 @@ mod tests {
             },
             "slow" => {
                 for names in 1..=8 {
-                    std::thread::sleep(Duration::from_millis(20));
+                    std::thread::sleep(Duration::from_millis(200));
                     write_message(
                         &mut output,
                         &Message::Progress(Progress {
@@ -487,16 +515,20 @@ mod tests {
                 "backwards"
             }));
         }
+        // Scale the real-process fixture above scheduler jitter. The exact
+        // twenty-second deadline is independently tested with a controlled clock.
+        let started = Instant::now();
         let outcome = inspect_with_limits(
             &configuration(),
             request("slow"),
             &Cancellation::default(),
             &mut |_| Ok(()),
             Duration::from_secs(5),
-            Duration::from_millis(100),
+            Duration::from_secs(1),
         )
         .unwrap();
         assert!(matches!(outcome, Outcome::Complete), "{outcome:?}");
+        assert!(started.elapsed() > Duration::from_secs(1));
     }
     #[test]
     fn missing_helper_is_explicitly_unavailable_and_precancelled_never_spawns() {
@@ -516,5 +548,36 @@ mod tests {
             inspect(&configuration, request("complete"), &cancel, |_| Ok(())),
             Err(Error::Cancelled)
         ));
+    }
+    #[test]
+    fn work_deadline_uses_elapsed_since_real_progress_without_total_scan_cutoff() {
+        let start = Instant::now();
+        let limit = Duration::from_secs(20);
+        let mut watch = WorkWatch::new(start);
+        for names in 1..=100 {
+            let now = start + Duration::from_secs(names * 19);
+            watch
+                .note_progress(
+                    Progress {
+                        names,
+                        ..Progress::default()
+                    },
+                    now,
+                )
+                .unwrap();
+            assert!(!watch.expired(now, limit));
+        }
+        let last = start + Duration::from_secs(1900);
+        watch
+            .note_progress(watch.previous, last + Duration::from_secs(19))
+            .unwrap();
+        assert!(watch.expired(last + limit, limit));
+        assert!(
+            watch
+                .note_progress(Progress::default(), last + limit)
+                .is_err()
+        );
+        watch.note_output(last + limit);
+        assert!(!watch.expired(last + limit, limit));
     }
 }

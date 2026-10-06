@@ -24,7 +24,15 @@ pub(super) fn metadata(path: &Path) -> Result<Handle> {
     )
 }
 
-pub(super) fn final_path(handle: &Handle, deleted: bool) -> Result<PathBuf> {
+pub(super) fn final_path(handle: &Handle, deleted: bool, target: &Target) -> Result<PathBuf> {
+    if deleted {
+        // GetFinalPathNameByHandle can reject a delete-pending file even though
+        // FileNameInfo still exposes its name. Bind volume-relative names to a
+        // checked volume identity; never attach them to an arbitrary drive.
+        if let Ok(path) = deleted_path(handle, target) {
+            return Ok(path);
+        }
+    }
     let mut buffer = vec![0u16; 512];
     loop {
         // SAFETY: valid owned disk handle, writable buffer of stated length.
@@ -56,6 +64,76 @@ pub(super) fn final_path(handle: &Handle, deleted: bool) -> Result<PathBuf> {
         }
         buffer.resize(length + 1, 0);
     }
+}
+
+fn decode_name(buffer: &[u32]) -> Result<PathBuf> {
+    let Some(&length) = buffer.first() else {
+        return Err(Error::Unavailable("file name header is missing".into()));
+    };
+    let length = length as usize;
+    if std::mem::offset_of!(FILE_NAME_INFO, FileName) != size_of::<u32>()
+        || length == 0
+        || !length.is_multiple_of(2)
+        || length / 2 > 32_768
+        || length > size_of_val(buffer).saturating_sub(size_of::<u32>())
+    {
+        return Err(Error::Unavailable("invalid native file name extent".into()));
+    }
+    // SAFETY: aligned u32 allocation, initialized success extent checked above;
+    // every UTF-16 bit pattern is retained without Unicode replacement.
+    let name =
+        unsafe { std::slice::from_raw_parts(buffer.as_ptr().add(1).cast::<u16>(), length / 2) };
+    if name.contains(&0) {
+        return Err(Error::Unavailable("native file name contains NUL".into()));
+    }
+    Ok(path(name))
+}
+fn relative_name(handle: &Handle) -> Result<PathBuf> {
+    let mut buffer = vec![0u32; 256];
+    loop {
+        let bytes = size_of_val(buffer.as_slice());
+        // SAFETY: owned handle, aligned initialized allocation, exact writable
+        // extent for SDK FileNameInfo's variable-length UTF-16 record.
+        if unsafe {
+            GetFileInformationByHandleEx(
+                handle.0,
+                FileNameInfo,
+                buffer.as_mut_ptr().cast(),
+                bytes as u32,
+            )
+        } != 0
+        {
+            return decode_name(&buffer);
+        }
+        let error = std::io::Error::last_os_error();
+        if !matches!(error.raw_os_error(), Some(code) if code == ERROR_MORE_DATA as i32 || code == ERROR_INSUFFICIENT_BUFFER as i32)
+        {
+            return Err(io("read deleted file name", error));
+        }
+        let maximum = 32_768 * 2 + size_of::<u32>();
+        let required = buffer[0] as usize + size_of::<u32>();
+        let next = (bytes * 2).max(required).min(maximum);
+        if required > maximum || next <= bytes {
+            return Err(Error::Unavailable(
+                "native file name exceeds helper extent".into(),
+            ));
+        }
+        buffer.resize(next.div_ceil(size_of::<u32>()), 0);
+    }
+}
+fn deleted_path(handle: &Handle, target: &Target) -> Result<PathBuf> {
+    let root = volume_root(&target.path)?;
+    if identity(handle)?.0 != identity(&metadata(&root)?)?.0 {
+        return Err(Error::Unavailable(
+            "deleted file volume cannot be resolved through target drive".into(),
+        ));
+    }
+    let relative = relative_name(handle)?;
+    Ok(root.join(
+        relative
+            .strip_prefix("\\")
+            .map_err(|_| Error::Unavailable("invalid deleted file volume-relative name".into()))?,
+    ))
 }
 
 pub(super) fn standard(handle: &Handle) -> Result<FILE_STANDARD_INFO> {
@@ -296,5 +374,23 @@ mod tests {
                 .unwrap(),
             PathBuf::from("\\\\?\\UNC\\server\\share\\file")
         );
+    }
+    #[test]
+    fn file_name_extents_are_checked_before_reading_utf16() {
+        let mut buffer = vec![0u32; 4];
+        buffer[0] = 4;
+        buffer[1] = u32::from(b'\\') | (0xd800 << 16);
+        let path = decode_name(&buffer).unwrap();
+        assert_eq!(
+            path.as_os_str().encode_wide().collect::<Vec<_>>(),
+            [92, 0xd800]
+        );
+        for length in [0, 1, 13, 14, u32::MAX] {
+            buffer[0] = length;
+            assert!(decode_name(&buffer).is_err());
+        }
+        buffer[0] = 4;
+        buffer[1] = 0;
+        assert!(decode_name(&buffer).is_err());
     }
 }

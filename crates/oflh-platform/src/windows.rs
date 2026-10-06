@@ -676,7 +676,8 @@ fn record_handle_progress(
     for (counter, amount) in [
         (
             InspectionCounter::Resources,
-            current.handles - previous.handles + current.mapped_names - previous.mapped_names,
+            (current.handles - previous.handles)
+                .saturating_add(current.mapped_names - previous.mapped_names),
         ),
         (
             InspectionCounter::NativeHandleNames,
@@ -697,6 +698,10 @@ fn record_handle_progress(
         (
             InspectionCounter::NativeHandleSnapshotMicros,
             current.snapshot_micros - previous.snapshot_micros,
+        ),
+        (
+            InspectionCounter::ResourceWorkers,
+            current.workers - previous.workers,
         ),
     ] {
         cancel.record(counter, amount);
@@ -724,10 +729,6 @@ fn collect_handle_users(
     let mut observed = HashMap::<Identity, Vec<Usage>>::new();
     let mut files = std::collections::HashSet::new();
     let mut warnings = std::collections::BTreeMap::<(Failure, Option<i32>), u64>::new();
-    cancel.record(
-        InspectionCounter::ResourceWorkers,
-        handles::worker_count() as u64,
-    );
     let outcome =
         crate::inspection_transport::inspect(&configuration, request, cancel, |message| {
             cancel.check()?;

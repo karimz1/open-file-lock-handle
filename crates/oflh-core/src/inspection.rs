@@ -45,7 +45,7 @@ pub enum InspectionCounter {
     ResourceWorkers,
     /// Native file-user fallback queries (Windows only).
     NativeFileUserQueries,
-    /// Native handle snapshot attempts.
+    /// Completed native handle snapshots.
     NativeHandleSnapshots,
     /// Native handle snapshot duration in microseconds.
     NativeHandleSnapshotMicros,
@@ -85,7 +85,7 @@ pub struct InspectionProgress {
     pub resource_workers: u64,
     /// Queries to the native file-user fallback; not Restart Manager calls.
     pub native_file_user_queries: u64,
-    /// Native handle snapshot attempts.
+    /// Completed native handle snapshots.
     pub native_handle_snapshots: u64,
     /// Native handle snapshot duration in microseconds.
     pub native_handle_snapshot_micros: u64,
