@@ -22,8 +22,8 @@ checks start time before signaling, but its APIs leave a narrow exit/PID-reuse r
 
 Windows console and service processes may require explicit force termination.
 Windows folder inspection follows process references rather than walking unused
-files. Accessible directory handles and delete-pending file handles are included;
-working-directory classification is unavailable. Data mappings are inspected even
+files. Accessible directory handles and delete-pending handles with resolvable names are included;
+working-directory classification is unavailable. POSIX-style unlink on modern Windows can discard the old parent/name while the handle remains live. Such handles cannot be assigned to their former folder safely and produce explicit partial-coverage warnings. Data mappings are inspected even
 when the file handle has closed. Their native device paths must have a supported
 DOS-drive or UNC translation; mounted-volume-only paths and outside-name hard-link
 aliases of closed-handle mappings may be missed. Open-file hard-link aliases are

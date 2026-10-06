@@ -40,6 +40,7 @@ pub(crate) enum Failure {
     Mapping = 4,
     Alias = 5,
     Worker = 6,
+    DeletedName = 7,
 }
 impl Failure {
     #[cfg(windows)]
@@ -51,6 +52,7 @@ impl Failure {
             Self::Mapping => "inspect data mapping",
             Self::Alias => "inspect file aliases",
             Self::Worker => "run native inspection worker",
+            Self::DeletedName => "resolve original folder of deleted handle",
         }
     }
 }
@@ -289,6 +291,7 @@ fn decode(bytes: &[u8]) -> Result<Message> {
                 4 => Failure::Mapping,
                 5 => Failure::Alias,
                 6 => Failure::Worker,
+                7 => Failure::DeletedName,
                 _ => {
                     return Err(Error::Unavailable(
                         "unknown inspection helper operation".into(),

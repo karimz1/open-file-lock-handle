@@ -72,7 +72,7 @@ file objects using its own live metadata handle, and distributes source processe
 across two workers per logical CPU, capped at eight. Workers own process handles
 and duplicated file handles. No kernel pointer is dereferenced or used as a path
 cache; captured access flags are not trusted after a handle slot can change.
-Actual disk handles are named, directory/delete-pending metadata is queried, and
+Actual disk handles are named, directory/delete-pending metadata is queried (original deleted names may be unavailable), and
 outside-opened hard-link aliases are verified using full file IDs. Data mappings
 are found with `VirtualQueryEx` and `GetMappedFileNameW`, including mappings after
 the file handle closes. Loaded modules and executables keep their existing scan.
@@ -95,7 +95,7 @@ do not reset the stall limit. A progressing scan has no total-time cutoff.
 Incomplete helper work keeps completed observations with explicit warnings.
 
 Native regressions require all 160 independent C users, distinct file users,
-a held file beyond 10,000 unused entries, directory/deleted references, outside
+a held file beyond 10,000 unused entries, directory references, available deleted names or explicit name-loss warnings, outside
 hard links and data mappings after file close. The synthetic timing comparison
 must also preserve file-user associations and sharing evidence. Remaining native
 limits are in [platform support](platform-support.md).
@@ -106,3 +106,9 @@ helper argument before terminal or WebView startup. Missing helpers fall back
 explicitly; no fixture or developer benchmark is linked into the application.
 New aggregate counters separate handle snapshot duration, handle names, queried
 memory regions and mapped-file names from Restart Manager calls.
+
+Modern Windows POSIX-style unlink can make both final-path modes and file-name
+information lose the original name. A native fixture independently checks those
+APIs: if the original name remains visible, the scanner must retain the deleted
+reference; otherwise it must disclose the unknown original folder and must not
+guess an association. This is an OS evidence limitation, not a process-count cap.

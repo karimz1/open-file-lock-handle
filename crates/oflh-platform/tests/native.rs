@@ -701,6 +701,7 @@ fn windows_reference_fixture(path: &Path, mode: &str) {
             )
         };
         let mut matches = Vec::new();
+        let mut query_codes = Vec::new();
         for flags in [FILE_NAME_NORMALIZED, FILE_NAME_OPENED] {
             let mut name = vec![0u16; 32768];
             // SAFETY: owned fixture handle and stated writable UTF-16 extent.
@@ -712,16 +713,61 @@ fn windows_reference_fixture(path: &Path, mode: &str) {
                     flags | VOLUME_NAME_DOS,
                 )
             } as usize;
+            query_codes.push(if length == 0 {
+                std::io::Error::last_os_error().raw_os_error()
+            } else {
+                None
+            });
             use std::os::windows::ffi::OsStringExt;
             let observed = PathBuf::from(std::ffi::OsString::from_wide(
                 &name[..length.min(name.len())],
             ));
             matches.push(length > 0 && length < name.len() && original.matches(&observed, None));
         }
+        let mut named = vec![0u32; 16_385];
+        // SAFETY: aligned writable allocation and exact variable-length SDK output size.
+        let named_ok = unsafe {
+            GetFileInformationByHandleEx(
+                file.as_raw_handle(),
+                FileNameInfo,
+                named.as_mut_ptr().cast(),
+                std::mem::size_of_val(named.as_slice()) as u32,
+            )
+        };
+        let named_code = if named_ok == 0 {
+            std::io::Error::last_os_error().raw_os_error()
+        } else {
+            None
+        };
+        let original_relative: Vec<_> = {
+            use std::os::windows::ffi::OsStrExt;
+            let mut components = original.path.components();
+            components.next();
+            components.as_path().as_os_str().encode_wide().collect()
+        };
+        let named_original = if named_ok != 0
+            && named[0] as usize <= std::mem::size_of_val(named.as_slice()) - 4
+            && named[0].is_multiple_of(2)
+        {
+            // SAFETY: SDK initialized exactly the byte extent validated above.
+            let relative = unsafe {
+                std::slice::from_raw_parts(
+                    named.as_ptr().add(1).cast::<u16>(),
+                    named[0] as usize / 2,
+                )
+            };
+            relative == original_relative
+        } else {
+            false
+        };
         // Aggregate diagnostics reveal no native paths or process identities.
         eprintln!(
-            "deleted fixture: metadata_ok={ok}, pending={}, links={}, normalized_matches={}, opened_matches={}",
+            "deleted fixture: metadata_ok={ok}, pending={}, links={}, normalized_matches={}, opened_matches={}, final_query_codes={query_codes:?}, file_name_ok={named_ok}, file_name_code={named_code:?}, file_name_original={named_original}",
             info.DeletePending, info.NumberOfLinks, matches[0], matches[1]
+        );
+        println!(
+            "OFLH DELETION ORIGINAL {}",
+            matches.iter().any(|matched| *matched) || named_original
         );
     }
     let held_file = if mode == "mapped-closed" {
@@ -832,7 +878,7 @@ fn directory_inspection_retains_an_outside_opened_hard_link_and_deleted_referenc
     fs::hard_link(&outside, &alias).unwrap();
     fs::write(&deleted, [0; 4096]).unwrap();
     let alias_child = start(&outside, "open");
-    let deleted_child = start(&deleted, "deleted");
+    let (deleted_child, original_name_available) = start_deleted_fixture(&deleted);
     let target = Target::new(&directory).unwrap();
     let expected_alias = Target::new(&alias).unwrap().path;
     let expected_deleted = target.path.join("deleted.bin");
@@ -847,16 +893,66 @@ fn directory_inspection_retains_an_outside_opened_hard_link_and_deleted_referenc
                 .iter()
                 .any(|usage| usage.path == expected_alias && usage.relation == Relation::Open)
     }));
-    assert!(
-        snapshot.processes.iter().any(|process| {
-            process.identity.pid == deleted_child.0.id()
-                && process.usages.iter().any(|usage| {
-                    usage.path == expected_deleted
-                        && usage.relation == Relation::Open
-                        && usage.deleted
-                })
-        }),
-        "deleted reference missing; warning_count={}",
-        snapshot.warnings.len()
+    let original_observed = snapshot.processes.iter().any(|process| {
+        process.identity.pid == deleted_child.0.id()
+            && process.usages.iter().any(|usage| {
+                usage.path == expected_deleted && usage.relation == Relation::Open && usage.deleted
+            })
+    });
+    if original_name_available {
+        assert!(
+            original_observed,
+            "deleted reference missing despite independently visible native name"
+        );
+    } else {
+        // Modern Windows POSIX unlink can discard the old parent/name even
+        // while the descriptor stays live. Require a specific coverage warning,
+        // and reject an invented association with the old path.
+        assert!(
+            !original_observed,
+            "deleted-file name was guessed after native name loss"
+        );
+        assert!(
+            snapshot
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("resolve original folder of deleted handle")),
+            "original native name unavailable without explicit partial warning"
+        );
+    }
+}
+
+#[cfg(windows)]
+fn start_deleted_fixture(path: &Path) -> (ChildGuard, bool) {
+    let mut child = ChildGuard(
+        Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "fixture_helper", "--nocapture"])
+            .env("OFLH_FIXTURE", path)
+            .env("OFLH_MODE", "deleted")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap(),
     );
+    let output = child.0.stdout.take().unwrap();
+    let (sender, receiver) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let mut visible = None;
+        for line in BufReader::new(output).lines() {
+            let line = line.unwrap();
+            if let Some(value) = line.strip_prefix("OFLH DELETION ORIGINAL ") {
+                visible = Some(value.parse::<bool>().unwrap());
+            }
+            if line.starts_with("OFLH READY ") {
+                sender.send(visible).unwrap();
+                break;
+            }
+        }
+    });
+    let original_visible = receiver
+        .recv_timeout(Duration::from_secs(15))
+        .unwrap()
+        .expect("missing independent native deletion capability");
+    (child, original_visible)
 }

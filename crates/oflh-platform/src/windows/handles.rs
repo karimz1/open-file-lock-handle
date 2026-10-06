@@ -182,7 +182,14 @@ fn inspect_handles(
         let observed = match names::final_path(&handle, deleted, context.target) {
             Ok(path) => path,
             Err(error) => {
-                failures.note(Failure::Path, &error);
+                failures.note(
+                    if deleted {
+                        Failure::DeletedName
+                    } else {
+                        Failure::Path
+                    },
+                    &error,
+                );
                 continue;
             }
         };
@@ -191,6 +198,13 @@ fn inspect_handles(
         }
         if context.target.contains(&observed) {
             context.publish(identity, pinned, &observed, info.Directory, false, deleted)?;
+        } else if deleted {
+            // POSIX unlink can move a live handle's native name into an NTFS
+            // tombstone directory. Its old parent cannot be inferred safely.
+            failures.note(
+                Failure::DeletedName,
+                &Error::Unavailable("original deleted-file folder is unavailable".into()),
+            );
         } else if !info.Directory && info.NumberOfLinks > 1 && !deleted {
             match names::aliases(&handle, &observed, context.target) {
                 Ok(aliases) => {
