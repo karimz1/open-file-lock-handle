@@ -356,6 +356,8 @@ const zh: TranslationSchema<typeof en> = {
     k_reset_to_default: "恢复默认",
   },
   status: {
+    k_last_scan_duration: "上次扫描：{{duration}}",
+    k_last_completed_scan_duration: "上次成功完成检查所用的时间",
     k_about_automatic_refresh: "关于自动刷新",
     k_automatic_refresh: "自动刷新",
     k_automatic_refresh_information: "自动刷新说明",

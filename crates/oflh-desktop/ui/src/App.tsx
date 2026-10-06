@@ -49,6 +49,7 @@ import {
 } from "./api";
 import { acceptStatus, initialStatus, selectKey } from "./state";
 import { InspectionOverlay } from "./InspectionOverlay";
+import { scanDuration } from "./scanDuration";
 import { Inspector } from "./Inspector";
 import { Modal } from "./Modal";
 import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
@@ -1746,6 +1747,16 @@ export function App() {
                 : t("inspection.k_ready_to_inspect")}
           </span>
         </span>
+        {status.last_scan_elapsed_ms != null && (
+          <span
+            className="scan-duration"
+            title={t("status.k_last_completed_scan_duration")}
+          >
+            {t("status.k_last_scan_duration", {
+              duration: scanDuration(status.last_scan_elapsed_ms),
+            })}
+          </span>
+        )}
         <span className="status-metrics">
           {status.processes} {t("status.k_file_users")} · {status.usages}{" "}
           {t("status.k_file_usages_d01933d6")} · {status.ports}{" "}

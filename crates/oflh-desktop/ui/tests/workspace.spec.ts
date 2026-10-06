@@ -77,6 +77,7 @@ test.beforeEach(async ({ page }) => {
       revision: 1,
       scanning: false,
       elapsed_ms: 0,
+      last_scan_elapsed_ms: null as number | null,
       progress: {
         phase: "processes",
         processes: 0,
@@ -258,7 +259,7 @@ test.beforeEach(async ({ page }) => {
                     .includes(args.query.columns.name.toLowerCase())),
             );
             return {
-              revision: 1,
+              revision: args.revision,
               total: rows.length,
               rows: rows.slice(
                 args.query.offset,
@@ -386,13 +387,127 @@ test.beforeEach(async ({ page }) => {
           status = { ...status, ...payload };
         for (const [id, callback] of callbacks) {
           if (callbackEvents.get(id) === event) {
-            callback({ event, id, payload });
+            callback({
+              event,
+              id,
+              payload: event === "scan-status" ? status : payload,
+            });
           }
         }
       },
     });
   });
 });
+
+test("completed duration survives active, cancelled, failed and stale scans", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const duration = page.locator(".scan-duration");
+  await expect(duration).toHaveCount(0);
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 2,
+      revision: 2,
+      scanning: false,
+      elapsed_ms: 1532,
+      last_scan_elapsed_ms: 1532,
+    }),
+  );
+  await expect(duration).toHaveText("Last scan: 1.5 sec");
+  await page.evaluate(() => {
+    (window as any).__holdRefreshForTest = true;
+  });
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Scanning", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(duration).toHaveText("Last scan: 1.5 sec");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(duration).toHaveText("Last scan: 1.5 sec");
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 5,
+      scanning: false,
+      error: {
+        kind: "unavailable",
+        message: "Synthetic failure",
+        os_code: null,
+      },
+    }),
+  );
+  await expect(duration).toHaveText("Last scan: 1.5 sec");
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 3,
+      revision: 3,
+      scanning: false,
+      last_scan_elapsed_ms: 90000,
+    }),
+  );
+  await expect(duration).toHaveText("Last scan: 1.5 sec");
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 6,
+      revision: 6,
+      scanning: false,
+      error: null,
+      elapsed_ms: 0,
+      last_scan_elapsed_ms: 0,
+    }),
+  );
+  await expect(duration).toHaveText("Last scan: 0 ms");
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 7,
+      revision: 7,
+      scanning: false,
+      elapsed_ms: 90000,
+      last_scan_elapsed_ms: 90000,
+    }),
+  );
+  await expect(duration).toHaveText("Last scan: 1.5 min");
+});
+
+for (const [language, expected] of [
+  ["en", "Last scan: 1.5 min"],
+  ["de", "Letzter Scan: 1,5 Min."],
+  ["zh", "上次扫描：1.5分钟"],
+]) {
+  test(`completed duration fits the minimum window in ${language}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 860, height: 560 });
+    await page.addInitScript((language) => {
+      localStorage.setItem("oflh-language", language);
+      localStorage.setItem("oflh-font-size", "14");
+    }, language);
+    await page.goto("/");
+    await page.evaluate(() =>
+      (window as any).__emitTestEvent("scan-status", {
+        generation: 2,
+        revision: 2,
+        scanning: false,
+        elapsed_ms: 90000,
+        last_scan_elapsed_ms: 90000,
+      }),
+    );
+    const duration = page.locator(".scan-duration");
+    await expect(duration).toHaveText(expected);
+    await expect(page.getByRole("grid")).toHaveAttribute(
+      "aria-rowcount",
+      "1501",
+    );
+    const bounds = await duration.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(860);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(860);
+    await page.screenshot({ path: `test-results/last-scan-${language}.png` });
+  });
+}
 test("virtualized workspace, theme, process details, keyboard and copy", async ({
   page,
 }) => {

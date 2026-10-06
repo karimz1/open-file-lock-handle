@@ -4,6 +4,7 @@ export const initialStatus: Status = {
   revision: 0,
   scanning: false,
   elapsed_ms: 0,
+  last_scan_elapsed_ms: null,
   progress: {
     phase: "processes",
     processes: 0,

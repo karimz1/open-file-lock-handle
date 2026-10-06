@@ -87,6 +87,9 @@ pub struct Status {
     pub scanning: bool,
     /// Elapsed inspection time; frozen when the request completes or is cancelled.
     pub elapsed_ms: u64,
+    /// Total backend time of the last accepted successful inspection, including
+    /// indexing/publication. Retained across new requests, failures and cancellation.
+    pub last_scan_elapsed_ms: Option<u64>,
     /// Approximate native work attempted; totals and coverage are not implied.
     pub progress: ScanProgress,
     /// Sanitized display path of the last successful target.
