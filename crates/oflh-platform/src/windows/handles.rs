@@ -5,7 +5,7 @@ use std::{
     collections::{BTreeMap, HashSet},
     io::{BufReader, BufWriter, Write},
     sync::{
-        atomic::{AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering},
         mpsc::{self, SyncSender},
     },
     time::{Duration, Instant},
@@ -65,15 +65,42 @@ fn send(sender: &SyncSender<Message>, message: Message) -> Result<()> {
         .map_err(|_| Error::Unavailable("inspection helper consumer disconnected".into()))
 }
 
+#[derive(Clone, Copy)]
+#[repr(u8)]
+enum NativeOperation {
+    Process,
+    Duplicate,
+    Metadata,
+    Path,
+    Alias,
+    Mapping,
+    Sharing,
+}
+struct ActivityGuard<'a> {
+    current: &'a AtomicU8,
+    previous: u8,
+}
+impl Drop for ActivityGuard<'_> {
+    fn drop(&mut self) {
+        self.current.store(self.previous, Ordering::Relaxed);
+    }
+}
 struct Context<'a> {
     target: &'a Target,
     devices: &'a names::DevicePaths,
     sharing: &'a names::Sharing,
     stats: &'a Stats,
+    activity: &'a AtomicU8,
     sender: &'a SyncSender<Message>,
     cancel: &'a Cancellation,
 }
 impl Context<'_> {
+    fn operation(&self, operation: NativeOperation) -> ActivityGuard<'_> {
+        ActivityGuard {
+            current: self.activity,
+            previous: self.activity.swap(1 << operation as u8, Ordering::Relaxed),
+        }
+    }
     fn publish(
         &self,
         identity: Identity,
@@ -87,6 +114,7 @@ impl Context<'_> {
         let sharing = if directory || deleted {
             None
         } else {
+            let _activity = self.operation(NativeOperation::Sharing);
             self.sharing.inspect(path)
         };
         // The owned process handle pins this birth identity. A terminated process
@@ -157,6 +185,7 @@ fn inspect_handles(
     for &value in values {
         context.cancel.check()?;
         context.stats.add(1, 1);
+        let _activity = context.operation(NativeOperation::Duplicate);
         let handle = match duplicate(&source, value) {
             Ok(handle) => handle,
             Err(error) => {
@@ -170,7 +199,11 @@ fn inspect_handles(
         if unsafe { GetFileType(handle.0) } != FILE_TYPE_DISK {
             continue;
         }
-        let info = match names::standard(&handle) {
+        let metadata = {
+            let _activity = context.operation(NativeOperation::Metadata);
+            names::standard(&handle)
+        };
+        let info = match metadata {
             Ok(info) => info,
             Err(error) => {
                 failures.note(Failure::Path, &error);
@@ -179,7 +212,11 @@ fn inspect_handles(
         };
         let deleted = info.DeletePending || info.NumberOfLinks == 0;
         context.stats.add(2, 1);
-        let observed = match names::final_path(&handle, deleted, context.target) {
+        let resolved = {
+            let _activity = context.operation(NativeOperation::Path);
+            names::final_path(&handle, deleted, context.target)
+        };
+        let observed = match resolved {
             Ok(path) => path,
             Err(error) => {
                 failures.note(
@@ -206,7 +243,11 @@ fn inspect_handles(
                 &Error::Unavailable("original deleted-file folder is unavailable".into()),
             );
         } else if !info.Directory && info.NumberOfLinks > 1 && !deleted {
-            match names::aliases(&handle, &observed, context.target) {
+            let aliases = {
+                let _activity = context.operation(NativeOperation::Alias);
+                names::aliases(&handle, &observed, context.target)
+            };
+            match aliases {
                 Ok(aliases) => {
                     for alias in aliases {
                         context.publish(identity, pinned, &alias, false, false, false)?;
@@ -225,6 +266,7 @@ fn inspect_process(
     context: &Context<'_>,
     failures: &mut Failures,
 ) -> Result<()> {
+    let _activity = context.operation(NativeOperation::Process);
     context.stats.add(0, 1);
     let pinned = match open(pid, PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE) {
         Ok(process) => process,
@@ -353,10 +395,11 @@ fn execute(request: crate::inspection_protocol::Request, output: &mut impl Write
     let sharing = names::Sharing::default();
     let cancel = Cancellation::default();
     let next = AtomicUsize::new(0);
+    let activities: Vec<_> = (0..worker_count()).map(|_| AtomicU8::new(0)).collect();
     std::thread::scope(|scope| -> Result<()> {
         let (sender, receiver) = mpsc::sync_channel(worker_count() * 2);
         let mut threads = Vec::new();
-        for index in 0..worker_count() {
+        for (index, activity) in activities.iter().enumerate() {
             let sender = sender.clone();
             let groups = &groups;
             let next = &next;
@@ -373,6 +416,7 @@ fn execute(request: crate::inspection_protocol::Request, output: &mut impl Write
                         devices,
                         sharing,
                         stats,
+                        activity,
                         sender: &sender,
                         cancel,
                     };
@@ -418,6 +462,16 @@ fn execute(request: crate::inspection_protocol::Request, output: &mut impl Write
                     output,
                     &Message::Progress(stats.progress()),
                 )
+                .and_then(|()| {
+                    crate::inspection_protocol::write_message(
+                        output,
+                        &Message::Activity(
+                            activities
+                                .iter()
+                                .fold(0, |mask, activity| mask | activity.load(Ordering::Relaxed)),
+                        ),
+                    )
+                })
                 .and_then(|()| {
                     output
                         .flush()

@@ -2,7 +2,7 @@
 use oflh_core::{AccessKind, Error, Identity, Result, io};
 use std::io::{Read, Write};
 
-const MAGIC: &[u8] = b"OFLH-HANDLES-1\0";
+const MAGIC: &[u8] = b"OFLH-HANDLES-2\0";
 const MAX_FRAME: usize = 128 * 1024;
 const MAX_PATH: usize = 32_768;
 
@@ -56,6 +56,34 @@ impl Failure {
         }
     }
 }
+/// Aggregate operation categories only: no paths, PIDs, or worker identities.
+pub(crate) const ACTIVITY_LABELS: [&str; 7] = [
+    "open source process",
+    "duplicate disk handle",
+    "query disk metadata",
+    "resolve disk path",
+    "enumerate hard-link aliases",
+    "inspect data mappings",
+    "probe file sharing",
+];
+pub(crate) fn activity_label(mask: u8) -> String {
+    let labels: Vec<_> = ACTIVITY_LABELS
+        .iter()
+        .enumerate()
+        .filter_map(|(index, &label)| (mask & (1 << index) != 0).then_some(label))
+        .collect();
+    if labels.is_empty() {
+        "unknown native operation".into()
+    } else {
+        labels.join(", ")
+    }
+}
+fn validate_activity(mask: u8) -> Result<u8> {
+    if mask & 0x80 != 0 {
+        return Err(Error::Unavailable("invalid native activity mask".into()));
+    }
+    Ok(mask)
+}
 #[derive(Debug, PartialEq)]
 pub(crate) enum Message {
     Hello,
@@ -68,6 +96,8 @@ pub(crate) enum Message {
         count: u64,
     },
     Done,
+    /// Diagnostic traffic never counts as completed work for the stall deadline.
+    Activity(u8),
     Failed {
         code: Option<i32>,
         reason: String,
@@ -169,6 +199,7 @@ pub(crate) fn write_message(writer: &mut impl Write, message: &Message) -> Resul
             bytes.extend(count.to_le_bytes());
         }
         Message::Done => bytes.push(5),
+        Message::Activity(mask) => bytes.extend([7, validate_activity(*mask)?]),
         Message::Failed { code, reason } => {
             if reason.len() > 2048 {
                 return Err(Error::Unavailable(
@@ -318,6 +349,7 @@ fn decode(bytes: &[u8]) -> Result<Message> {
             }
         }
         5 => Message::Done,
+        7 => Message::Activity(validate_activity(decoder.byte()?)?),
         6 => {
             let has_code = decoder.byte()?;
             let code = i32::from_le_bytes(decoder.take()?);
@@ -403,6 +435,7 @@ mod tests {
                 count: 160,
             },
             Message::Done,
+            Message::Activity(0x7f),
             Message::Failed {
                 code: Some(5),
                 reason: "open source process".into(),
@@ -419,6 +452,9 @@ mod tests {
             vec![],
             vec![99],
             vec![5, 0],
+            vec![7, 0x80],
+            vec![7],
+            vec![7, 1, 0],
             vec![4, 255, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
         ] {
             assert!(decode(&bytes).is_err());

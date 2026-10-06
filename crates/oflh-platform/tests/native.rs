@@ -89,7 +89,15 @@ fn fixture_helper() {
     let path = PathBuf::from(path);
     let mode = std::env::var("OFLH_MODE").unwrap();
     #[cfg(windows)]
-    if matches!(mode.as_str(), "mapped-closed" | "directory" | "deleted") {
+    if matches!(
+        mode.as_str(),
+        "mapped-closed"
+            | "directory"
+            | "deleted"
+            | "handle-read"
+            | "handle-write"
+            | "handle-metadata"
+    ) {
         windows_reference_fixture(&path, &mode);
         return;
     }
@@ -649,6 +657,11 @@ fn windows_reference_fixture(path: &Path, mode: &str) {
     use windows_sys::Win32::{Foundation::*, Storage::FileSystem::*, System::Memory::*};
     let file = OpenOptions::new()
         .read(true)
+        .access_mode(match mode {
+            "handle-write" => GENERIC_WRITE,
+            "handle-metadata" => 0,
+            _ => GENERIC_READ,
+        })
         .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
         .custom_flags(if mode == "directory" {
             FILE_FLAG_BACKUP_SEMANTICS
@@ -862,6 +875,44 @@ fn directory_handle_and_closed_file_mapping_remain_visible() {
                 && process.usages.iter().any(|usage| usage.path == expected
                     && usage.relation == Relation::Open
                     && usage.access == Access::Directory))
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn directory_inspection_keeps_read_only_write_only_and_metadata_only_handles() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut children = Vec::new();
+    for mode in ["handle-read", "handle-write", "handle-metadata"] {
+        let path = directory.path().join(format!("{mode}.bin"));
+        fs::write(&path, [0; 4096]).unwrap();
+        let child = start(&path, mode);
+        children.push((child, Target::new(&path).unwrap().path));
+    }
+    let snapshot = native()
+        .unwrap()
+        .scan(
+            &Target::new(directory.path()).unwrap(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+    for (child, path) in &children {
+        let process = snapshot
+            .processes
+            .iter()
+            .find(|process| process.identity.pid == child.0.id())
+            .expect("minimal-rights handle user missing");
+        assert_ne!(process.identity.started, 0);
+        assert!(process.usages.iter().any(|usage| usage.path == *path
+            && usage.relation == Relation::Open
+            && usage.access == Access::Unknown));
+    }
+    assert!(
+        !snapshot.warnings.iter().any(|warning| warning
+            .starts_with("Windows handle inspection incomplete:")
+            || warning.starts_with("Windows handle inspection unavailable:")),
+        "helper failed: {:?}",
+        snapshot.warnings
     );
 }
 

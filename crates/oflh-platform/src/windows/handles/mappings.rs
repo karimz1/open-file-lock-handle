@@ -1,6 +1,6 @@
 //! Enumerate data mappings independently of open file handles and loaded modules.
 use super::super::*;
-use super::{Context, Failures, names::DevicePaths};
+use super::{Context, Failures, NativeOperation, names::DevicePaths};
 use crate::inspection_protocol::Failure;
 use std::collections::HashSet;
 use windows_sys::Win32::System::Memory::*;
@@ -48,6 +48,7 @@ pub(super) fn inspect(
     context: &Context<'_>,
     failures: &mut Failures,
 ) -> Result<()> {
+    let _activity = context.operation(NativeOperation::Mapping);
     let process = match open(identity.pid, PROCESS_QUERY_INFORMATION | SYNCHRONIZE) {
         Ok(process) => process,
         Err(error) => {

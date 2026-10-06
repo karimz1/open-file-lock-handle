@@ -38,6 +38,7 @@ fn summarize(profiles: &[Value]) -> Result<String> {
                     .ok_or("missing root outcome")?;
                 if ![
                     "completed",
+                    "partial",
                     "budget_cancelled",
                     "budget_or_failure",
                     "failed",
@@ -158,6 +159,15 @@ mod tests {
         assert!(summary.contains("cancelled work is not a completed scan or a speedup"));
         profiles[0].as_object_mut().unwrap().remove("whole_root");
         assert!(summarize(&profiles).is_err());
+    }
+    #[test]
+    fn partial_root_results_remain_explicit_in_the_comparison() {
+        let mut profiles = profiles();
+        for profile in &mut profiles {
+            profile["whole_root"] = json!({"baseline":{"outcome":"completed","elapsed_ms":90},"candidate":{"outcome":"partial","elapsed_ms":20000}});
+        }
+        let summary = summarize(&profiles).unwrap();
+        assert_eq!(summary.matches("20000.000 (partial)").count(), 6);
     }
     #[test]
     fn requires_six_unique_native_targets_and_equivalent_coverage() {

@@ -231,6 +231,38 @@ fn profile(name: &str, held: usize, baseline: Option<&Path>) -> Result<Value> {
     }
     Ok(result)
 }
+/// Only classify fixed backend diagnostics; never publish warning payloads.
+fn root_outcome(warnings: &[String]) -> &'static str {
+    if warnings.iter().any(|warning| {
+        warning.starts_with("Windows handle inspection incomplete:")
+            || warning.starts_with("Windows handle inspection unavailable:")
+            || warning.contains("limited to 10,000 files")
+    }) {
+        "partial"
+    } else {
+        "completed"
+    }
+}
+fn stalled_operations(warnings: &[String]) -> Vec<&'static str> {
+    [
+        "open source process",
+        "duplicate disk handle",
+        "query disk metadata",
+        "resolve disk path",
+        "enumerate hard-link aliases",
+        "inspect data mappings",
+        "probe file sharing",
+    ]
+    .into_iter()
+    .filter(|operation| {
+        warnings.iter().any(|warning| {
+            warning.starts_with("Windows handle inspection incomplete:")
+                && warning.contains("inspection helper stalled")
+                && warning.contains(operation)
+        })
+    })
+    .collect()
+}
 /// Whole-root results describe each backend's scope; they cannot assert equivalent
 /// observations from a live machine. A budget is cancellation, never a faster scan.
 fn root_diagnostic(baseline: Option<&Path>, budget: std::time::Duration) -> Result<Value> {
@@ -250,7 +282,9 @@ fn root_diagnostic(baseline: Option<&Path>, budget: std::time::Duration) -> Resu
     let _ = finished.send(());
     timer.join().map_err(|_| "root budget worker failed")?;
     let candidate = match snapshot {
-        Ok(snapshot) => json!({"outcome":"completed","elapsed_ms":elapsed,
+        Ok(snapshot) => json!({"outcome":root_outcome(&snapshot.warnings),"elapsed_ms":elapsed,
+            "helper_stalled":snapshot.warnings.iter().any(|warning| warning.starts_with("Windows handle inspection incomplete:") && warning.contains("inspection helper stalled")),
+            "stalled_operations":stalled_operations(&snapshot.warnings),
             "processes":snapshot.processes.len(),
             "usages":snapshot.processes.iter().map(|process| process.usages.len()).sum::<usize>(),
             "warning_count":snapshot.warnings.len(),
@@ -360,4 +394,24 @@ fn main() -> Result<()> {
     }
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn helper_failures_are_partial_root_scans_even_when_the_backend_returns_rows() {
+        for warning in [
+            "Windows handle inspection incomplete: stalled",
+            "Windows handle inspection unavailable: missing",
+            "Inspection limited to 10,000 files",
+        ] {
+            assert_eq!(root_outcome(&[warning.into()]), "partial");
+        }
+        assert_eq!(root_outcome(&[]), "completed");
+        assert_eq!(
+            root_outcome(&["process permissions limit coverage".into()]),
+            "completed"
+        );
+    }
 }

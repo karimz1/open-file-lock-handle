@@ -112,3 +112,12 @@ information lose the original name. A native fixture independently checks those
 APIs: if the original name remains visible, the scanner must retain the deleted
 reference; otherwise it must disclose the unknown original folder and must not
 guess an association. This is an OS evidence limitation, not a process-count cap.
+
+Helper stall warnings now identify only aggregate operation categories (process
+open, handle duplication, metadata, naming, aliases, mappings or sharing).
+Activity messages contain no paths or process identifiers and do not reset the
+stall deadline. Root profiling labels helper failures and capped fallback results
+`partial`, even when the backend returns useful rows. The summary keeps that
+outcome explicit; a returned partial snapshot is not completed native discovery.
+Native minimal-rights fixtures separately require read-only, write-only and
+metadata-only users to survive folder inspection without invented access modes.

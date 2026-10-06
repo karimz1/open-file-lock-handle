@@ -180,6 +180,7 @@ fn consume(
 ) -> Result<Outcome> {
     let mut greeted = false;
     let mut watch = WorkWatch::new(Instant::now());
+    let mut activity = 0;
     let failure = loop {
         cancel.check()?;
         match receiver.recv_timeout(Duration::from_millis(25)) {
@@ -218,6 +219,10 @@ fn consume(
                     "inspection helper did not exit successfully after completion".into(),
                 );
             }
+            Ok(Ok(Message::Activity(mask))) if greeted => {
+                // Diagnostic heartbeats cannot conceal a blocked native call.
+                activity = mask;
+            }
             Ok(Ok(Message::Progress(progress))) if greeted => {
                 if let Err(error) = watch.note_progress(progress, Instant::now()) {
                     break error;
@@ -237,9 +242,10 @@ fn consume(
         }
         let limit = if greeted { stall_limit } else { startup_limit };
         if watch.expired(Instant::now(), limit) {
-            break Error::Unavailable(
-                "inspection helper stalled; partial observations retained".into(),
-            );
+            break Error::Unavailable(format!(
+                "inspection helper stalled during {}; partial observations retained",
+                crate::inspection_protocol::activity_label(activity)
+            ));
         }
     };
     Ok(if greeted {
@@ -393,6 +399,7 @@ mod tests {
                 std::process::exit(1);
             }
             "stall" => loop {
+                write_message(&mut output, &Message::Activity(1 << 6)).unwrap();
                 write_message(&mut output, &Message::Progress(Progress::default())).unwrap();
                 output.flush().unwrap();
                 std::thread::sleep(Duration::from_millis(10));
@@ -509,6 +516,9 @@ mod tests {
             let Outcome::Partial(error) = outcome else {
                 panic!("invalid native progress was accepted")
             };
+            if mode == "stall" {
+                assert!(error.to_string().contains("probe file sharing"));
+            }
             assert!(error.to_string().contains(if mode == "stall" {
                 "stalled"
             } else {
