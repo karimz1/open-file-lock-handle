@@ -236,3 +236,6 @@ panel. Captured details remain visible when the process exits or no longer
 matches; a notice identifies this state and actions stay disabled until a current
 observation is available. PID reuse cannot substitute another process for the
 captured identity. A different target or query clears stale matches normally.
+If loading the replacement page fails, the old viewport stays visible with an
+explicit error. Stale path actions remain disabled, and a new refresh can recover;
+the reload barrier does not stay stuck after failed presentation work.
