@@ -48,6 +48,12 @@ Drop a file or folder anywhere in the window, choose **Open file** / **Open fold
 or type a path and choose **Inspect**. **Recent targets** lets you revisit targets
 from previous launches. Folder scans include descendants.
 
+On Windows, ordinary drive and network paths use familiar text such as `C:\`
+or `\\server\share` in the target, history, details and copied paths. Native
+paths remain unchanged for inspection and file-manager actions. Paths requiring
+the Windows extended namespace retain their prefix; copied long paths also keep
+it so their meaning does not depend on the receiving application's settings.
+
 **Processes** groups results by process. **File usages** shows individual matching
 observations. Click a row to open details. Use the panel button or close button to
 close it. Table paths are shortened for readability. Full paths and copy/reveal
