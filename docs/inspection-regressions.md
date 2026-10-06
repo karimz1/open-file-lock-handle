@@ -31,9 +31,10 @@ tracks the additional parser, native-buffer and snapshot regressions.
 | #75: completed duration | Only successful accepted scans publish a duration; cancel/failure/stale work retains the previous value; ms/s/min formatting, localized/minimum-window footer | `crates/oflh-desktop/src/service.rs`, `ui/src/scanDuration.test.ts`, browser tests |
 | #76: quiet automatic refresh | Old viewport remains until a matching page is ready; search/scroll/focus/details stay usable; one scan and page request at a time; no idle progress polling; no refresh timer restart before accepted rows; stale/reused identities and changed observations cannot gain actions | `crates/oflh-desktop/ui/tests/workspace.spec.ts` |
 
-A 200-row IPC page limits one response, not native discovery. The desktop's explicit
-10,000-process select-all safety limit reports an error; it does not truncate the
-inspected dataset. Tests assert result membership and identity separately from
+A 200-row IPC page limits one response, not native discovery. A 10,001-process
+fixture requires the complete count and the last page to remain accessible even
+after select-all reports its explicit 10,000-process safety limit. It does not
+truncate the inspected dataset. Tests assert result membership and identity separately from
 viewport sizes and timings.
 
 ## Run and review

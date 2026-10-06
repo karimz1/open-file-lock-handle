@@ -1145,6 +1145,55 @@ mod query_cache_tests {
         )
     }
     #[test]
+    fn selection_safety_limit_does_not_truncate_inspection_or_late_pages() {
+        let dataset = Dataset::new(
+            1,
+            Snapshot {
+                processes: (4000..14001)
+                    .map(|pid| Process {
+                        identity: Identity {
+                            pid,
+                            started: 10,
+                            started_sub: 0,
+                        },
+                        name: "worker".into(),
+                        usages: vec![Usage {
+                            path: PathBuf::from("/fixture/shared.bin"),
+                            ..Usage::default()
+                        }],
+                        ..Process::default()
+                    })
+                    .collect(),
+                warnings: vec![],
+            },
+        );
+        let query = TableQuery {
+            sort: Sort::Pid,
+            offset: 9999,
+            limit: usize::MAX,
+            ..TableQuery::default()
+        };
+        let page = dataset.page(&query).unwrap();
+        assert_eq!(dataset.file_users(), 10001);
+        assert_eq!(page.total, 10001);
+        assert_eq!(
+            page.rows.iter().map(|row| row.pid).collect::<Vec<_>>(),
+            [13999, 14000]
+        );
+        let error = dataset.keys(&query).unwrap_err();
+        assert_eq!(error.kind, "invalid_request");
+        assert!(error.message.contains("10,000"));
+        assert_eq!(dataset.page(&query).unwrap().total, 10001);
+        let narrowed = TableQuery {
+            columns: ColumnFilters {
+                pid: Some(14000),
+                ..ColumnFilters::default()
+            },
+            ..query
+        };
+        assert_eq!(dataset.keys(&narrowed).unwrap(), ["14000:10:0"]);
+    }
+    #[test]
     fn skipping_relevance_scores_preserves_all_per_observation_matches_and_selection() {
         let dataset = large_dataset(1);
         for handles in [false, true] {
