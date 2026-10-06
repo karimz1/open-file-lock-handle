@@ -48,6 +48,12 @@ Drop a file or folder anywhere in the window, choose **Open file** / **Open fold
 or type a path and choose **Inspect**. **Recent targets** lets you revisit targets
 from previous launches. Folder scans include descendants.
 
+On Windows, ordinary drive and network paths use familiar text such as `C:\`
+or `\\server\share` in the target, history, details and copied paths. Native
+paths remain unchanged for inspection and file-manager actions. Paths requiring
+the Windows extended namespace retain their prefix; copied long paths also keep
+it so their meaning does not depend on the receiving application's settings.
+
 **Processes** groups results by process. **File usages** shows individual matching
 observations. Click a row to open details. Use the panel button or close button to
 close it. Table paths are shortened for readability. Full paths and copy/reveal
@@ -212,6 +218,11 @@ Choose **Donate** to open the support dialog, then choose Buy Me a Coffee,
 GitHub Sponsors, or PayPal. The selected service opens in your browser.
 
 ## Long-running inspections
+
+The footer keeps the duration of the last completed scan or refresh, including
+result preparation. Short scans use milliseconds, longer scans use seconds or
+minutes. The previous completed duration stays visible while another scan runs
+and after cancellation or failure. This also applies to local-port inspections.
 
 While an inspection is running, a modal progress panel blocks workspace actions and reload shortcuts. It shows elapsed time, the current stage and native work counts. The total is unknown; the bar does not imply a percentage. Windows file counts are distinct from descriptors, mappings or module references. Results may still be partial because of permissions or platform limits.
 This modal panel applies to opening a new target or manually refreshing. Automatic

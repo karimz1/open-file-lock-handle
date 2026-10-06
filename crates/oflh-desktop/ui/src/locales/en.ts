@@ -373,6 +373,9 @@ const en = {
     k_zoom_out: "Zoom out",
   },
   status: {
+    k_last_scan_duration: "Last scan: {{duration}}",
+    k_last_completed_scan_duration:
+      "Duration of the last successfully completed inspection",
     k_about_automatic_refresh: "About automatic refresh",
     k_automatic_refresh: "Automatic refresh",
     k_automatic_refresh_information: "Automatic refresh information",

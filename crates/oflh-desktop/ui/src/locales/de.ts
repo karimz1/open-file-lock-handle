@@ -385,6 +385,9 @@ const de: TranslationSchema<typeof en> = {
     k_zoom_out: "Verkleinern",
   },
   status: {
+    k_last_scan_duration: "Letzter Scan: {{duration}}",
+    k_last_completed_scan_duration:
+      "Dauer der letzten erfolgreich abgeschlossenen Untersuchung",
     k_about_automatic_refresh: "Über die automatische Aktualisierung",
     k_automatic_refresh: "Automatische Aktualisierung",
     k_automatic_refresh_information:

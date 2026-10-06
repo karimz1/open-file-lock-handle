@@ -503,7 +503,8 @@ impl Dataset {
                 .collect(),
         })
     }
-    /// Copy original text, never the sanitized presentation. Reject lossy path conversion.
+    /// Copy unsanitized, lossless text. Ordinary Windows paths use familiar
+    /// notation; namespace-dependent paths retain their native prefix.
     pub fn copy_text(
         &self,
         keys: &[String],
@@ -528,11 +529,20 @@ impl Dataset {
             } else {
                 path.as_os_str()
             };
-            return value.to_str().map(str::to_owned).ok_or_else(|| {
-                Failure::invalid(
-                    "This native path cannot be represented losslessly as clipboard text",
-                )
-            });
+            return value
+                .to_str()
+                .map(|text| {
+                    if field == "path" {
+                        crate::path_text::clipboard(text)
+                    } else {
+                        text.to_owned()
+                    }
+                })
+                .ok_or_else(|| {
+                    Failure::invalid(
+                        "This native path cannot be represented losslessly as clipboard text",
+                    )
+                });
         }
         if keys.is_empty() || keys.len() > 10000 {
             return Err(Failure::invalid("Select between 1 and 10,000 processes"));
@@ -548,9 +558,11 @@ impl Dataset {
                     process.name,
                     process.identity.pid,
                     process.user,
-                    process.executable.to_str().ok_or_else(|| Failure::invalid(
-                        "An executable path cannot be represented losslessly as clipboard text"
-                    ))?
+                    crate::path_text::clipboard(process.executable.to_str().ok_or_else(|| {
+                        Failure::invalid(
+                            "An executable path cannot be represented losslessly as clipboard text",
+                        )
+                    })?)
                 ),
                 _ => return Err(Failure::invalid("Unknown copy field")),
             });
@@ -613,7 +625,7 @@ fn row_path(process: &Process, usage: Option<usize>) -> &Path {
         .unwrap_or(&process.executable)
 }
 pub(crate) fn display(path: &Path) -> String {
-    safe(&path.to_string_lossy())
+    crate::path_text::display(path)
 }
 
 #[cfg(test)]
@@ -871,6 +883,46 @@ mod tests {
             dataset.copy_text(&[], "filename", Some("7:0:0")).unwrap(),
             "FileLockExampleCli.dll"
         );
+    }
+    #[cfg(windows)]
+    #[test]
+    fn familiar_windows_text_never_replaces_native_path_references() {
+        let native = PathBuf::from(r"\\?\C:\Projects\file ü.bin");
+        let mut snapshot = fixture().snapshot;
+        snapshot.processes[0].executable = native.clone();
+        snapshot.processes[0].cwd = PathBuf::from(r"\\?\UNC\server\share\folder");
+        snapshot.processes[0].usages[0].path = native.clone();
+        let dataset = Dataset::new(9, snapshot);
+        let key = identity_key(dataset.snapshot.processes[0].identity);
+        let page = dataset.page(&TableQuery::default()).unwrap();
+        assert_eq!(page.rows[0].path, r"C:\Projects\file ü.bin");
+        let details = dataset.details(&key).unwrap();
+        assert_eq!(details.executable.display, r"C:\Projects\file ü.bin");
+        assert_eq!(details.cwd.display, r"\\server\share\folder");
+        assert_eq!(
+            dataset.copy_text(&[], "path", Some("9:0:0")).unwrap(),
+            r"C:\Projects\file ü.bin"
+        );
+        assert_eq!(dataset.path("9:0:0").unwrap(), native);
+        assert!(
+            dataset
+                .copy_text(&[key], "rows", None)
+                .unwrap()
+                .ends_with(r"C:\Projects\file ü.bin")
+        );
+    }
+    #[cfg(windows)]
+    #[test]
+    fn unpaired_utf16_paths_are_retained_and_never_copied_lossily() {
+        use std::os::windows::ffi::OsStringExt;
+        let mut units: Vec<u16> = r"\\?\C:\fixture\".encode_utf16().collect();
+        units.push(0xd800);
+        let path = PathBuf::from(std::ffi::OsString::from_wide(&units));
+        let mut snapshot = fixture().snapshot;
+        snapshot.processes[0].usages[0].path = path.clone();
+        let dataset = Dataset::new(9, snapshot);
+        assert_eq!(dataset.path("9:0:0").unwrap(), path);
+        assert!(dataset.copy_text(&[], "path", Some("9:0:0")).is_err());
     }
     #[cfg(unix)]
     #[test]
