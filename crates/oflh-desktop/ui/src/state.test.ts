@@ -15,6 +15,23 @@ describe("desktop state", () => {
     const done = { ...scanning, scanning: false, revision: 2 };
     expect(acceptStatus(done, scanning)).toBe(done);
   });
+  it("rejects late progress within the current generation", () => {
+    const latest = {
+      ...initialStatus,
+      generation: 2,
+      scanning: true,
+      elapsed_ms: 1000,
+    };
+    expect(acceptStatus(latest, { ...latest, elapsed_ms: 500 })).toBe(latest);
+    expect(
+      acceptStatus(latest, {
+        ...latest,
+        scanning: false,
+        revision: 2,
+        elapsed_ms: 1100,
+      }).scanning,
+    ).toBe(false);
+  });
   it("never aliases different process lifetimes or truncates birth counters", () => {
     const first = "32:18446744073709551614:0";
     const second = "32:18446744073709551615:0";

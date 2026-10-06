@@ -198,6 +198,19 @@ const de: TranslationSchema<typeof en> = {
     k_search_recent_targets: "Zuletzt verwendete Ziele durchsuchen",
   },
   inspection: {
+    k_checking_process_references: "Prozessreferenzen werden geprüft",
+    k_checking_files: "Dateien werden geprüft",
+    k_checking_ports: "Lokale Ports werden geprüft",
+    k_preparing_results: "Ergebnisse werden vorbereitet",
+    k_reload_paused: "Neuladen ist bis zum Ende der Untersuchung pausiert.",
+    k_starting_inspection: "Untersuchung wird gestartet…",
+    k_files_checked: "{{count}} Dateien geprüft",
+    k_references_checked: "{{count}} Referenzen geprüft",
+    k_processes_checked: "{{count}} Prozesse geprüft",
+    k_unknown_total: "Die Gesamtzahl ist während der Untersuchung unbekannt.",
+    k_progress_unavailable:
+      "Fortschritt ist vorübergehend nicht verfügbar. Die Untersuchung läuft weiter.",
+
     k_1_open_oflh_desktop_and_inspect_a_file_or_folder:
       "1. OFLH Desktop öffnen und eine Datei oder einen Ordner untersuchen.",
     k_a_clear_view_of_files_in_use:

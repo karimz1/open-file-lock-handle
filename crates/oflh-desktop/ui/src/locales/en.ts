@@ -190,6 +190,19 @@ const en = {
     k_search_recent_targets: "Search recent targets",
   },
   inspection: {
+    k_checking_process_references: "Checking process references",
+    k_checking_files: "Checking files",
+    k_checking_ports: "Checking local ports",
+    k_preparing_results: "Preparing results",
+    k_reload_paused: "Reloads are paused until this inspection finishes.",
+    k_starting_inspection: "Starting inspection…",
+    k_files_checked: "{{count}} files checked",
+    k_references_checked: "{{count}} references checked",
+    k_processes_checked: "{{count}} processes checked",
+    k_unknown_total: "The total is unknown while inspection is running.",
+    k_progress_unavailable:
+      "Progress is temporarily unavailable. Inspection continues.",
+
     k_1_open_oflh_desktop_and_inspect_a_file_or_folder:
       "1. Open OFLH Desktop and inspect a file or folder.",
     k_a_clear_view_of_files_in_use: "A clear view of files in use.",

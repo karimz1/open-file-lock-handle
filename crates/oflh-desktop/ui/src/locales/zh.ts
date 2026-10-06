@@ -190,6 +190,18 @@ const zh: TranslationSchema<typeof en> = {
     k_search_recent_targets: "搜索最近目标",
   },
   inspection: {
+    k_checking_process_references: "正在检查进程引用",
+    k_checking_files: "正在检查文件",
+    k_checking_ports: "正在检查本地端口",
+    k_preparing_results: "正在准备结果",
+    k_reload_paused: "检查完成前，刷新已暂停。",
+    k_starting_inspection: "正在开始检查…",
+    k_files_checked: "已检查 {{count}} 个文件",
+    k_references_checked: "已检查 {{count}} 个引用",
+    k_processes_checked: "已检查 {{count}} 个进程",
+    k_unknown_total: "检查期间总数未知。",
+    k_progress_unavailable: "暂时无法获取进度，检查仍在继续。",
+
     k_1_open_oflh_desktop_and_inspect_a_file_or_folder:
       "1. 打开 OFLH 桌面版并检查文件或文件夹。",
     k_a_clear_view_of_files_in_use: "清楚查看文件使用情况。",

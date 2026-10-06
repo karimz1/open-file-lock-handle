@@ -7,7 +7,14 @@ use oflh_core::{
 use std::{
     cmp::Ordering,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
 };
+
+type RowMatch = (usize, Option<usize>, u32);
+struct CachedQuery {
+    query: TableQuery,
+    rows: Arc<[RowMatch]>,
+}
 
 /// Snapshot-owned search cache. Cloning the surrounding Arc is cheap for IPC commands.
 pub struct Dataset {
@@ -18,6 +25,8 @@ pub struct Dataset {
     indices: Vec<ProcessIndex>,
     port_indices: Vec<Vec<oflh_core::ports::PortIndex>>,
     identities: std::collections::HashMap<String, usize>,
+    query_cache: Mutex<Option<CachedQuery>>,
+    counts: (usize, usize, usize),
 }
 impl Dataset {
     /// Build an immutable snapshot and its reusable indices.
@@ -40,13 +49,64 @@ impl Dataset {
                     .collect()
             })
             .collect();
+        let counts = (
+            snapshot
+                .processes
+                .iter()
+                .filter(|process| !process.usages.is_empty())
+                .count(),
+            snapshot
+                .processes
+                .iter()
+                .map(|process| process.ports.len())
+                .sum(),
+            snapshot
+                .processes
+                .iter()
+                .map(|process| process.usages.len())
+                .sum(),
+        );
         Self {
+            query_cache: Mutex::new(None),
+            counts,
             port_indices,
             identities,
             revision,
             snapshot,
             indices,
         }
+    }
+    /// File users in the accepted snapshot, computed once during indexing.
+    pub fn file_users(&self) -> usize {
+        self.counts.0
+    }
+    /// Local bindings in the accepted snapshot.
+    pub fn port_count(&self) -> usize {
+        self.counts.1
+    }
+    /// Target-matching observations in the accepted snapshot.
+    pub fn usage_count(&self) -> usize {
+        self.counts.2
+    }
+    /// One snapshot-local query cache bounds memory while reusing search/sort
+    /// results across viewport pages, selection and content-width measurements.
+    fn cached_matches(&self, request: &TableQuery) -> Result<Arc<[RowMatch]>, Failure> {
+        let mut query = request.clone();
+        query.offset = 0;
+        query.limit = 0;
+        let mut cache = self
+            .query_cache
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(cached) = cache.as_ref().filter(|cached| cached.query == query) {
+            return Ok(cached.rows.clone());
+        }
+        let rows: Arc<[RowMatch]> = self.matched(&query)?.into();
+        *cache = Some(CachedQuery {
+            query,
+            rows: rows.clone(),
+        });
+        Ok(rows)
     }
     /// Resolve a captured lifetime key without accepting a PID-only substitute.
     pub fn process(&self, key: &str) -> Result<(usize, &Process), Failure> {
@@ -316,9 +376,9 @@ impl Dataset {
     pub fn keys(&self, request: &TableQuery) -> Result<Vec<String>, Failure> {
         let mut seen = std::collections::HashSet::new();
         let keys: Vec<_> = self
-            .matched(request)?
-            .into_iter()
-            .map(|(index, _, _)| identity_key(self.snapshot.processes[index].identity))
+            .cached_matches(request)?
+            .iter()
+            .map(|(index, _, _)| identity_key(self.snapshot.processes[*index].identity))
             .filter(|key| seen.insert(key.clone()))
             .collect();
         if keys.len() > 10000 {
@@ -330,10 +390,11 @@ impl Dataset {
     }
     /// Return at most 200 sorted rows; the full native snapshot remains in Rust.
     pub fn page(&self, request: &TableQuery) -> Result<Page, Failure> {
-        let matches = self.matched(request)?;
+        let matches = self.cached_matches(request)?;
         let total = matches.len();
         let rows = matches
-            .into_iter()
+            .iter()
+            .copied()
             .skip(request.offset)
             .take(request.limit.clamp(1, 200))
             .map(|(process, usage, _)| {
@@ -921,6 +982,123 @@ mod port_tests {
                 .details(&row.process_key)
                 .unwrap()
                 .can_inspect_folder
+        );
+    }
+}
+
+#[cfg(test)]
+mod query_cache_tests {
+    use super::*;
+    use oflh_core::{Identity, Usage};
+    fn large_dataset(revision: u32) -> Dataset {
+        Dataset::new(
+            revision,
+            Snapshot {
+                processes: (0..1000)
+                    .map(|index| Process {
+                        identity: Identity {
+                            pid: 4000 + index,
+                            started: 10,
+                            started_sub: 0,
+                        },
+                        name: format!("worker-{index:04}"),
+                        usages: (0..20)
+                            .map(|usage| Usage {
+                                path: PathBuf::from(format!(
+                                    "/fixture/{index:04}/file-{usage:02}.bin"
+                                )),
+                                ..Usage::default()
+                            })
+                            .collect(),
+                        ..Process::default()
+                    })
+                    .collect(),
+                warnings: vec![],
+            },
+        )
+    }
+    #[test]
+    fn pages_and_selection_reuse_the_full_query_without_aliasing_filter_changes() {
+        let dataset = large_dataset(1);
+        let mut query = TableQuery {
+            handles: true,
+            sort: Sort::Pid,
+            ..TableQuery::default()
+        };
+        let original = dataset.cached_matches(&query).unwrap();
+        assert_eq!(original.len(), 20000);
+        query.offset = 199;
+        query.limit = 2;
+        assert!(Arc::ptr_eq(
+            &original,
+            &dataset.cached_matches(&query).unwrap()
+        ));
+        let boundary = dataset.page(&query).unwrap();
+        assert_eq!(boundary.total, 20000);
+        assert_eq!(boundary.rows.len(), 2);
+        assert_eq!(boundary.rows[0].pid, 4009);
+        assert_eq!(boundary.rows[1].pid, 4010);
+        assert_eq!(dataset.keys(&query).unwrap().len(), 1000);
+        assert!(Arc::ptr_eq(
+            &original,
+            &dataset.cached_matches(&query).unwrap()
+        ));
+        query.columns.pid = Some(4010);
+        let filtered = dataset.cached_matches(&query).unwrap();
+        assert_eq!(filtered.len(), 20);
+        assert!(!Arc::ptr_eq(&original, &filtered));
+        query.columns.pid = None;
+        query.descending = true;
+        assert_eq!(
+            dataset
+                .page(&TableQuery { offset: 0, ..query })
+                .unwrap()
+                .rows[0]
+                .pid,
+            4999
+        );
+        let refreshed = large_dataset(2);
+        assert!(!Arc::ptr_eq(
+            &original,
+            &refreshed
+                .cached_matches(&TableQuery {
+                    handles: true,
+                    sort: Sort::Pid,
+                    ..TableQuery::default()
+                })
+                .unwrap()
+        ));
+        assert_eq!(refreshed.usage_count(), 20000);
+    }
+    #[test]
+    fn cached_queries_do_not_bypass_validation_or_leak_between_ports_and_files() {
+        let dataset = large_dataset(1);
+        dataset.page(&TableQuery::default()).unwrap();
+        let ports = dataset
+            .page(&TableQuery {
+                ports: true,
+                ..TableQuery::default()
+            })
+            .unwrap();
+        assert_eq!(ports.total, 0);
+        assert!(
+            dataset
+                .page(&TableQuery {
+                    text: "a".repeat(4097),
+                    ..TableQuery::default()
+                })
+                .is_err()
+        );
+        assert!(
+            dataset
+                .page(&TableQuery {
+                    columns: ColumnFilters {
+                        cpu_min: Some(f64::NAN),
+                        ..ColumnFilters::default()
+                    },
+                    ..TableQuery::default()
+                })
+                .is_err()
         );
     }
 }
