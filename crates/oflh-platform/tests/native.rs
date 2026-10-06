@@ -688,7 +688,41 @@ fn windows_reference_fixture(path: &Path, mode: &str) {
         None
     };
     if mode == "deleted" {
+        let original = Target::new(path).unwrap();
         fs::remove_file(path).unwrap();
+        let mut info = FILE_STANDARD_INFO::default();
+        // SAFETY: live fixture handle and exact writable SDK record, diagnostic only.
+        let ok = unsafe {
+            GetFileInformationByHandleEx(
+                file.as_raw_handle(),
+                FileStandardInfo,
+                (&mut info as *mut FILE_STANDARD_INFO).cast(),
+                std::mem::size_of::<FILE_STANDARD_INFO>() as u32,
+            )
+        };
+        let mut matches = Vec::new();
+        for flags in [FILE_NAME_NORMALIZED, FILE_NAME_OPENED] {
+            let mut name = vec![0u16; 32768];
+            // SAFETY: owned fixture handle and stated writable UTF-16 extent.
+            let length = unsafe {
+                GetFinalPathNameByHandleW(
+                    file.as_raw_handle(),
+                    name.as_mut_ptr(),
+                    name.len() as u32,
+                    flags | VOLUME_NAME_DOS,
+                )
+            } as usize;
+            use std::os::windows::ffi::OsStringExt;
+            let observed = PathBuf::from(std::ffi::OsString::from_wide(
+                &name[..length.min(name.len())],
+            ));
+            matches.push(length > 0 && length < name.len() && original.matches(&observed, None));
+        }
+        // Aggregate diagnostics reveal no native paths or process identities.
+        eprintln!(
+            "deleted fixture: metadata_ok={ok}, pending={}, links={}, normalized_matches={}, opened_matches={}",
+            info.DeletePending, info.NumberOfLinks, matches[0], matches[1]
+        );
     }
     let held_file = if mode == "mapped-closed" {
         drop(file);
@@ -813,10 +847,16 @@ fn directory_inspection_retains_an_outside_opened_hard_link_and_deleted_referenc
                 .iter()
                 .any(|usage| usage.path == expected_alias && usage.relation == Relation::Open)
     }));
-    assert!(snapshot.processes.iter().any(|process| {
-        process.identity.pid == deleted_child.0.id()
-            && process.usages.iter().any(|usage| {
-                usage.path == expected_deleted && usage.relation == Relation::Open && usage.deleted
-            })
-    }));
+    assert!(
+        snapshot.processes.iter().any(|process| {
+            process.identity.pid == deleted_child.0.id()
+                && process.usages.iter().any(|usage| {
+                    usage.path == expected_deleted
+                        && usage.relation == Relation::Open
+                        && usage.deleted
+                })
+        }),
+        "deleted reference missing; warning_count={}",
+        snapshot.warnings.len()
+    );
 }

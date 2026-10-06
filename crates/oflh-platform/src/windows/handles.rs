@@ -169,8 +169,16 @@ fn inspect_handles(
         if unsafe { GetFileType(handle.0) } != FILE_TYPE_DISK {
             continue;
         }
+        let info = match names::standard(&handle) {
+            Ok(info) => info,
+            Err(error) => {
+                failures.note(Failure::Path, &error);
+                continue;
+            }
+        };
+        let deleted = info.DeletePending || info.NumberOfLinks == 0;
         context.stats.add(2, 1);
-        let observed = match names::final_path(&handle) {
+        let observed = match names::final_path(&handle, deleted) {
             Ok(path) => path,
             Err(error) => {
                 failures.note(Failure::Path, &error);
@@ -180,23 +188,9 @@ fn inspect_handles(
         if !seen.insert(observed.clone()) {
             continue;
         }
-        let info = match names::standard(&handle) {
-            Ok(info) => info,
-            Err(error) => {
-                failures.note(Failure::Path, &error);
-                continue;
-            }
-        };
         if context.target.contains(&observed) {
-            context.publish(
-                identity,
-                pinned,
-                &observed,
-                info.Directory,
-                false,
-                info.DeletePending,
-            )?;
-        } else if !info.Directory && info.NumberOfLinks > 1 && !info.DeletePending {
+            context.publish(identity, pinned, &observed, info.Directory, false, deleted)?;
+        } else if !info.Directory && info.NumberOfLinks > 1 && !deleted {
             match names::aliases(&handle, &observed, context.target) {
                 Ok(aliases) => {
                     for alias in aliases {

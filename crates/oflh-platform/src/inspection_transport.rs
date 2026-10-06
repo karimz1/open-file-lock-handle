@@ -9,6 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[derive(Debug)]
 pub(crate) enum Outcome {
     Complete,
     /// No valid greeting: the embedding binary may not implement the helper.
@@ -404,7 +405,7 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        assert!(matches!(outcome, Outcome::Complete));
+        assert!(matches!(outcome, Outcome::Complete), "{outcome:?}");
         assert_eq!(count, 2000);
         count = 0;
         let outcome = inspect(&configuration(), request("truncated"), &cancel, |message| {
@@ -495,7 +496,7 @@ mod tests {
             Duration::from_millis(100),
         )
         .unwrap();
-        assert!(matches!(outcome, Outcome::Complete));
+        assert!(matches!(outcome, Outcome::Complete), "{outcome:?}");
     }
     #[test]
     fn missing_helper_is_explicitly_unavailable_and_precancelled_never_spawns() {

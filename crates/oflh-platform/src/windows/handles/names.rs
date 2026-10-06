@@ -24,7 +24,7 @@ pub(super) fn metadata(path: &Path) -> Result<Handle> {
     )
 }
 
-pub(super) fn final_path(handle: &Handle) -> Result<PathBuf> {
+pub(super) fn final_path(handle: &Handle, deleted: bool) -> Result<PathBuf> {
     let mut buffer = vec![0u16; 512];
     loop {
         // SAFETY: valid owned disk handle, writable buffer of stated length.
@@ -33,7 +33,11 @@ pub(super) fn final_path(handle: &Handle) -> Result<PathBuf> {
                 handle.0,
                 buffer.as_mut_ptr(),
                 buffer.len() as u32,
-                FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
+                (if deleted {
+                    FILE_NAME_OPENED
+                } else {
+                    FILE_NAME_NORMALIZED
+                }) | VOLUME_NAME_DOS,
             )
         } as usize;
         if length == 0 {
@@ -218,14 +222,16 @@ impl DevicePaths {
             if let Some(suffix) = native.strip_prefix(device.as_slice())
                 && suffix.first() == Some(&u16::from(b'\\'))
             {
-                let mut translated = drive.clone();
+                // Match GetFinalPathNameByHandleW's lossless verbatim DOS form.
+                let mut translated: Vec<_> = "\\\\?\\".encode_utf16().collect();
+                translated.extend(drive);
                 translated.extend(suffix);
                 return Ok(path(&translated));
             }
         }
         let network: Vec<_> = "\\Device\\Mup\\".encode_utf16().collect();
         if let Some(suffix) = native.strip_prefix(network.as_slice()) {
-            let mut translated = vec![u16::from(b'\\'); 2];
+            let mut translated: Vec<_> = "\\\\?\\UNC\\".encode_utf16().collect();
             translated.extend(suffix);
             return Ok(path(&translated));
         }
@@ -288,7 +294,7 @@ mod tests {
                         .collect::<Vec<_>>()
                 )
                 .unwrap(),
-            PathBuf::from("\\\\server\\share\\file")
+            PathBuf::from("\\\\?\\UNC\\server\\share\\file")
         );
     }
 }
