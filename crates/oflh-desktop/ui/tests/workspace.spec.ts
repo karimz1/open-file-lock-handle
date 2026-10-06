@@ -3404,6 +3404,7 @@ test("a failed replacement page keeps old rows safe and permits a new manual ref
     "Could not update results",
   );
   await expect(grid).toHaveAttribute("aria-rowcount", "1501");
+  await expect(grid).toHaveAttribute("aria-busy", "false");
   await expect(grid.getByText("4000", { exact: true })).toBeVisible();
   await expect(
     details.getByRole("button", { name: "Copy path", exact: true }).first(),

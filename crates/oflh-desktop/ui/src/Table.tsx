@@ -97,6 +97,12 @@ export function Table(props: Props) {
   const [page, setPage] = useState<
     (Page & { offset: number; queryKey: string; target: string }) | null
   >(null);
+  const [failedPage, setFailedPage] = useState<{
+    revision: number;
+    target: string;
+    queryKey: string;
+    offset: number;
+  } | null>(null);
   const queryKey = JSON.stringify({ ...props.query, offset: 0 });
   // Keep the accepted viewport during a same-target refresh. A different query
   // or target must never inherit stale matches. Actions retain the page revision.
@@ -148,6 +154,11 @@ export function Table(props: Props) {
     lastVisible < displayPage.offset + displayPage.rows.length
       ? displayPage.offset
       : Math.floor(firstVisible / 100) * 100;
+  const pageFailed =
+    failedPage?.revision === props.revision &&
+    failedPage.target === props.target &&
+    failedPage.queryKey === queryKey &&
+    failedPage.offset === offset;
   useEffect(() => {
     scroll.current?.scrollTo({ top: 0 });
     setCursor(0);
@@ -171,12 +182,21 @@ export function Table(props: Props) {
               if (nextCursor >= 0) setCursor(offset + nextCursor);
             }
             setPage({ ...result, offset, queryKey, target: props.target });
+            setFailedPage(null);
             props.onPage(result);
             props.onTotal(result.total);
           }
         },
         (error) => {
-          if (active) props.onPageError(error, props.revision);
+          if (active) {
+            setFailedPage({
+              revision: props.revision,
+              target: props.target,
+              queryKey,
+              offset,
+            });
+            props.onPageError(error, props.revision);
+          }
         },
       );
     }, 45);
@@ -336,7 +356,7 @@ export function Table(props: Props) {
       }
       aria-rowcount={(displayPage?.total ?? 0) + 1}
       aria-colcount={columns.length}
-      aria-busy={!currentPage}
+      aria-busy={!currentPage && !pageFailed}
       aria-multiselectable
       aria-activedescendant={
         items.some((item) => item.index === cursor)
