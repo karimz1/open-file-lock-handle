@@ -55,6 +55,16 @@ pub enum InspectionCounter {
     MemoryRegions,
     /// Data-mapping path queries.
     MappedNames,
+    /// Native process workers started; currently macOS only.
+    ProcessWorkers,
+    /// Process metadata and ancestry duration; concurrent calls overlap.
+    ProcessMetadataMicros,
+    /// Descriptor inspection duration; concurrent calls overlap.
+    DescriptorMicros,
+    /// Mapping inspection duration; concurrent calls overlap.
+    MappingMicros,
+    /// Native lock-detection duration.
+    LockProbeMicros,
 }
 
 /// Small, approximate live view, read without blocking the native worker.
@@ -95,12 +105,22 @@ pub struct InspectionProgress {
     pub memory_regions: u64,
     /// Data-mapping path queries.
     pub mapped_names: u64,
+    /// Native process workers started; currently macOS only.
+    pub process_workers: u64,
+    /// Process metadata and ancestry duration; concurrent calls overlap.
+    pub process_metadata_micros: u64,
+    /// Descriptor inspection duration; concurrent calls overlap.
+    pub descriptor_micros: u64,
+    /// Mapping inspection duration; concurrent calls overlap.
+    pub mapping_micros: u64,
+    /// Native lock-detection duration.
+    pub lock_probe_micros: u64,
 }
 
 #[derive(Default)]
 pub(crate) struct ProgressState {
     phase: AtomicU8,
-    counters: [AtomicU64; 16],
+    counters: [AtomicU64; 21],
 }
 impl ProgressState {
     pub(crate) fn phase(&self, phase: InspectionPhase) {
@@ -137,6 +157,11 @@ impl ProgressState {
             native_handle_names: counters[13],
             memory_regions: counters[14],
             mapped_names: counters[15],
+            process_workers: counters[16],
+            process_metadata_micros: counters[17],
+            descriptor_micros: counters[18],
+            mapping_micros: counters[19],
+            lock_probe_micros: counters[20],
         }
     }
 }

@@ -17,6 +17,8 @@ mod linux;
 mod macos;
 #[cfg(any(target_os = "linux", target_os = "macos", windows))]
 mod ports;
+#[cfg(any(target_os = "macos", test))]
+mod process_pool;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
