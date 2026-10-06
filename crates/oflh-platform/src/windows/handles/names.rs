@@ -491,8 +491,18 @@ mod tests {
         name.push(0xd800);
         assert_eq!(native_name(&path(&name)).unwrap().last(), Some(&0xd800));
         assert!(native_name(Path::new("relative.bin")).is_err());
-        assert!(native_name(&path(&[67, 58, 92, 0])).is_err());
-        assert!(native_name(&path(&vec![65; 32768])).is_err());
+        // The native C-string decoder intentionally trims NUL; construct an
+        // actual invalid OsString so this regression reaches the probe boundary.
+        assert!(
+            native_name(&PathBuf::from(OsString::from_wide(&[
+                67, 58, 92, 65, 0, 66
+            ])))
+            .is_err()
+        );
+        assert!(native_name(Path::new("C:relative.bin")).is_err());
+        let mut oversized: Vec<_> = "C:\\".encode_utf16().collect();
+        oversized.extend(std::iter::repeat_n(65, 32768));
+        assert!(native_name(&PathBuf::from(OsString::from_wide(&oversized))).is_err());
         let probe = SharingProbe {
             evidence: None,
             unavailable: Some(STATUS_ACCESS_DENIED),
