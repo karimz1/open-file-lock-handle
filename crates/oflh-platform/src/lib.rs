@@ -131,6 +131,103 @@ fn apply_metrics(snapshot: &mut Snapshot, metrics: Vec<(Identity, Metrics)>) {
     }
 }
 
+#[cfg(test)]
+mod metric_identity_tests {
+    use super::*;
+
+    fn identity(started_sub: u64) -> Identity {
+        Identity {
+            pid: 4000,
+            started: 10,
+            started_sub,
+        }
+    }
+
+    #[test]
+    fn sampling_never_inherits_cpu_from_a_reused_pid_or_an_absent_lifetime() {
+        let original = identity(1);
+        let reused = identity(2);
+        let mut sampler = Sampler::default();
+        let first = sampler.sample(vec![(original, 100, Some(1024))], 1000);
+        assert_eq!(first[0].1.cpu, None);
+        assert_eq!(first[0].1.memory, Some(1024));
+        let next = sampler.sample(vec![(original, 150, None), (reused, 900, Some(2048))], 1100);
+        assert_eq!(next[0].1.cpu, Some(50.0));
+        assert_eq!(next[0].1.memory, None); // Unknown memory is not zero.
+        assert_eq!(next[1].1.cpu, None);
+        assert_eq!(next[1].1.memory, Some(2048));
+        assert!(sampler.sample(vec![], 1200).is_empty());
+        assert_eq!(
+            sampler.sample(vec![(original, 200, None)], 1300)[0].1.cpu,
+            None
+        );
+    }
+
+    #[test]
+    fn invalid_counter_deltas_are_unknown_and_a_later_sample_can_recover() {
+        let process = identity(1);
+        for (cpu, total) in [(150, 1000), (150, 999), (99, 1100)] {
+            let mut sampler = Sampler::default();
+            sampler.sample(vec![(process, 100, None)], 1000);
+            assert_eq!(
+                sampler.sample(vec![(process, cpu, None)], total)[0].1.cpu,
+                None
+            );
+            assert_eq!(
+                sampler.sample(vec![(process, cpu + 50, None)], total + 100)[0]
+                    .1
+                    .cpu,
+                Some(50.0)
+            );
+        }
+        let mut sampler = Sampler::default();
+        sampler.sample(vec![(process, 0, None)], 1);
+        assert_eq!(
+            sampler.sample(vec![(process, 1000, None)], 2)[0].1.cpu,
+            Some(100.0)
+        );
+    }
+
+    #[test]
+    fn applying_samples_matches_the_complete_birth_identity_and_keeps_unknown_metrics() {
+        let original = identity(1);
+        let reused = identity(2);
+        let mut snapshot = Snapshot {
+            processes: vec![Process {
+                identity: original,
+                memory: Some(1024),
+                cpu: Some(25.0),
+                ..Process::default()
+            }],
+            warnings: vec![],
+        };
+        apply_metrics(
+            &mut snapshot,
+            vec![(
+                reused,
+                Metrics {
+                    memory: Some(2048),
+                    cpu: Some(90.0),
+                },
+            )],
+        );
+        assert_eq!(snapshot.processes[0].memory, Some(1024));
+        assert_eq!(snapshot.processes[0].cpu, Some(25.0));
+        apply_metrics(
+            &mut snapshot,
+            vec![(
+                original,
+                Metrics {
+                    memory: None,
+                    cpu: None,
+                },
+            )],
+        );
+        assert_eq!(snapshot.processes[0].memory, None);
+        assert_eq!(snapshot.processes[0].cpu, None);
+    }
+}
+
 /// Inspect local TCP listeners and UDP bindings using native APIs.
 /// Run on a worker thread; process ownership is checked against birth identities.
 pub fn scan_ports(cancel: &Cancellation) -> Result<Snapshot> {
