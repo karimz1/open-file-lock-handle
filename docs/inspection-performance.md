@@ -134,3 +134,22 @@ withholds break acknowledgment and requires complete folder discovery without a
 false sharing-conflict row. Other filesystem/filter calls can still block, so
 the owned-helper stall protection remains. Native profiling must validate this
 change before a whole-drive improvement is claimed.
+
+## macOS process workers and phase profiling
+
+macOS dispatches each captured PID once across two workers per logical CPU,
+capped at eight. Every worker owns its matching processes, username cache and
+partial-inspection count. A shared atomic cursor bounds dispatch without a queue
+of per-process results. All workers finish before publication, including on
+cancellation, typed failure or panic. Process births are checked after native
+inspection and again after user/ancestry enrichment. Lock detection, snapshot
+normalization and metric sampling retain their existing parent-side behavior.
+Linux enumeration remains unchanged.
+
+The profiler reports `process_workers` and `phase_ms`: process metadata and
+ancestry, descriptors, mappings, and lock probes. Concurrent durations are summed
+and can exceed elapsed time; they identify work, not a sequential breakdown of
+latency. Native six-target CI compares the same held-file fixtures against the PR
+base. Concurrency is under evaluation until those measurements and native
+regressions pass; no macOS speedup is inferred from Linux worker tests. Track the
+results and further decisions in [the macOS investigation](https://github.com/karimz1/open-file-lock-handle/issues/66).

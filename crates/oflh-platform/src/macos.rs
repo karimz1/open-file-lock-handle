@@ -172,6 +172,215 @@ fn add(process: &mut Process, target: &Target, path: PathBuf, relation: Relation
     }
 }
 #[derive(Default)]
+struct ProcessWorker {
+    processes: Vec<Process>,
+    users: HashMap<u32, String>,
+    limited: usize,
+}
+fn inspect_process(
+    worker: &mut ProcessWorker,
+    pid: u32,
+    target: &Target,
+    cancel: &Cancellation,
+) -> Result<()> {
+    cancel.check()?;
+    cancel.record(InspectionCounter::Processes, 1);
+    let metadata_timer = cancel.measure(InspectionCounter::ProcessMetadataMicros);
+    let Ok((mut process, uid)) = read_process(pid) else {
+        worker.limited += 1;
+        return Ok(());
+    };
+    let mut partial = false;
+    let exe = process.executable.clone();
+    add(
+        &mut process,
+        target,
+        exe,
+        Relation::Executable,
+        Access::Execute,
+    );
+    if let Ok(cwd) = info::<libc::proc_vnodepathinfo>(pid, 0) {
+        process.cwd = vnode_path(&cwd.pvi_cdir);
+        let path = process.cwd.clone();
+        add(&mut process, target, path, Relation::Cwd, Access::Directory)
+    } else {
+        partial = true
+    }
+    drop(metadata_timer);
+    partial |= collect_descriptors(&mut process, target, cancel)?;
+    partial |= collect_mappings(&mut process, target, cancel)?;
+    if partial {
+        worker.limited += 1;
+    }
+    let _timer = cancel.measure(InspectionCounter::ProcessMetadataMicros);
+    if !process.usages.is_empty()
+        && read_identity(pid).is_ok_and(|identity| identity == process.identity)
+    {
+        process.user = worker
+            .users
+            .entry(uid)
+            .or_insert_with(|| super::unix::username(uid))
+            .clone();
+        let mut parent = process.parent;
+        while parent > 0
+            && parent != pid
+            && process.ancestors.len() < 8
+            && !process.ancestors.iter().any(|a| a.identity.pid == parent)
+        {
+            cancel.check()?;
+            match read_process(parent) {
+                Ok((a, _)) => {
+                    process.ancestors.push(Ancestor {
+                        identity: a.identity,
+                        name: a.name,
+                    });
+                    parent = a.parent
+                }
+                Err(_) => {
+                    process.ancestors.push(Ancestor {
+                        identity: Identity {
+                            pid: parent,
+                            ..Identity::default()
+                        },
+                        name: "unavailable".into(),
+                    });
+                    break;
+                }
+            }
+        }
+        // Recheck the captured lifetime after ancestry and user enrichment.
+        if read_identity(pid).is_ok_and(|identity| identity == process.identity) {
+            worker.processes.push(process);
+        }
+    }
+    Ok(())
+}
+fn collect_descriptors(
+    process: &mut Process,
+    target: &Target,
+    cancel: &Cancellation,
+) -> Result<bool> {
+    let _timer = cancel.measure(InspectionCounter::DescriptorMicros);
+    let pid = process.identity.pid;
+    let mut partial = false;
+    let mut resources_inspected = 0;
+    // SAFETY: null/zero requests the descriptor buffer size.
+    let needed = unsafe { libc::proc_pidinfo(pid as i32, 1, 0, std::ptr::null_mut(), 0) };
+    if needed > 0 && needed < 32 * 1024 * 1024 {
+        let len = needed as usize / size_of::<libc::proc_fdinfo>() + 128;
+        let mut fds = Vec::<libc::proc_fdinfo>::with_capacity(len);
+        // SAFETY: spare capacity provides len correctly aligned writable records. Length stays zero until validated.
+        let returned = unsafe {
+            libc::proc_pidinfo(
+                pid as i32,
+                1,
+                0,
+                fds.as_mut_ptr().cast(),
+                (len * size_of::<libc::proc_fdinfo>()) as i32,
+            )
+        };
+        if returned <= 0 {
+            partial = true
+        } else if returned as usize > len * size_of::<libc::proc_fdinfo>() {
+            return Err(Error::Unavailable(
+                "invalid libproc descriptor length".into(),
+            ));
+        } else {
+            if returned as usize == len * size_of::<libc::proc_fdinfo>() {
+                partial = true
+            }
+            // SAFETY: native call initialized exactly the complete records covered by n bytes.
+            unsafe { fds.set_len(returned as usize / size_of::<libc::proc_fdinfo>()) };
+            for descriptor in fds {
+                cancel.check()?;
+                resources_inspected += 1;
+                if descriptor.proc_fdtype != 1 {
+                    continue;
+                }
+                let mut vnode = MaybeUninit::<VnodeFd>::zeroed();
+                // SAFETY: flavor 2 writes the VnodeFd POD layout into an exact-sized buffer.
+                let returned = unsafe {
+                    libc::proc_pidfdinfo(
+                        pid as i32,
+                        descriptor.proc_fd,
+                        2,
+                        vnode.as_mut_ptr().cast(),
+                        size_of::<VnodeFd>() as i32,
+                    )
+                };
+                if returned != size_of::<VnodeFd>() as i32 {
+                    partial = true;
+                    continue;
+                }
+                // SAFETY: complete POD record was returned.
+                let vnode = unsafe { vnode.assume_init() };
+                let access = match vnode.file.flags & 3 {
+                    1 => Access::Read,
+                    2 => Access::Write,
+                    3 => Access::ReadWrite,
+                    _ => Access::Unknown,
+                };
+                add(
+                    process,
+                    target,
+                    vnode_path(&vnode.vnode),
+                    Relation::Open,
+                    access,
+                );
+            }
+        }
+    } else if needed < 0 {
+        partial = true
+    }
+    cancel.record(InspectionCounter::Resources, resources_inspected);
+    Ok(partial)
+}
+fn collect_mappings(process: &mut Process, target: &Target, cancel: &Cancellation) -> Result<bool> {
+    let _timer = cancel.measure(InspectionCounter::MappingMicros);
+    let pid = process.identity.pid;
+    let mut partial = false;
+    let mut resources_inspected = 0;
+    let mut address = 0;
+    for step in 0..65536 {
+        cancel.check()?;
+        let Ok(region) = info::<Region>(pid, address) else {
+            break;
+        };
+        resources_inspected += 1;
+        let flags = region.info.protection;
+        let access = if flags & 4 != 0 {
+            Access::Execute
+        } else {
+            match flags & 3 {
+                1 => Access::Read,
+                2 => Access::Write,
+                3 => Access::ReadWrite,
+                _ => Access::Mapped,
+            }
+        };
+        add(
+            process,
+            target,
+            vnode_path(&region.vnode),
+            Relation::Mapped,
+            access,
+        );
+        let Some(next) = region.info.address.checked_add(region.info.size) else {
+            partial = true;
+            break;
+        };
+        if next <= address {
+            break;
+        }
+        address = next;
+        if step == 65535 {
+            partial = true
+        }
+    }
+    cancel.record(InspectionCounter::Resources, resources_inspected);
+    Ok(partial)
+}
+#[derive(Default)]
 pub struct Native {
     sampler: Sampler,
 }
@@ -187,187 +396,29 @@ impl Backend for Native {
             ..Snapshot::default()
         };
         let mut limited = 0;
-        let mut users = HashMap::new();
-        for pid in pids {
-            cancel.check()?;
-            if pid <= 0 || pid as u32 == std::process::id() {
-                continue;
-            }
-            let pid = pid as u32;
-            cancel.record(InspectionCounter::Processes, 1);
-            let Ok((mut process, uid)) = read_process(pid) else {
-                limited += 1;
-                continue;
-            };
-            let mut partial = false;
-            let mut resources_inspected = 0;
-            let exe = process.executable.clone();
-            add(
-                &mut process,
-                target,
-                exe,
-                Relation::Executable,
-                Access::Execute,
-            );
-            if let Ok(cwd) = info::<libc::proc_vnodepathinfo>(pid, 0) {
-                process.cwd = vnode_path(&cwd.pvi_cdir);
-                let path = process.cwd.clone();
-                add(&mut process, target, path, Relation::Cwd, Access::Directory)
-            } else {
-                partial = true
-            }
-            // SAFETY: null/zero requests the descriptor buffer size.
-            let needed = unsafe { libc::proc_pidinfo(pid as i32, 1, 0, std::ptr::null_mut(), 0) };
-            if needed > 0 && needed < 32 * 1024 * 1024 {
-                let len = needed as usize / size_of::<libc::proc_fdinfo>() + 128;
-                let mut fds = Vec::<libc::proc_fdinfo>::with_capacity(len);
-                // SAFETY: spare capacity provides len correctly aligned writable records. Length stays zero until validated.
-                let returned = unsafe {
-                    libc::proc_pidinfo(
-                        pid as i32,
-                        1,
-                        0,
-                        fds.as_mut_ptr().cast(),
-                        (len * size_of::<libc::proc_fdinfo>()) as i32,
-                    )
-                };
-                if returned <= 0 {
-                    partial = true
-                } else if returned as usize > len * size_of::<libc::proc_fdinfo>() {
-                    return Err(Error::Unavailable(
-                        "invalid libproc descriptor length".into(),
-                    ));
-                } else {
-                    if returned as usize == len * size_of::<libc::proc_fdinfo>() {
-                        partial = true
-                    }
-                    // SAFETY: native call initialized exactly the complete records covered by n bytes.
-                    unsafe { fds.set_len(returned as usize / size_of::<libc::proc_fdinfo>()) };
-                    for descriptor in fds {
-                        cancel.check()?;
-                        resources_inspected += 1;
-                        if descriptor.proc_fdtype != 1 {
-                            continue;
-                        }
-                        let mut vnode = MaybeUninit::<VnodeFd>::zeroed();
-                        // SAFETY: flavor 2 writes the VnodeFd POD layout into an exact-sized buffer.
-                        let returned = unsafe {
-                            libc::proc_pidfdinfo(
-                                pid as i32,
-                                descriptor.proc_fd,
-                                2,
-                                vnode.as_mut_ptr().cast(),
-                                size_of::<VnodeFd>() as i32,
-                            )
-                        };
-                        if returned != size_of::<VnodeFd>() as i32 {
-                            partial = true;
-                            continue;
-                        }
-                        // SAFETY: complete POD record was returned.
-                        let vnode = unsafe { vnode.assume_init() };
-                        let access = match vnode.file.flags & 3 {
-                            1 => Access::Read,
-                            2 => Access::Write,
-                            3 => Access::ReadWrite,
-                            _ => Access::Unknown,
-                        };
-                        add(
-                            &mut process,
-                            target,
-                            vnode_path(&vnode.vnode),
-                            Relation::Open,
-                            access,
-                        );
-                    }
-                }
-            } else if needed < 0 {
-                partial = true
-            }
-            let mut address = 0;
-            for step in 0..65536 {
-                cancel.check()?;
-                let Ok(region) = info::<Region>(pid, address) else {
-                    break;
-                };
-                resources_inspected += 1;
-                let flags = region.info.protection;
-                let access = if flags & 4 != 0 {
-                    Access::Execute
-                } else {
-                    match flags & 3 {
-                        1 => Access::Read,
-                        2 => Access::Write,
-                        3 => Access::ReadWrite,
-                        _ => Access::Mapped,
-                    }
-                };
-                add(
-                    &mut process,
-                    target,
-                    vnode_path(&region.vnode),
-                    Relation::Mapped,
-                    access,
-                );
-                let Some(next) = region.info.address.checked_add(region.info.size) else {
-                    partial = true;
-                    break;
-                };
-                if next <= address {
-                    break;
-                }
-                address = next;
-                if step == 65535 {
-                    partial = true
-                }
-            }
-            cancel.record(InspectionCounter::Resources, resources_inspected);
-            if partial {
-                limited += 1
-            }
-            if !process.usages.is_empty()
-                && read_identity(pid).is_ok_and(|identity| identity == process.identity)
-            {
-                process.user = users
-                    .entry(uid)
-                    .or_insert_with(|| super::unix::username(uid))
-                    .clone();
-                let mut parent = process.parent;
-                while parent > 0
-                    && parent != pid
-                    && process.ancestors.len() < 8
-                    && !process.ancestors.iter().any(|a| a.identity.pid == parent)
-                {
-                    cancel.check()?;
-                    match read_process(parent) {
-                        Ok((a, _)) => {
-                            process.ancestors.push(Ancestor {
-                                identity: a.identity,
-                                name: a.name,
-                            });
-                            parent = a.parent
-                        }
-                        Err(_) => {
-                            process.ancestors.push(Ancestor {
-                                identity: Identity {
-                                    pid: parent,
-                                    ..Identity::default()
-                                },
-                                name: "unavailable".into(),
-                            });
-                            break;
-                        }
-                    }
-                }
-                snapshot.processes.push(process);
-            }
+        let pids: Vec<_> = pids
+            .into_iter()
+            .filter(|&pid| pid > 0 && pid as u32 != std::process::id())
+            .map(|pid| pid as u32)
+            .collect();
+        let workers = std::thread::available_parallelism()
+            .map_or(2, |count| count.get().saturating_mul(2))
+            .clamp(2, 8);
+        for worker in crate::process_pool::collect(&pids, workers, cancel, |worker, pid| {
+            inspect_process(worker, pid, target, cancel)
+        })? {
+            limited += worker.limited;
+            snapshot.processes.extend(worker.processes);
         }
         if limited > 0 {
             snapshot.warnings.push(format!(
                 "{limited} processes could not be fully inspected (permissions or process changes)."
             ))
         }
-        detect_locks(&mut snapshot, cancel)?;
+        {
+            let _timer = cancel.measure(InspectionCounter::LockProbeMicros);
+            detect_locks(&mut snapshot, cancel)?;
+        }
         snapshot.normalize();
         let ids = snapshot
             .processes
