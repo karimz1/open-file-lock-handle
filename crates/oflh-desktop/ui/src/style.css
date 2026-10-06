@@ -1006,6 +1006,11 @@ main {
   gap: 8px;
   min-width: 0;
 }
+.scan-duration {
+  flex: none;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 .footer-attribution,
 .status-metrics {
   min-width: 0;

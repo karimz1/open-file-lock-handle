@@ -207,6 +207,11 @@ GitHub Sponsors, or PayPal. The selected service opens in your browser.
 
 ## Long-running inspections
 
+The footer keeps the duration of the last completed scan or refresh, including
+result preparation. Short scans use milliseconds, longer scans use seconds or
+minutes. The previous completed duration stays visible while another scan runs
+and after cancellation or failure. This also applies to local-port inspections.
+
 While an inspection is running, a modal progress panel blocks workspace actions and reload shortcuts. It shows elapsed time, the current stage and native work counts. The total is unknown; the bar does not imply a percentage. Windows file counts are distinct from descriptors, mappings or module references. Results may still be partial because of permissions or platform limits.
 
 Use **Cancel** to keep the previous accepted results and stop the current request cooperatively. A native call already running can finish later; its results cannot replace the accepted snapshot. F5, automatic refresh and other targets cannot restart an active inspection. Automatic refresh waits a full selected interval after completion or cancellation.
