@@ -146,8 +146,9 @@ inspection and again after user/ancestry enrichment. Lock detection, snapshot
 normalization and metric sampling retain their existing parent-side behavior.
 Linux enumeration remains unchanged.
 
-The profiler reports `process_workers` and `phase_ms`: process metadata and
-ancestry, descriptors, mappings, and lock probes. Concurrent durations are summed
+The profiler reports `process_workers`, `process_metadata_ms`, `descriptor_ms`,
+`mapping_ms`, and `lock_probe_ms` for process metadata/ancestry, descriptors,
+mappings, and lock probes. Concurrent durations are summed
 and can exceed elapsed time; they identify work, not a sequential breakdown of
 latency. Native six-target CI compares the same held-file fixtures against the PR
 base. Concurrency is under evaluation until those measurements and native

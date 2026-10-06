@@ -93,13 +93,28 @@ mod tests {
     use super::*;
     use std::{
         collections::BTreeSet,
-        sync::{Arc, Barrier},
+        sync::{Arc, Condvar, Mutex},
         time::Duration,
     };
+    /// A fixture must fail clearly if a peer cannot start, rather than hanging
+    /// CI forever while the pool is correctly joining a failed dispatch.
+    fn meet_peer(gate: &(Mutex<usize>, Condvar)) {
+        let (entered, changed) = gate;
+        let mut entered = entered.lock().unwrap();
+        *entered += 1;
+        changed.notify_all();
+        let (entered, timeout) = changed
+            .wait_timeout_while(entered, Duration::from_secs(5), |entered| *entered < 2)
+            .unwrap();
+        assert!(
+            !timeout.timed_out() || *entered >= 2,
+            "native fixture peer never started"
+        );
+    }
     #[test]
     fn native_work_overlaps_with_a_fixed_bound_and_no_lost_processes() {
         let processes: Vec<_> = (0..512).collect();
-        let barrier = Barrier::new(2);
+        let gate = (Mutex::new(0), Condvar::new());
         let active = AtomicUsize::new(0);
         let peak = AtomicUsize::new(0);
         let cancel = Cancellation::default();
@@ -107,7 +122,7 @@ mod tests {
             let current = active.fetch_add(1, Ordering::SeqCst) + 1;
             peak.fetch_max(current, Ordering::SeqCst);
             if pid < 2 {
-                barrier.wait();
+                meet_peer(&gate);
             }
             state.push(pid);
             active.fetch_sub(1, Ordering::SeqCst);
@@ -156,11 +171,11 @@ mod tests {
         for cancelled in [false, true] {
             let cancel = Cancellation::default();
             let running = Arc::new(AtomicUsize::new(0));
-            let barrier = Barrier::new(2);
+            let gate = (Mutex::new(0), Condvar::new());
             let result = collect(&[0, 1, 2, 3], 2, &cancel, |_: &mut Vec<u32>, pid| {
                 running.fetch_add(1, Ordering::SeqCst);
                 if pid < 2 {
-                    barrier.wait();
+                    meet_peer(&gate);
                 }
                 if pid == 0 {
                     running.fetch_sub(1, Ordering::SeqCst);
@@ -190,13 +205,13 @@ mod tests {
     #[test]
     fn panic_is_an_error_after_other_callbacks_finish_and_precancelled_work_never_starts() {
         let finished = AtomicUsize::new(0);
-        let barrier = Barrier::new(2);
+        let gate = (Mutex::new(0), Condvar::new());
         let result = collect(
             &[0, 1],
             2,
             &Cancellation::default(),
             |_: &mut Vec<u32>, pid| {
-                barrier.wait();
+                meet_peer(&gate);
                 if pid == 0 {
                     panic!("native fixture worker panic");
                 }
