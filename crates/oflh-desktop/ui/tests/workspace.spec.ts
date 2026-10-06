@@ -1741,7 +1741,7 @@ test("double-click auto-fit includes offscreen matches and preserves virtualizat
   await expect(grid.getByText("4001", { exact: true })).toBeVisible();
   await process.scrollIntoViewIfNeeded();
   await process.focus();
-  await page.keyboard.press("Enter");
+  await process.dblclick();
   await expect
     .poll(async () => Number(await process.getAttribute("aria-valuenow")))
     .toBeLessThan(200);
@@ -1757,7 +1757,7 @@ test("auto-fit works for every file and port column and scales with the font", a
   for (const divider of await grid.getByRole("separator").all()) {
     await divider.scrollIntoViewIfNeeded();
     await divider.focus();
-    await page.keyboard.press("Enter");
+    await divider.dblclick();
     await expect(divider).toHaveAttribute("aria-busy", "false");
     expect(
       Number(await divider.getAttribute("aria-valuenow")),
@@ -1775,7 +1775,7 @@ test("auto-fit works for every file and port column and scales with the font", a
   await page.keyboard.press("Control+1");
   await expect(grid.getByText("4000", { exact: true })).toBeVisible();
   await name.focus();
-  await page.keyboard.press("Enter");
+  await name.dblclick();
   await expect
     .poll(async () => Number(await name.getAttribute("aria-valuenow")))
     .toBeGreaterThan(small);
@@ -1784,7 +1784,7 @@ test("auto-fit works for every file and port column and scales with the font", a
   for (const divider of await grid.getByRole("separator").all()) {
     await divider.scrollIntoViewIfNeeded();
     await divider.focus();
-    await page.keyboard.press("Enter");
+    await divider.dblclick();
     await expect(divider).toHaveAttribute("aria-busy", "false");
     expect(
       Number(await divider.getAttribute("aria-valuenow")),
@@ -1811,7 +1811,7 @@ test("changing filters cancels an in-flight column auto-fit", async ({
     exact: true,
   });
   await divider.focus();
-  await page.keyboard.press("Enter");
+  await divider.dblclick();
   await expect(divider).toHaveAttribute("aria-busy", "true");
   await expect
     .poll(() => page.evaluate(() => !!(window as any).__releaseFitForTest))
@@ -2929,4 +2929,115 @@ test("keyboard navigation crosses IPC page boundaries without displaying stale s
   await expect(grid.getByText("4001", { exact: true })).toBeVisible();
   await expect(grid.getByText("4000", { exact: true })).not.toBeVisible();
   expect(await grid.getByRole("row").count()).toBeLessThan(60);
+});
+
+test("Enter on a column divider does not fit or open a row", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const divider = page.getByRole("separator", {
+    name: "Resize Process column",
+    exact: true,
+  });
+  await expect(divider).toHaveAttribute(
+    "title",
+    "Double-click to fit column to contents",
+  );
+  const width = await divider.getAttribute("aria-valuenow");
+  const count = await page.evaluate(
+    () =>
+      (window as any).__testCalls.filter((call: any) => call.command === "page")
+        .length,
+  );
+  await divider.focus();
+  await page.keyboard.press("Enter");
+  await expect(divider).toHaveAttribute("aria-valuenow", width!);
+  await expect(divider).toHaveAttribute("aria-busy", "false");
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "page",
+        ).length,
+    ),
+  ).toBe(count);
+  await expect(page.locator(".inspector")).not.toBeVisible();
+});
+
+test("Fit all columns includes offscreen content in one bounded traversal and skips hidden columns", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__wideCellsForTest = true;
+    localStorage.setItem("oflh-hidden-columns", JSON.stringify(["cpu"]));
+  });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const before = await page.evaluate(() => (window as any).__testCalls.length);
+  await page
+    .getByRole("button", { name: "Fit all columns", exact: true })
+    .click();
+  const process = page.getByRole("separator", {
+    name: "Resize Process column",
+    exact: true,
+  });
+  const path = page.getByRole("separator", {
+    name: "Resize Path column",
+    exact: true,
+  });
+  await expect
+    .poll(async () => Number(await process.getAttribute("aria-valuenow")))
+    .toBeGreaterThan(350);
+  await expect
+    .poll(async () => Number(await path.getAttribute("aria-valuenow")))
+    .toBeGreaterThan(1000);
+  await expect(
+    page.getByRole("separator", { name: "Resize CPU column", exact: true }),
+  ).toHaveCount(0);
+  const offsets = await page.evaluate(
+    (start) =>
+      (window as any).__testCalls
+        .slice(start)
+        .filter((call: any) => call.command === "page")
+        .map((call: any) => call.args.query.offset),
+    before,
+  );
+  expect(offsets).toEqual([200, 400, 600, 800, 1000, 1200, 1400]);
+  expect(await page.getByRole("grid").getByRole("row").count()).toBeLessThan(
+    60,
+  );
+  await page.screenshot({ path: "test-results/fit-all-columns.png" });
+});
+
+test("a filter change cancels all-column fitting without applying stale widths", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const divider = page.getByRole("separator", {
+    name: "Resize Process column",
+    exact: true,
+  });
+  const width = await divider.getAttribute("aria-valuenow");
+  await page.evaluate(() => {
+    (window as any).__holdFitForTest = true;
+  });
+  await page
+    .getByRole("button", { name: "Fit all columns", exact: true })
+    .click();
+  await expect(divider).toHaveAttribute("aria-busy", "true");
+  await expect
+    .poll(() => page.evaluate(() => !!(window as any).__releaseFitForTest))
+    .toBe(true);
+  await page
+    .getByRole("textbox", { name: "Search loaded results" })
+    .fill("node");
+  await expect(page.getByText("300 results", { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__holdFitForTest = false;
+    (window as any).__releaseFitForTest();
+  });
+  await expect(divider).toHaveAttribute("aria-busy", "false");
+  await expect(divider).toHaveAttribute("aria-valuenow", width!);
 });

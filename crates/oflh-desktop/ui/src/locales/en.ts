@@ -406,7 +406,9 @@ const en = {
     k_trade_off: "Trade-off:",
   },
   table: {
-    k_auto_fit_hint: "Double-click or press Enter to fit column to contents",
+    k_auto_fit_hint: "Double-click to fit column to contents",
+    k_fit_all_columns: "Fit all columns",
+    k_fit_all_columns_hint: "Fit all visible columns to every matching row",
     k_columns: "Columns",
     k_deleted: "deleted",
     k_file_was_deleted: "File was deleted",

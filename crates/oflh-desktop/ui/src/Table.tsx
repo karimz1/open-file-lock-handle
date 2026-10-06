@@ -31,6 +31,8 @@ export interface ColumnDefinition {
   width: number;
 }
 interface Props {
+  fitAllRequest: number;
+  onFittingChange: (fitting: boolean) => void;
   fontSize: number;
   target: string;
   expandedKey: string | null;
@@ -77,7 +79,12 @@ export function Table(props: Props) {
   );
   const fitRequest = useRef(0);
   const loader = useRef(createPageLoader());
-  const [fitting, setFitting] = useState<ColumnKey | null>(null);
+  const [fitting, setFitting] = useState<ColumnKey | "all" | null>(null);
+  useEffect(
+    () => props.onFittingChange(fitting !== null),
+    [fitting, props.onFittingChange],
+  );
+  useEffect(() => () => props.onFittingChange(false), [props.onFittingChange]);
   const scroll = useRef<HTMLDivElement>(null);
   const resizing = useRef<{
     key: ColumnKey;
@@ -194,19 +201,22 @@ export function Table(props: Props) {
     },
     [],
   );
-  const autoFit = async (column: ColumnDefinition) => {
+  const autoFit = async (fitColumns: ColumnDefinition[]) => {
     if (!scroll.current) return;
     const request = ++fitRequest.current;
-    setFitting(column.key);
+    setFitting(fitColumns.length === 1 ? fitColumns[0].key : "all");
     try {
       await document.fonts.ready;
       if (request !== fitRequest.current || !scroll.current) return;
-      const measurement = columnMeasurer(
-        scroll.current,
-        columns.indexOf(column),
-        column.key,
-        t(column.label),
-      );
+      const measurements = fitColumns.map((column) => ({
+        column,
+        measurement: columnMeasurer(
+          scroll.current!,
+          columns.indexOf(column),
+          column.key,
+          t(column.label),
+        ),
+      }));
       let offset = 0;
       // The grid is virtualized. Walk bounded IPC pages so offscreen matches
       // participate without creating DOM nodes for the complete snapshot.
@@ -223,10 +233,13 @@ export function Table(props: Props) {
               });
         if (request !== fitRequest.current) return;
         if (result.revision !== props.revision) return;
-        for (const row of result.rows)
-          measurement.include(
-            columnText(row, column.key, props.query.handles, props.target),
-          );
+        for (const row of result.rows) {
+          for (const { column, measurement } of measurements) {
+            measurement.include(
+              columnText(row, column.key, props.query.handles, props.target),
+            );
+          }
+        }
         offset += result.rows.length;
         if (!result.rows.length || offset >= result.total) break;
         // Keep navigation and cancellation responsive between pages.
@@ -235,7 +248,12 @@ export function Table(props: Props) {
       if (request === fitRequest.current)
         setWidths((current) => ({
           ...current,
-          [column.key]: measurement.width(),
+          ...Object.fromEntries(
+            measurements.map(({ column, measurement }) => [
+              column.key,
+              measurement.width(),
+            ]),
+          ),
         }));
     } catch (error) {
       if (request === fitRequest.current) props.onError(error);
@@ -243,6 +261,12 @@ export function Table(props: Props) {
       if (request === fitRequest.current) setFitting(null);
     }
   };
+  const previousFitAllRequest = useRef(props.fitAllRequest);
+  useEffect(() => {
+    if (previousFitAllRequest.current === props.fitAllRequest) return;
+    previousFitAllRequest.current = props.fitAllRequest;
+    void autoFit(columns);
+  }, [props.fitAllRequest]);
   const rowAt = (index: number) =>
     currentPage?.rows[index - currentPage.offset];
   const navigate = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -283,6 +307,7 @@ export function Table(props: Props) {
   };
   return (
     <div
+      id="results-grid"
       className="table-scroll"
       ref={scroll}
       role="grid"
@@ -354,12 +379,12 @@ export function Table(props: Props) {
               aria-orientation="vertical"
               aria-valuenow={widthFor(column)}
               aria-valuemin={70}
-              aria-busy={fitting === column.key}
+              aria-busy={fitting === "all" || fitting === column.key}
               title={t("table.k_auto_fit_hint")}
               onDoubleClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                void autoFit(column);
+                void autoFit([column]);
               }}
               tabIndex={0}
               className="resize-handle"
@@ -367,7 +392,7 @@ export function Table(props: Props) {
                 if (event.key === "Enter") {
                   event.preventDefault();
                   event.stopPropagation();
-                  void autoFit(column);
+                  // Enter on a divider must not fit a column or open a grid row.
                   return;
                 }
                 if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
