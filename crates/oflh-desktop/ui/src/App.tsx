@@ -177,6 +177,11 @@ export function App() {
   const [backgroundScan, setBackgroundScan] = useState(false);
   const backgroundRevision = useRef(0);
   const [view, setView] = useState<View>("processes");
+  const [gridRevision, setGridRevision] = useState(0);
+  const gridReady =
+    !["processes", "handles", "ports"].includes(view) ||
+    gridRevision === status.revision;
+  const preparingRefresh = backgroundScan && !status.scanning && !gridReady;
   const [path, setPath] = useState("");
   const [pathEdited, setPathEdited] = useState(false);
   const previousTarget = useRef("");
@@ -311,7 +316,8 @@ export function App() {
     [],
   );
   useEffect(() => {
-    if (!autoReloadSeconds || !status.revision || scanBusy) return;
+    if (!autoReloadSeconds || !status.revision || scanBusy || !gridReady)
+      return;
     const interval = window.setInterval(() => {
       if (
         !statusRef.current.scanning &&
@@ -330,6 +336,7 @@ export function App() {
     acting,
     apply,
     autoReloadSeconds,
+    gridReady,
     confirmation,
     context,
     pathEdited,
@@ -462,7 +469,13 @@ export function App() {
     resetScope = true,
     background = false,
   ) => {
-    if (statusRef.current.scanning || scanRequestPending.current) return;
+    if (
+      statusRef.current.scanning ||
+      scanRequestPending.current ||
+      (["processes", "handles", "ports"].includes(view) &&
+        gridRevision !== statusRef.current.revision)
+    )
+      return;
     scanRequestPending.current = true;
     setBackgroundScan(background);
     if (background) backgroundRevision.current = statusRef.current.revision;
@@ -1345,7 +1358,8 @@ export function App() {
                         setFocused(row.process_key);
                       }}
                       onSort={changeSort}
-                      onPage={(page) =>
+                      onPage={(page) => {
+                        setGridRevision(page.revision);
                         setActiveRow((current) => {
                           if (!current) return current;
                           const row = page.rows.find(
@@ -1357,8 +1371,8 @@ export function App() {
                           return row
                             ? { row, revision: page.revision }
                             : current;
-                        })
-                      }
+                        });
+                      }}
                       onTotal={setTotal}
                       onError={report}
                     />
@@ -1785,18 +1799,22 @@ export function App() {
             />
           ) : (
             <>
-              {status.scanning && <LoaderCircle size={13} className="spin" />}
+              {(status.scanning || preparingRefresh) && (
+                <LoaderCircle size={13} className="spin" />
+              )}
               <span className="status-current-label">
-                {status.scanning
-                  ? t("inspection.k_scanning")
-                  : status.revision
-                    ? t(
-                        backgroundScan &&
-                          status.revision > backgroundRevision.current
-                          ? "inspection.k_results_refreshed"
-                          : "inspection.k_inspection_complete",
-                      )
-                    : t("inspection.k_ready_to_inspect")}
+                {preparingRefresh
+                  ? t("inspection.k_preparing_results")
+                  : status.scanning
+                    ? t("inspection.k_scanning")
+                    : status.revision
+                      ? t(
+                          backgroundScan &&
+                            status.revision > backgroundRevision.current
+                            ? "inspection.k_results_refreshed"
+                            : "inspection.k_inspection_complete",
+                        )
+                      : t("inspection.k_ready_to_inspect")}
               </span>
             </>
           )}

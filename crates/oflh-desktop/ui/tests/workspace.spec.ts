@@ -3213,6 +3213,12 @@ test("quiet automatic refresh keeps search, grid focus, scroll, details and boun
   await page.clock.runFor(100);
   await expect(grid).toHaveAttribute("aria-busy", "true");
   await expect(row).toBeVisible();
+  await expect(page.locator(".status-current")).toContainText(
+    "Preparing results",
+  );
+  await page.keyboard.press("F5");
+  await page.clock.runFor(6000);
+  expect(await refreshCount(page)).toBe(1);
   await expect(page.getByText("Loading results", { exact: true })).toHaveCount(
     0,
   );
