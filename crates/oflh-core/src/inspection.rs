@@ -65,6 +65,8 @@ pub enum InspectionCounter {
     MappingMicros,
     /// Native lock-detection duration.
     LockProbeMicros,
+    /// Shared active-process work ceiling contributed by macOS scans.
+    ProcessConcurrencySlots,
 }
 
 /// Small, approximate live view, read without blocking the native worker.
@@ -115,12 +117,15 @@ pub struct InspectionProgress {
     pub mapping_micros: u64,
     /// Native lock-detection duration.
     pub lock_probe_micros: u64,
+    /// Sum of shared active-process ceilings requested by macOS scans; one fresh
+    /// scan reports its CPU-sized limit, separately from spawned workers.
+    pub process_concurrency_slots: u64,
 }
 
 #[derive(Default)]
 pub(crate) struct ProgressState {
     phase: AtomicU8,
-    counters: [AtomicU64; 21],
+    counters: [AtomicU64; 22],
 }
 impl ProgressState {
     pub(crate) fn phase(&self, phase: InspectionPhase) {
@@ -162,6 +167,7 @@ impl ProgressState {
             descriptor_micros: counters[18],
             mapping_micros: counters[19],
             lock_probe_micros: counters[20],
+            process_concurrency_slots: counters[21],
         }
     }
 }

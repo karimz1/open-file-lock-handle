@@ -177,6 +177,16 @@ struct ProcessWorker {
     users: HashMap<u32, String>,
     limited: usize,
 }
+
+fn process_work_budget() -> &'static crate::process_pool::WorkBudget {
+    static BUDGET: std::sync::OnceLock<crate::process_pool::WorkBudget> =
+        std::sync::OnceLock::new();
+    BUDGET.get_or_init(|| {
+        crate::process_pool::WorkBudget::new(
+            std::thread::available_parallelism().map_or(1, |count| count.get()),
+        )
+    })
+}
 fn inspect_process(
     worker: &mut ProcessWorker,
     pid: u32,
@@ -404,8 +414,13 @@ impl Backend for Native {
         let workers = std::thread::available_parallelism()
             .map_or(2, |count| count.get().saturating_mul(2))
             .clamp(2, 8);
+        let budget = process_work_budget();
+        cancel.record(
+            InspectionCounter::ProcessConcurrencySlots,
+            budget.maximum().min(pids.len()) as u64,
+        );
         for worker in crate::process_pool::collect(&pids, workers, cancel, |worker, pid| {
-            inspect_process(worker, pid, target, cancel)
+            budget.run(cancel, || inspect_process(worker, pid, target, cancel))
         })? {
             limited += worker.limited;
             snapshot.processes.extend(worker.processes);
