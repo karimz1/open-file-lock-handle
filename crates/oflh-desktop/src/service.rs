@@ -836,11 +836,9 @@ mod tests {
         );
         let native_target = service.shared.lock().target.clone().unwrap();
         assert_eq!(native_target, std::fs::canonicalize(folder.path()).unwrap());
-        #[cfg(windows)]
-        assert_eq!(
-            first.target,
-            native_target.to_str().unwrap().trim_start_matches(r"\\?\")
-        );
+        // The duration PR is independent of Windows path presentation. Both
+        // ordinary and extended text must resolve to the exact native target.
+        assert_eq!(std::fs::canonicalize(&first.target).unwrap(), native_target);
 
         service.inspect(folder.path().join("\0invalid")).unwrap();
         let failed = received.recv_timeout(TIMEOUT).unwrap();

@@ -259,7 +259,7 @@ test.beforeEach(async ({ page }) => {
                     .includes(args.query.columns.name.toLowerCase())),
             );
             return {
-              revision: 1,
+              revision: args.revision,
               total: rows.length,
               rows: rows.slice(
                 args.query.offset,
@@ -494,6 +494,10 @@ for (const [language, expected] of [
     );
     const duration = page.locator(".scan-duration");
     await expect(duration).toHaveText(expected);
+    await expect(page.getByRole("grid")).toHaveAttribute(
+      "aria-rowcount",
+      "1501",
+    );
     const bounds = await duration.boundingBox();
     expect(bounds).not.toBeNull();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
