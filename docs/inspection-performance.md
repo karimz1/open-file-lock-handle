@@ -179,9 +179,20 @@ inspection and again after user/ancestry enrichment. Lock detection, snapshot
 normalization and metric sampling retain their existing parent-side behavior.
 Linux enumeration remains unchanged.
 
-The profiler reports `process_workers`, `process_metadata_ms`, `descriptor_ms`,
+Independent scans in one application process share an active-process work budget
+sized to the available logical CPUs, capped at eight. Extra workers wait for a
+permit with cooperative cancellation; the counter mutex is released before
+native work. Error and panic cleanup release the permit. This prevents parallel
+scan instances from multiplying native query pressure while retaining every
+captured PID and worker-local result. The CPU-busy Intel regression suite exposed
+long execution under the previous per-scan-only bounds; native profiles and the
+unchanged fixtures determine whether the shared budget is retained.
+
+The profiler reports `process_workers`, `process_concurrency_slots`, `process_metadata_ms`, `descriptor_ms`,
 `mapping_ms`, and `lock_probe_ms` for process metadata/ancestry, descriptors,
-mappings, and lock probes. Concurrent durations are summed
+mappings, and lock probes. `process_concurrency_slots` records the shared work
+ceiling separately from spawned workers for a fresh scan; reusing one cancellation
+token sums the ceilings contributed by its scans. Concurrent durations are summed
 and can exceed elapsed time; they identify work, not a sequential breakdown of
 latency. Native six-target CI compares the same held-file fixtures against the PR
 base and requires native regressions on both macOS architectures. No macOS

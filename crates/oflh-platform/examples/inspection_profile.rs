@@ -128,6 +128,7 @@ fn counters(progress: InspectionProgress) -> Value {
         "native_handle_snapshots":progress.native_handle_snapshots,
         "native_handle_snapshot_ms":progress.native_handle_snapshot_micros as f64 / 1000.0,
         "native_handle_names":progress.native_handle_names,"memory_regions":progress.memory_regions,"mapped_names":progress.mapped_names,"process_workers":progress.process_workers,
+        "process_concurrency_slots":progress.process_concurrency_slots,
         "process_metadata_ms":progress.process_metadata_micros as f64/1000.0,
         "descriptor_ms":progress.descriptor_micros as f64/1000.0,
         "mapping_ms":progress.mapping_micros as f64/1000.0,

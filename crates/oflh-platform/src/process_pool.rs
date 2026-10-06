@@ -1,6 +1,69 @@
 //! Bounded independent native-process work. Join all workers before publication.
 use oflh_core::{Cancellation, Error, InspectionCounter, Result, io};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Condvar, Mutex};
+use std::time::Duration;
+
+/// Share a CPU-sized native-work limit across independent scan instances. The
+/// counter lock is released before callbacks; waiting remains cancellable.
+pub(crate) struct WorkBudget {
+    maximum: usize,
+    available: Mutex<usize>,
+    changed: Condvar,
+}
+impl WorkBudget {
+    pub(crate) fn new(maximum: usize) -> Self {
+        let maximum = maximum.clamp(1, 8);
+        Self {
+            maximum,
+            available: Mutex::new(maximum),
+            changed: Condvar::new(),
+        }
+    }
+    pub(crate) fn maximum(&self) -> usize {
+        self.maximum
+    }
+    fn acquire(&self, cancel: &Cancellation) -> Result<WorkPermit<'_>> {
+        cancel.check()?;
+        let mut available = self
+            .available
+            .lock()
+            .map_err(|_| Error::Unavailable("native process work budget poisoned".into()))?;
+        loop {
+            cancel.check()?;
+            if *available > 0 {
+                *available -= 1;
+                return Ok(WorkPermit(self));
+            }
+            (available, _) = self
+                .changed
+                .wait_timeout(available, Duration::from_millis(25))
+                .map_err(|_| Error::Unavailable("native process work budget poisoned".into()))?;
+        }
+    }
+    pub(crate) fn run<T>(
+        &self,
+        cancel: &Cancellation,
+        work: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
+        let _permit = self.acquire(cancel)?;
+        work()
+    }
+}
+struct WorkPermit<'a>(&'a WorkBudget);
+impl Drop for WorkPermit<'_> {
+    fn drop(&mut self) {
+        // No callback runs under this lock. Recovery during unwinding releases
+        // this uniquely owned permit without causing a second panic.
+        let mut available = self
+            .0
+            .available
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *available += 1;
+        self.0.changed.notify_one();
+    }
+}
 
 struct StopOnPanic<'a>(&'a AtomicBool);
 impl Drop for StopOnPanic<'_> {
@@ -231,5 +294,87 @@ mod tests {
             Err(Error::Cancelled)
         ));
         assert_eq!(cancel.progress().process_workers, 0);
+    }
+
+    #[test]
+    fn independent_scans_share_a_work_ceiling_without_losing_processes() {
+        let budget = WorkBudget::new(2);
+        let processes: Vec<_> = (0..32).collect();
+        let gate = (Mutex::new(0), Condvar::new());
+        let entered = AtomicUsize::new(0);
+        let active = AtomicUsize::new(0);
+        let peak = AtomicUsize::new(0);
+        let inspect = || {
+            let cancel = Cancellation::default();
+            let states = collect(&processes, 8, &cancel, |state: &mut Vec<u32>, pid| {
+                budget.run(&cancel, || {
+                    let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(current, Ordering::SeqCst);
+                    if entered.fetch_add(1, Ordering::SeqCst) < 2 {
+                        meet_peer(&gate);
+                    }
+                    std::thread::sleep(Duration::from_millis(1));
+                    state.push(pid);
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    Ok(())
+                })
+            })
+            .unwrap();
+            assert_eq!(cancel.progress().process_workers, 8);
+            let collected: Vec<_> = states.into_iter().flatten().collect();
+            assert_eq!(collected.len(), processes.len());
+            assert_eq!(
+                collected.into_iter().collect::<BTreeSet<_>>(),
+                processes.iter().copied().collect()
+            );
+        };
+        std::thread::scope(|scope| {
+            scope.spawn(inspect);
+            scope.spawn(inspect);
+        });
+        assert_eq!(peak.load(Ordering::SeqCst), budget.maximum());
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+        assert_eq!(entered.load(Ordering::SeqCst), 64);
+    }
+
+    #[test]
+    fn waiting_for_native_work_is_cancellable_without_releasing_a_foreign_permit() {
+        let budget = WorkBudget::new(1);
+        let held = budget.acquire(&Cancellation::default()).unwrap();
+        let cancel = Cancellation::default();
+        let (started, received) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let waiter = scope.spawn(|| {
+                started.send(()).unwrap();
+                budget.run::<()>(&cancel, || panic!("cancelled budget callback"))
+            });
+            received.recv_timeout(Duration::from_secs(2)).unwrap();
+            cancel.cancel();
+            assert!(matches!(waiter.join().unwrap(), Err(Error::Cancelled)));
+        });
+        assert_eq!(*budget.available.lock().unwrap(), 0);
+        drop(held);
+        assert_eq!(*budget.available.lock().unwrap(), 1);
+        assert_eq!(WorkBudget::new(0).maximum(), 1);
+        assert_eq!(WorkBudget::new(usize::MAX).maximum(), 8);
+    }
+
+    #[test]
+    fn native_error_and_callback_panic_release_the_shared_work_budget() {
+        let budget = WorkBudget::new(1);
+        let cancel = Cancellation::default();
+        let result = budget.run(&cancel, || {
+            Err::<(), _>(io(
+                "native budget fixture",
+                std::io::Error::from_raw_os_error(5),
+            ))
+        });
+        assert!(matches!(result, Err(Error::Io {source, ..}) if source.raw_os_error()==Some(5)));
+        let panic = std::panic::catch_unwind(|| {
+            budget.run::<()>(&cancel, || panic!("native budget fixture panic"))
+        });
+        assert!(panic.is_err());
+        assert_eq!(budget.run(&cancel, || Ok(42)).unwrap(), 42);
+        assert_eq!(*budget.available.lock().unwrap(), 1);
     }
 }
