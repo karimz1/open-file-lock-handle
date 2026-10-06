@@ -221,6 +221,14 @@ test.beforeEach(async ({ page }) => {
                   ? status.revision + 1
                   : status.revision,
             });
+          if (command === "page" && (window as any).__failNextPageForTest) {
+            (window as any).__failNextPageForTest = false;
+            throw {
+              kind: "io",
+              message: "Synthetic result-page failure",
+              os_code: 5,
+            };
+          }
           if (
             command === "page" &&
             (window as any).__holdPagesForTest &&
@@ -3258,6 +3266,59 @@ test("quiet automatic refresh keeps search, grid focus, scroll, details and boun
   expect(await grid.locator(".data-row").count()).toBeLessThan(60);
   await page.clock.runFor(4800);
   expect(await refreshCount(page)).toBe(1);
+});
+
+test("a failed replacement page keeps old rows safe and permits a new manual refresh", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  await expect(grid.getByText("4000", { exact: true })).toBeVisible();
+  await grid.locator(".data-row").filter({ hasText: "4000" }).click();
+  const details = page.getByRole("complementary", { name: "Process details" });
+  await expect(details).toBeVisible();
+  await enableQuietRefresh(page);
+  await page.evaluate(() => {
+    (window as any).__failNextPageForTest = true;
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 2,
+      revision: 2,
+      scanning: false,
+    });
+  });
+  await page.clock.runFor(100);
+  await expect(page.getByText(/Synthetic result-page failure/)).toBeVisible();
+  await expect(page.locator(".status-current")).toContainText(
+    "Could not update results",
+  );
+  await expect(grid).toHaveAttribute("aria-rowcount", "1501");
+  await expect(grid.getByText("4000", { exact: true })).toBeVisible();
+  await expect(
+    details.getByRole("button", { name: "Copy path", exact: true }).first(),
+  ).toBeDisabled();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.clock.runFor(4800);
+  expect(await refreshCount(page)).toBe(1);
+  await page.keyboard.press("F5");
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  expect(await refreshCount(page)).toBe(2);
+  await page.evaluate(() => {
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 3,
+      revision: 3,
+      scanning: false,
+    });
+  });
+  await page.clock.runFor(100);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator(".status-current")).toContainText(
+    "Inspection complete",
+  );
+  await expect(
+    details.getByRole("button", { name: "Copy path", exact: true }).first(),
+  ).toBeEnabled();
+  expect(await refreshCount(page)).toBe(2);
 });
 
 test("quiet automatic refresh permits searching and cancellation without stealing input focus or polling while idle", async ({

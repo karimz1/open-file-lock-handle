@@ -245,6 +245,7 @@ const zh: TranslationSchema<typeof en> = {
       "请等待当前扫描完成后再打开行操作。",
     k_updating_results: "正在更新结果…",
     k_results_refreshed: "结果已更新",
+    k_result_update_failed: "无法更新结果",
     k_background_hint:
       "刷新期间仍可查看之前的结果。本次检查完成后才能开始下一次检查。",
     k_cancel_refresh: "取消自动刷新",

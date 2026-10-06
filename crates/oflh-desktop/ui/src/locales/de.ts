@@ -257,6 +257,7 @@ const de: TranslationSchema<typeof en> = {
       "Warte, bis die aktuelle Suche abgeschlossen ist, bevor du Zeilenaktionen öffnest.",
     k_updating_results: "Ergebnisse werden aktualisiert…",
     k_results_refreshed: "Ergebnisse aktualisiert",
+    k_result_update_failed: "Ergebnisse konnten nicht aktualisiert werden",
     k_background_hint:
       "Die bisherigen Ergebnisse bleiben während der Aktualisierung verfügbar. Ein weiterer Scan wartet auf den Abschluss.",
     k_cancel_refresh: "Automatische Aktualisierung abbrechen",

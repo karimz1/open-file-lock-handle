@@ -48,6 +48,7 @@ interface Props {
   onSort: (sort: Sort) => void;
   onPage: (page: Page) => void;
   onTotal: (total: number) => void;
+  onPageError: (error: unknown, revision: number) => void;
   onError: (error: unknown) => void;
 }
 export const fileColumns: ColumnDefinition[] = [
@@ -175,7 +176,7 @@ export function Table(props: Props) {
           }
         },
         (error) => {
-          if (active) props.onError(error);
+          if (active) props.onPageError(error, props.revision);
         },
       );
     }, 45);

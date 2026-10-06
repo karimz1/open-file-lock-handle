@@ -247,6 +247,7 @@ const en = {
       "Wait for the current scan to finish before opening row actions.",
     k_updating_results: "Updating results…",
     k_results_refreshed: "Results refreshed",
+    k_result_update_failed: "Could not update results",
     k_background_hint:
       "Previous results remain available while refreshing. Another scan cannot start until this one finishes.",
     k_cancel_refresh: "Cancel automatic refresh",

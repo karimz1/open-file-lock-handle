@@ -178,9 +178,17 @@ export function App() {
   const backgroundRevision = useRef(0);
   const [view, setView] = useState<View>("processes");
   const [gridRevision, setGridRevision] = useState(0);
+  // A failed page ends presentation work without making stale rows actionable.
+  // Permit a fresh scan to recover instead of leaving the reload barrier stuck.
+  const [failedGridRevision, setFailedGridRevision] = useState<number | null>(
+    null,
+  );
+  const gridFailed =
+    failedGridRevision === status.revision && gridRevision !== status.revision;
   const gridReady =
     !["processes", "handles", "ports"].includes(view) ||
-    gridRevision === status.revision;
+    gridRevision === status.revision ||
+    gridFailed;
   const preparingRefresh = backgroundScan && !status.scanning && !gridReady;
   const [path, setPath] = useState("");
   const [pathEdited, setPathEdited] = useState(false);
@@ -473,7 +481,8 @@ export function App() {
       statusRef.current.scanning ||
       scanRequestPending.current ||
       (["processes", "handles", "ports"].includes(view) &&
-        gridRevision !== statusRef.current.revision)
+        gridRevision !== statusRef.current.revision &&
+        failedGridRevision !== statusRef.current.revision)
     )
       return;
     scanRequestPending.current = true;
@@ -1360,6 +1369,7 @@ export function App() {
                       onSort={changeSort}
                       onPage={(page) => {
                         setGridRevision(page.revision);
+                        setFailedGridRevision(null);
                         setActiveRow((current) => {
                           if (!current) return current;
                           const row = page.rows.find(
@@ -1374,6 +1384,11 @@ export function App() {
                         });
                       }}
                       onTotal={setTotal}
+                      onPageError={(failure, revision) => {
+                        if (revision !== statusRef.current.revision) return;
+                        setFailedGridRevision(revision);
+                        report(failure);
+                      }}
                       onError={report}
                     />
                     {details && (
@@ -1803,18 +1818,20 @@ export function App() {
                 <LoaderCircle size={13} className="spin" />
               )}
               <span className="status-current-label">
-                {preparingRefresh
-                  ? t("inspection.k_preparing_results")
-                  : status.scanning
-                    ? t("inspection.k_scanning")
-                    : status.revision
-                      ? t(
-                          backgroundScan &&
-                            status.revision > backgroundRevision.current
-                            ? "inspection.k_results_refreshed"
-                            : "inspection.k_inspection_complete",
-                        )
-                      : t("inspection.k_ready_to_inspect")}
+                {gridFailed
+                  ? t("inspection.k_result_update_failed")
+                  : preparingRefresh
+                    ? t("inspection.k_preparing_results")
+                    : status.scanning
+                      ? t("inspection.k_scanning")
+                      : status.revision
+                        ? t(
+                            backgroundScan &&
+                              status.revision > backgroundRevision.current
+                              ? "inspection.k_results_refreshed"
+                              : "inspection.k_inspection_complete",
+                          )
+                        : t("inspection.k_ready_to_inspect")}
               </span>
             </>
           )}
