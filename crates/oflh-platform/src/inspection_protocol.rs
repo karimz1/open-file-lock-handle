@@ -41,6 +41,7 @@ pub(crate) enum Failure {
     Alias = 5,
     Worker = 6,
     DeletedName = 7,
+    Sharing = 8,
 }
 impl Failure {
     #[cfg(windows)]
@@ -53,6 +54,7 @@ impl Failure {
             Self::Alias => "inspect file aliases",
             Self::Worker => "run native inspection worker",
             Self::DeletedName => "resolve original folder of deleted handle",
+            Self::Sharing => "probe file sharing",
         }
     }
 }
@@ -323,6 +325,7 @@ fn decode(bytes: &[u8]) -> Result<Message> {
                 5 => Failure::Alias,
                 6 => Failure::Worker,
                 7 => Failure::DeletedName,
+                8 => Failure::Sharing,
                 _ => {
                     return Err(Error::Unavailable(
                         "unknown inspection helper operation".into(),

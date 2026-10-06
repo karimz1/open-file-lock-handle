@@ -1,6 +1,6 @@
 //! Enumerate data mappings independently of open file handles and loaded modules.
 use super::super::*;
-use super::{Context, Failures, NativeOperation, names::DevicePaths};
+use super::{Context, Failures, NativeOperation, Reference, names::DevicePaths};
 use crate::inspection_protocol::Failure;
 use std::collections::HashSet;
 use windows_sys::Win32::System::Memory::*;
@@ -95,7 +95,17 @@ pub(super) fn inspect(
             context.stats.add(4, 1);
             match mapped_path(&process, info.AllocationBase as usize, context.devices) {
                 Ok(path) if context.target.contains(&path) => {
-                    context.publish(identity, pinned, &path, false, true, false)?;
+                    context.publish(
+                        identity,
+                        pinned,
+                        Reference {
+                            path: &path,
+                            directory: false,
+                            mapped: true,
+                            deleted: false,
+                        },
+                        failures,
+                    )?;
                 }
                 Ok(_) => {}
                 Err(error) => failures.note(Failure::Mapping, &error),

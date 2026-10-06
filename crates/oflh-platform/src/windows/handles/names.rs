@@ -319,36 +319,198 @@ impl DevicePaths {
     }
 }
 
+/// Successful and unavailable probes are shared by path for this scan only.
+#[derive(Clone, Copy)]
+struct SharingProbe {
+    evidence: Option<AccessKind>,
+    unavailable: Option<i32>,
+}
+impl SharingProbe {
+    fn result(self) -> Result<Option<AccessKind>> {
+        if self.evidence.is_some() {
+            return Ok(self.evidence);
+        }
+        match self.unavailable {
+            Some(code) => Err(io(
+                "probe native file sharing",
+                std::io::Error::from_raw_os_error(code),
+            )),
+            None => Ok(None),
+        }
+    }
+}
+fn native_name(path: &Path) -> Result<Vec<u16>> {
+    if !path.is_absolute() {
+        return Err(Error::Unavailable(
+            "sharing probe requires an absolute path".into(),
+        ));
+    }
+    let name: Vec<u16> = path.as_os_str().encode_wide().collect();
+    let verbatim: Vec<_> = "\\\\?\\".encode_utf16().collect();
+    let network: Vec<_> = "\\\\".encode_utf16().collect();
+    let mut native: Vec<_> = "\\??\\".encode_utf16().collect();
+    if let Some(suffix) = name.strip_prefix(verbatim.as_slice()) {
+        native.extend(suffix);
+    } else if let Some(suffix) = name.strip_prefix(network.as_slice()) {
+        native.extend("UNC\\".encode_utf16());
+        native.extend(suffix);
+    } else if matches!(path.components().next(), Some(Component::Prefix(prefix)) if matches!(prefix.kind(), Prefix::Disk(_)))
+    {
+        native.extend(name);
+    } else {
+        return Err(Error::Unavailable(
+            "sharing probe requires an absolute DOS or UNC path".into(),
+        ));
+    }
+    if native.contains(&0) || native.len() > u16::MAX as usize / 2 {
+        return Err(Error::Unavailable(
+            "sharing probe native name exceeds extent".into(),
+        ));
+    }
+    Ok(native)
+}
+fn probe_sharing(path: &Path) -> Result<SharingProbe> {
+    use windows_sys::{
+        Wdk::{Foundation::OBJECT_ATTRIBUTES, Storage::FileSystem::*},
+        Win32::System::IO::IO_STATUS_BLOCK,
+    };
+    const _: () = {
+        assert!(size_of::<UNICODE_STRING>() == 16);
+        assert!(size_of::<OBJECT_ATTRIBUTES>() == 48);
+        assert!(size_of::<IO_STATUS_BLOCK>() == 16);
+    };
+    let mut name = native_name(path)?;
+    let name_bytes = (name.len() * size_of::<u16>()) as u16;
+    let unicode = UNICODE_STRING {
+        Length: name_bytes,
+        MaximumLength: name_bytes,
+        Buffer: name.as_mut_ptr(),
+    };
+    let attributes = OBJECT_ATTRIBUTES {
+        Length: size_of::<OBJECT_ATTRIBUTES>() as u32,
+        ObjectName: &unicode,
+        Attributes: OBJ_CASE_INSENSITIVE,
+        ..OBJECT_ATTRIBUTES::default()
+    };
+    let mut unavailable = None;
+    for (access, kind) in [
+        (FILE_GENERIC_READ, AccessKind::Read),
+        (FILE_GENERIC_WRITE, AccessKind::Write),
+        (DELETE | SYNCHRONIZE, AccessKind::Delete),
+    ] {
+        let mut status_block = IO_STATUS_BLOCK::default();
+        let mut raw = null_mut();
+        // SAFETY: checked length-delimited UTF-16 and exact SDK POD layouts remain
+        // live through the synchronous call. FILE_OPEN never creates or changes
+        // content; maximal sharing and NO_RECALL avoid recalling offline data.
+        // COMPLETE_IF_OPLOCKED returns after initiating an oplock break rather
+        // than waiting for the inspected application's acknowledgement.
+        let status = unsafe {
+            NtCreateFile(
+                &mut raw,
+                access,
+                &attributes,
+                &mut status_block,
+                null(),
+                FILE_ATTRIBUTE_NORMAL,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                FILE_OPEN,
+                FILE_SYNCHRONOUS_IO_NONALERT
+                    | FILE_NON_DIRECTORY_FILE
+                    | FILE_COMPLETE_IF_OPLOCKED
+                    | FILE_OPEN_NO_RECALL,
+                null(),
+                0,
+            )
+        };
+        if status == STATUS_SHARING_VIOLATION {
+            return Ok(SharingProbe {
+                evidence: Some(kind),
+                unavailable: None,
+            });
+        }
+        if status < 0 {
+            unavailable.get_or_insert(status);
+            continue;
+        }
+        // Synchronous opens complete before the borrowed I/O block can be dropped.
+        // Alternate success STATUS_OPLOCK_BREAK_IN_PROGRESS still owns a handle.
+        drop(Handle::new(raw, "own native sharing probe")?);
+    }
+    Ok(SharingProbe {
+        evidence: None,
+        unavailable,
+    })
+}
 #[derive(Default)]
-pub(super) struct Sharing(std::sync::Mutex<HashMap<PathBuf, Option<LockEvidence>>>);
+pub(super) struct Sharing(std::sync::Mutex<HashMap<PathBuf, SharingProbe>>);
 impl Sharing {
-    pub(super) fn inspect(&self, path: &Path) -> Option<AccessKind> {
+    pub(super) fn inspect(&self, path: &Path) -> Result<Option<AccessKind>> {
         let cached = self
             .0
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .get(path)
-            .cloned();
-        let evidence = cached.unwrap_or_else(|| {
-            // Potentially blocking probes run outside the cache lock and inside
-            // the owned helper, never on the parent/UI thread.
-            let evidence = sharing(path);
-            self.0
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .insert(path.to_owned(), evidence.clone());
-            evidence
-        });
-        match evidence {
-            Some(LockEvidence::SharingConflict(kind)) => Some(kind),
-            _ => None,
-        }
+            .copied();
+        let probe = match cached {
+            Some(probe) => probe,
+            None => {
+                // Native calls run outside the cache lock and inside the helper.
+                let probe = probe_sharing(path)?;
+                self.0
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .insert(path.to_owned(), probe);
+                probe
+            }
+        };
+        probe.result()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_probe_names_preserve_dos_unc_and_unpaired_utf16() {
+        for (input, expected) in [
+            ("C:\\folder\\file", "\\??\\C:\\folder\\file"),
+            ("\\\\?\\C:\\file", "\\??\\C:\\file"),
+            ("\\\\server\\share\\file", "\\??\\UNC\\server\\share\\file"),
+            (
+                "\\\\?\\UNC\\server\\share\\file",
+                "\\??\\UNC\\server\\share\\file",
+            ),
+        ] {
+            assert_eq!(
+                native_name(Path::new(input)).unwrap(),
+                expected.encode_utf16().collect::<Vec<_>>()
+            );
+        }
+        let mut name: Vec<_> = "C:\\file".encode_utf16().collect();
+        name.push(0xd800);
+        assert_eq!(native_name(&path(&name)).unwrap().last(), Some(&0xd800));
+        assert!(native_name(Path::new("relative.bin")).is_err());
+        // The native C-string decoder intentionally trims NUL; construct an
+        // actual invalid OsString so this regression reaches the probe boundary.
+        assert!(
+            native_name(&PathBuf::from(OsString::from_wide(&[
+                67, 58, 92, 65, 0, 66
+            ])))
+            .is_err()
+        );
+        assert!(native_name(Path::new("C:relative.bin")).is_err());
+        let mut oversized: Vec<_> = "C:\\".encode_utf16().collect();
+        oversized.extend(std::iter::repeat_n(65, 32768));
+        assert!(native_name(&PathBuf::from(OsString::from_wide(&oversized))).is_err());
+        let probe = SharingProbe {
+            evidence: None,
+            unavailable: Some(STATUS_ACCESS_DENIED),
+        };
+        assert!(
+            matches!(probe.result(), Err(Error::Io { source, .. }) if source.raw_os_error() == Some(STATUS_ACCESS_DENIED))
+        );
+    }
     #[test]
     fn device_translation_respects_boundaries_and_preserves_surrogates() {
         let paths = DevicePaths(vec![(

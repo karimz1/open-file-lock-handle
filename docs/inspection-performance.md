@@ -122,6 +122,19 @@ outcome explicit; a returned partial snapshot is not completed native discovery.
 Native minimal-rights fixtures separately require read-only, write-only and
 metadata-only users to survive folder inspection without invented access modes.
 
+Whole-drive diagnostics identified a sharing-probe stall on the x64 runner.
+Folder probes now open existing files through `NtCreateFile` with
+`FILE_COMPLETE_IF_OPLOCKED`, maximal sharing and `FILE_OPEN_NO_RECALL`.
+[Microsoft documents the immediate oplock-break completion](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ntcreatefile).
+The probe closes alternate-success handles without reading or writing content,
+and records only `STATUS_SHARING_VIOLATION` as sharing evidence. Permission,
+offline-file and other native failures remain explicit unknown evidence with
+original status codes. An independent read/handle oplock fixture deliberately
+withholds break acknowledgment and requires complete folder discovery without a
+false sharing-conflict row. Other filesystem/filter calls can still block, so
+the owned-helper stall protection remains. Native profiling must validate this
+change before a whole-drive improvement is claimed.
+
 ## macOS process workers and phase profiling
 
 macOS dispatches each captured PID once across two workers per logical CPU,
@@ -149,3 +162,12 @@ The desktop keeps the full native snapshot and search indices in Rust, sends at 
 The [50,000-row synthetic grid measurement](measurements/desktop-grid-linux-2026-10-05.json) has 500 processes and 100 paged requests. On the local Linux machine, median page retrieval fell from 39.540 ms to 0.139 ms (p95 40.886 to 0.145 ms). Initial search stayed about 41–42 ms, and indexing about 36–37 ms. This measures Rust search/paging, not webview frame latency or overall inspection speed. CI compares the same grid workload against the PR base on all six native targets, compiling the same developer harness against both revisions. Run `cargo run --release --locked -p oflh-desktop --example grid_profile` to reproduce it; add `-- --baseline /path/to/baseline/grid_profile` for a comparison. The helper is excluded from distributed binaries.
 
 Keep fixed-size virtualization and bounded IPC before changing the UI layout. [TanStack describes the rendering/overscan tradeoff](https://tanstack.com/virtual/latest/docs/api/virtualizer). [React's deferred-value guidance](https://react.dev/reference/react/useDeferredValue) can help expensive rendering, but does not itself reduce requests; this grid instead bounds requests and removes repeated Rust search/sort work. The progress dialog updates locally during scans so it does not redraw the underlying grid on every polling tick. Further cold-search optimization should be driven by profiles of the shared matcher and index construction, preserving word boundaries, wildcards, per-usage matching and selection identities.
+
+The desktop also skips relevance scoring when the requested order is path, PID,
+name or another column. Relevance sorts compute process metadata scores once per
+process instead of once per usage. Ranking and tie ordering remain covered for
+both process and handle views. A [local 50,000-row path-sort comparison](measurements/desktop-grid-lazy-score-linux-2026-10-06.json)
+measured first-query time of 40.04 ms before this change and 3.57 ms after it, with
+all 50,000 rows retained; cached pages stayed about 0.14 ms. This local run does
+not establish the same gain for every query, sort, machine or WebView. Six-target
+CI records the combined search/paging comparison against the PR base.
