@@ -15,6 +15,8 @@ use std::time::Instant;
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(any(target_os = "macos", test))]
+mod native_buffer;
 #[cfg(any(target_os = "linux", target_os = "macos", windows))]
 mod ports;
 #[cfg(any(target_os = "macos", test))]

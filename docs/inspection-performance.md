@@ -2,6 +2,10 @@
 
 Linux, macOS and the Windows folder backend enumerate process references instead of every unused file below a folder. Windows uses an owned headless helper for live disk handles and data mappings, alongside existing executable/module discovery. Healthy folder inspection has no 10,000-file cap or process-count cutoff. Permissions, native-query failures and unsupported paths remain explicit limitations; observations do not prove lock ownership. Individual files retain Restart Manager and the identity-aware native recovery backend. An embedding binary without a helper uses an explicitly limited Restart Manager folder fallback.
 
+Correctness gates and their test locations are listed in
+[inspection regression coverage](inspection-regressions.md). Preserve those contracts
+when comparing faster implementations.
+
 ## Recorded Windows results
 
 The final handle backend was compared with the parallel Restart Manager backend

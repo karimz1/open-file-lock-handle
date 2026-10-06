@@ -289,18 +289,16 @@ fn collect_descriptors(
                 (len * size_of::<libc::proc_fdinfo>()) as i32,
             )
         };
-        if returned <= 0 {
-            partial = true
-        } else if returned as usize > len * size_of::<libc::proc_fdinfo>() {
-            return Err(Error::Unavailable(
-                "invalid libproc descriptor length".into(),
-            ));
-        } else {
-            if returned as usize == len * size_of::<libc::proc_fdinfo>() {
-                partial = true
-            }
-            // SAFETY: native call initialized exactly the complete records covered by n bytes.
-            unsafe { fds.set_len(returned as usize / size_of::<libc::proc_fdinfo>()) };
+        {
+            let extent = crate::native_buffer::descriptor_extent(
+                returned,
+                len,
+                size_of::<libc::proc_fdinfo>(),
+            )?;
+            partial |= extent.partial;
+            // SAFETY: the validated byte extent fits this allocation, contains
+            // complete ABI records, and initializes exactly extent.records items.
+            unsafe { fds.set_len(extent.records) };
             for descriptor in fds {
                 cancel.check()?;
                 resources_inspected += 1;
