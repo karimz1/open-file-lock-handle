@@ -115,8 +115,9 @@ Tauri reads the signature embedded in the manifest and downloads only the
 installer from GitHub.
 
 Publishing a stable release automatically runs `updater-website.yml`, which
-promotes the latest published stable version to `public/api/latest.json` after
-checking that its staged manifest exactly matches the published GitHub asset.
+downloads and validates the latest published stable release's `latest.json`,
+then writes it to both `public/api/releases/<tag>/latest.json` and
+`public/api/latest.json`. Missing or stale draft metadata is repaired automatically.
 Drafts and RCs never replace that stable endpoint. The workflow can also be
 rerun manually to recover a failed promotion. Versioned manifests remain
 available independently of CI artifact retention. Amplify's existing static

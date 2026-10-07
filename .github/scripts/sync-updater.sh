@@ -6,6 +6,10 @@ tag="$3"
 mode="$4"
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
 [[ "$mode" == stage || "$mode" == publish ]]
+# RCs remain versioned and never replace the stable application endpoint.
+if [[ "$mode" == publish ]]; then
+  [[ "$tag" != *-* ]]
+fi
 node - "$manifest" "$tag" <<'NODE'
 const fs = require('node:fs');
 const [file, tag] = process.argv.slice(2);
@@ -28,16 +32,9 @@ for (const [platform, filename] of Object.entries(expected)) {
 NODE
 destination="$website/public/api/releases/$tag/latest.json"
 mkdir -p "$(dirname "$destination")"
+# Stage uses draft metadata; publish uses the validated published release asset.
+cp "$manifest" "$destination"
 if [[ "$mode" == publish ]]; then
-  cmp "$manifest" "$destination"
-else
-  # The caller has already refused to overwrite a published release.
-  # Draft retries rebuild signatures and must refresh the versioned manifest.
-  cp "$manifest" "$destination"
-fi
-if [[ "$mode" == publish ]]; then
-  # RCs remain versioned and never replace the stable application endpoint.
-  [[ "$tag" != *-* ]]
   cp "$manifest" "$website/public/api/latest.json"
 fi
 git -C "$website" config user.name 'github-actions[bot]'

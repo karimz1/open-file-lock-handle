@@ -23,8 +23,7 @@ test('release upload retains the legacy manifest and desktop keeps a fallback', 
   const cli = readFileSync(`${__dirname}/../../crates/oflh-platform/src/updates.rs`, 'utf8');
   assert.match(cli, /pub const MANIFEST_URL: &str = "https:\/\/oflh\.karimzouine\.com\/api\/latest\.json"/);
   const promotion = readFileSync(`${__dirname}/../workflows/updater-website.yml`, 'utf8');
-  assert.match(promotion, /gh release download "\$TAG" --pattern latest\.json/);
-  assert.match(promotion, /cmp published-updater\/latest\.json "\$MANIFEST"/);
+  assert.match(promotion, /gh release download "\$TAG" --repo karimz1\/open-file-lock-handle --pattern latest\.json/);
 });
 function manifest(tag = 'v1.2.3-rc.1') {
   const platforms = {};
@@ -108,10 +107,24 @@ test('automatically pushes draft metadata and promotes only stable releases', ()
   const published = git('--git-dir', remote, 'show', 'main:public/api/latest.json').toString();
   assert.equal(JSON.parse(published).version, '1.2.3');
   sync('v1.2.3', 'publish');
+  // Recover a published release whose draft manifest was never staged.
+  const recovered = JSON.stringify(manifest('v1.2.4'));
+  writeFileSync(file, recovered);
+  sync('v1.2.4', 'publish');
+  assert.equal(git('--git-dir', remote, 'show', 'main:public/api/releases/v1.2.4/latest.json').toString(), recovered);
+  assert.equal(git('--git-dir', remote, 'show', 'main:public/api/latest.json').toString(), recovered);
+  // The release asset also repairs stale draft metadata on a retry.
+  const corrected = manifest('v1.2.4');
+  corrected.platforms['darwin-x86_64'].signature = 'published-signature';
+  writeFileSync(file, JSON.stringify(corrected));
+  sync('v1.2.4', 'publish');
+  const latest = git('--git-dir', remote, 'show', 'main:public/api/latest.json').toString();
+  assert.equal(latest, JSON.stringify(corrected));
+  assert.equal(git('--git-dir', remote, 'show', 'main:public/api/releases/v1.2.4/latest.json').toString(), latest);
   writeFileSync(file, JSON.stringify(manifest('v1.3.0-rc.1')));
   sync('v1.3.0-rc.1', 'stage');
-  assert.equal(git('--git-dir', remote, 'show', 'main:public/api/latest.json').toString(), published);
+  assert.equal(git('--git-dir', remote, 'show', 'main:public/api/latest.json').toString(), latest);
   assert.throws(() => sync('v1.3.0-rc.1', 'publish'));
-  assert.equal(git('--git-dir', remote, 'show', 'main:public/api/latest.json').toString(), published);
+  assert.equal(git('--git-dir', remote, 'show', 'main:public/api/latest.json').toString(), latest);
   assert.throws(() => sync('../invalid-tag', 'stage'));
 });
