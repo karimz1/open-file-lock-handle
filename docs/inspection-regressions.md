@@ -86,3 +86,12 @@ issues [56](https://github.com/karimz1/open-file-lock-handle/issues/56),
 [58](https://github.com/karimz1/open-file-lock-handle/issues/58),
 [62](https://github.com/karimz1/open-file-lock-handle/issues/62) and
 [66](https://github.com/karimz1/open-file-lock-handle/issues/66).
+
+## Terminal follow-ups
+
+Issue #79 adds complete 10,001-process navigation and selection, per-observation
+matching across every sort, full birth-identity metric updates, cancelled index
+publication, retained details during reload, completion-based scheduling and
+modal/editor/tree auto-refresh suppression. The synthetic terminal profile also
+requires all 50,000 usages and a reachable final row on every native target.
+Existing English terminal goldens remain unchanged.

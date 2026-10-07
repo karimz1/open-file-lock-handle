@@ -1,4 +1,4 @@
-use crate::Event;
+use crate::{Event, app::PreparedSnapshot};
 use oflh_core::*;
 use oflh_platform::{Backend, scan_port_folder, scan_with_ports};
 use std::sync::{Arc, Condvar, Mutex, mpsc::SyncSender};
@@ -57,6 +57,12 @@ impl Worker {
             cancel: Cancellation::default(),
         })
     }
+    pub fn progress(&self) -> InspectionProgress {
+        self.cancel.progress()
+    }
+    pub fn cancel_scan(&self) {
+        self.cancel.cancel();
+    }
     /// Cancel previous work and replace any request that has not started yet.
     pub fn request(&mut self, generation: u64, work: Work) {
         self.cancel.cancel();
@@ -74,14 +80,26 @@ impl Worker {
 /// Execute one request outside the queue lock so input can cancel or replace work.
 fn execute_job(backend: &mut dyn Backend, job: Job) -> Event {
     match job.work {
-        Work::Scan(target) => Event::Scan(job.generation, backend.scan(&target, &job.cancel)),
+        Work::Scan(target) => Event::Scan(
+            job.generation,
+            backend
+                .scan(&target, &job.cancel)
+                .and_then(|snapshot| PreparedSnapshot::new(snapshot, &job.cancel)),
+        ),
         Work::ScanPorts(target) => Event::Scan(
             job.generation,
-            scan_with_ports(backend, &target, &job.cancel),
+            scan_with_ports(backend, &target, &job.cancel)
+                .and_then(|snapshot| PreparedSnapshot::new(snapshot, &job.cancel)),
         ),
         Work::FollowPort(identity, path) => Event::ScopedScan(
             job.generation,
-            Box::new(scan_port_folder(backend, identity, &path, &job.cancel)),
+            Box::new(
+                scan_port_folder(backend, identity, &path, &job.cancel).and_then(
+                    |(target, snapshot)| {
+                        Ok((target, PreparedSnapshot::new(snapshot, &job.cancel)?))
+                    },
+                ),
+            ),
         ),
         Work::Sample(identities) => {
             Event::Metrics(job.generation, backend.sample(&identities, &job.cancel))
