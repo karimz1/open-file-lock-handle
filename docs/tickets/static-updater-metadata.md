@@ -9,6 +9,7 @@ directory. Only published stable releases may replace `/api/latest.json`;
 RCs and drafts must not change stable updates. Seed the website with the existing
 v0.6.0 manifest and document the cross-repository automation credential.
 
-GitHub issue creation was attempted but the connected integration returned
-HTTP 403 (`Resource not accessible by integration`). This file preserves the
-ticket for later issue creation.
+Tracking issue: https://github.com/karimz1/open-file-lock-handle/issues/88.
+
+Application PR: https://github.com/karimz1/open-file-lock-handle/pull/87.
+Website PR: https://github.com/karimz1/oflh-website/pull/1.
