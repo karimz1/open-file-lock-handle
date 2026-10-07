@@ -82,6 +82,27 @@ pub(super) fn collect() -> Result<Vec<Entry>> {
 mod tests {
     use super::*;
     #[test]
+    fn large_snapshots_keep_all_records_and_native_width_fields() {
+        let count = 4096usize;
+        let words_per_entry = size_of::<Entry>() / size_of::<usize>();
+        let mut buffer = vec![0usize; 2 + count * words_per_entry];
+        buffer[0] = count;
+        for index in 0..count {
+            let at = 2 + index * words_per_entry;
+            buffer[at + 1] = u32::MAX as usize + index + 1;
+            buffer[at + 2] = usize::MAX - index;
+        }
+        let entries = decode(&buffer, size_of_val(buffer.as_slice())).unwrap();
+        assert_eq!(entries.len(), count);
+        for (index, entry) in entries.iter().enumerate() {
+            assert_eq!(entry.process_id, u32::MAX as usize + index + 1);
+            assert_eq!(entry.handle_value, usize::MAX - index);
+        }
+        buffer[0] = count + 1;
+        assert!(decode(&buffer, size_of_val(buffer.as_slice())).is_err());
+        assert!(decode(&[], 16).is_err());
+    }
+    #[test]
     fn abi_and_returned_extents_are_checked() {
         assert_eq!(size_of::<Entry>(), 40);
         assert_eq!(align_of::<Entry>(), 8);

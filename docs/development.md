@@ -39,6 +39,10 @@ Updater tests use a local HTTP server and synthetic signed payloads. Desktop CI
 also validates each Windows/macOS updater package after bundling; see
 [Updater regression coverage](releasing.md#updater-regression-coverage).
 
+See [inspection regression coverage](inspection-regressions.md) for the contracts,
+test locations and six-target validation required when changing native discovery
+or desktop paging.
+
 ## Native inspection profiles
 
 See [inspection performance](inspection-performance.md) for equivalent-coverage fixture comparisons, native CI artifacts and the meaning of progress counters.

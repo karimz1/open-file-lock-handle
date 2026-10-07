@@ -1145,6 +1145,151 @@ mod query_cache_tests {
         )
     }
     #[test]
+    fn selection_safety_limit_does_not_truncate_inspection_or_late_pages() {
+        let dataset = Dataset::new(
+            1,
+            Snapshot {
+                processes: (4000..14001)
+                    .map(|pid| Process {
+                        identity: Identity {
+                            pid,
+                            started: 10,
+                            started_sub: 0,
+                        },
+                        name: "worker".into(),
+                        usages: vec![Usage {
+                            path: PathBuf::from("/fixture/shared.bin"),
+                            ..Usage::default()
+                        }],
+                        ..Process::default()
+                    })
+                    .collect(),
+                warnings: vec![],
+            },
+        );
+        let query = TableQuery {
+            sort: Sort::Pid,
+            offset: 9999,
+            limit: usize::MAX,
+            ..TableQuery::default()
+        };
+        let page = dataset.page(&query).unwrap();
+        assert_eq!(dataset.file_users(), 10001);
+        assert_eq!(page.total, 10001);
+        assert_eq!(
+            page.rows.iter().map(|row| row.pid).collect::<Vec<_>>(),
+            [13999, 14000]
+        );
+        let error = dataset.keys(&query).unwrap_err();
+        assert_eq!(error.kind, "invalid_request");
+        assert!(error.message.contains("10,000"));
+        assert_eq!(dataset.page(&query).unwrap().total, 10001);
+        let narrowed = TableQuery {
+            columns: ColumnFilters {
+                pid: Some(14000),
+                ..ColumnFilters::default()
+            },
+            ..query
+        };
+        assert_eq!(dataset.keys(&narrowed).unwrap(), ["14000:10:0"]);
+    }
+    #[test]
+    fn skipping_relevance_scores_preserves_all_per_observation_matches_and_selection() {
+        let dataset = large_dataset(1);
+        for handles in [false, true] {
+            for descending in [false, true] {
+                for sort in [
+                    Sort::Relevance,
+                    Sort::Pid,
+                    Sort::Name,
+                    Sort::Path,
+                    Sort::Cpu,
+                    Sort::Memory,
+                ] {
+                    let query = TableQuery {
+                        handles,
+                        descending,
+                        sort,
+                        text: "worker file-19".into(),
+                        offset: 950,
+                        limit: 200,
+                        ..TableQuery::default()
+                    };
+                    let matches = dataset.cached_matches(&query).unwrap();
+                    // Metadata supplies "worker"; exactly one observation supplies
+                    // "file-19". Ranking must never change the membership set.
+                    assert_eq!(matches.len(), 1000);
+                    let indices: std::collections::BTreeSet<_> = matches
+                        .iter()
+                        .map(|&(process, usage, score)| {
+                            assert_eq!(usage, handles.then_some(19));
+                            if sort == Sort::Relevance {
+                                assert!(score > 0);
+                            } else {
+                                assert_eq!(score, 0);
+                            }
+                            process
+                        })
+                        .collect();
+                    assert_eq!(indices, (0..1000).collect());
+                    let page = dataset.page(&query).unwrap();
+                    assert_eq!(page.total, 1000);
+                    assert_eq!(page.rows.len(), 50);
+                    let keys = dataset.keys(&query).unwrap();
+                    assert_eq!(keys.len(), 1000); // Selection includes offscreen matches.
+                    assert!(keys.contains(&"4000:10:0".to_owned()));
+                    assert!(keys.contains(&"4999:10:0".to_owned()));
+                    assert!(Arc::ptr_eq(
+                        &matches,
+                        &dataset.cached_matches(&query).unwrap()
+                    ));
+                    let split_terms = TableQuery {
+                        text: "worker file-01 file-19".into(),
+                        ..query
+                    };
+                    assert_eq!(dataset.page(&split_terms).unwrap().total, 0);
+                }
+            }
+        }
+    }
+    #[test]
+    fn a_new_snapshot_cannot_reuse_cached_lifetime_keys_or_native_path_references() {
+        let original = large_dataset(7);
+        let query = TableQuery {
+            handles: true,
+            process_key: Some("4000:10:0".into()),
+            ..TableQuery::default()
+        };
+        let old_page = original.page(&query).unwrap();
+        assert_eq!(old_page.total, 20);
+        assert_eq!(original.keys(&query).unwrap(), ["4000:10:0"]);
+        let old_reference = old_page.rows[0].path_ref.clone();
+        let mut snapshot = original.snapshot.clone();
+        snapshot.processes[0].identity.started = 11;
+        snapshot.processes[0].usages[0].path = PathBuf::from("/fixture/reused-pid.bin");
+        let refreshed = Dataset::new(8, snapshot);
+        assert_eq!(refreshed.page(&query).unwrap().total, 0);
+        assert!(refreshed.keys(&query).unwrap().is_empty());
+        assert!(refreshed.details("4000:10:0").is_err());
+        assert!(refreshed.path(&old_reference).is_err());
+        let new_query = TableQuery {
+            process_key: Some("4000:11:0".into()),
+            ..query
+        };
+        let new_page = refreshed.page(&new_query).unwrap();
+        assert_eq!(new_page.revision, 8);
+        assert_eq!(new_page.total, 20);
+        assert_eq!(refreshed.keys(&new_query).unwrap(), ["4000:11:0"]);
+        assert_eq!(
+            refreshed.path(&new_page.rows[0].path_ref).unwrap(),
+            PathBuf::from("/fixture/reused-pid.bin")
+        );
+        assert_eq!(
+            original.path(&old_reference).unwrap(),
+            PathBuf::from("/fixture/0000/file-00.bin")
+        );
+    }
+    #[test]
     fn pages_and_selection_reuse_the_full_query_without_aliasing_filter_changes() {
         let dataset = large_dataset(1);
         let mut query = TableQuery {
