@@ -92,3 +92,19 @@ evidence limits. Native Linux/macOS/Windows x86-64 and ARM64 CI validates the
 combined branch; synthetic timings do not guarantee the same latency on every
 machine. The development integration and its gates are tracked in
 [issue 68](https://github.com/karimz1/open-file-lock-handle/issues/68).
+
+### Terminal language regressions
+
+The CLI/TUI supports English, German and Simplified Chinese through `--language`.
+`crates/oflh-tui/src/messages.rs` owns terminal labels, literal format translations
+and readable help catalogs; `crates/oflh/src/messages.rs` owns CLI help. Format macros
+compile all language variants with the same arguments and evaluate only the selected
+branch. Translate presentation, retaining native data and stable search tokens.
+
+Locale tests use supplied values or child-process environments, never process-wide
+unsafe environment mutation. Real PTY workflows pin English for deterministic
+assertions; separate real CLI tests cover explicit languages and environment priority.
+Multilingual fixtures cover narrow/wide grids, details, help and default-cancel actions.
+When intentionally changing layouts, update snapshots and inspect every changed fixture
+and optional `OFLH_VISUAL_DIR` SVG. Wide glyphs occupy their actual terminal columns.
+The Windows user-locale boundary must also pass native x86-64/ARM64 execution.

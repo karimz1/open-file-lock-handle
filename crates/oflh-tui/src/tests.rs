@@ -235,9 +235,10 @@ fn export_visual(name: &str, buffer: &ratatui::buffer::Buffer) {
                 if bg != "#202028" {
                     write!(
                         svg,
-                        "<rect x=\"{}\" y=\"{}\" width=\"9\" height=\"18\" fill=\"{bg}\"/>",
+                        "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"18\" fill=\"{bg}\"/>",
                         column * 9,
-                        row * 18
+                        row * 18,
+                        unicode_width::UnicodeWidthStr::width(cell.symbol()).max(1) * 9
                     )
                     .unwrap();
                 }
@@ -897,5 +898,106 @@ fn terminal_drive_root_and_details_use_familiar_text_without_mutating_references
         assert!(!text.contains(r"\\?\"));
         assert_eq!(app.target.path, native_target);
         assert_eq!(app.snapshot.processes[0].usages[0].path, native_usage);
+    }
+}
+
+fn readable_buffer(buffer: &ratatui::buffer::Buffer) -> String {
+    let mut result = String::new();
+    for row in buffer.content.chunks(buffer.area.width as usize) {
+        let mut line = String::new();
+        let mut column = 0;
+        while column < row.len() {
+            let symbol = row[column].symbol();
+            line.push_str(symbol);
+            column += unicode_width::UnicodeWidthStr::width(symbol).max(1);
+        }
+        result.push_str(line.trim_end());
+        result.push('\n');
+    }
+    result
+}
+
+#[test]
+fn translated_workflows_keep_search_identities_default_cancel_and_review_guards() {
+    for language in [Language::English, Language::German, Language::Chinese] {
+        let mut app = self::app();
+        app.language = language;
+        key(&mut app, K::Char(' '));
+        let identity = app.current().unwrap().identity;
+        key(&mut app, K::Char('/'));
+        app.paste("absent");
+        key(&mut app, K::Enter);
+        assert!(app.rows.is_empty());
+        key(&mut app, K::Char('x'));
+        assert_eq!(app.pending[0].identity, identity);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+        terminal.draw(|frame| view::draw(frame, &mut app)).unwrap();
+        let text = readable_buffer(terminal.backend().buffer());
+        assert!(text.contains(language.text("Cancel")));
+        assert!(text.contains("dotnet"));
+        assert!(text.contains("424242"));
+        assert!(!app.confirm);
+        assert!(matches!(key(&mut app, K::Enter), Effect::None));
+        key(&mut app, K::Char('x'));
+        key(&mut app, K::Tab);
+        app.height = 12;
+        assert!(matches!(key(&mut app, K::Enter), Effect::None));
+        assert!(app.error);
+        app.height = 24;
+        assert!(
+            matches!(key(&mut app,K::Enter),Effect::Kill(identities,true) if identities == [identity])
+        );
+        let mut app = self::app();
+        app.language = language;
+        for (width, height) in [(1, 1), (28, 18), (48, 20), (80, 24), (120, 40)] {
+            for screen in [Screen::Main, Screen::Details, Screen::Help, Screen::Confirm] {
+                app.screen = Screen::Main;
+                key(&mut app, K::Enter);
+                app.screen = screen;
+                let mut terminal =
+                    ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
+                        .unwrap();
+                terminal.draw(|frame| view::draw(frame, &mut app)).unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn translated_terminal_goldens() {
+    for (language, locale) in [(Language::German, "de"), (Language::Chinese, "zh")] {
+        for (name, screen, width, height) in [
+            ("processes", Screen::Main, 160, 40),
+            ("compact", Screen::Main, 48, 20),
+            ("details", Screen::Details, 160, 40),
+            ("help", Screen::Help, 100, 50),
+            ("confirm", Screen::Confirm, 80, 24),
+        ] {
+            let mut app = self::app();
+            app.language = language;
+            app.target.path = "/build".into();
+            app.snapshot.processes[0].executable = "/usr/bin/dotnet".into();
+            app.snapshot.processes[0].cwd = "/build".into();
+            if screen == Screen::Details {
+                key(&mut app, K::Enter);
+            }
+            if screen == Screen::Confirm {
+                key(&mut app, K::Char('x'));
+            }
+            app.screen = screen;
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+            terminal.draw(|frame| view::draw(frame, &mut app)).unwrap();
+            let text = readable_buffer(terminal.backend().buffer());
+            let name = format!("{name}-{locale}");
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("tests/snapshots/{name}.txt"));
+            if std::env::var_os("OFLH_UPDATE_SNAPSHOTS").is_some() {
+                std::fs::write(&path, &text).unwrap();
+            }
+            assert_eq!(std::fs::read_to_string(path).unwrap(), text, "{name}");
+            export_visual(&name, terminal.backend().buffer());
+        }
     }
 }

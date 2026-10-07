@@ -1,0 +1,40 @@
+  oflh   1 Prozesse  2 Gesperrte Dateien  3 Ports                                                                                                         test
+  /build  ·  MANUELL · r aktualisieren
+  Navigation · / suchen · Tab/→ Baum
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │/ PID, Prozess, Pfad suchen… · * Platzhalter                                                                                                              │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  Prozesse: 1 / 1 · Sortierung: PID
+     PID     PROZESS           BENUTZER    CPU%    RAM        ZUGRIFF     PORTS TREFFERPFAD                     dotnet · PID 424242
+     424242  dotnet            alice       —       —          lesen/schr. 0     FileLockExampleCli.dll +2       ──────────────────────────────────────────────
+                                                                                                                CPU —   RAM —
+                                                                                                                CPU = Anteil am System · RAM = RSS
+
+                                                                                                                PROZESSBAUM
+                                                                                                                └─ parent (424241)
+                                                                                                                  └─ dotnet (424242)
+
+                                                                                                                PORTS · Enter, dann p untersuchen
+                                                                                                                keine erkannt
+
+                                                                                                                PROGRAMM
+                                                                                                                /usr/bin/dotnet
+
+                                                                                                                GEWÄHLTER PFAD
+                                                                                                                /build/FileLockExampleCli.dll
+
+
+
+
+
+
+
+
+
+
+
+
+  Enter untersuchen · Space auswählen · m RAM / c CPU / n Name / p PID
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  1/2/3 Ansichten · / suchen · ↑↓ bewegen · Enter untersuchen · Space auswählen · Ctrl+A alle · Tab/→ Baum · i Seitenleiste · m/c RAM/CPU · a automatisch
+  r aktualisieren · k beenden · x erzwingen · ? Hilfe · R GitHub · D Spenden · q beenden

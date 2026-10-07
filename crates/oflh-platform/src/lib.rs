@@ -3,6 +3,8 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 pub mod elevation;
 pub mod inspection_helper;
+mod locale;
+pub use locale::system_locale;
 #[cfg(any(windows, test))]
 mod inspection_protocol;
 #[cfg(any(windows, test))]

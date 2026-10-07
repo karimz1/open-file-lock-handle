@@ -4,6 +4,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 mod app;
 mod refresh;
+pub use view::messages::{Language, LanguageError};
 mod view;
 mod worker;
 use app::{App, Effect, PreparedSnapshot, Screen};
@@ -15,6 +16,7 @@ use std::{
     sync::mpsc::{self, RecvTimeoutError},
     time::{Duration, Instant},
 };
+use view::messages::localized;
 use worker::{Work, Worker};
 enum Event {
     Input(std::io::Result<TerminalEvent>),
@@ -37,6 +39,8 @@ impl Drop for TerminalGuard {
 pub struct StartOptions {
     /// Follow a selected port owner’s folder when no explicit path was supplied.
     pub follow_port_folder: bool,
+    /// Explicit terminal language; None follows the environment/system locale.
+    pub language: Option<Language>,
     /// Start in the Ports tab and collect network bindings.
     pub ports: bool,
     /// Start with bindings associated with an explicitly supplied target path.
@@ -56,6 +60,7 @@ pub fn run(
     let _guard = TerminalGuard;
     crossterm::execute!(std::io::stdout(), event::EnableBracketedPaste)?;
     let mut app = App::new(target, version);
+    app.language = options.language.unwrap_or_else(Language::system);
     app.ports = options.ports;
     app.ports_path_only = options.ports_path_only;
     app.follow_port_folder = options.follow_port_folder;
@@ -135,11 +140,12 @@ pub fn run(
                         sample = Some(Instant::now() + Duration::from_secs(1))
                     }
                     Err(Error::Cancelled) => {
-                        app.status = "Inspection cancelled".into();
+                        app.status = app.language.text("Inspection cancelled").into();
                         app.error = false;
                     }
                     Err(error) => {
-                        app.status = format!("Scan failed: {error}");
+                        app.status =
+                            localized!(app.language, "Scan failed: {error}", error = error);
                         app.error = true
                     }
                 }
@@ -157,11 +163,15 @@ pub fn run(
                         sample = Some(Instant::now() + Duration::from_secs(1));
                     }
                     Err(Error::Cancelled) => {
-                        app.status = "Inspection cancelled".into();
+                        app.status = app.language.text("Inspection cancelled").into();
                         app.error = false;
                     }
                     Err(error) => {
-                        app.status = format!("Process folder scan failed: {error}");
+                        app.status = localized!(
+                            app.language,
+                            "Process folder scan failed: {error}",
+                            error = error
+                        );
                         app.error = true;
                     }
                 }
@@ -179,13 +189,15 @@ pub fn run(
             Ok(Event::Killed(sent, errors)) => {
                 app.stopping = false;
                 app.error = !errors.is_empty();
-                app.status = format!(
+                app.status = localized!(
+                    app.language,
                     "{sent} termination requests sent{}",
                     if errors.is_empty() {
                         String::new()
                     } else {
                         format!(" · {}", errors.join("; "))
-                    }
+                    },
+                    sent = sent
                 );
                 if sent > 0 {
                     app.tree = None;
@@ -230,14 +242,14 @@ pub fn run(
             }
             Effect::Link(url) => {
                 if let Err(error) = open_link(url) {
-                    app.status = format!("Open browser: {error}");
+                    app.status = localized!(app.language, "Open browser: {error}", error = error);
                     app.error = true
                 }
                 dirty = true
             }
             Effect::CancelScan => {
                 worker.cancel_scan();
-                app.status = "Cancelling inspection…".into();
+                app.status = app.language.text("Cancelling inspection…").into();
                 app.error = false;
                 dirty = true;
             }
