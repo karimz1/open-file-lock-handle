@@ -97,20 +97,26 @@ command and app, so choose one. Scheduled updates follow stable releases only.
 
 ## Desktop updates and signing
 
-Windows and macOS Desktop installs read the static manifest at
-`https://oflh.karimzouine.com/api/latest.json`. Linux DEB/RPM users update through
+New Desktop installs and CLI update checks read the static manifest at
+`https://oflh.karimzouine.com/api/latest.json`, with the GitHub latest-release
+manifest as a fallback. Linux DEB/RPM users update through
 their package manager or the release page.
 
 The Release workflow automatically commits each assembled manifest, including
 RCs, to `karimz1/oflh-website` on `main` at
 `public/api/releases/<tag>/latest.json`. This happens during draft creation;
-no manual workflow step is needed. `latest.json` is excluded from new GitHub
-release assets. Detached `.sig` files and signed updater packages stay on GitHub;
+no manual workflow step is needed. The identical `latest.json` is also uploaded
+to every new GitHub release. Keep publishing it in future releases: installed
+0.6.0 apps and the terminal updater use GitHub's latest-release URL, which points
+to the newest stable release rather than retaining an older release's manifest.
+Keeping only old manifests would therefore break update discovery.
+Detached `.sig` files and signed updater packages stay on GitHub;
 Tauri reads the signature embedded in the manifest and downloads only the
 installer from GitHub.
 
 Publishing a stable release automatically runs `updater-website.yml`, which
-promotes the latest published stable version to `public/api/latest.json`.
+promotes the latest published stable version to `public/api/latest.json` after
+checking that its staged manifest exactly matches the published GitHub asset.
 Drafts and RCs never replace that stable endpoint. The workflow can also be
 rerun manually to recover a failed promotion. Versioned manifests remain
 available independently of CI artifact retention. Amplify's existing static
@@ -122,8 +128,12 @@ Actions secrets to a fine-grained token with Contents write permission for
 Deploy the website's seeded stable manifest before distributing an app with
 the new endpoint. Keep website `/api/*.json` requests outside SPA rewrites and
 use a short cache lifetime for `/api/latest.json`. Previously installed apps
-continue using their embedded GitHub endpoint until updated; retain old release
-manifests for those clients.
+continue using their embedded GitHub endpoint until updated. New desktop apps
+also include that endpoint as a fallback if the website request fails. A valid
+website response is authoritative; deployment or cache lag may briefly delay
+discovery until the website refreshes. Both
+endpoints carry the same payload signatures and use the existing public key;
+do not rotate that key during this endpoint migration.
 
 ### Set up the updater keys
 

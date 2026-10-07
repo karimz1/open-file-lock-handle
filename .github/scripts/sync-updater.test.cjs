@@ -10,6 +10,22 @@ const { execFileSync } = require('node:child_process');
 // Exercise the exact manifest validator used before website commits.
 const script = readFileSync(`${__dirname}/sync-updater.sh`, 'utf8');
 const validator = script.split("<<'NODE'\n")[1].split('\nNODE')[0];
+test('release upload retains the legacy manifest and desktop keeps a fallback', () => {
+  const workflow = readFileSync(`${__dirname}/../workflows/release.yml`, 'utf8');
+  assert.match(workflow, /cp release-dist\/latest\.json updater-dist\/latest\.json/);
+  assert.doesNotMatch(workflow, /mv release-dist\/latest\.json/);
+  assert.match(workflow, /gh release upload "\$TAG" release-dist\/\* --clobber/);
+  const config = JSON.parse(readFileSync(`${__dirname}/../../crates/oflh-desktop/tauri.conf.json`, 'utf8'));
+  assert.deepEqual(config.plugins.updater.endpoints, [
+    'https://oflh.karimzouine.com/api/latest.json',
+    'https://github.com/karimz1/open-file-lock-handle/releases/latest/download/latest.json',
+  ]);
+  const cli = readFileSync(`${__dirname}/../../crates/oflh-platform/src/updates.rs`, 'utf8');
+  assert.match(cli, /pub const MANIFEST_URL: &str = "https:\/\/oflh\.karimzouine\.com\/api\/latest\.json"/);
+  const promotion = readFileSync(`${__dirname}/../workflows/updater-website.yml`, 'utf8');
+  assert.match(promotion, /gh release download "\$TAG" --pattern latest\.json/);
+  assert.match(promotion, /cmp published-updater\/latest\.json "\$MANIFEST"/);
+});
 function manifest(tag = 'v1.2.3-rc.1') {
   const platforms = {};
   for (const [os, arch, platformArch] of [
