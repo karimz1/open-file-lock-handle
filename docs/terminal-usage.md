@@ -9,7 +9,7 @@ A file target shows references to that file; a folder target includes descendant
 **Processes** groups usages by process. **Locked files** shows only observations
 with lock or sharing-conflict evidence. Press `Enter` to inspect a process.
 
-Press `r` to refresh, or `a` for five-second auto-refresh. In details, `l` shows
+Press `r` or `F5` to refresh, or `a` for automatic refresh five seconds after the previous inspection finishes. Active inspections ignore further reloads. Press `z` to cancel; native calls already running may finish before cancellation is acknowledged. Progress shows elapsed time and attempted process/resource counts, not a completeness total. Accepted rows remain usable during refresh; the last successful scan duration stays visible. Automatic refresh pauses while editing search, reviewing confirmations/help or focusing the ancestry tree. In details, `l` shows
 only lock evidence. Search and filters stay active when you refresh. Use `←` and
 `→` to read a long path. On wider terminals, the side panel also shows process
 parents, CPU, and memory.
@@ -115,7 +115,8 @@ Press `?` for the full shortcut list. The main controls are:
 | `↑` / `↓`, `Enter` | Select and inspect |
 | `/`, then `Enter` / `Esc` | Edit search, then apply / cancel |
 | `Space` / `Ctrl+A` | Select one / all visible processes |
-| `r` / `a` | Refresh / five-second auto-refresh |
+| `r` / `F5` / `a` | Refresh / refresh / auto-refresh after completion |
+| `z` | Cancel active inspection |
 | `k` / `x` | Terminate / force kill, with confirmation |
 | `Esc` | Go back or clear search |
 | `q` / `Ctrl+C` | Quit (`q` enters text while searching) |

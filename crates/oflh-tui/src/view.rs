@@ -193,6 +193,29 @@ fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
         keys
     };
     let mut lines = Vec::new();
+    if app.scanning {
+        let phase = match app.scan_progress.phase {
+            InspectionPhase::Processes => "processes",
+            InspectionPhase::Files => "files",
+            InspectionPhase::Ports => "ports",
+            InspectionPhase::Indexing => "indexing",
+        };
+        lines.push(Line::styled(
+            format!(
+                "{} {phase} · {:.1}s · {} processes / {} resources · z cancel",
+                ["◐", "◓", "◑", "◒"][app.pulse % 4],
+                app.scan_elapsed.as_secs_f64(),
+                app.scan_progress.processes,
+                app.scan_progress.resources
+            ),
+            accent(),
+        ));
+    } else if let Some(elapsed) = app.last_scan_elapsed {
+        lines.push(Line::styled(
+            format!("Last scan {:.2}s", elapsed.as_secs_f64()),
+            Style::default().fg(MUTED),
+        ));
+    }
     if !app.status.is_empty() {
         lines.push(Line::styled(
             safe(&app.status),
@@ -388,23 +411,11 @@ fn main_view(frame: &mut Frame, area: Rect, app: &mut App) {
     } else if app.locked {
         format!(
             "{} locked files · {} lock entries",
-            app.rows
-                .iter()
-                .map(|row| &app.snapshot.processes[row.process].usages[row.usages[0]].path)
-                .collect::<std::collections::HashSet<_>>()
-                .len(),
+            app.locked_files,
             app.rows.len()
         )
     } else {
-        format!(
-            "{} of {} processes",
-            app.rows.len(),
-            app.snapshot
-                .processes
-                .iter()
-                .filter(|process| !process.usages.is_empty())
-                .count()
-        )
+        format!("{} of {} processes", app.rows.len(), app.file_processes)
     };
     text(
         frame,
@@ -881,17 +892,7 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
         app,
         true,
     );
-    let locked = app
-        .usage_rows
-        .iter()
-        .filter_map(|&i| {
-            process.usages[i]
-                .lock
-                .as_ref()
-                .map(|_| &process.usages[i].path)
-        })
-        .collect::<std::collections::HashSet<_>>()
-        .len();
+    let locked = app.detail_locked_files;
     text(
         frame,
         line_area(area, head_height + 3),
@@ -1148,8 +1149,9 @@ Ctrl+A         Select / deselect all visible processes
 *              Wildcards: micro*dll, FLEC*.json
                Fragments and CamelCase; spaces combine terms.
 Esc            Clear search / back / cancel
-r              Refresh; cancels previous scan
-a              Toggle five-second auto-refresh
+a              Toggle auto-refresh (5s after completion)
+r / F5         Refresh (ignored during inspection)
+z              Cancel an active inspection
 i              Toggle side inspector
 Tab / →        Focus ancestry; ↑↓ chooses action target
 Tab / ← / Esc  Leave ancestry

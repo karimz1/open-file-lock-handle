@@ -711,3 +711,158 @@ fn port_folder_fallback_and_unknown_owner() {
     key(&mut application, K::End);
     assert!(matches!(key(&mut application, K::Enter), Effect::None));
 }
+
+#[test]
+fn complete_large_snapshot_navigation_search_and_identity_metrics() {
+    let mut app = app();
+    let snapshot = Snapshot {
+        processes: (0..10001)
+            .map(|index| Process {
+                identity: Identity {
+                    pid: 1000 + index,
+                    started: 10,
+                    started_sub: index as u64,
+                },
+                name: format!("Worker-{index:05}"),
+                usages: vec![
+                    Usage {
+                        path: format!("/fixture/{index:05}/one.bin").into(),
+                        ..Usage::default()
+                    },
+                    Usage {
+                        path: format!("/fixture/{index:05}/two.txt").into(),
+                        ..Usage::default()
+                    },
+                ],
+                ..Process::default()
+            })
+            .collect(),
+        warnings: vec![],
+    };
+    app.replace(snapshot);
+    assert_eq!(app.rows.len(), 10001);
+    key(&mut app, K::End);
+    assert_eq!(app.current().unwrap().identity.pid, 11000);
+    app.select_all();
+    assert_eq!(app.selected.len(), 10001);
+    app.query = "one.bin two.txt".into();
+    app.refilter();
+    assert!(
+        app.rows.is_empty(),
+        "different files cannot jointly satisfy the query"
+    );
+    app.query = "worker one.bin".into();
+    app.refilter();
+    for sort in [
+        Sort::Name,
+        Sort::Pid,
+        Sort::Memory,
+        Sort::Cpu,
+        Sort::Relevance,
+    ] {
+        app.sort = sort;
+        app.refilter();
+        assert_eq!(app.rows.len(), 10001);
+        assert!(app.rows.iter().all(|row| row.usages == [0]));
+        assert_eq!(
+            app.rows
+                .iter()
+                .map(|row| app.snapshot.processes[row.process].identity)
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            10001
+        );
+    }
+    let original = app.snapshot.processes[10000].identity;
+    let mut stale = original;
+    stale.started_sub += 1;
+    app.metrics(vec![
+        (
+            stale,
+            Metrics {
+                memory: Some(999),
+                cpu: Some(99.0),
+            },
+        ),
+        (
+            original,
+            Metrics {
+                memory: Some(123),
+                cpu: None,
+            },
+        ),
+    ]);
+    assert_eq!(app.snapshot.processes[10000].memory, Some(123));
+    assert_eq!(app.snapshot.processes[10000].cpu, None);
+    assert!(
+        app.snapshot.processes[..10000]
+            .iter()
+            .all(|process| process.memory.is_none())
+    );
+    let mut snapshot = app.snapshot.clone();
+    snapshot.processes[10000].identity = stale;
+    app.replace(snapshot);
+    assert!(!app.selected.contains(&original));
+    assert!(!app.selected.contains(&stale));
+    assert_eq!(app.selected.len(), 10000);
+}
+
+#[test]
+fn active_inspection_retains_rows_rejects_reloads_and_allows_cancel() {
+    let mut app = app();
+    key(&mut app, K::Enter);
+    let captured = app.detail_id;
+    let now = Instant::now();
+    app.begin_scan(now);
+    for code in [K::Char('r'), K::F(5)] {
+        assert!(matches!(key(&mut app, code), Effect::None));
+    }
+    assert!(!app.can_auto_scan());
+    assert_eq!(app.detail_id, captured);
+    assert_eq!(app.usage_rows.len(), 3);
+    assert!(matches!(key(&mut app, K::Char('z')), Effect::CancelScan));
+    app.finish_scan(now + Duration::from_secs(12), false);
+    assert_eq!(app.last_scan_elapsed, None);
+    app.begin_scan(now + Duration::from_secs(20));
+    app.finish_scan(now + Duration::from_secs(22), true);
+    assert_eq!(app.last_scan_elapsed, Some(Duration::from_secs(2)));
+    app.begin_scan(now + Duration::from_secs(30));
+    app.finish_scan(now + Duration::from_secs(45), false);
+    assert_eq!(app.last_scan_elapsed, Some(Duration::from_secs(2)));
+    assert!(app.can_auto_scan());
+    app.editing = true;
+    assert!(!app.can_auto_scan());
+    app.editing = false;
+    for screen in [Screen::Help, Screen::Confirm] {
+        app.screen = screen;
+        assert!(!app.can_auto_scan());
+    }
+    app.screen = Screen::Main;
+    key(&mut app, K::Tab);
+    assert!(!app.can_auto_scan());
+    app.begin_scan(now + Duration::from_secs(50));
+    assert!(matches!(key(&mut app, K::Char('z')), Effect::CancelScan));
+}
+
+#[test]
+fn summaries_follow_the_accepted_query_and_do_not_limit_viewport_rows() {
+    let mut app = app();
+    let duplicate = app.snapshot.processes[0].usages[0].clone();
+    app.snapshot.processes[0].usages.push(duplicate);
+    app.replace(app.snapshot.clone());
+    app.locked = true;
+    app.refilter();
+    assert_eq!(app.locked_files, 1);
+    assert_eq!(app.rows.len(), 2);
+    key(&mut app, K::Enter);
+    assert_eq!(app.detail_locked_files, 1);
+    app.detail_query = "absent".into();
+    app.filter_details();
+    assert_eq!(app.detail_locked_files, 0);
+    let token = Cancellation::default();
+    token.cancel();
+    assert!(matches!(
+        PreparedSnapshot::new(app.snapshot.clone(), &token),
+        Err(Error::Cancelled)
+    ));
+}
