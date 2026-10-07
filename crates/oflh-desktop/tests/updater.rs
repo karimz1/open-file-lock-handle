@@ -162,8 +162,8 @@ fn build_updater_with_version(
 
 #[test]
 fn failed_primary_endpoint_falls_back_to_a_verified_download() {
-    let primary = UpdateServer::start("9.9.9", PAYLOAD.to_vec(), 503);
-    let fallback = UpdateServer::start("9.9.9", PAYLOAD.to_vec(), 200);
+    let primary = UpdateServer::start("9.9.9-rc.1", PAYLOAD.to_vec(), 503);
+    let fallback = UpdateServer::start("9.9.9-rc.1", PAYLOAD.to_vec(), 200);
     let (app, _) = build_updater(&primary, PUBLIC_KEY.trim());
     let updater = app
         .updater_builder()
@@ -177,7 +177,7 @@ fn failed_primary_endpoint_falls_back_to_a_verified_download() {
         .unwrap();
     tauri::async_runtime::block_on(async {
         let update = updater.check().await.unwrap().unwrap();
-        assert_eq!(update.version, "9.9.9");
+        assert_eq!(update.version, "9.9.9-rc.1");
         assert_eq!(update.download(|_, _| {}, || {}).await.unwrap(), PAYLOAD);
     });
 }
