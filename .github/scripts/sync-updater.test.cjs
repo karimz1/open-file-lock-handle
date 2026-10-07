@@ -78,6 +78,12 @@ test('automatically pushes draft metadata and promotes only stable releases', ()
   sync('v1.2.3-rc.1', 'stage');
   assert.ok(existsSync(join(website, 'public/api/releases/v1.2.3-rc.1/latest.json')));
   assert.ok(!existsSync(join(website, 'public/api/latest.json')));
+  const rebuilt = manifest();
+  rebuilt.platforms['darwin-x86_64'].signature = 'rebuilt-signature';
+  writeFileSync(file, JSON.stringify(rebuilt));
+  sync('v1.2.3-rc.1', 'stage');
+  const retried = git('--git-dir', remote, 'show', 'main:public/api/releases/v1.2.3-rc.1/latest.json').toString();
+  assert.equal(JSON.parse(retried).platforms['darwin-x86_64'].signature, 'rebuilt-signature');
   assert.throws(() => sync('v1.2.3-rc.1', 'publish'));
   writeFileSync(file, JSON.stringify(manifest('v1.2.3')));
   sync('v1.2.3', 'stage');
@@ -86,4 +92,10 @@ test('automatically pushes draft metadata and promotes only stable releases', ()
   const published = git('--git-dir', remote, 'show', 'main:public/api/latest.json').toString();
   assert.equal(JSON.parse(published).version, '1.2.3');
   sync('v1.2.3', 'publish');
+  writeFileSync(file, JSON.stringify(manifest('v1.3.0-rc.1')));
+  sync('v1.3.0-rc.1', 'stage');
+  assert.equal(git('--git-dir', remote, 'show', 'main:public/api/latest.json').toString(), published);
+  assert.throws(() => sync('v1.3.0-rc.1', 'publish'));
+  assert.equal(git('--git-dir', remote, 'show', 'main:public/api/latest.json').toString(), published);
+  assert.throws(() => sync('../invalid-tag', 'stage'));
 });

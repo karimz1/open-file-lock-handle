@@ -1,0 +1,29 @@
+name: Updater metadata
+on:
+  pull_request:
+    paths:
+      - '.github/scripts/sync-updater*'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/updater-*.yml'
+      - 'crates/oflh-desktop/tauri.conf.json'
+  push:
+    branches: [main]
+    paths:
+      - '.github/scripts/sync-updater*'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/updater-*.yml'
+      - 'crates/oflh-desktop/tauri.conf.json'
+permissions:
+  contents: read
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Check publishing script syntax
+        run: bash -n .github/scripts/sync-updater.sh
+      - name: Test automatic website commits and stable promotion
+        run: node --test .github/scripts/sync-updater.test.cjs
