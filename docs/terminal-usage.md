@@ -117,6 +117,7 @@ Press `?` for the full shortcut list. The main controls are:
 | `Space` / `Ctrl+A` | Select one / all visible processes |
 | `r` / `F5` / `a` | Refresh / refresh / auto-refresh after completion |
 | `z` | Cancel active inspection |
+| `u` / `U` / `b` | Check releases / open available release / dismiss notice |
 | `k` / `x` | Terminate / force kill, with confirmation |
 | `Esc` | Go back or clear search |
 | `q` / `Ctrl+C` | Quit (`q` enters text while searching) |
@@ -154,3 +155,29 @@ Keyboard shortcuts, wildcard/port search syntax and access/relation search token
 language. Process names, filenames and original OS diagnostic details are retained.
 `--version` always emits the same build/provenance format. Confirmations default to
 Cancel in every language and require enough terminal space to review the targets.
+
+## Release notices
+
+Versioned release builds check the same public stable-release manifest as desktop
+at startup and one hour after each completed check. A small footer line announces
+a newer stable version without replacing results, moving the grid, changing focus
+or starting another inspection. Press `u` to check, `U` to open the official release
+page when an update is visible, and `b` to dismiss that version for this session.
+A later version can appear again. These keys remain text while editing search and
+have no update action in process confirmations. Installation remains manual.
+
+Use `oflh --no-update-check .` to disable automatic and manual network checks.
+Unversioned development builds and pull-request artifacts also disable checks.
+Installed release candidates can be offered the corresponding stable release;
+build metadata does not change version precedence. Older releases and prereleases
+are never offered through the stable channel.
+
+Requests run on an independent worker with an eight-second request timeout,
+three-second connection timeout, verified HTTPS, restricted GitHub asset redirects
+and a 64 KiB response limit. Only the fixed public URL and generic request headers
+are sent; file paths, process data and credentials are not sent. The check bypasses
+proxy settings to avoid using proxy credentials; networks requiring a proxy may
+not support it. Automatic failures are quiet, and a known update survives a
+transient failure. Hourly checks do not cause periodic terminal redraws. The notice
+reads version information only, downloads no application binary and does not
+perform the desktop's signed installation workflow.

@@ -4,6 +4,7 @@
 pub mod elevation;
 pub mod inspection_helper;
 mod locale;
+pub mod updates;
 pub use locale::system_locale;
 #[cfg(any(windows, test))]
 mod inspection_protocol;

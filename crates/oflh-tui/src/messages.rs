@@ -91,6 +91,9 @@ macro_rules! labels {
     }
 }
 labels! {
+    "u check updates", "u Version prüfen", "u 检查更新";
+    "Checking updates…", "Neue Version wird geprüft…", "正在检查更新…";
+    "No newer stable release · u check updates", "Keine neuere stabile Version · u erneut prüfen", "没有更新的稳定版本 · u 再次检查";
     "Cancel", "Abbrechen", "取消";
     "Force kill", "Beenden erzwingen", "强制终止";
     "Terminate", "Beenden", "终止";
@@ -242,6 +245,27 @@ labels! {
 }
 // Literal formats compile in all languages; arguments are evaluated in only one branch.
 macro_rules! localized {
+    ($language:expr, "↑ {version} · U releases · b hide" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("↑ {version} · U releases · b hide" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("↑ {version} · U Downloads · b ausblenden" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("↑ {version} · U 下载 · b 隐藏" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Update {version} available · U releases · b dismiss" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Update {version} available · U releases · b dismiss" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Version {version} verfügbar · U Downloads · b ausblenden" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("可更新至 {version} · U 下载页面 · b 隐藏" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Update check failed: {error} · u retry · b dismiss" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Update check failed: {error} · u retry · b dismiss" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Versionsprüfung fehlgeschlagen: {error} · u erneut · b ausblenden" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("更新检查失败：{error} · u 重试 · b 隐藏" $(, $($arguments)*)?),
+        }
+    };
     ($language:expr, "{} {phase} · {:.1}s · {} processes / {} resources · z cancel" $(, $($arguments:tt)*)?) => {
         match $language {
             $crate::view::messages::Language::English => format!("{} {phase} · {:.1}s · {} processes / {} resources · z cancel" $(, $($arguments)*)?),
@@ -469,6 +493,7 @@ K / X          Selection; otherwise all filtered processes
 Tab            Choose Cancel / Terminate
 ?              Show help
 R / D          Open repository / donation page
+u / U / b      Check updates / releases / dismiss (release builds)
 q / Ctrl+C     Quit (q types text while searching)
 
 Every termination requires confirmation. Cancel is the default.
@@ -524,6 +549,7 @@ K / X          Auswahl; sonst alle gefilterten Prozesse
 Tab            Abbrechen / Beenden wählen
 ?              Hilfe anzeigen
 R / D          Repository / Spendenseite öffnen
+u / U / b      Version prüfen / Downloads / ausblenden (Release-Builds)
 q / Ctrl+C     Beenden (q schreibt Text in der Suche)
 
 Jedes Beenden erfordert Bestätigung. Abbrechen ist vorausgewählt.
@@ -579,6 +605,7 @@ K / X          使用所选项；未选择时使用所有筛选结果
 Tab            选择取消 / 终止
 ?              显示帮助
 R / D          打开项目仓库 / 捐赠页面
+u / U / b      检查更新 / 下载页面 / 隐藏（发布版本）
 q / Ctrl+C     退出（搜索中 q 用于输入文本）
 
 每次终止都需要确认，默认选择取消。

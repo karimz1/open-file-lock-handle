@@ -4,6 +4,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 mod app;
 mod refresh;
+mod update_worker;
 pub use view::messages::{Language, LanguageError};
 mod view;
 mod worker;
@@ -16,6 +17,7 @@ use std::{
     sync::mpsc::{self, RecvTimeoutError},
     time::{Duration, Instant},
 };
+use update_worker::{UpdateSchedule, UpdateWorker};
 use view::messages::localized;
 use worker::{Work, Worker};
 enum Event {
@@ -24,6 +26,7 @@ enum Event {
     ScopedScan(u64, Box<Result<(Target, PreparedSnapshot)>>),
     Metrics(u64, Result<Vec<(Identity, Metrics)>>),
     Killed(usize, Vec<String>),
+    Update(std::result::Result<Option<String>, String>),
 }
 const REFRESH: Duration = Duration::from_secs(5);
 const PULSE: Duration = Duration::from_millis(120);
@@ -41,6 +44,8 @@ pub struct StartOptions {
     pub follow_port_folder: bool,
     /// Explicit terminal language; None follows the environment/system locale.
     pub language: Option<Language>,
+    /// Disable all network release checks, including manual requests.
+    pub no_update_check: bool,
     /// Start in the Ports tab and collect network bindings.
     pub ports: bool,
     /// Start with bindings associated with an explicitly supplied target path.
@@ -61,6 +66,8 @@ pub fn run(
     crossterm::execute!(std::io::stdout(), event::EnableBracketedPaste)?;
     let mut app = App::new(target, version);
     app.language = options.language.unwrap_or_else(Language::system);
+    app.update.enabled = !options.no_update_check
+        && oflh_core::releases::can_check_releases(VERSION, PULL_REQUEST_URL);
     app.ports = options.ports;
     app.ports_path_only = options.ports_path_only;
     app.follow_port_folder = options.follow_port_folder;
@@ -72,6 +79,12 @@ pub fn run(
     terminal.draw(|frame| view::draw(frame, &mut app))?;
     let (sender, receiver) = mpsc::sync_channel(128);
     let mut worker = Worker::new(backend, sender.clone())?;
+    let mut updates = if app.update.enabled {
+        Some(UpdateWorker::new(sender.clone(), VERSION.into())?)
+    } else {
+        None
+    };
+    let mut update_schedule = UpdateSchedule::new(app.update.enabled, Instant::now());
     std::thread::Builder::new()
         .name("oflh-input".into())
         .spawn(move || {
@@ -92,6 +105,9 @@ pub fn run(
     loop {
         let now = Instant::now();
         let mut deadline = now + Duration::from_secs(86400);
+        if let Some(at) = update_schedule.deadline() {
+            deadline = deadline.min(at);
+        }
         if app.scanning || app.stopping {
             deadline = deadline.min(pulse)
         }
@@ -206,6 +222,13 @@ pub fn run(
                 effect = Effect::Scan;
                 dirty = true
             }
+            Ok(Event::Update(result)) => {
+                if let Some(worker) = &mut updates {
+                    worker.completed();
+                }
+                dirty = app.update.complete(result);
+                update_schedule.completed(Instant::now());
+            }
             Err(RecvTimeoutError::Disconnected) => return Ok(()),
             _ => {}
         }
@@ -253,9 +276,25 @@ pub fn run(
                 app.error = false;
                 dirty = true;
             }
+            Effect::CheckUpdate => {
+                if let Some(worker) = &mut updates
+                    && worker.request()
+                {
+                    app.update.begin(true);
+                    update_schedule.started();
+                    dirty = true;
+                }
+            }
             Effect::None | Effect::Scan | Effect::FollowPort(..) => {}
         }
         let now = Instant::now();
+        if update_schedule.due(now)
+            && let Some(worker) = &mut updates
+            && worker.request()
+        {
+            app.update.begin(false);
+            update_schedule.started();
+        }
         if (app.scanning || app.stopping) && now >= pulse {
             if let Some(started) = app.scan_started {
                 app.scan_elapsed = now.saturating_duration_since(started);

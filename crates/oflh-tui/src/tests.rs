@@ -1001,3 +1001,154 @@ fn translated_terminal_goldens() {
         }
     }
 }
+
+#[test]
+fn update_notice_preserves_rows_selection_detail_tree_and_confirmation_identity() {
+    let mut app = self::app();
+    app.update.enabled = true;
+    key(&mut app, K::Char(' '));
+    let selected = app.selected.clone();
+    let identity = app.current().unwrap().identity;
+    key(&mut app, K::Enter);
+    let detail = app.detail_id;
+    let usages = app.usage_rows.clone();
+    app.begin_scan(Instant::now());
+    assert!(app.update.begin(false));
+    assert!(app.update.complete(Ok(Some("1.2.0".into()))));
+    assert!(app.scanning);
+    assert_eq!(app.screen, Screen::Details);
+    assert_eq!(app.detail_id, detail);
+    assert_eq!(app.usage_rows, usages);
+    assert_eq!(app.selected, selected);
+    assert_eq!(app.current().unwrap().identity, identity);
+    key(&mut app, K::Esc);
+    key(&mut app, K::Tab);
+    let captured = app
+        .tree
+        .as_ref()
+        .unwrap()
+        .nodes
+        .iter()
+        .map(|node| node.identity)
+        .collect::<Vec<_>>();
+    app.update.begin(false);
+    assert!(!app.update.complete(Err("offline".into())));
+    assert_eq!(
+        app.tree
+            .as_ref()
+            .unwrap()
+            .nodes
+            .iter()
+            .map(|node| node.identity)
+            .collect::<Vec<_>>(),
+        captured
+    );
+    key(&mut app, K::Esc);
+    key(&mut app, K::Char('x'));
+    assert_eq!(app.screen, Screen::Confirm);
+    let pending = app
+        .pending
+        .iter()
+        .map(|target| target.identity)
+        .collect::<Vec<_>>();
+    app.update.begin(false);
+    app.update.complete(Ok(Some("1.3.0".into())));
+    for shortcut in ['u', 'U', 'b'] {
+        assert!(matches!(key(&mut app, K::Char(shortcut)), Effect::None));
+    }
+    assert_eq!(
+        app.pending
+            .iter()
+            .map(|target| target.identity)
+            .collect::<Vec<_>>(),
+        pending
+    );
+    assert!(!app.confirm);
+    assert!(matches!(key(&mut app, K::Enter), Effect::None));
+    assert!(!app.stopping);
+}
+
+#[test]
+fn update_actions_preserve_search_text_and_open_only_the_fixed_release_page() {
+    let mut app = self::app();
+    assert!(matches!(key(&mut app, K::Char('u')), Effect::None));
+    app.update.enabled = true;
+    assert!(matches!(key(&mut app, K::Char('u')), Effect::CheckUpdate));
+    assert!(matches!(key(&mut app, K::Char('U')), Effect::None));
+    app.update.begin(false);
+    app.update.complete(Ok(Some("1.2.0".into())));
+    assert!(
+        matches!(key(&mut app,K::Char('U')),Effect::Link(url) if url==oflh_platform::updates::RELEASE_PAGE)
+    );
+    key(&mut app, K::Char('/'));
+    for character in ['u', 'U', 'b'] {
+        assert!(matches!(key(&mut app, K::Char(character)), Effect::None));
+    }
+    assert_eq!(app.query, "uUb");
+    assert_eq!(app.update.visible_version(), Some("1.2.0"));
+    app.key(KeyEvent::new(K::Char('u'), KeyModifiers::CONTROL));
+    assert!(app.query.is_empty());
+    key(&mut app, K::Enter);
+    key(&mut app, K::Char('b'));
+    assert_eq!(app.update.visible_version(), None);
+    assert!(matches!(key(&mut app, K::Char('U')), Effect::None));
+}
+
+#[test]
+fn update_state_coalesces_retains_known_updates_and_dismisses_one_version() {
+    let mut notice = UpdateNotice::default();
+    assert!(!notice.begin(true));
+    notice.enabled = true;
+    assert!(notice.begin(false));
+    assert!(!notice.begin(true));
+    assert!(notice.complete(Ok(Some("1.2.0".into()))));
+    notice.dismiss();
+    notice.begin(false);
+    assert!(!notice.complete(Ok(Some("1.2.0".into()))));
+    assert_eq!(notice.visible_version(), None);
+    notice.begin(false);
+    assert!(!notice.complete(Err("offline".into())));
+    assert_eq!(notice.version.as_deref(), Some("1.2.0"));
+    notice.begin(false);
+    assert!(notice.complete(Ok(Some("1.3.0".into()))));
+    assert_eq!(notice.visible_version(), Some("1.3.0"));
+    notice.begin(true);
+    assert!(notice.complete(Err("offline".into())));
+    assert_eq!(notice.visible_version(), Some("1.3.0"));
+    notice.dismiss();
+    notice.begin(true);
+    assert!(notice.complete(Ok(None)));
+    assert_eq!(notice.feedback, UpdateFeedback::Current);
+}
+
+#[test]
+fn translated_update_footer_has_stable_viewport_and_no_modal_overlay() {
+    for language in [Language::English, Language::German, Language::Chinese] {
+        let mut app = self::app();
+        app.language = language;
+        app.update.enabled = true;
+        for (width, height) in [(160, 40), (48, 20)] {
+            app.update = UpdateNotice::default();
+            app.update.enabled = true;
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+            terminal.draw(|frame| view::draw(frame, &mut app)).unwrap();
+            let before = terminal.backend().buffer().clone();
+            let page = app.page;
+            app.update.begin(false);
+            app.update.complete(Ok(Some("1.2.0".into())));
+            terminal.draw(|frame| view::draw(frame, &mut app)).unwrap();
+            let after = terminal.backend().buffer();
+            assert_eq!(app.page, page);
+            let changed_rows = (0..height)
+                .filter(|row| {
+                    (0..width).any(|column| before[(column, *row)] != after[(column, *row)])
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(changed_rows.len(), 1, "{language:?} {width}x{height}");
+            assert!(changed_rows[0] > height / 2);
+            assert!(readable_buffer(after).contains("1.2.0"));
+            export_visual(&format!("update-{language:?}-{width}"), after);
+        }
+    }
+}

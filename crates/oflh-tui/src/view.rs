@@ -202,6 +202,42 @@ fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
         keys
     };
     let mut lines = Vec::new();
+    // Reserve this line from startup for enabled release builds. A background
+    // notice changes its text, never the grid's height, cursor or viewport.
+    if app.update.enabled && app.screen != Screen::Confirm {
+        let text = if let Some(version) = app.update.visible_version() {
+            if width < 60 {
+                localized!(
+                    app.language,
+                    "↑ {version} · U releases · b hide",
+                    version = version
+                )
+            } else {
+                localized!(
+                    app.language,
+                    "Update {version} available · U releases · b dismiss",
+                    version = version
+                )
+            }
+        } else {
+            match &app.update.feedback {
+                crate::app::UpdateFeedback::Checking => {
+                    app.language.text("Checking updates…").into()
+                }
+                crate::app::UpdateFeedback::Current => app
+                    .language
+                    .text("No newer stable release · u check updates")
+                    .into(),
+                crate::app::UpdateFeedback::Failed(error) => localized!(
+                    app.language,
+                    "Update check failed: {error} · u retry · b dismiss",
+                    error = safe(error)
+                ),
+                crate::app::UpdateFeedback::Quiet => app.language.text("u check updates").into(),
+            }
+        };
+        lines.push(Line::styled(text, Style::default().fg(MUTED)));
+    }
     if app.scanning {
         let phase = match app.scan_progress.phase {
             InspectionPhase::Processes => app.language.text("processes"),

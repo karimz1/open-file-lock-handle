@@ -34,6 +34,7 @@ Options:
   --ports       start in the Ports tab (TCP listeners and bound UDP)
   --port PORT   start in Ports with an exact local-port filter
   --language en|de|zh|system   choose language; default follows the system locale
+  --no-update-check   disable network release checks
   --version     print version
   --help        show help";
 const GERMAN_HELP: &str =
@@ -56,6 +57,7 @@ Optionen:
   --ports       in der Portansicht starten (TCP-Listener und gebundenes UDP)
   --port PORT   Portansicht mit exaktem lokalen Portfilter öffnen
   --language en|de|zh|system   Sprache wählen; Standard folgt der System-Locale
+  --no-update-check   Netzwerkprüfung auf neue Versionen deaktivieren
   --version     Version ausgeben
   --help        Hilfe anzeigen";
 const CHINESE_HELP: &str = "oflh — Open File Lock Handle. 查找正在使用文件和端口的进程。
@@ -77,5 +79,6 @@ const CHINESE_HELP: &str = "oflh — Open File Lock Handle. 查找正在使用�
   --ports       从端口视图启动（TCP 侦听器和已绑定的 UDP）
   --port PORT   从端口视图启动，并精确筛选本地端口
   --language en|de|zh|system   选择语言；默认跟随系统区域设置
+  --no-update-check   禁用联网版本检查
   --version     输出版本
   --help        显示帮助";

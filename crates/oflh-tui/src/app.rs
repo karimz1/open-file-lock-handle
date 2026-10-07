@@ -45,9 +45,71 @@ pub enum Effect {
     Quit,
     Scan,
     CancelScan,
+    CheckUpdate,
     FollowPort(Identity, std::path::PathBuf),
     Kill(Vec<Identity>, bool),
     Link(&'static str),
+}
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum UpdateFeedback {
+    #[default]
+    Quiet,
+    Checking,
+    Current,
+    Failed(String),
+}
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UpdateNotice {
+    pub enabled: bool,
+    pub checking: bool,
+    pub version: Option<String>,
+    dismissed: Option<String>,
+    manual: bool,
+    pub feedback: UpdateFeedback,
+}
+impl UpdateNotice {
+    pub fn visible_version(&self) -> Option<&str> {
+        self.version
+            .as_deref()
+            .filter(|version| self.dismissed.as_deref() != Some(*version))
+    }
+    pub fn begin(&mut self, manual: bool) -> bool {
+        if !self.enabled || self.checking {
+            return false;
+        }
+        self.checking = true;
+        self.manual = manual;
+        if manual {
+            self.feedback = UpdateFeedback::Checking;
+        }
+        true
+    }
+    pub fn complete(&mut self, result: std::result::Result<Option<String>, String>) -> bool {
+        let before = (
+            self.visible_version().map(str::to_owned),
+            self.feedback.clone(),
+        );
+        self.checking = false;
+        match result {
+            Ok(Some(version)) => {
+                self.version = Some(version);
+                self.feedback = UpdateFeedback::Quiet;
+            }
+            Ok(None) if self.manual => self.feedback = UpdateFeedback::Current,
+            Err(error) if self.manual => self.feedback = UpdateFeedback::Failed(error),
+            _ => {}
+        }
+        self.manual = false;
+        before
+            != (
+                self.visible_version().map(str::to_owned),
+                self.feedback.clone(),
+            )
+    }
+    pub fn dismiss(&mut self) {
+        self.dismissed = self.version.clone();
+        self.feedback = UpdateFeedback::Quiet;
+    }
 }
 /// Immutable search data prepared by the scanner, never by the render loop.
 pub struct PreparedSnapshot {
@@ -96,6 +158,7 @@ pub struct App {
     pub follow_port_folder: bool,
     pub version: String,
     pub language: Language,
+    pub update: UpdateNotice,
     pub snapshot: Snapshot,
     indices: Vec<ProcessIndex>,
     port_indices: Vec<Vec<PortIndex>>,
@@ -154,6 +217,7 @@ impl App {
             follow_port_folder: false,
             version,
             language: Language::English,
+            update: UpdateNotice::default(),
             snapshot: Snapshot::default(),
             indices: Vec::new(),
             port_indices: Vec::new(),
@@ -631,6 +695,19 @@ impl App {
         }
         if self.screen == Screen::Confirm {
             return self.confirm_key(key.code);
+        }
+        if self.update.enabled && !key.modifiers.intersects(M::CONTROL | M::ALT) {
+            match key.code {
+                K::Char('u') => return Effect::CheckUpdate,
+                K::Char('U') if self.update.visible_version().is_some() => {
+                    return Effect::Link(oflh_platform::updates::RELEASE_PAGE);
+                }
+                K::Char('b') => {
+                    self.update.dismiss();
+                    return Effect::None;
+                }
+                _ => {}
+            }
         }
         if self.screen == Screen::Help {
             return self.help_key(key.code);

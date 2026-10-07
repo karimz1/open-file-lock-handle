@@ -56,6 +56,10 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Argu
                 };
                 continue;
             }
+            if argument == "--no-update-check" {
+                result.view.no_update_check = true;
+                continue;
+            }
             if argument == "--ports" {
                 result.view.ports = true;
                 continue;
@@ -176,6 +180,23 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn disabling_update_checks_preserves_options_and_literal_path_rules() {
+        let parsed = parse_arguments(
+            ["--no-update-check", "--language", "de", "--ports", "."]
+                .into_iter()
+                .map(OsString::from),
+        )
+        .unwrap();
+        assert!(parsed.view.no_update_check);
+        assert!(parsed.view.ports);
+        assert_eq!(parsed.view.language, Some(Language::German));
+        assert_eq!(parsed.path, Some(OsString::from(".")));
+        let literal =
+            parse_arguments(["--", "--no-update-check"].into_iter().map(OsString::from)).unwrap();
+        assert!(!literal.view.no_update_check);
+        assert_eq!(literal.path, Some(OsString::from("--no-update-check")));
+    }
     #[test]
     fn explicit_language_and_system_options_preserve_path_and_help_arguments() {
         for (value, expected) in [
