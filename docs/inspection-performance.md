@@ -219,3 +219,38 @@ measured first-query time of 40.04 ms before this change and 3.57 ms after it, w
 all 50,000 rows retained; cached pages stayed about 0.14 ms. This local run does
 not establish the same gain for every query, sort, machine or WebView. Six-target
 CI records the combined search/paging comparison against the PR base.
+
+## Terminal navigation and search
+
+The TUI renders only the current terminal viewport. It retains the complete snapshot;
+viewport sizing never limits inspection or selection. Scanner workers now prepare
+search fields, lowercase name keys and full PID/birth lookup tables before publication,
+with cooperative index cancellation. Name/RAM/CPU/PID sorting skips unused relevance
+scoring. Sort shortcuts reuse accepted matches, metric updates use identity lookups,
+and lock summaries are recomputed when matches change rather than on each frame.
+
+[Five alternating local Linux runs](measurements/tui-navigation-linux-2026-10-07.json)
+compare development `30f429b` with this change. Both discover all 50,000 synthetic
+usages and reach the last row:
+
+| Workload | Before median | After median |
+| --- | ---: | ---: |
+| 500 processes: wildcard/name search | 78.792 ms | 11.912 ms |
+| 10,000 processes: wildcard/name search | 91.430 ms | 16.832 ms |
+| 50,000 lock rows, 500 processes: search | 130.211 ms | 24.563 ms |
+| 50,000 lock rows, 10,000 processes: search | 142.908 ms | 30.572 ms |
+| 10,000 identity-bound metric updates | 29.000 ms | 0.367 ms |
+| 100 lock-table End/draw frames, 10,000 processes | 272.434 ms | 32.854 ms |
+
+Indexing plus initial matching increases from 52.248 to 53.752 ms for 500 processes
+and 35.938 to 39.513 ms for 10,000; preparation is moved off the render/input thread,
+not claimed to be cheaper. Process-table frame times remain about 39 ms per 100 draws.
+These are synthetic TestBackend timings, excluding terminal output latency and native
+scanning. Search still examines the complete snapshot; relevance sorting and much
+larger results can cost more. No absolute speed guarantee is inferred.
+
+Reproduce with `cargo run --release --locked -p oflh-tui --features profiling --example navigation_profile`.
+Native CI builds the same harness against the PR base and candidate on all six targets,
+checks complete match membership and final-row reachability, and uploads baseline and
+candidate JSONL artifacts. Each CI profile is one diagnostic, not a timing assertion.
+The example/feature is excluded from the distributed CLI build.

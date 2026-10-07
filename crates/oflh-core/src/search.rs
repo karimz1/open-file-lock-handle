@@ -206,15 +206,30 @@ impl ProcessIndex {
     /// Cache searchable fields for a process and its file usages.
     pub fn new(process: &Process) -> Self {
         Self {
-            metadata: vec![
-                Field::new(&process.identity.pid.to_string(), false),
-                Field::new(&process.name, true),
-                Field::new(&process.user, false),
-                Field::new(&process.executable.to_string_lossy(), false),
-                Field::new(&process.cwd.to_string_lossy(), false),
-            ],
+            metadata: metadata_fields(process),
             usages: process.usages.iter().map(usage_fields).collect(),
         }
+    }
+    /// Build a snapshot index with cooperative cancellation between usage records.
+    /// The partially constructed index is never published after cancellation.
+    pub fn with_cancellation(
+        process: &Process,
+        cancel: &crate::Cancellation,
+    ) -> crate::Result<Self> {
+        cancel.check()?;
+        let mut indexed = Self {
+            metadata: metadata_fields(process),
+            usages: Vec::new(),
+        };
+        indexed.usages.reserve(process.usages.len());
+        for (position, usage) in process.usages.iter().enumerate() {
+            if position % 256 == 0 {
+                cancel.check()?;
+            }
+            indexed.usages.push(usage_fields(usage));
+        }
+        cancel.check()?;
+        Ok(indexed)
     }
     /// Check the query against process metadata and all usages.
     pub fn matches(&self, query: &Query, scratch: &mut Scratch) -> bool {
@@ -239,6 +254,15 @@ impl ProcessIndex {
             .sum()
     }
 }
+fn metadata_fields(process: &Process) -> Vec<Field> {
+    vec![
+        Field::new(&process.identity.pid.to_string(), false),
+        Field::new(&process.name, true),
+        Field::new(&process.user, false),
+        Field::new(&process.executable.to_string_lossy(), false),
+        Field::new(&process.cwd.to_string_lossy(), false),
+    ]
+}
 fn usage_fields(usage: &Usage) -> Vec<Field> {
     let path = usage.path.to_string_lossy();
     let name = path.rsplit(['/', '\\']).next().unwrap_or(&path);
@@ -256,6 +280,50 @@ fn usage_fields(usage: &Usage) -> Vec<Field> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cancellable_indices_keep_search_semantics_and_reject_cancelled_publication() {
+        let process = Process {
+            name: "WorkerÜ".into(),
+            usages: vec![
+                Usage {
+                    path: "/fixture/FileLockExampleCli.dll".into(),
+                    ..Usage::default()
+                },
+                Usage {
+                    path: "/fixture/other.json".into(),
+                    ..Usage::default()
+                },
+            ],
+            ..Process::default()
+        };
+        let ordinary = ProcessIndex::new(&process);
+        let cancel = crate::Cancellation::default();
+        let indexed = ProcessIndex::with_cancellation(&process, &cancel).unwrap();
+        assert_eq!(indexed.usages.len(), 2);
+        for text in [
+            "",
+            "WorkerÜ",
+            "FLEC*dll",
+            "other.json",
+            "absent",
+            "worker FLEC",
+        ] {
+            let query = Query::new(text);
+            assert_eq!(
+                ordinary.matches(&query, &mut Scratch::default()),
+                indexed.matches(&query, &mut Scratch::default())
+            );
+            assert_eq!(
+                ordinary.score(&query, &mut Scratch::default()),
+                indexed.score(&query, &mut Scratch::default())
+            );
+        }
+        cancel.cancel();
+        assert!(matches!(
+            ProcessIndex::with_cancellation(&process, &cancel),
+            Err(crate::Error::Cancelled)
+        ));
+    }
     #[test]
     fn semantics() {
         for (field, query, want) in [

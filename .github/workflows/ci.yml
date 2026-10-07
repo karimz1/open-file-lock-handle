@@ -108,6 +108,25 @@ jobs:
           path: grid-profiles/*.json
           if-no-files-found: error
           retention-days: 14
+      - name: Profile complete large terminal tables
+        run: |
+          mkdir -p .profile-base/crates/oflh-tui/examples tui-profiles
+          cp crates/oflh-tui/examples/navigation_profile.rs .profile-base/crates/oflh-tui/examples/navigation_profile.rs
+          profile_features=()
+          if grep -q '^profiling = ' .profile-base/crates/oflh-tui/Cargo.toml; then
+            profile_features=(--features profiling)
+          fi
+          cargo build --release --locked --manifest-path .profile-base/Cargo.toml -p oflh-tui --example navigation_profile "${profile_features[@]}"
+          cargo build --release --locked -p oflh-tui --features profiling --example navigation_profile
+          ./.profile-base/target/release/examples/navigation_profile${{ matrix.os == 'windows' && '.exe' || '' }} > tui-profiles/${{ matrix.os }}-${{ matrix.arch }}-baseline.jsonl
+          ./target/release/examples/navigation_profile${{ matrix.os == 'windows' && '.exe' || '' }} > tui-profiles/${{ matrix.os }}-${{ matrix.arch }}-candidate.jsonl
+      - name: Upload terminal table measurements
+        uses: actions/upload-artifact@v7
+        with:
+          name: tui-profile-${{ matrix.os }}-${{ matrix.arch }}
+          path: tui-profiles/*.jsonl
+          if-no-files-found: error
+          retention-days: 14
       - name: Set traceable build identity
         run: |
           cargo xtask ci-version --version "$RELEASE_TAG" --commit "$BUILD_COMMIT" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" --repository "$GITHUB_REPOSITORY" --server-url "$GITHUB_SERVER_URL" --pr-number "$PR_NUMBER" --github-env "$GITHUB_ENV"
