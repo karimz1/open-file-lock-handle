@@ -21,6 +21,19 @@ on:
 permissions:
   contents: read
 jobs:
+  updater:
+    name: Updater metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Check publishing script syntax
+        run: bash -n .github/scripts/sync-updater.sh
+      - name: Test automatic website commits and stable promotion
+        run: node --test .github/scripts/sync-updater.test.cjs
   lockfile:
     name: Cargo lockfile
     runs-on: ubuntu-24.04
@@ -31,7 +44,7 @@ jobs:
       - name: Check workspace lockfile
         run: cargo check --workspace --locked
   test:
-    needs: lockfile
+    needs: [lockfile, updater]
     name: Native Rust TUI + scanner / ${{ matrix.label }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35

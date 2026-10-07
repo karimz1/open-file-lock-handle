@@ -178,6 +178,13 @@ explicitly to the reusable Desktop workflow.
 
 ## Updater regression coverage
 
+Every normal CI run checks the website publishing script and tests RC commits,
+draft rebuilds, stable promotion, repeat promotion, and rejection of malformed
+metadata. These checks run on every pull request, supported branch push, manual
+CI run, and release's reusable CI call. They commit and push only to a temporary
+local Git repository, so they need no website token and work on fork PRs.
+Native CLI jobs wait for these checks before building the platform matrix.
+
 Native Desktop CI uses a loopback HTTP server and the real Tauri updater to
 exercise a synthetic newer RC, current and older versions, endpoint failures,
 malformed metadata, signed downloads, tampered payload rejection, and signed
