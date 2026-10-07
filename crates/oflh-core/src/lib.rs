@@ -5,7 +5,9 @@
 
 mod inspection;
 mod path;
+mod path_text;
 pub use inspection::{InspectionCounter, InspectionPhase, InspectionProgress, InspectionTimer};
+pub use path_text::{clipboard_path_text, display_path};
 /// Full SemVer version shared by both frontends.
 pub const VERSION: &str = match option_env!("OFLH_VERSION") {
     Some(version) => version,

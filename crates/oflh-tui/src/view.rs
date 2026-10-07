@@ -264,7 +264,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             area,
             format!(
                 "oflh {}\n{}\nResize for full view · Esc back · q quit",
-                safe(&app.target.path.to_string_lossy()),
+                display_path(&app.target.path),
                 if app.screen == Screen::Confirm {
                     format!("{} targets. Enlarge to review.", app.pending.len())
                 } else {
@@ -351,10 +351,7 @@ fn main_view(frame: &mut Frame, area: Rect, app: &mut App) {
     text(
         frame,
         line_area(area, 1),
-        format!(
-            "{}  ·  {activity}",
-            safe(&app.target.path.to_string_lossy())
-        ),
+        format!("{}  ·  {activity}", display_path(&app.target.path)),
         Style::default().fg(MUTED),
     );
     text(
@@ -586,7 +583,7 @@ fn render_main_table(frame: &mut Frame, area: Rect, app: &App) {
         };
         let path = format!(
             "{}{}{}",
-            safe(&path.to_string_lossy()),
+            display_path(path),
             if usage.deleted { " (deleted)" } else { "" },
             if row.usages.len() > 1 {
                 format!(" +{}", row.usages.len() - 1)
@@ -773,7 +770,7 @@ fn inspector(frame: &mut Frame, area: Rect, app: &App) {
         Line::raw(process_port_summary(process)),
         Line::raw(""),
         Line::styled("EXECUTABLE", accent()),
-        Line::raw(safe(&process.executable.to_string_lossy())),
+        Line::raw(display_path(&process.executable)),
     ]);
     if let Some(row) = app.rows.get(app.cursor)
         && let Some(usage) = row
@@ -784,7 +781,7 @@ fn inspector(frame: &mut Frame, area: Rect, app: &App) {
         lines.extend([
             Line::raw(""),
             Line::styled("SELECTED PATH", accent()),
-            Line::raw(safe(&usage.path.to_string_lossy())),
+            Line::raw(display_path(&usage.path)),
         ]);
     }
     frame.render_widget(Paragraph::new(lines), area);
@@ -829,11 +826,8 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
             ),
             accent(),
         ),
-        Line::raw(format!(
-            "EXE {}",
-            safe(&process.executable.to_string_lossy())
-        )),
-        Line::raw(format!("CWD {}", safe(&process.cwd.to_string_lossy()))),
+        Line::raw(format!("EXE {}", display_path(&process.executable))),
+        Line::raw(format!("CWD {}", display_path(&process.cwd))),
         Line::raw(format!(
             "PARENT {}",
             process.ancestors.first().map_or_else(
@@ -966,12 +960,8 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
                         Style::default().fg(if usage.lock.is_some() { LOCK } else { ACCENT }),
                     ));
                     cells.push(Cell::from(usage.access.label()).style(access_style(usage.access)));
-                    cells.push(Cell::from(safe(
-                        &usage
-                            .path
-                            .parent()
-                            .unwrap_or(std::path::Path::new(""))
-                            .to_string_lossy(),
+                    cells.push(Cell::from(display_path(
+                        usage.path.parent().unwrap_or(std::path::Path::new("")),
                     )))
                 } else {
                     cells.push(Cell::from(usage.relation.label()))
@@ -1010,7 +1000,7 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
         );
         let full = format!(
             "{}{}",
-            safe(&usage.path.to_string_lossy()),
+            display_path(&usage.path),
             usage
                 .lock
                 .as_ref()
@@ -1233,7 +1223,7 @@ fn locked_table(frame: &mut Frame, area: Rect, app: &App) {
         }
         cells.push(Cell::from(format!(
             "{}{}",
-            safe(&usage.path.to_string_lossy()),
+            display_path(&usage.path),
             if usage.deleted { " (deleted)" } else { "" }
         )));
         TableRow::new(cells)
@@ -1420,13 +1410,13 @@ fn port_details(frame: &mut Frame, area: Rect, app: &mut App) {
     text(
         frame,
         line_area(area, 3),
-        format!("EXE {}", safe(&process.executable.to_string_lossy())),
+        format!("EXE {}", display_path(&process.executable)),
         Style::default(),
     );
     text(
         frame,
         line_area(area, 4),
-        format!("CWD {}", safe(&process.cwd.to_string_lossy())),
+        format!("CWD {}", display_path(&process.cwd)),
         Style::default(),
     );
     search(
