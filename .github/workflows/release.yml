@@ -135,7 +135,9 @@ jobs:
             gh release create "$TAG" --verify-tag --draft "${PRERELEASE[@]}" --title "OFLH $TAG" --notes-file .github/release-notes/downloads.md --generate-notes
           fi
           mkdir -p updater-dist
-          mv release-dist/latest.json updater-dist/latest.json
+          # Keep the legacy endpoint working for installed apps and the CLI.
+          # The website receives the exact same signed updater metadata.
+          cp release-dist/latest.json updater-dist/latest.json
           gh release upload "$TAG" release-dist/* --clobber
           echo '### Release ready for review' >> "$GITHUB_STEP_SUMMARY"
           echo 'All platform jobs passed. The release remains a draft until you publish it.' >> "$GITHUB_STEP_SUMMARY"

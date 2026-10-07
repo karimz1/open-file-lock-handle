@@ -30,4 +30,9 @@ jobs:
           TAG=$(gh api repos/karimz1/open-file-lock-handle/releases/latest --jq .tag_name)
           MANIFEST="updater-website/public/api/releases/$TAG/latest.json"
           test -f "$MANIFEST"
-          bash .github/scripts/sync-updater.sh updater-website "$MANIFEST" "$TAG" publish
+          # Promote only metadata identical to the published compatibility asset.
+          # This also refuses promotion if the release lacks legacy update support.
+          mkdir -p published-updater
+          gh release download "$TAG" --pattern latest.json --dir published-updater
+          cmp published-updater/latest.json "$MANIFEST"
+          bash .github/scripts/sync-updater.sh updater-website published-updater/latest.json "$TAG" publish

@@ -5,7 +5,9 @@ use std::{io::Read, time::Duration};
 use thiserror::Error;
 
 /// The same stable manifest used by the desktop updater.
-pub const MANIFEST_URL: &str =
+pub const MANIFEST_URL: &str = "https://oflh.karimzouine.com/api/latest.json";
+/// Compatibility endpoint retained for existing installations and website outages.
+pub const LEGACY_MANIFEST_URL: &str =
     "https://github.com/karimz1/open-file-lock-handle/releases/latest/download/latest.json";
 /// Manual installation information; never a remotely supplied link.
 pub const RELEASE_PAGE: &str = "https://github.com/karimz1/open-file-lock-handle/releases/latest";
@@ -49,6 +51,7 @@ fn allowed_redirect(url: &reqwest::Url, previous: usize) -> bool {
             url.host_str(),
             Some(
                 "github.com"
+                    | "oflh.karimzouine.com"
                     | "release-assets.githubusercontent.com"
                     | "objects.githubusercontent.com"
             )
@@ -112,10 +115,22 @@ fn fetch(client: &Client, url: &str, installed: &str) -> Result<Option<String>, 
     read_manifest(response, installed)
 }
 /// Check for a newer stable release. Call only from a dedicated background worker.
-/// Requests contain no inspection data. TLS verification remains enabled; both
-/// total request duration and response bytes are bounded. No binary is downloaded.
+/// Requests contain no inspection data. TLS verification remains enabled.
+/// Each endpoint request is limited to eight seconds and 64 KiB; a failed primary
+/// check may make one additional bounded fallback request. No binary is downloaded.
 pub fn check_stable_release(installed: &str) -> Result<Option<String>, UpdateCheckError> {
-    fetch(&client()?, MANIFEST_URL, installed)
+    fetch_with_fallback(&client()?, MANIFEST_URL, LEGACY_MANIFEST_URL, installed)
+}
+
+fn fetch_with_fallback(
+    client: &Client,
+    primary: &str,
+    fallback: &str,
+    installed: &str,
+) -> Result<Option<String>, UpdateCheckError> {
+    // A valid response, including "no update", is authoritative. Retry only a
+    // failed request or invalid manifest; each request retains its own bounds.
+    fetch(client, primary, installed).or_else(|_| fetch(client, fallback, installed))
 }
 
 #[cfg(test)]
@@ -168,6 +183,7 @@ mod tests {
             assert!(!allowed_redirect(&url.parse().unwrap(), 1));
         }
         assert!(allowed_redirect(&MANIFEST_URL.parse().unwrap(), 1));
+        assert!(allowed_redirect(&LEGACY_MANIFEST_URL.parse().unwrap(), 1));
         assert!(allowed_redirect(
             &"https://release-assets.githubusercontent.com/asset?token=synthetic"
                 .parse()
@@ -176,6 +192,61 @@ mod tests {
         ));
         assert!(!allowed_redirect(&MANIFEST_URL.parse().unwrap(), 5));
         assert!(client().unwrap().get("http://127.0.0.1:1/").send().is_err());
+    }
+    #[test]
+    fn fallback_recovers_http_and_invalid_metadata_without_leaking_urls() {
+        let test_client = Client::builder().no_proxy().build().unwrap();
+        for (status, body) in [
+            (200, "{"),
+            (200, "{}"),
+            (200, "{\"version\":\"invalid\"}"),
+            (503, ""),
+        ] {
+            let response = format!(
+                "HTTP/1.1 {status} Fixture\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let (primary, primary_thread, _primary_requests, _) =
+                local_response(response.into_bytes(), false);
+            let (fallback, fallback_thread, _fallback_requests, _) = local_response(
+                b"HTTP/1.1 200 OK\r\nContent-Length: 19\r\nConnection: close\r\n\r\n{\"version\":\"1.2.0\"}".to_vec(),
+                false,
+            );
+            assert_eq!(
+                fetch_with_fallback(&test_client, &primary, &fallback, "1.0.0").unwrap(),
+                Some("1.2.0".into())
+            );
+            primary_thread.join().unwrap();
+            fallback_thread.join().unwrap();
+        }
+        let (primary, primary_thread, _primary_requests, _) = local_response(
+            b"HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(),
+            false,
+        );
+        let (fallback, fallback_thread, _fallback_requests, _) = local_response(
+            b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(),
+            false,
+        );
+        let error = fetch_with_fallback(&test_client, &primary, &fallback, "1.0.0").unwrap_err();
+        assert!(!error.to_string().contains("synthetic-secret"));
+        assert!(matches!(error, UpdateCheckError::Request(_)));
+        primary_thread.join().unwrap();
+        fallback_thread.join().unwrap();
+    }
+
+    #[test]
+    fn valid_primary_does_not_contact_fallback() {
+        let test_client = Client::builder().no_proxy().build().unwrap();
+        for installed in ["1.0.0", "1.2.0", "2.0.0"] {
+            let (primary, worker, _requests, _) = local_response(
+                b"HTTP/1.1 200 OK\r\nContent-Length: 19\r\nConnection: close\r\n\r\n{\"version\":\"1.2.0\"}".to_vec(),
+                false,
+            );
+            let result =
+                fetch_with_fallback(&test_client, &primary, "invalid URL", installed).unwrap();
+            assert_eq!(result.is_some(), installed == "1.0.0");
+            worker.join().unwrap();
+        }
     }
     fn local_response(
         response: Vec<u8>,
