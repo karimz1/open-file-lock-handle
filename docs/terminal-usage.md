@@ -129,3 +129,13 @@ Review the confirmation carefully. `Tab` changes focus, not views.
 Use an interactive terminal with Unicode and true-color support. A wider window
 provides room for the process table and side panel. No particular terminal
 emulator is required.
+
+### Windows drive roots
+
+`oflh 'C:\'` in PowerShell or `oflh C:\` in Command Prompt inspects the drive root.
+The terminal and desktop show ordinary drive/UNC paths in familiar form while keeping
+canonical native references for inspection and actions. Namespace-dependent names
+(such as devices, reserved names, trailing dots/spaces and alternate streams) retain
+the extended prefix. Clipboard conversion rejects non-Unicode paths and retains
+long verbatim paths when the destination's long-path support is unknown. On Unix,
+backslashes remain literal filename characters.

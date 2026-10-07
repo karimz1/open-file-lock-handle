@@ -139,6 +139,20 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn drive_root_arguments_preserve_native_text_and_resolve_as_directories() {
+        for root in [r"C:\", r"\\?\C:\"] {
+            let arguments =
+                parse_arguments([OsString::from("--ports"), OsString::from(root)]).unwrap();
+            assert_eq!(arguments.path, Some(OsString::from(root)));
+            let target = oflh_core::Target::new(arguments.path.unwrap()).unwrap();
+            assert!(target.directory);
+            assert_eq!(oflh_core::display_path(&target.path), r"C:\");
+            assert!(arguments.view.ports_path_only);
+            assert!(!arguments.view.follow_port_folder);
+        }
+    }
     #[test]
     fn explicit_port_paths_start_scoped_and_omitted_paths_start_global() {
         for (arguments, scoped) in [

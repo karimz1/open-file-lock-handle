@@ -866,3 +866,36 @@ fn summaries_follow_the_accepted_query_and_do_not_limit_viewport_rows() {
         Err(Error::Cancelled)
     ));
 }
+
+#[cfg(windows)]
+#[test]
+fn terminal_drive_root_and_details_use_familiar_text_without_mutating_references() {
+    let mut app = app();
+    app.target = Target::new(r"C:\").unwrap();
+    let native_target = app.target.path.clone();
+    let mut snapshot = app.snapshot.clone();
+    snapshot.processes[0].executable = r"\\?\C:\fixture\worker.exe".into();
+    snapshot.processes[0].cwd = r"\\?\C:\fixture".into();
+    snapshot.processes[0].usages[0].path = r"\\?\C:\fixture\file.bin".into();
+    let native_usage = snapshot.processes[0].usages[0].path.clone();
+    app.replace(snapshot);
+    for screen in [Screen::Main, Screen::Details] {
+        if screen == Screen::Details {
+            key(&mut app, K::Enter);
+        }
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(160, 40)).unwrap();
+        terminal.draw(|frame| view::draw(frame, &mut app)).unwrap();
+        let text = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(text.contains(r"C:\"));
+        assert!(!text.contains(r"\\?\"));
+        assert_eq!(app.target.path, native_target);
+        assert_eq!(app.snapshot.processes[0].usages[0].path, native_usage);
+    }
+}
