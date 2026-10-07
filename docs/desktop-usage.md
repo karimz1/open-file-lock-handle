@@ -151,9 +151,15 @@ unavailable to the unprivileged UI even after a successful privileged request.
 The full shortcut list is shown in Settings and beside relevant controls. Press
 `F5` or `Ctrl/Cmd+R` to refresh. Choose an automatic refresh interval beside the
 Refresh button. Automatic scans pause during active scans and process-action
-confirmations. A progress panel blocks workspace actions during inspection,
-shows elapsed time and work counts, and offers Cancel. The results table keeps
-its position underneath it. See [long-running inspections](#long-running-inspections).
+confirmations. Automatic refresh runs in the background: the current results
+remain visible, and search, scrolling and process details stay usable. The footer
+shows **Updating results…**, elapsed time and **Cancel**, followed by **Results
+refreshed** on success. New pages replace the corresponding visible results when
+ready, retaining the scroll position and captured process identities.
+
+Opening a target or manually refreshing uses a blocking progress panel with
+elapsed time, work counts and Cancel. See
+[long-running inspections](#long-running-inspections).
 
 ## Appearance
 
@@ -219,5 +225,17 @@ minutes. The previous completed duration stays visible while another scan runs
 and after cancellation or failure. This also applies to local-port inspections.
 
 While an inspection is running, a modal progress panel blocks workspace actions and reload shortcuts. It shows elapsed time, the current stage and native work counts. The total is unknown; the bar does not imply a percentage. Windows file counts are distinct from descriptors, mappings or module references. Results may still be partial because of permissions or platform limits.
+This modal panel applies to opening a new target or manually refreshing. Automatic
+refresh uses the footer described in [Keyboard and refresh](#keyboard-and-refresh).
 
 Use **Cancel** to keep the previous accepted results and stop the current request cooperatively. A native call already running can finish later; its results cannot replace the accepted snapshot. F5, automatic refresh and other targets cannot restart an active inspection. Automatic refresh waits a full selected interval after completion or cancellation.
+
+Automatic refresh keeps the previous accepted viewport until the replacement
+page is ready. It does not reset search, filters, column widths or the details
+panel. Captured details remain visible when the process exits or no longer
+matches; a notice identifies this state and actions stay disabled until a current
+observation is available. PID reuse cannot substitute another process for the
+captured identity. A different target or query clears stale matches normally.
+If loading the replacement page fails, the old viewport stays visible with an
+explicit error. Stale path actions remain disabled, and a new refresh can recover;
+the reload barrier does not stay stuck after failed presentation work.

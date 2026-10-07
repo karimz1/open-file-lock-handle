@@ -255,6 +255,18 @@ const de: TranslationSchema<typeof en> = {
     k_target_processes_only: "Nur Zielprozesse",
     k_wait_for_the_current_scan_to_finish_bef_20cd41dd:
       "Warte, bis die aktuelle Suche abgeschlossen ist, bevor du Zeilenaktionen öffnest.",
+    k_updating_results: "Ergebnisse werden aktualisiert…",
+    k_results_refreshed: "Ergebnisse aktualisiert",
+    k_result_update_failed: "Ergebnisse konnten nicht aktualisiert werden",
+    k_background_hint:
+      "Die bisherigen Ergebnisse bleiben während der Aktualisierung verfügbar. Ein weiterer Scan wartet auf den Abschluss.",
+    k_cancel_refresh: "Automatische Aktualisierung abbrechen",
+    k_updating_details:
+      "Diese Details werden aktualisiert. Aktionen sind mit dem neuen Ergebnis wieder verfügbar.",
+    k_captured_process_missing:
+      "Dieser erfasste Prozess fehlt in der aktuellen Untersuchung. Er wurde möglicherweise beendet oder verwendet dieses Ziel nicht mehr.",
+    k_captured_observation:
+      "Diese Beobachtung stammt aus der vorherigen Untersuchung. Wähle eine aktuelle Zeile für Dateiaktionen.",
   },
   inspector: {
     k_access: "Zugriff",

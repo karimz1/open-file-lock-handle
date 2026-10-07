@@ -245,6 +245,18 @@ const en = {
     k_target_processes_only: "Target processes only",
     k_wait_for_the_current_scan_to_finish_bef_20cd41dd:
       "Wait for the current scan to finish before opening row actions.",
+    k_updating_results: "Updating results…",
+    k_results_refreshed: "Results refreshed",
+    k_result_update_failed: "Could not update results",
+    k_background_hint:
+      "Previous results remain available while refreshing. Another scan cannot start until this one finishes.",
+    k_cancel_refresh: "Cancel automatic refresh",
+    k_updating_details:
+      "Updating these details. Actions resume when the new snapshot is ready.",
+    k_captured_process_missing:
+      "This captured process is absent from the latest inspection. It may have exited or stopped matching this target.",
+    k_captured_observation:
+      "This observation is from the previous inspection. Select a current row to use its file actions.",
   },
   inspector: {
     k_access: "Access",

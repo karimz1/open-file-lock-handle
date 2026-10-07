@@ -65,6 +65,7 @@ import { AboutDialog } from "./AboutDialog";
 import { SettingsMenu } from "./SettingsMenu";
 import { useUpdates } from "./useUpdates";
 import { UpdateBanner } from "./UpdateBanner";
+import { BackgroundInspection } from "./BackgroundInspection";
 import { UpdateFeedback } from "./UpdateFeedback";
 import {
   languageOptions,
@@ -174,7 +175,22 @@ export function App() {
   const scanRequestPending = useRef(false);
   const [startingScan, setStartingScan] = useState(false);
   const scanBusy = status.scanning || startingScan;
+  const [backgroundScan, setBackgroundScan] = useState(false);
+  const backgroundRevision = useRef(0);
   const [view, setView] = useState<View>("processes");
+  const [gridRevision, setGridRevision] = useState(0);
+  // A failed page ends presentation work without making stale rows actionable.
+  // Permit a fresh scan to recover instead of leaving the reload barrier stuck.
+  const [failedGridRevision, setFailedGridRevision] = useState<number | null>(
+    null,
+  );
+  const gridFailed =
+    failedGridRevision === status.revision && gridRevision !== status.revision;
+  const gridReady =
+    !["processes", "handles", "ports"].includes(view) ||
+    gridRevision === status.revision ||
+    gridFailed;
+  const preparingRefresh = backgroundScan && !status.scanning && !gridReady;
   const [path, setPath] = useState("");
   const [pathEdited, setPathEdited] = useState(false);
   const previousTarget = useRef("");
@@ -248,6 +264,8 @@ export function App() {
   } | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
   const [details, setDetails] = useState<Details | null>(null);
+  const [detailsRevision, setDetailsRevision] = useState(0);
+  const [detailsMissing, setDetailsMissing] = useState(false);
   const [context, setContext] = useState<Row | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [ancestorOwner, setAncestorOwner] = useState<string | null>(null);
@@ -282,6 +300,12 @@ export function App() {
   );
   const searchRef = useRef<HTMLInputElement>(null);
   const apply = useCallback((incoming: Status) => {
+    if (
+      incoming.scanning &&
+      incoming.generation > statusRef.current.generation &&
+      !scanRequestPending.current
+    )
+      setBackgroundScan(false);
     const accepted = acceptStatus(statusRef.current, incoming);
     statusRef.current = accepted;
     setStatus(accepted);
@@ -301,7 +325,8 @@ export function App() {
     [],
   );
   useEffect(() => {
-    if (!autoReloadSeconds || !status.revision || scanBusy) return;
+    if (!autoReloadSeconds || !status.revision || scanBusy || !gridReady)
+      return;
     const interval = window.setInterval(() => {
       if (
         !statusRef.current.scanning &&
@@ -313,13 +338,14 @@ export function App() {
         !showErrorDetails &&
         !context
       )
-        runScan(() => api.refresh(), view, false);
+        runScan(() => api.refresh(), view, false, true);
     }, autoReloadSeconds * 1000);
     return () => window.clearInterval(interval);
   }, [
     acting,
     apply,
     autoReloadSeconds,
+    gridReady,
     confirmation,
     context,
     pathEdited,
@@ -408,21 +434,25 @@ export function App() {
     setDetails((current) =>
       current?.process.process_key === focused ? current : null,
     );
+    setDetailsMissing(false);
     if (focused)
       api
         .details(status.revision, focused)
         .then((value) => {
-          if (active)
+          if (active) {
+            setDetailsRevision(status.revision);
             setDetails((current) =>
               current?.process.process_key === value.process.process_key
                 ? { ...value, ancestors: current.ancestors }
                 : value,
             );
+          }
         })
         .catch((failure) => {
           if (active) {
-            setFocused(null);
-            report(failure);
+            setDetailsMissing(true);
+            if ((failure as Failure)?.kind !== "identity_changed")
+              report(failure);
           }
         });
     return () => {
@@ -446,16 +476,26 @@ export function App() {
     work: () => Promise<Status | null>,
     nextView: View = "processes",
     resetScope = true,
+    background = false,
   ) => {
-    if (statusRef.current.scanning || scanRequestPending.current) return;
+    if (
+      statusRef.current.scanning ||
+      scanRequestPending.current ||
+      (["processes", "handles", "ports"].includes(view) &&
+        gridRevision !== statusRef.current.revision &&
+        failedGridRevision !== statusRef.current.revision)
+    )
+      return;
     scanRequestPending.current = true;
+    setBackgroundScan(background);
+    if (background) backgroundRevision.current = statusRef.current.revision;
     setStartingScan(true);
     setError(null);
     void work()
       .then((value) => {
         if (value) {
           apply(value);
-          setView(nextView);
+          if (!background) setView(nextView);
           if (resetScope) setScope(null);
         }
       })
@@ -1286,17 +1326,15 @@ export function App() {
                       fontSize={fontSize}
                       target={status.target}
                       expandedKey={
-                        focused &&
-                        activeRow?.revision === status.revision &&
-                        activeRow.row.process_key === focused
+                        focused && activeRow?.row.process_key === focused
                           ? activeRow.row.key
                           : null
                       }
-                      onToggle={(row) => {
+                      onToggle={(row, revision) => {
                         const closing =
                           focused === row.process_key &&
                           activeRow?.row.key === row.key;
-                        setActiveRow({ row, revision: status.revision });
+                        setActiveRow({ row, revision });
                         setFocused(closing ? null : row.process_key);
                       }}
                       key={view === "ports" ? "ports" : "files"}
@@ -1305,19 +1343,19 @@ export function App() {
                       hiddenColumns={hiddenColumns}
                       selected={selected}
                       focused={focused}
-                      onSelect={(row, additive) => {
+                      onSelect={(row, additive, revision) => {
                         setSelected((current) =>
                           selectKey(current, row.process_key, additive),
                         );
-                        setActiveRow({ row, revision: status.revision });
+                        setActiveRow({ row, revision });
                         setFocused(row.process_key);
                       }}
-                      onOpen={(row) => {
-                        setActiveRow({ row, revision: status.revision });
+                      onOpen={(row, revision) => {
+                        setActiveRow({ row, revision });
                         setFocused(row.process_key);
                       }}
-                      onContext={(row) => {
-                        if (status.scanning) {
+                      onContext={(row, revision) => {
+                        if (status.scanning || revision !== status.revision) {
                           setToast(
                             t(
                               "inspection.k_wait_for_the_current_scan_to_finish_bef_20cd41dd",
@@ -1326,11 +1364,32 @@ export function App() {
                           return;
                         }
                         setContext(row);
-                        setActiveRow({ row, revision: status.revision });
+                        setActiveRow({ row, revision });
                         setFocused(row.process_key);
                       }}
                       onSort={changeSort}
+                      onPage={(page) => {
+                        setGridRevision(page.revision);
+                        setFailedGridRevision(null);
+                        setActiveRow((current) => {
+                          if (!current) return current;
+                          const row = page.rows.find(
+                            (row) =>
+                              row.key === current.row.key &&
+                              row.path === current.row.path &&
+                              row.port?.endpoint === current.row.port?.endpoint,
+                          );
+                          return row
+                            ? { row, revision: page.revision }
+                            : current;
+                        });
+                      }}
                       onTotal={setTotal}
+                      onPageError={(failure, revision) => {
+                        if (revision !== statusRef.current.revision) return;
+                        setFailedGridRevision(revision);
+                        report(failure);
+                      }}
                       onError={report}
                     />
                     {details && (
@@ -1356,10 +1415,17 @@ export function App() {
                             .finally(() => setActing(false));
                         }}
                         details={details}
+                        rowCurrent={activeRow?.revision === status.revision}
+                        availability={
+                          detailsMissing
+                            ? "missing"
+                            : detailsRevision === status.revision
+                              ? "current"
+                              : "updating"
+                        }
                         row={
-                          activeRow?.revision === status.revision &&
-                          activeRow.row.process_key ===
-                            details.process.process_key
+                          activeRow?.row.process_key ===
+                          details.process.process_key
                             ? activeRow.row
                             : null
                         }
@@ -1737,15 +1803,39 @@ export function App() {
         </main>
       </div>
       <footer className="statusbar">
-        <span className="status-current" role="status">
-          {status.scanning && <LoaderCircle size={13} className="spin" />}
-          <span className="status-current-label">
-            {status.scanning
-              ? t("inspection.k_scanning")
-              : status.revision
-                ? t("inspection.k_inspection_complete")
-                : t("inspection.k_ready_to_inspect")}
-          </span>
+        <span
+          className="status-current"
+          role={backgroundScan && scanBusy ? undefined : "status"}
+        >
+          {backgroundScan && scanBusy ? (
+            <BackgroundInspection
+              status={status}
+              starting={startingScan}
+              complete={apply}
+            />
+          ) : (
+            <>
+              {(status.scanning || preparingRefresh) && (
+                <LoaderCircle size={13} className="spin" />
+              )}
+              <span className="status-current-label">
+                {gridFailed
+                  ? t("inspection.k_result_update_failed")
+                  : preparingRefresh
+                    ? t("inspection.k_preparing_results")
+                    : status.scanning
+                      ? t("inspection.k_scanning")
+                      : status.revision
+                        ? t(
+                            backgroundScan &&
+                              status.revision > backgroundRevision.current
+                              ? "inspection.k_results_refreshed"
+                              : "inspection.k_inspection_complete",
+                          )
+                        : t("inspection.k_ready_to_inspect")}
+              </span>
+            </>
+          )}
         </span>
         {status.last_scan_elapsed_ms != null && (
           <span
@@ -2210,7 +2300,7 @@ export function App() {
           </div>
         </Modal>
       )}
-      {scanBusy && (
+      {scanBusy && !backgroundScan && (
         <InspectionOverlay
           status={status}
           starting={startingScan}

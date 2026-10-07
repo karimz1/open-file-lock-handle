@@ -155,6 +155,8 @@ test.beforeEach(async ({ page }) => {
           if (command === "plugin:process|restart") return;
           if (command === "system_info") return { os: "linux", arch: "x86_64" };
           if (command === "status") {
+            if (status.scanning && (window as any).__failProgressForTest)
+              throw new Error("Synthetic progress failure");
             if (status.scanning) {
               status = {
                 ...status,
@@ -170,6 +172,8 @@ test.beforeEach(async ({ page }) => {
             }
             return status;
           }
+          if (command === "cancel" && (window as any).__failCancelForTest)
+            throw new Error("Synthetic cancel failure");
           if (command === "cancel")
             return (status = {
               ...status,
@@ -218,6 +222,36 @@ test.beforeEach(async ({ page }) => {
                   ? status.revision + 1
                   : status.revision,
             });
+          if (command === "page" && (window as any).__failNextPageForTest) {
+            (window as any).__failNextPageForTest = false;
+            throw {
+              kind: "io",
+              message: "Synthetic result-page failure",
+              os_code: 5,
+            };
+          }
+          if (
+            command === "page" &&
+            (window as any).__holdPagesForTest &&
+            args.revision > 1
+          ) {
+            await new Promise<void>((resolve) => {
+              ((window as any).__heldPages ??= []).push(resolve);
+            });
+          }
+          const freshRow = (row: (typeof processRows)[number]) => ({
+            ...row,
+            path_ref: row.path_ref.replace(/^\d+:/, `${args.revision}:`),
+            port: row.port
+              ? {
+                  ...(row.port as any),
+                  reference: (row.port as any).reference.replace(
+                    /^\d+:/,
+                    `${args.revision}:`,
+                  ),
+                }
+              : null,
+          });
           if (command === "page" && args.query.ports) {
             const rows = portRows.filter(
               (row) =>
@@ -229,7 +263,11 @@ test.beforeEach(async ({ page }) => {
                   row.process_key === args.query.process_key) &&
                 !(terminated && row.pid === 4000),
             );
-            return { revision: status.revision, total: rows.length, rows };
+            return {
+              revision: args.revision,
+              total: rows.length,
+              rows: rows.map(freshRow),
+            };
           }
           if (command === "page") {
             if ((window as any).__wideCellsForTest) {
@@ -261,16 +299,26 @@ test.beforeEach(async ({ page }) => {
             return {
               revision: args.revision,
               total: rows.length,
-              rows: rows.slice(
-                args.query.offset,
-                args.query.offset + args.query.limit,
-              ),
+              rows: rows
+                .slice(args.query.offset, args.query.offset + args.query.limit)
+                .map(freshRow),
             };
           }
           if (command === "details") {
-            const process = [...processRows, ...portRows].find(
+            if ((window as any).__holdDetailsForTest && args.revision > 1)
+              await new Promise<void>((resolve) => {
+                ((window as any).__heldDetails ??= []).push(resolve);
+              });
+            const captured = [...processRows, ...portRows].find(
               (row) => row.process_key === args.key,
             );
+            if (!captured)
+              throw {
+                kind: "identity_changed",
+                message: "Captured identity absent",
+                os_code: null,
+              };
+            const process = freshRow(captured);
             return {
               process,
               ports: 1,
@@ -279,7 +327,10 @@ test.beforeEach(async ({ page }) => {
                 display: process?.path,
                 reference: process?.path_ref,
               },
-              cwd: { display: "/workspace/project", reference: "1:0:cwd" },
+              cwd: {
+                display: "/workspace/project",
+                reference: `${args.revision}:0:cwd`,
+              },
               ancestors: [
                 {
                   name: "fixture-shell",
@@ -381,6 +432,40 @@ test.beforeEach(async ({ page }) => {
             return;
           throw new Error(`Unexpected test IPC command ${command}`);
         },
+      },
+      __mutateRowsForTest(action: string, index = 0) {
+        if (action === "update") processRows[index].cpu = 42;
+        if (action === "move")
+          processRows[index].path = "/workspace/project/new-observation.bin";
+        if (action === "empty") {
+          processRows.splice(0);
+          portRows.splice(0);
+        }
+        if (action === "exit") {
+          processRows.splice(index, 1);
+          portRows.splice(index, 1);
+        }
+        if (action === "reuse") {
+          processRows[index] = {
+            ...processRows[index],
+            process_key: "4000:999999:0",
+            key: "4000:999999:0/exe",
+            name: "ReusedPid",
+          };
+          portRows.splice(index, 1);
+        }
+      },
+      __releasePagesForTest() {
+        (window as any).__holdPagesForTest = false;
+        ((window as any).__heldPages ?? [])
+          .splice(0)
+          .forEach((resolve: () => void) => resolve());
+      },
+      __releaseDetailsForTest() {
+        (window as any).__holdDetailsForTest = false;
+        ((window as any).__heldDetails ?? [])
+          .splice(0)
+          .forEach((resolve: () => void) => resolve());
       },
       __emitTestEvent(event: string, payload: unknown) {
         if (event === "scan-status" && payload && typeof payload === "object")
@@ -2983,7 +3068,10 @@ test("inspection barrier blocks manual and automatic reloads, shows work, and re
     ),
   ).toBe(1);
   await page.clock.runFor(200);
-  await expect(dialog).toBeVisible();
+  await expect(dialog).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Cancel automatic refresh" }),
+  ).toBeVisible();
   expect(
     await page.evaluate(
       () =>
@@ -3155,4 +3243,578 @@ test("a filter change cancels all-column fitting without applying stale widths",
   });
   await expect(divider).toHaveAttribute("aria-busy", "false");
   await expect(divider).toHaveAttribute("aria-valuenow", width!);
+});
+
+const refreshCount = (page: import("@playwright/test").Page) =>
+  page.evaluate(
+    () =>
+      (window as any).__testCalls.filter(
+        (call: any) => call.command === "refresh",
+      ).length,
+  );
+async function enableQuietRefresh(page: import("@playwright/test").Page) {
+  await page
+    .getByRole("button", { name: "Automatic refresh interval" })
+    .click();
+  await page.getByRole("option", { name: "5s", exact: true }).click();
+  await page.evaluate(() => {
+    (window as any).__holdRefreshForTest = true;
+  });
+  // Freeze wall time so interval boundaries do not depend on screenshot or IPC latency.
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+  await page.clock.runFor(5100);
+  await expect(
+    page.getByRole("button", { name: "Cancel automatic refresh" }),
+  ).toBeVisible();
+}
+
+test("quiet automatic refresh keeps search, grid focus, scroll, details and bounded rows until replacement is ready", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await grid.evaluate((element) => {
+    element.scrollTop = 12000;
+    element.scrollLeft = 220;
+  });
+  await page.clock.runFor(200);
+  const row = grid.locator(".data-row").filter({ hasText: "4300" });
+  await expect(row).toBeVisible();
+  await row.click();
+  const details = page.getByRole("complementary", { name: "Process details" });
+  await expect(details).toBeVisible();
+  await details.evaluate((element) => {
+    element.scrollTop = 150;
+  });
+  await enableQuietRefresh(page);
+  await grid.focus();
+  const before = await grid.evaluate((element) => ({
+    top: element.scrollTop,
+    left: element.scrollLeft,
+  }));
+  const panelTop = await details.evaluate((element) => element.scrollTop);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(grid).toBeFocused();
+  await expect(row).toBeVisible();
+  await grid.evaluate((element) => {
+    (window as any).__gridMutations = 0;
+    new MutationObserver((records) => {
+      (window as any).__gridMutations += records.length;
+    }).observe(element, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+  });
+  await page.keyboard.press("F5");
+  await page.keyboard.press("Control+r");
+  await page.keyboard.press("Control+o");
+  await page.clock.runFor(6000);
+  expect(await refreshCount(page)).toBe(1);
+  expect(await page.evaluate(() => (window as any).__gridMutations)).toBe(0);
+  await expect(grid).toBeFocused();
+  await expect(details).toContainText("PID 4300");
+  await page.screenshot({ path: "test-results/quiet-refresh.png" });
+  await page.evaluate(() => {
+    (window as any).__holdPagesForTest = true;
+    (window as any).__holdDetailsForTest = true;
+    (window as any).__mutateRowsForTest("update", 300);
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 2,
+      revision: 2,
+      scanning: false,
+      elapsed_ms: 1800,
+    });
+  });
+  await page.clock.runFor(100);
+  await expect(grid).toHaveAttribute("aria-busy", "true");
+  await expect(row).toBeVisible();
+  await expect(page.locator(".status-current")).toContainText(
+    "Preparing results",
+  );
+  await page.keyboard.press("F5");
+  await page.clock.runFor(6000);
+  expect(await refreshCount(page)).toBe(1);
+  await expect(page.getByText("Loading results", { exact: true })).toHaveCount(
+    0,
+  );
+  expect(
+    await grid.evaluate((element) => ({
+      top: element.scrollTop,
+      left: element.scrollLeft,
+    })),
+  ).toEqual(before);
+  await expect(
+    details.getByRole("button", { name: "Copy path", exact: true }).first(),
+  ).toBeDisabled();
+  await page.evaluate(() => {
+    (window as any).__releasePagesForTest();
+    (window as any).__releaseDetailsForTest();
+  });
+  await expect(grid).toHaveAttribute("aria-busy", "false");
+  await expect(row).toContainText("42.0%");
+  await expect(grid).toBeFocused();
+  expect(
+    await grid.evaluate((element) => ({
+      top: element.scrollTop,
+      left: element.scrollLeft,
+    })),
+  ).toEqual(before);
+  expect(await details.evaluate((element) => element.scrollTop)).toBe(panelTop);
+  await expect(
+    details.getByRole("button", { name: "Copy path", exact: true }).first(),
+  ).toBeEnabled();
+  await expect(row.getByRole("button")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await expect(page.locator(".status-current")).toContainText(
+    "Results refreshed",
+  );
+  expect(await grid.locator(".data-row").count()).toBeLessThan(60);
+  await page.clock.runFor(4800);
+  expect(await refreshCount(page)).toBe(1);
+});
+
+test("a failed replacement page keeps old rows safe and permits a new manual refresh", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  await expect(grid.getByText("4000", { exact: true })).toBeVisible();
+  await grid.locator(".data-row").filter({ hasText: "4000" }).click();
+  const details = page.getByRole("complementary", { name: "Process details" });
+  await expect(details).toBeVisible();
+  await enableQuietRefresh(page);
+  await page.evaluate(() => {
+    (window as any).__failNextPageForTest = true;
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 2,
+      revision: 2,
+      scanning: false,
+    });
+  });
+  await page.clock.runFor(100);
+  await expect(page.getByText(/Synthetic result-page failure/)).toBeVisible();
+  await expect(page.locator(".status-current")).toContainText(
+    "Could not update results",
+  );
+  await expect(grid).toHaveAttribute("aria-rowcount", "1501");
+  await expect(grid).toHaveAttribute("aria-busy", "false");
+  await expect(grid.getByText("4000", { exact: true })).toBeVisible();
+  await expect(
+    details.getByRole("button", { name: "Copy path", exact: true }).first(),
+  ).toBeDisabled();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.clock.runFor(4800);
+  expect(await refreshCount(page)).toBe(1);
+  await page.keyboard.press("F5");
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  expect(await refreshCount(page)).toBe(2);
+  await page.evaluate(() => {
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 3,
+      revision: 3,
+      scanning: false,
+    });
+  });
+  await page.clock.runFor(100);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator(".status-current")).toContainText(
+    "Inspection complete",
+  );
+  await expect(
+    details.getByRole("button", { name: "Copy path", exact: true }).first(),
+  ).toBeEnabled();
+  expect(await refreshCount(page)).toBe(2);
+});
+
+test("quiet automatic refresh permits searching and cancellation without stealing input focus or polling while idle", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await enableQuietRefresh(page);
+  await expect(
+    page.locator(".background-inspection").getByRole("status"),
+  ).toHaveText("Updating results…");
+  await expect(page.locator(".background-elapsed")).toHaveAttribute(
+    "aria-live",
+    "off",
+  );
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  await search.fill("node");
+  await page.clock.runFor(100);
+  await expect(page.getByText("300 results", { exact: true })).toBeVisible();
+  await expect(search).toBeFocused();
+  await page.getByRole("button", { name: "Cancel automatic refresh" }).click();
+  await expect(
+    page.getByRole("button", { name: "Cancel automatic refresh" }),
+  ).toHaveCount(0);
+  await expect(search).toHaveValue("node");
+  const polls = await page.evaluate(
+    () =>
+      (window as any).__testCalls.filter(
+        (call: any) => call.command === "status",
+      ).length,
+  );
+  await page.clock.runFor(4900);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "status",
+        ).length,
+    ),
+  ).toBe(polls);
+  expect(await refreshCount(page)).toBe(1);
+  await page.clock.runFor(200);
+  expect(await refreshCount(page)).toBe(2);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+for (const action of ["exit", "reuse"] as const)
+  test(`quiet refresh retains captured details for ${action} without aliasing another process`, async ({
+    page,
+  }) => {
+    await page.clock.install();
+    await page.goto("/");
+    const grid = page.getByRole("grid");
+    await expect(grid.getByText("4000", { exact: true })).toBeVisible();
+    await grid.getByRole("row").nth(1).click();
+    const details = page.getByRole("complementary", {
+      name: "Process details",
+    });
+    await expect(details).toContainText("Code");
+    await enableQuietRefresh(page);
+    await page.evaluate((action) => {
+      (window as any).__mutateRowsForTest(action);
+      (window as any).__emitTestEvent("scan-status", {
+        generation: 2,
+        revision: 2,
+        scanning: false,
+      });
+    }, action);
+    await page.clock.runFor(100);
+    await expect(details).toContainText("This captured process is absent");
+    await expect(details).toContainText("PID 4000");
+    await expect(
+      details.getByRole("heading", { name: "Code", exact: true }),
+    ).toBeVisible();
+    await expect(
+      details.getByRole("button", { name: "Terminate process…", exact: true }),
+    ).toBeDisabled();
+    await expect(
+      details.getByRole("button", { name: "Copy path", exact: true }).first(),
+    ).toBeDisabled();
+    if (action === "reuse")
+      await expect(grid.getByText("ReusedPid", { exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(
+      await page.evaluate(() =>
+        (window as any).__testCalls.some((call: any) =>
+          ["prepare", "terminate", "reveal", "copy"].includes(call.command),
+        ),
+      ),
+    ).toBe(false);
+  });
+
+test("quiet refresh handles delayed acknowledgments, stale completion and failure without a second scan", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__delayRefreshAck = true;
+  });
+  await enableQuietRefresh(page);
+  const cancel = page.getByRole("button", { name: "Cancel automatic refresh" });
+  await expect(cancel).toBeDisabled();
+  await page.keyboard.press("F5");
+  await page.clock.runFor(10000);
+  expect(await refreshCount(page)).toBe(1);
+  await page.evaluate(() => {
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 2,
+      revision: 1,
+      scanning: false,
+      error: { kind: "io", message: "Synthetic refresh failure", os_code: 5 },
+    });
+    (window as any).__ackRefresh();
+  });
+  await expect(cancel).toHaveCount(0);
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 1,
+      revision: 0,
+      scanning: true,
+    });
+  });
+  await expect(cancel).toHaveCount(0);
+  await expect(page.locator(".status-current")).not.toContainText(
+    "Results refreshed",
+  );
+});
+
+test("quiet port refresh keeps selected binding and details until the new page arrives", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  await page.getByRole("button", { name: /^Ports/ }).click();
+  const grid = page.getByRole("grid");
+  await expect(grid.getByText("8080", { exact: true })).toBeVisible();
+  await grid.getByRole("row").nth(1).click();
+  const details = page.getByRole("complementary", { name: "Process details" });
+  await expect(details).toContainText("127.0.0.1:8080");
+  await enableQuietRefresh(page);
+  await page.evaluate(() => {
+    (window as any).__holdPagesForTest = true;
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 2,
+      revision: 2,
+      scanning: false,
+    });
+  });
+  await page.clock.runFor(100);
+  await expect(grid.getByText("8080", { exact: true })).toBeVisible();
+  await expect(details).toContainText("127.0.0.1:8080");
+  await page.evaluate(() => {
+    (window as any).__releasePagesForTest();
+  });
+  await expect(grid).toHaveAttribute("aria-busy", "false");
+  await expect(
+    grid.getByRole("row").nth(1).getByRole("button"),
+  ).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("a changed target clears previous matches instead of presenting them as current", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  await expect(grid.getByText("4000", { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__holdPagesForTest = true;
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 2,
+      revision: 2,
+      scanning: false,
+      target: "/workspace/other",
+    });
+  });
+  await expect(grid.locator(".data-row")).toHaveCount(0);
+  await expect(
+    grid.getByText("Loading results", { exact: true }),
+  ).toBeVisible();
+});
+
+test("quiet refresh reports progress and cancel failures, allows retry and keeps accepted results", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await enableQuietRefresh(page);
+  await page.evaluate(() => {
+    (window as any).__failProgressForTest = true;
+    (window as any).__failCancelForTest = true;
+  });
+  await page.clock.runFor(300);
+  await expect(page.locator(".background-error")).toContainText(
+    "Progress is temporarily unavailable",
+  );
+  const cancel = page.getByRole("button", { name: "Cancel automatic refresh" });
+  await cancel.click();
+  await expect(page.locator(".background-error")).toContainText(
+    "Synthetic cancel failure",
+  );
+  await expect(cancel).toBeEnabled();
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__failCancelForTest = false;
+  });
+  await cancel.click();
+  await expect(cancel).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("quiet refresh rejects retained matches after a new query and publishes the latest query only", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  await expect(grid.getByText("4000", { exact: true })).toBeVisible();
+  await enableQuietRefresh(page);
+  await page.evaluate(() => {
+    (window as any).__holdPagesForTest = true;
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 2,
+      revision: 2,
+      scanning: false,
+    });
+  });
+  await page.clock.runFor(100);
+  await page
+    .getByRole("textbox", { name: "Search loaded results" })
+    .fill("node");
+  await page.clock.runFor(100);
+  await expect(grid.locator(".data-row")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).__releasePagesForTest();
+  });
+  await expect(page.getByText("300 results", { exact: true })).toBeVisible();
+  await expect(grid.getByText("node", { exact: true }).first()).toBeVisible();
+  await expect(grid.getByText("Code", { exact: true })).toHaveCount(0);
+});
+
+test("a native target scan after quiet refresh restores the manual interaction barrier", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await enableQuietRefresh(page);
+  await page.getByRole("button", { name: "Cancel automatic refresh" }).click();
+  await page.evaluate(() => {
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 4,
+      revision: 1,
+      scanning: true,
+    });
+  });
+  await expect(
+    page.getByRole("dialog", { name: "Scanning", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("F5");
+  expect(await refreshCount(page)).toBe(1);
+});
+
+for (const language of ["en", "de", "zh"])
+  for (const fontSize of [14, 24])
+    test(`quiet refresh footer fits the minimum window in ${language} at ${fontSize}px`, async ({
+      page,
+    }) => {
+      await page.clock.install();
+      await page.setViewportSize({ width: 860, height: 560 });
+      await page.addInitScript(
+        ({ language, fontSize }) => {
+          localStorage.setItem("oflh-language", language);
+          localStorage.setItem("oflh-font-size", String(fontSize));
+        },
+        { language, fontSize },
+      );
+      await page.goto("/");
+      await expect(page.getByRole("grid")).toHaveAttribute(
+        "aria-rowcount",
+        "1501",
+      );
+      // Wait for the existing sidebar font-size transition before measuring.
+      await expect(page.locator(".sidebar")).toHaveCSS(
+        "width",
+        `${fontSize * 16}px`,
+      );
+      const before = await page.getByRole("grid").boundingBox();
+      await page.locator(".refresh-selector-trigger").click();
+      await page.getByRole("option", { name: "5s", exact: true }).click();
+      await page.evaluate(() => {
+        (window as any).__holdRefreshForTest = true;
+      });
+      await page.clock.runFor(5100);
+      const progress = page.locator(".background-inspection");
+      await expect(progress).toBeVisible();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      const cancel = progress.getByRole("button");
+      await expect(cancel).toBeEnabled();
+      const cancelBounds = await cancel.boundingBox();
+      expect(cancelBounds!.x).toBeGreaterThanOrEqual(0);
+      expect(cancelBounds!.x + cancelBounds!.width).toBeLessThanOrEqual(860);
+      const after = await page.getByRole("grid").boundingBox();
+      expect(after).toEqual(before);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth),
+      ).toBeLessThanOrEqual(860);
+      await page.screenshot({
+        path: `test-results/quiet-refresh-${language}-${fontSize}.png`,
+      });
+    });
+
+test("quiet refresh does not rebind a captured file to a different observation in the same row slot", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  await expect(grid.getByText("4000", { exact: true })).toBeVisible();
+  await grid.getByRole("row").nth(1).click();
+  const details = page.getByRole("complementary", { name: "Process details" });
+  await expect(details).toBeVisible();
+  await enableQuietRefresh(page);
+  await page.evaluate(() => {
+    (window as any).__mutateRowsForTest("move");
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 2,
+      revision: 2,
+      scanning: false,
+    });
+  });
+  await page.clock.runFor(100);
+  await expect(grid).toHaveAttribute("aria-busy", "false");
+  await expect(details).toContainText(
+    "This observation is from the previous inspection",
+  );
+  await expect(
+    details.getByRole("button", { name: "Copy path", exact: true }).first(),
+  ).toBeDisabled();
+  await expect(
+    details.getByRole("button", { name: "Terminate process…", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    details.getByText("/workspace/project/target/debug/fixture", {
+      exact: true,
+    }),
+  ).toBeVisible();
+});
+
+test("quiet refresh publishes a legitimately empty snapshot and retains captured details explicitly", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  await expect(grid.getByText("4000", { exact: true })).toBeVisible();
+  await grid.getByRole("row").nth(1).click();
+  await enableQuietRefresh(page);
+  await page.evaluate(() => {
+    (window as any).__mutateRowsForTest("empty");
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 2,
+      revision: 2,
+      scanning: false,
+      processes: 0,
+      usages: 0,
+      ports: 0,
+    });
+  });
+  await page.clock.runFor(100);
+  await expect(grid.locator(".data-row")).toHaveCount(0);
+  await expect(
+    grid.getByText("No matching processes", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("complementary", { name: "Process details" }),
+  ).toContainText("This captured process is absent");
+  await expect(page.locator(".status-current")).toContainText(
+    "Results refreshed",
+  );
 });

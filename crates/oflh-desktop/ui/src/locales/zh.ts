@@ -243,6 +243,17 @@ const zh: TranslationSchema<typeof en> = {
     k_target_processes_only: "仅目标进程",
     k_wait_for_the_current_scan_to_finish_bef_20cd41dd:
       "请等待当前扫描完成后再打开行操作。",
+    k_updating_results: "正在更新结果…",
+    k_results_refreshed: "结果已更新",
+    k_result_update_failed: "无法更新结果",
+    k_background_hint:
+      "刷新期间仍可查看之前的结果。本次检查完成后才能开始下一次检查。",
+    k_cancel_refresh: "取消自动刷新",
+    k_updating_details: "正在更新详情。新结果准备好后即可恢复操作。",
+    k_captured_process_missing:
+      "最新检查中没有此已记录的进程。它可能已退出或不再使用此目标。",
+    k_captured_observation:
+      "此记录来自上一次检查。请选择当前结果中的行以执行文件操作。",
   },
   inspector: {
     k_access: "访问权限",
