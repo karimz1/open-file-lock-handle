@@ -35,7 +35,13 @@ ARM64, without a helper stall or directory cap. They returned 137/144 visible
 users, 8,754/10,241 references, and 10/9 warnings respectively. Live roots have
 changing, permission-limited and unequal coverage: their baseline timings do
 not establish a speedup ratio, complete access to protected processes, or an OS
-speed ranking. [Issue 62 records the design goals, discovered sharing-probe stall,
+speed ranking. The local Linux x86-64 `/` diagnostic finished in 194.668 ms,
+returning 48,647 usages across 153 visible users with two warnings. Its
+[recorded data](measurements/inspection-linux-2026-10-05.json) reports 69,723
+visited process references and no directory traversal. These timings measure
+backend inspection rather than application startup or rendering.
+
+[Issue 62 records the design goals, discovered sharing-probe stall,
 coverage gates and future profiling targets](https://github.com/karimz1/open-file-lock-handle/issues/62#issuecomment-6018347156).
 
 ## Native comparison

@@ -172,12 +172,8 @@ Installed release candidates can be offered the corresponding stable release;
 build metadata does not change version precedence. Older releases and prereleases
 are never offered through the stable channel.
 
-Requests run on an independent worker with an eight-second request timeout,
-three-second connection timeout, verified HTTPS, restricted GitHub asset redirects
-and a 64 KiB response limit. Only the fixed public URL and generic request headers
-are sent; file paths, process data and credentials are not sent. The check bypasses
-proxy settings to avoid using proxy credentials; networks requiring a proxy may
-not support it. Automatic failures are quiet, and a known update survives a
-transient failure. Hourly checks do not cause periodic terminal redraws. The notice
-reads version information only, downloads no application binary and does not
-perform the desktop's signed installation workflow.
+Checks run in the background over HTTPS without sending file paths, process data,
+or credentials. They contact the OFLH website, with GitHub as a fallback, and
+download version information only. Networks requiring a proxy may block the
+check because it bypasses proxy settings. Failed automatic checks stay quiet;
+press `u` for an explicit result. Download and install terminal updates manually.

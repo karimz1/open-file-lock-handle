@@ -6,10 +6,10 @@ The [terminal guide](terminal-usage.md) covers the separate CLI/TUI interface.
 
 ## Linux archive installation
 
-New builds provide `oflh-desktop.linux.amd64.tar.gz` (x86-64) and
-`oflh-desktop.linux.arm64.tar.gz` (AArch64) alongside the `.deb` and `.rpm`
-installers. Older releases such as `v0.4.0` do not include these archives.
-ARM32 builds are not available. Download the archive matching your CPU from
+Use `oflh-desktop.linux.amd64.tar.gz` (x86-64) or
+`oflh-desktop.linux.arm64.tar.gz` (AArch64) when you need an archive instead of
+a `.deb` or `.rpm` installer. ARM32 builds are not available. Download the archive
+matching your CPU from
 [GitHub Releases](https://github.com/karimz1/open-file-lock-handle/releases),
 check it against the release's `checksums.txt`, then extract and run it in your
 graphical desktop session. For x86-64:
@@ -59,16 +59,25 @@ observations. Click a row to open details. Use the panel button or close button 
 close it. Table paths are shortened for readability. Full paths and copy/reveal
 actions are available in details. Drag column dividers or the details panel edge
 to resize. Double-click a column divider to fit that column to its heading and
-all matching values, including results outside the visible viewport. A focused
-divider supports arrow keys for manual resizing. **Fit all columns** in the grid toolbar fits every visible column in one pass through the matching rows. Enter on a divider does not fit columns.
+all matching values, including rows outside the visible viewport. A focused
+divider supports arrow keys for manual resizing. **Fit all columns** fits every
+visible column. Enter on a divider does not fit columns.
 
 Details show **Matching handles**, **Local ports**, and **Process ancestry**.
-The ancestry tree lists parents above the selected process. Click a parent to
-inspect it or use its process actions.
 
 An open file is not proof of a lock. **Lock evidence only** restricts results to
 reported evidence. Windows resource users are not proven lock owners. Open
 **coverage notices** below the table for permissions and scan limitations.
+
+## Follow the parent process tree
+
+Select a process to view **Process ancestry** in its details. The tree runs from
+the oldest recorded parent down to the selected process. It helps connect a
+background worker to its parent app, such as an editor or terminal session.
+Click a parent to inspect its details or use its process actions.
+
+Parents that cannot be identified appear as unavailable. Refresh to check current
+file usage; stopping a parent can affect its children and unsaved work.
 
 ## Search and filters
 
@@ -224,18 +233,17 @@ result preparation. Short scans use milliseconds, longer scans use seconds or
 minutes. The previous completed duration stays visible while another scan runs
 and after cancellation or failure. This also applies to local-port inspections.
 
-While an inspection is running, a modal progress panel blocks workspace actions and reload shortcuts. It shows elapsed time, the current stage and native work counts. The total is unknown; the bar does not imply a percentage. Windows file counts are distinct from descriptors, mappings or module references. Results may still be partial because of permissions or platform limits.
-This modal panel applies to opening a new target or manually refreshing. Automatic
-refresh uses the footer described in [Keyboard and refresh](#keyboard-and-refresh).
+Opening a target or manually refreshing shows a progress panel with elapsed time,
+the current stage, work counts, and **Cancel**. The total is unknown, so the bar
+does not show a completion percentage. Reload shortcuts and new targets wait
+until the scan finishes. Permissions and platform limits can leave partial results.
 
-Use **Cancel** to keep the previous accepted results and stop the current request cooperatively. A native call already running can finish later; its results cannot replace the accepted snapshot. F5, automatic refresh and other targets cannot restart an active inspection. Automatic refresh waits a full selected interval after completion or cancellation.
+Choose **Cancel** to keep the previous results. A native query already running
+may take time to finish. Automatic refresh waits a full interval after completion
+or cancellation; it uses the footer described in
+[Keyboard and refresh](#keyboard-and-refresh).
 
-Automatic refresh keeps the previous accepted viewport until the replacement
-page is ready. It does not reset search, filters, column widths or the details
-panel. Captured details remain visible when the process exits or no longer
-matches; a notice identifies this state and actions stay disabled until a current
-observation is available. PID reuse cannot substitute another process for the
-captured identity. A different target or query clears stale matches normally.
-If loading the replacement page fails, the old viewport stays visible with an
-explicit error. Stale path actions remain disabled, and a new refresh can recover;
-the reload barrier does not stay stuck after failed presentation work.
+Refresh preserves your search, filters, column widths, and details panel. If a
+process exits or no longer matches, its captured details show a notice and actions
+are disabled. A failed refresh keeps the old results and shows an error; refresh
+again to retry.

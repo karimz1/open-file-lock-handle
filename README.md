@@ -16,11 +16,49 @@ investigate files that cannot be deleted or replaced, folders still in use, and
 “port already in use” errors.
 
 Choose the desktop app or the interactive terminal app. Both run on Linux,
-macOS, and Windows. You can inspect matching file usages, lock evidence, process
-parents, and local ports. Filter for lock evidence and, after confirmation,
-terminate a process to help release the files or ports it holds.
+macOS, and Windows. Inspect file usages and lock evidence, find local port owners,
+and follow a process's parent tree to identify the application behind it.
 
-[Install](#install) · [Build from source](#build-from-source)
+Optimized for fast file usage inspection, including a whole Windows `C:\` drive
+or Linux `/`. oflh follows live process references instead of walking every unused
+file on disk, making it useful when a large folder is in use and you do not know
+which file or process to look for. Desktop and terminal share the same scanner.
+
+[Install](#install) · [Quick start](#getting-started) · [Scan performance](#fast-whole-drive-file-usage-scans) · [Build from source](#build-from-source)
+
+## Fast whole-drive file usage scans
+
+Recorded backend inspections with the entire drive or root as the target:
+
+| Platform | Target | Measured scan time |
+| --- | --- | ---: |
+| [Windows x64](docs/measurements/inspection-windows-x64-2026-10-06.json) | `C:\` | **352 ms** |
+| [Windows ARM64](docs/measurements/inspection-windows-arm64-2026-10-06.json) | `C:\` | **510 ms** |
+| [Linux x86-64](docs/measurements/inspection-linux-2026-10-05.json) | `/` | **195 ms** |
+
+Single backend measurements from 5–6 October 2026: Windows on native GitHub
+runners, Linux locally. They measure accessible process references, not app
+startup or every disk file. Each scan reported coverage warnings; timings vary
+with hardware, workload, and permissions.
+
+An equivalent Windows fixture with 2,048 files and 128 held files also improved
+from **3,303 to 315 ms on x64** and **5,384 to 353 ms on ARM64** (five-sample medians
+against the earlier Restart Manager backend). See
+[inspection performance](docs/inspection-performance.md) for methodology,
+coverage checks, tradeoffs, and reproducible commands.
+
+## Follow the parent process tree
+
+A background helper's name may not tell you which app it belongs to. Select a
+file or port user to see its parent process tree, then inspect the recorded
+parents. For example, a `node.exe` worker may lead back to an editor or terminal
+session. This helps you find the app to close when a file stays in use or a
+development server keeps a port occupied.
+
+Both editions show process ancestry. See the
+[Desktop guide](docs/desktop-usage.md#follow-the-parent-process-tree) for the
+details panel or the [Terminal guide](docs/terminal-usage.md#process-actions)
+for keyboard navigation.
 
 ## Desktop
 
@@ -52,11 +90,10 @@ the right download and view screenshots, visit the [website](https://oflh.karimz
 Open the installer and follow its steps. Desktop installers are unsigned; see
 [installation warnings](#unsigned-installers) if your OS blocks them.
 
-Linux archive downloads are included in new builds; older releases such as
-`v0.4.0` only contain `.deb` and `.rpm` desktop packages. The archive can be used
-on Arch and other compatible glibc distributions after installing system
-libraries. See [Linux archive installation](docs/desktop-usage.md#linux-archive-installation)
-for extraction, startup, and dependency requirements. ARM32 is not available.
+For Arch and other compatible glibc distributions, use the Linux archive after
+installing its system libraries. See
+[Linux archive installation](docs/desktop-usage.md#linux-archive-installation)
+for extraction and dependencies. ARM32 builds are not available.
 
 <a id="cli-tui-install"></a>
 
@@ -111,6 +148,22 @@ oflh ./build/plugin.dll      # Processes using one file
 oflh --port 3000             # Local TCP listener or UDP binding on port 3000
 ```
 
+For broad file usage inspection, target the entire Windows drive in PowerShell:
+
+```powershell
+oflh 'C:\'
+```
+
+Or target the Linux filesystem root:
+
+```sh
+oflh /
+```
+
+In the desktop app, choose the same root with **Open folder**. These scans show
+accessible file users below the selected root; check scan warnings for permission
+limits. On Windows, reported file users do not prove which process caused a lock.
+
 | Key | Action |
 | --- | --- |
 | `1` / `2` / `3` | Processes / Locked files / Ports |
@@ -138,14 +191,10 @@ See [platform support](docs/platform-support.md) for detection limits.
 
 ## Privacy
 
-Privacy is a core principle of oflh. File and process inspection runs locally;
-file contents and scan results are not uploaded. That is why oflh is open source:
-anyone can [inspect the code](https://github.com/karimz1/open-file-lock-handle)
-and [build the tool themselves](docs/development.md). The build workflows and
-[CI runs](https://github.com/karimz1/open-file-lock-handle/actions), including
-those for release candidates (RCs), are public too.
-
-The desktop app contacts GitHub to check for and download updates.
+File and process inspection runs locally. File contents and scan results are not
+uploaded. Update checks contact the OFLH website, with GitHub as a fallback;
+desktop update downloads use GitHub Releases. Terminal users can disable checks
+with `--no-update-check`. See [release notices](docs/terminal-usage.md#release-notices).
 
 ## Build from source
 
@@ -171,8 +220,11 @@ packages are listed on the release page.
 
 ## Documentation
 
+[Browse the documentation](docs/README.md) for task-based guides and contributor references.
+
 - [Terminal guide](docs/terminal-usage.md) and [Desktop guide](docs/desktop-usage.md)
 - [Platform support and limitations](docs/platform-support.md)
+- [Scan performance and recorded benchmarks](docs/inspection-performance.md)
 - [Building and testing](docs/development.md)
 - [Contributing](CONTRIBUTING.md), [Architecture](docs/architecture.md),
   and [Releasing](docs/releasing.md)
