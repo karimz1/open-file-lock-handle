@@ -1,6 +1,8 @@
 //! Real OS contracts. Helpers exist only in this test executable, never in oflh.
 use oflh_core::*;
-use oflh_platform::{Backend, native};
+use oflh_platform::Backend;
+#[cfg(not(windows))]
+use oflh_platform::native;
 use std::{
     fs::{self, OpenOptions},
     io::{BufRead, BufReader, Write},
@@ -10,6 +12,87 @@ use std::{
     time::Duration,
 };
 struct ChildGuard(Child);
+
+/// Optional CI breadcrumbs contain aggregate work only. They neither cancel
+/// native work nor change test scheduling; a blocked call remains a test failure.
+trait NativeTestScan: Backend {
+    #[track_caller]
+    fn traced_scan(&mut self, target: &Target, cancel: &Cancellation) -> Result<Snapshot> {
+        if std::env::var_os("OFLH_TRACE_NATIVE_TESTS").is_none() {
+            return self.scan(target, cancel);
+        }
+        static NEXT_SCAN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let scan = NEXT_SCAN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let line = std::panic::Location::caller().line();
+        let started = std::time::Instant::now();
+        native_trace(format_args!(
+            "OFLH native test scan {scan} line {line}: starting"
+        ));
+        std::thread::scope(|scope| {
+            let (finished, receiver) = mpsc::sync_channel(1);
+            let _finish = FinishTrace(finished);
+            scope.spawn(move || {
+                while matches!(
+                    receiver.recv_timeout(Duration::from_secs(5)),
+                    Err(mpsc::RecvTimeoutError::Timeout)
+                ) {
+                    native_trace(format_args!(
+                        "OFLH native test scan {scan}: elapsed_ms={} progress={:?}",
+                        started.elapsed().as_millis(),
+                        cancel.progress()
+                    ));
+                }
+            });
+            let result = self.scan(target, cancel);
+            native_trace(format_args!(
+                "OFLH native test scan {scan}: finished success={} elapsed_ms={} progress={:?}",
+                result.is_ok(),
+                started.elapsed().as_millis(),
+                cancel.progress()
+            ));
+            result
+        })
+    }
+}
+impl<Scanner: Backend + ?Sized> NativeTestScan for Scanner {}
+
+fn native_trace(message: std::fmt::Arguments<'_>) {
+    // Write directly to stderr: libtest's per-test capture otherwise withholds
+    // the very breadcrumbs needed when a test cannot finish. Logging failures
+    // must not replace the inspection result or alter its evidence.
+    let _ = writeln!(std::io::stderr().lock(), "{message}");
+}
+
+struct FinishTrace(mpsc::SyncSender<()>);
+impl Drop for FinishTrace {
+    fn drop(&mut self) {
+        // Release the observer on completion and unwinding before scope joins it.
+        // Capacity one guarantees this single completion message cannot block.
+        let _ = self.0.send(());
+    }
+}
+#[cfg(windows)]
+fn native() -> Result<Box<dyn Backend>> {
+    oflh_platform::native_with_inspection_helper(
+        oflh_platform::inspection_helper::InspectionHelperCommand::new(
+            std::env::current_exe().unwrap(),
+            ["--exact", "native_inspection_helper", "--nocapture"]
+                .map(std::ffi::OsString::from)
+                .to_vec(),
+        ),
+    )
+}
+#[cfg(windows)]
+#[test]
+fn native_inspection_helper() {
+    if std::env::var_os("OFLH_NATIVE_HANDLE_HELPER").is_none() {
+        return;
+    }
+    let result = oflh_platform::inspection_helper::run_stdio();
+    // Leave no test-harness trailer in the private binary stream. Native RAII
+    // resources and stdout have already been dropped by run_stdio.
+    std::process::exit(if result.is_ok() { 0 } else { 1 });
+}
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         let _ = self.0.kill();
@@ -50,7 +133,9 @@ fn start(path: &Path, mode: &str) -> ChildGuard {
 }
 fn process(backend: &mut dyn Backend, path: &Path, pid: u32) -> Process {
     let target = Target::new(path).unwrap();
-    let result = backend.scan(&target, &Cancellation::default()).unwrap();
+    let result = backend
+        .traced_scan(&target, &Cancellation::default())
+        .unwrap();
     result
         .processes
         .into_iter()
@@ -64,6 +149,24 @@ fn fixture_helper() {
     };
     let path = PathBuf::from(path);
     let mode = std::env::var("OFLH_MODE").unwrap();
+    #[cfg(windows)]
+    if mode == "oplock" {
+        windows_oplock_fixture(&path);
+        return;
+    }
+    #[cfg(windows)]
+    if matches!(
+        mode.as_str(),
+        "mapped-closed"
+            | "directory"
+            | "deleted"
+            | "handle-read"
+            | "handle-write"
+            | "handle-metadata"
+    ) {
+        windows_reference_fixture(&path, &mode);
+        return;
+    }
     if mode == "parent" {
         let mut child = Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "fixture_helper", "--nocapture"])
@@ -252,7 +355,9 @@ fn native_lock_modes_and_release() {
         let target = Target::new(&path).unwrap();
         let until = std::time::Instant::now() + Duration::from_secs(5);
         loop {
-            let r = backend.scan(&target, &Cancellation::default()).unwrap();
+            let r = backend
+                .traced_scan(&target, &Cancellation::default())
+                .unwrap();
             if !r.processes.iter().any(|p| {
                 p.identity.pid == child.0.id() && p.usages.iter().any(|u| u.lock.is_some())
             }) {
@@ -276,7 +381,7 @@ fn native_cancellation_and_protection() {
     let c = Cancellation::default();
     c.cancel();
     assert!(matches!(
-        b.scan(&Target::new(".").unwrap(), &c),
+        b.traced_scan(&Target::new(".").unwrap(), &c),
         Err(Error::Cancelled)
     ));
     for pid in [0, 1, std::process::id()] {
@@ -332,7 +437,7 @@ fn deleted_replacement_and_hardlink() {
     assert!(p.usages.iter().any(|u| u.deleted));
     fs::write(&path, vec![1; 4096]).unwrap();
     let result = b
-        .scan(&Target::new(&path).unwrap(), &Cancellation::default())
+        .traced_scan(&Target::new(&path).unwrap(), &Cancellation::default())
         .unwrap();
     assert!(
         !result
@@ -377,7 +482,7 @@ fn native_parent_termination() {
     let until = std::time::Instant::now() + Duration::from_secs(10);
     loop {
         let r = b
-            .scan(&Target::new(&path).unwrap(), &Cancellation::default())
+            .traced_scan(&Target::new(&path).unwrap(), &Cancellation::default())
             .unwrap();
         if !r
             .processes
@@ -393,11 +498,9 @@ fn native_parent_termination() {
         std::thread::sleep(Duration::from_millis(50));
     }
 }
-#[test]
-fn independent_c_fixture() {
-    let dir = tempfile::tempdir().unwrap();
+fn compile_c_fixture(directory: &Path) -> PathBuf {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/lock-fixture.c");
-    let exe = dir.path().join(if cfg!(windows) {
+    let exe = directory.join(if cfg!(windows) {
         "fixture.exe"
     } else {
         "fixture"
@@ -426,7 +529,7 @@ fn independent_c_fixture() {
         .cargo_metadata(false)
         .get_compiler();
     let mut command = compiler.to_command();
-    command.current_dir(dir.path());
+    command.current_dir(directory);
     if compiler.is_like_msvc() {
         command.arg(&source).arg(format!("/Fe:{}", exe.display()));
     } else {
@@ -438,6 +541,13 @@ fn independent_c_fixture() {
             .expect("C compiler required for independent interoperability test")
             .success()
     );
+    exe
+}
+
+#[test]
+fn independent_c_fixture() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = compile_c_fixture(dir.path());
     for mode in ["open", "read", "write", "range"] {
         let path = dir.path().join("external.dat");
         fs::write(&path, vec![0; 4096]).unwrap();
@@ -463,4 +573,650 @@ fn independent_c_fixture() {
             p.usages
         );
     }
+}
+
+#[test]
+fn directory_batches_keep_distinct_native_file_users_and_progress() {
+    let directory = tempfile::tempdir().unwrap();
+    let first = directory.path().join("first");
+    let second = directory.path().join("second");
+    fs::create_dir_all(&first).unwrap();
+    fs::create_dir_all(&second).unwrap();
+    for index in 0..1100 {
+        fs::write(first.join(format!("unused-{index:04}.bin")), [0; 64]).unwrap();
+    }
+    let first_file = first.join("held ü.bin");
+    let second_file = second.join("held with spaces.bin");
+    fs::write(&first_file, [0; 4096]).unwrap();
+    fs::write(&second_file, [0; 4096]).unwrap();
+    let first_child = start(&first_file, "open");
+    let second_child = start(&second_file, "open");
+    let mut backend = native().unwrap();
+    let first_observation = process(&mut *backend, &first_file, first_child.0.id());
+    let second_observation = process(&mut *backend, &second_file, second_child.0.id());
+    let cancel = Cancellation::default();
+    let snapshot = backend
+        .traced_scan(&Target::new(directory.path()).unwrap(), &cancel)
+        .unwrap();
+    for expected in [&first_observation, &second_observation] {
+        let observed = snapshot
+            .processes
+            .iter()
+            .find(|process| process.identity == expected.identity)
+            .unwrap();
+        for usage in expected
+            .usages
+            .iter()
+            .filter(|usage| usage.relation != Relation::Cwd)
+        {
+            #[cfg(windows)]
+            let matches = observed.usages.iter().any(|candidate| {
+                let mut expected = usage.clone();
+                if matches!(
+                    expected.relation,
+                    Relation::RestartManager | Relation::NativeFileUser
+                ) {
+                    expected.relation = Relation::Open;
+                }
+                *candidate == expected
+            });
+            #[cfg(not(windows))]
+            let matches = observed.usages.contains(usage);
+            assert!(
+                matches,
+                "directory lost a single-file observation: {usage:?}"
+            );
+        }
+    }
+    let progress = cancel.progress();
+    assert!(progress.processes > 0);
+    assert!(progress.resources > 0);
+    #[cfg(windows)]
+    {
+        assert_eq!(progress.files, 2);
+        assert_eq!(progress.directories, 0);
+        assert_eq!(progress.resource_queries, 0);
+        assert_eq!(progress.native_handle_snapshots, 1);
+        assert!(progress.native_handle_names > 0 && progress.memory_regions > 0);
+        assert_eq!(progress.file_identity_queries, 0);
+    }
+    #[cfg(unix)]
+    {
+        // Unix enumerates process references; it does not walk unused disk files.
+        assert_eq!(progress.files, 0);
+        assert_eq!(progress.directories, 0);
+    }
+}
+
+#[test]
+fn directory_inspection_retains_more_than_150_distinct_native_users() {
+    let directory = tempfile::tempdir().unwrap();
+    let executable = compile_c_fixture(directory.path());
+    let data = directory.path().join("data");
+    fs::create_dir(&data).unwrap();
+    let path = data.join("shared.bin");
+    fs::write(&path, [0; 64]).unwrap();
+    let expected_path = Target::new(&path).unwrap().path;
+    let mut children = Vec::new();
+    for _ in 0..160 {
+        let mut child = ChildGuard(
+            Command::new(&executable)
+                .arg("open")
+                .arg(&path)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::inherit())
+                .spawn()
+                .unwrap(),
+        );
+        ready(&mut child.0);
+        children.push(child);
+    }
+    let snapshot = native()
+        .unwrap()
+        .traced_scan(&Target::new(&data).unwrap(), &Cancellation::default())
+        .unwrap();
+    let observed: std::collections::BTreeSet<_> = snapshot
+        .processes
+        .iter()
+        .filter(|process| {
+            process
+                .usages
+                .iter()
+                .any(|usage| usage.path == expected_path)
+        })
+        .map(|process| process.identity.pid)
+        .collect();
+    let missing = children
+        .iter()
+        .filter(|child| !observed.contains(&child.0.id()))
+        .count();
+    let observed_identities = children
+        .iter()
+        .filter(|child| {
+            snapshot
+                .processes
+                .iter()
+                .any(|process| process.identity.pid == child.0.id())
+        })
+        .count();
+    assert_eq!(
+        missing,
+        0,
+        "native directory inspection lost fixture users: matched={}, identities={}, warnings={}, resource_errors={:?}",
+        observed.len(),
+        observed_identities,
+        snapshot.warnings.len(),
+        snapshot
+            .warnings
+            .iter()
+            .filter(|warning| warning.starts_with("Restart Manager query failed:"))
+            .collect::<Vec<_>>()
+    );
+    assert!(observed.len() >= 160);
+}
+
+/// Hold a read/handle oplock and deliberately do not acknowledge a break until
+/// the parent closes stdin. Every asynchronous buffer stays owned until drained.
+#[cfg(windows)]
+fn windows_oplock_fixture(path: &Path) {
+    use std::os::windows::{
+        fs::OpenOptionsExt,
+        io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    };
+    use windows_sys::Win32::{
+        Foundation::*,
+        Storage::FileSystem::*,
+        System::{IO::*, Ioctl::*, Threading::*},
+    };
+    let file = OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_OVERLAPPED)
+        .open(path)
+        .unwrap();
+    // SAFETY: unnamed manual-reset event with valid arguments, newly owned.
+    let event = unsafe { CreateEventW(std::ptr::null(), 1, 0, std::ptr::null()) };
+    assert!(!event.is_null() && event != INVALID_HANDLE_VALUE);
+    // SAFETY: exactly one owner of the event returned above.
+    let event = unsafe { OwnedHandle::from_raw_handle(event) };
+    struct PendingOplock {
+        file: std::fs::File,
+        _event: OwnedHandle,
+        input: Box<REQUEST_OPLOCK_INPUT_BUFFER>,
+        output: Box<REQUEST_OPLOCK_OUTPUT_BUFFER>,
+        overlapped: Box<OVERLAPPED>,
+        pending: bool,
+    }
+    impl Drop for PendingOplock {
+        fn drop(&mut self) {
+            if !self.pending {
+                return;
+            }
+            // SAFETY: live file and stable async storage; cancel may race a
+            // completed break. Always drain before these owned fields drop.
+            unsafe { CancelIoEx(self.file.as_raw_handle(), &*self.overlapped) };
+            let mut returned = 0;
+            // SAFETY: same file/OVERLAPPED, exact output, wait for completion.
+            unsafe {
+                GetOverlappedResult(
+                    self.file.as_raw_handle(),
+                    &*self.overlapped,
+                    &mut returned,
+                    1,
+                )
+            };
+        }
+    }
+    let overlapped = Box::new(OVERLAPPED {
+        hEvent: event.as_raw_handle(),
+        ..OVERLAPPED::default()
+    });
+    let mut operation = PendingOplock {
+        file,
+        _event: event,
+        pending: false,
+        overlapped,
+        input: Box::new(REQUEST_OPLOCK_INPUT_BUFFER {
+            StructureVersion: REQUEST_OPLOCK_CURRENT_VERSION as u16,
+            StructureLength: std::mem::size_of::<REQUEST_OPLOCK_INPUT_BUFFER>() as u16,
+            RequestedOplockLevel: OPLOCK_LEVEL_CACHE_READ | OPLOCK_LEVEL_CACHE_HANDLE,
+            Flags: REQUEST_OPLOCK_INPUT_FLAG_REQUEST,
+        }),
+        output: Box::new(REQUEST_OPLOCK_OUTPUT_BUFFER::default()),
+    };
+    let mut returned = 0;
+    // SAFETY: live overlapped file/event, exact SDK input/output extents, boxes
+    // keep all addresses stable until cancellation and completion below.
+    let result = unsafe {
+        DeviceIoControl(
+            operation.file.as_raw_handle(),
+            FSCTL_REQUEST_OPLOCK,
+            (&mut *operation.input as *mut REQUEST_OPLOCK_INPUT_BUFFER).cast(),
+            std::mem::size_of::<REQUEST_OPLOCK_INPUT_BUFFER>() as u32,
+            (&mut *operation.output as *mut REQUEST_OPLOCK_OUTPUT_BUFFER).cast(),
+            std::mem::size_of::<REQUEST_OPLOCK_OUTPUT_BUFFER>() as u32,
+            &mut returned,
+            &mut *operation.overlapped,
+        )
+    };
+    let code = if result == 0 {
+        // SAFETY: capture the immediate DeviceIoControl status before any calls.
+        unsafe { GetLastError() }
+    } else {
+        0
+    };
+    operation.pending = result == 0 && code == ERROR_IO_PENDING;
+    assert_eq!(result, 0);
+    assert_eq!(code, ERROR_IO_PENDING);
+    assert_eq!(
+        // SAFETY: owned event, zero timeout verifies the request awaits a break.
+        unsafe { WaitForSingleObject(operation._event.as_raw_handle(), 0) },
+        WAIT_TIMEOUT
+    );
+    println!("OFLH READY {}", std::process::id());
+    std::io::stdout().flush().unwrap();
+    let mut line = String::new();
+    let _ = std::io::stdin().read_line(&mut line);
+    drop(operation);
+}
+
+#[cfg(windows)]
+fn windows_reference_fixture(path: &Path, mode: &str) {
+    use std::os::windows::{
+        fs::OpenOptionsExt,
+        io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    };
+    use windows_sys::Win32::{Foundation::*, Storage::FileSystem::*, System::Memory::*};
+    let file = OpenOptions::new()
+        .read(true)
+        .access_mode(match mode {
+            "handle-write" => GENERIC_WRITE,
+            "handle-metadata" => 0,
+            _ => GENERIC_READ,
+        })
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(if mode == "directory" {
+            FILE_FLAG_BACKUP_SEMANTICS
+        } else {
+            0
+        })
+        .open(path)
+        .unwrap();
+    struct View(MEMORY_MAPPED_VIEW_ADDRESS);
+    impl Drop for View {
+        fn drop(&mut self) {
+            // SAFETY: exactly the live view returned by MapViewOfFile, unmapped once.
+            unsafe { UnmapViewOfFile(self.0) };
+        }
+    }
+    let view = if mode == "mapped-closed" {
+        // SAFETY: owned file with 4096 bytes, read-only unnamed mapping, valid inputs.
+        let section = unsafe {
+            CreateFileMappingW(
+                file.as_raw_handle(),
+                std::ptr::null(),
+                PAGE_READONLY,
+                0,
+                0,
+                std::ptr::null(),
+            )
+        };
+        assert!(!section.is_null() && section != INVALID_HANDLE_VALUE);
+        // SAFETY: a newly returned section handle transfers to exactly one RAII owner.
+        let section = unsafe { OwnedHandle::from_raw_handle(section) };
+        // SAFETY: live mapping section, read-only bounded view of the fixture file.
+        let view = unsafe { MapViewOfFile(section.as_raw_handle(), FILE_MAP_READ, 0, 0, 4096) };
+        assert!(!view.Value.is_null());
+        drop(section);
+        Some(View(view))
+    } else {
+        None
+    };
+    if mode == "deleted" {
+        let original = Target::new(path).unwrap();
+        fs::remove_file(path).unwrap();
+        let mut info = FILE_STANDARD_INFO::default();
+        // SAFETY: live fixture handle and exact writable SDK record, diagnostic only.
+        let ok = unsafe {
+            GetFileInformationByHandleEx(
+                file.as_raw_handle(),
+                FileStandardInfo,
+                (&mut info as *mut FILE_STANDARD_INFO).cast(),
+                std::mem::size_of::<FILE_STANDARD_INFO>() as u32,
+            )
+        };
+        let mut matches = Vec::new();
+        let mut query_codes = Vec::new();
+        for flags in [FILE_NAME_NORMALIZED, FILE_NAME_OPENED] {
+            let mut name = vec![0u16; 32768];
+            // SAFETY: owned fixture handle and stated writable UTF-16 extent.
+            let length = unsafe {
+                GetFinalPathNameByHandleW(
+                    file.as_raw_handle(),
+                    name.as_mut_ptr(),
+                    name.len() as u32,
+                    flags | VOLUME_NAME_DOS,
+                )
+            } as usize;
+            query_codes.push(if length == 0 {
+                std::io::Error::last_os_error().raw_os_error()
+            } else {
+                None
+            });
+            use std::os::windows::ffi::OsStringExt;
+            let observed = PathBuf::from(std::ffi::OsString::from_wide(
+                &name[..length.min(name.len())],
+            ));
+            matches.push(length > 0 && length < name.len() && original.matches(&observed, None));
+        }
+        let mut named = vec![0u32; 16_385];
+        // SAFETY: aligned writable allocation and exact variable-length SDK output size.
+        let named_ok = unsafe {
+            GetFileInformationByHandleEx(
+                file.as_raw_handle(),
+                FileNameInfo,
+                named.as_mut_ptr().cast(),
+                std::mem::size_of_val(named.as_slice()) as u32,
+            )
+        };
+        let named_code = if named_ok == 0 {
+            std::io::Error::last_os_error().raw_os_error()
+        } else {
+            None
+        };
+        let original_relative: Vec<_> = {
+            use std::os::windows::ffi::OsStrExt;
+            let mut components = original.path.components();
+            components.next();
+            components.as_path().as_os_str().encode_wide().collect()
+        };
+        let named_original = if named_ok != 0
+            && named[0] as usize <= std::mem::size_of_val(named.as_slice()) - 4
+            && named[0].is_multiple_of(2)
+        {
+            // SAFETY: SDK initialized exactly the byte extent validated above.
+            let relative = unsafe {
+                std::slice::from_raw_parts(
+                    named.as_ptr().add(1).cast::<u16>(),
+                    named[0] as usize / 2,
+                )
+            };
+            relative == original_relative
+        } else {
+            false
+        };
+        // Aggregate diagnostics reveal no native paths or process identities.
+        eprintln!(
+            "deleted fixture: metadata_ok={ok}, pending={}, links={}, normalized_matches={}, opened_matches={}, final_query_codes={query_codes:?}, file_name_ok={named_ok}, file_name_code={named_code:?}, file_name_original={named_original}",
+            info.DeletePending, info.NumberOfLinks, matches[0], matches[1]
+        );
+        println!(
+            "OFLH DELETION ORIGINAL {}",
+            matches.iter().any(|matched| *matched) || named_original
+        );
+    }
+    let held_file = if mode == "mapped-closed" {
+        drop(file);
+        None
+    } else {
+        Some(file)
+    };
+    println!("OFLH READY {}", std::process::id());
+    std::io::stdout().flush().unwrap();
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line).unwrap();
+    drop(view);
+    drop(held_file);
+}
+
+#[cfg(windows)]
+#[test]
+fn handle_scan_finds_late_files_without_traversal_or_ten_thousand_file_cap() {
+    let directory = tempfile::tempdir().unwrap();
+    for index in 0..10_050 {
+        fs::write(
+            directory.path().join(format!("file-{index:05}.bin")),
+            [0; 4096],
+        )
+        .unwrap();
+    }
+    let held = directory.path().join("file-10049.bin");
+    let child = start(&held, "open");
+    let cancel = Cancellation::default();
+    let snapshot = native()
+        .unwrap()
+        .traced_scan(&Target::new(directory.path()).unwrap(), &cancel)
+        .unwrap();
+    let expected = Target::new(&held).unwrap().path;
+    assert!(snapshot.processes.iter().any(|process| {
+        process.identity.pid == child.0.id()
+            && process
+                .usages
+                .iter()
+                .any(|usage| usage.path == expected && usage.relation == Relation::Open)
+    }));
+    let progress = cancel.progress();
+    assert_eq!(progress.files, 1);
+    assert_eq!(progress.directories, 0);
+    assert_eq!(progress.resource_queries, 0);
+    assert_eq!(progress.native_handle_snapshots, 1);
+    assert!(
+        !snapshot
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("10,000") || warning.contains("helper"))
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn directory_handle_and_closed_file_mapping_remain_visible() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("mapping ü.bin");
+    fs::write(&path, [0; 4096]).unwrap();
+    let mapped = start(&path, "mapped-closed");
+    let held_directory = start(directory.path(), "directory");
+    let snapshot = native()
+        .unwrap()
+        .traced_scan(
+            &Target::new(directory.path()).unwrap(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+    let expected = Target::new(&path).unwrap().path;
+    let process = snapshot
+        .processes
+        .iter()
+        .find(|process| process.identity.pid == mapped.0.id())
+        .unwrap();
+    assert!(process.usages.iter().any(|usage| usage.path == expected
+        && usage.relation == Relation::Mapped
+        && usage.access == Access::Mapped));
+    assert!(
+        !process
+            .usages
+            .iter()
+            .any(|usage| usage.path == expected && usage.relation == Relation::Open)
+    );
+    let expected = Target::new(directory.path()).unwrap().path;
+    assert!(
+        snapshot
+            .processes
+            .iter()
+            .any(|process| process.identity.pid == held_directory.0.id()
+                && process.usages.iter().any(|usage| usage.path == expected
+                    && usage.relation == Relation::Open
+                    && usage.access == Access::Directory))
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn directory_sharing_probe_does_not_wait_for_an_unacknowledged_oplock_break() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("oplock.bin");
+    fs::write(&path, [0; 4096]).unwrap();
+    let child = start(&path, "oplock");
+    let snapshot = native()
+        .unwrap()
+        .traced_scan(
+            &Target::new(directory.path()).unwrap(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+    let expected = Target::new(&path).unwrap().path;
+    let process = snapshot
+        .processes
+        .iter()
+        .find(|process| process.identity.pid == child.0.id())
+        .expect("oplock holder missing");
+    assert!(
+        process
+            .usages
+            .iter()
+            .any(|usage| usage.path == expected && usage.relation == Relation::Open)
+    );
+    assert!(
+        !process.usages.iter().any(|usage| usage.path == expected
+            && matches!(usage.lock, Some(LockEvidence::SharingConflict(_)))),
+        "an oplock is not a sharing denial"
+    );
+    assert!(
+        !snapshot.warnings.iter().any(|warning| warning
+            .starts_with("Windows handle inspection incomplete:")
+            || warning.starts_with("Windows handle inspection unavailable:")),
+        "sharing probe waited for the holder: {:?}",
+        snapshot.warnings
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn directory_inspection_keeps_read_only_write_only_and_metadata_only_handles() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut children = Vec::new();
+    for mode in ["handle-read", "handle-write", "handle-metadata"] {
+        let path = directory.path().join(format!("{mode}.bin"));
+        fs::write(&path, [0; 4096]).unwrap();
+        let child = start(&path, mode);
+        children.push((child, Target::new(&path).unwrap().path));
+    }
+    let snapshot = native()
+        .unwrap()
+        .traced_scan(
+            &Target::new(directory.path()).unwrap(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+    for (child, path) in &children {
+        let process = snapshot
+            .processes
+            .iter()
+            .find(|process| process.identity.pid == child.0.id())
+            .expect("minimal-rights handle user missing");
+        assert_ne!(process.identity.started, 0);
+        assert!(process.usages.iter().any(|usage| usage.path == *path
+            && usage.relation == Relation::Open
+            && usage.access == Access::Unknown));
+    }
+    assert!(
+        !snapshot.warnings.iter().any(|warning| warning
+            .starts_with("Windows handle inspection incomplete:")
+            || warning.starts_with("Windows handle inspection unavailable:")),
+        "helper failed: {:?}",
+        snapshot.warnings
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn directory_inspection_retains_an_outside_opened_hard_link_and_deleted_reference() {
+    let fixture = tempfile::tempdir().unwrap();
+    let directory = fixture.path().join("inspected");
+    fs::create_dir(&directory).unwrap();
+    let outside = fixture.path().join("outside.bin");
+    let alias = directory.join("alias.bin");
+    let deleted = directory.join("deleted.bin");
+    fs::write(&outside, [0; 4096]).unwrap();
+    fs::hard_link(&outside, &alias).unwrap();
+    fs::write(&deleted, [0; 4096]).unwrap();
+    let alias_child = start(&outside, "open");
+    let (deleted_child, original_name_available) = start_deleted_fixture(&deleted);
+    let target = Target::new(&directory).unwrap();
+    let expected_alias = Target::new(&alias).unwrap().path;
+    let expected_deleted = target.path.join("deleted.bin");
+    let snapshot = native()
+        .unwrap()
+        .traced_scan(&target, &Cancellation::default())
+        .unwrap();
+    assert!(snapshot.processes.iter().any(|process| {
+        process.identity.pid == alias_child.0.id()
+            && process
+                .usages
+                .iter()
+                .any(|usage| usage.path == expected_alias && usage.relation == Relation::Open)
+    }));
+    let original_observed = snapshot.processes.iter().any(|process| {
+        process.identity.pid == deleted_child.0.id()
+            && process.usages.iter().any(|usage| {
+                usage.path == expected_deleted && usage.relation == Relation::Open && usage.deleted
+            })
+    });
+    if original_name_available {
+        assert!(
+            original_observed,
+            "deleted reference missing despite independently visible native name"
+        );
+    } else {
+        // Modern Windows POSIX unlink can discard the old parent/name even
+        // while the descriptor stays live. Require a specific coverage warning,
+        // and reject an invented association with the old path.
+        assert!(
+            !original_observed,
+            "deleted-file name was guessed after native name loss"
+        );
+        assert!(
+            snapshot
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("resolve original folder of deleted handle")),
+            "original native name unavailable without explicit partial warning"
+        );
+    }
+}
+
+#[cfg(windows)]
+fn start_deleted_fixture(path: &Path) -> (ChildGuard, bool) {
+    let mut child = ChildGuard(
+        Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "fixture_helper", "--nocapture"])
+            .env("OFLH_FIXTURE", path)
+            .env("OFLH_MODE", "deleted")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap(),
+    );
+    let output = child.0.stdout.take().unwrap();
+    let (sender, receiver) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let mut visible = None;
+        for line in BufReader::new(output).lines() {
+            let line = line.unwrap();
+            if let Some(value) = line.strip_prefix("OFLH DELETION ORIGINAL ") {
+                visible = Some(value.parse::<bool>().unwrap());
+            }
+            if line.starts_with("OFLH READY ") {
+                sender.send(visible).unwrap();
+                break;
+            }
+        }
+    });
+    let original_visible = receiver
+        .recv_timeout(Duration::from_secs(15))
+        .unwrap()
+        .expect("missing independent native deletion capability");
+    (child, original_visible)
 }

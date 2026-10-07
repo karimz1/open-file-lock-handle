@@ -7,7 +7,14 @@ use oflh_core::{
 use std::{
     cmp::Ordering,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
 };
+
+type RowMatch = (usize, Option<usize>, u32);
+struct CachedQuery {
+    query: TableQuery,
+    rows: Arc<[RowMatch]>,
+}
 
 /// Snapshot-owned search cache. Cloning the surrounding Arc is cheap for IPC commands.
 pub struct Dataset {
@@ -18,6 +25,8 @@ pub struct Dataset {
     indices: Vec<ProcessIndex>,
     port_indices: Vec<Vec<oflh_core::ports::PortIndex>>,
     identities: std::collections::HashMap<String, usize>,
+    query_cache: Mutex<Option<CachedQuery>>,
+    counts: (usize, usize, usize),
 }
 impl Dataset {
     /// Build an immutable snapshot and its reusable indices.
@@ -40,13 +49,64 @@ impl Dataset {
                     .collect()
             })
             .collect();
+        let counts = (
+            snapshot
+                .processes
+                .iter()
+                .filter(|process| !process.usages.is_empty())
+                .count(),
+            snapshot
+                .processes
+                .iter()
+                .map(|process| process.ports.len())
+                .sum(),
+            snapshot
+                .processes
+                .iter()
+                .map(|process| process.usages.len())
+                .sum(),
+        );
         Self {
+            query_cache: Mutex::new(None),
+            counts,
             port_indices,
             identities,
             revision,
             snapshot,
             indices,
         }
+    }
+    /// File users in the accepted snapshot, computed once during indexing.
+    pub fn file_users(&self) -> usize {
+        self.counts.0
+    }
+    /// Local bindings in the accepted snapshot.
+    pub fn port_count(&self) -> usize {
+        self.counts.1
+    }
+    /// Target-matching observations in the accepted snapshot.
+    pub fn usage_count(&self) -> usize {
+        self.counts.2
+    }
+    /// One snapshot-local query cache bounds memory while reusing search/sort
+    /// results across viewport pages, selection and content-width measurements.
+    fn cached_matches(&self, request: &TableQuery) -> Result<Arc<[RowMatch]>, Failure> {
+        let mut query = request.clone();
+        query.offset = 0;
+        query.limit = 0;
+        let mut cache = self
+            .query_cache
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(cached) = cache.as_ref().filter(|cached| cached.query == query) {
+            return Ok(cached.rows.clone());
+        }
+        let rows: Arc<[RowMatch]> = self.matched(&query)?.into();
+        *cache = Some(CachedQuery {
+            query,
+            rows: rows.clone(),
+        });
+        Ok(rows)
     }
     /// Resolve a captured lifetime key without accepting a PID-only substitute.
     pub fn process(&self, key: &str) -> Result<(usize, &Process), Failure> {
@@ -182,18 +242,33 @@ impl Dataset {
             // As in the TUI, metadata may satisfy terms, but all remaining terms
             // must match one observation rather than unrelated paths in the same process.
             let file_query = query.file_terms(&index.metadata, &mut scratch);
+            // Metadata is immutable across usages. Ranking is needed only for
+            // relevance ordering, and its metadata score is shared by this process.
+            let relevance = request.sort == Sort::Relevance;
+            let metadata_score = if relevance && request.handles {
+                query.score(&index.metadata, &mut scratch)
+            } else {
+                0
+            };
             for (usage_index, fields) in index.usages.iter().enumerate() {
                 if request.locks_only && process.usages[usage_index].lock.is_none() {
                     continue;
                 }
                 if file_query.matches(fields, &mut scratch) {
                     if !request.handles {
-                        matches.push((process_index, None, index.score(&query, &mut scratch)));
+                        let score = if relevance {
+                            index.score(&query, &mut scratch)
+                        } else {
+                            0
+                        };
+                        matches.push((process_index, None, score));
                         break;
                     }
-                    let score = query
-                        .score(fields, &mut scratch)
-                        .max(query.score(&index.metadata, &mut scratch));
+                    let score = if relevance {
+                        query.score(fields, &mut scratch).max(metadata_score)
+                    } else {
+                        0
+                    };
                     matches.push((process_index, Some(usage_index), score));
                 }
             }
@@ -316,9 +391,9 @@ impl Dataset {
     pub fn keys(&self, request: &TableQuery) -> Result<Vec<String>, Failure> {
         let mut seen = std::collections::HashSet::new();
         let keys: Vec<_> = self
-            .matched(request)?
-            .into_iter()
-            .map(|(index, _, _)| identity_key(self.snapshot.processes[index].identity))
+            .cached_matches(request)?
+            .iter()
+            .map(|(index, _, _)| identity_key(self.snapshot.processes[*index].identity))
             .filter(|key| seen.insert(key.clone()))
             .collect();
         if keys.len() > 10000 {
@@ -330,10 +405,11 @@ impl Dataset {
     }
     /// Return at most 200 sorted rows; the full native snapshot remains in Rust.
     pub fn page(&self, request: &TableQuery) -> Result<Page, Failure> {
-        let matches = self.matched(request)?;
+        let matches = self.cached_matches(request)?;
         let total = matches.len();
         let rows = matches
-            .into_iter()
+            .iter()
+            .copied()
             .skip(request.offset)
             .take(request.limit.clamp(1, 200))
             .map(|(process, usage, _)| {
@@ -427,7 +503,8 @@ impl Dataset {
                 .collect(),
         })
     }
-    /// Copy original text, never the sanitized presentation. Reject lossy path conversion.
+    /// Copy unsanitized, lossless text. Ordinary Windows paths use familiar
+    /// notation; namespace-dependent paths retain their native prefix.
     pub fn copy_text(
         &self,
         keys: &[String],
@@ -452,11 +529,20 @@ impl Dataset {
             } else {
                 path.as_os_str()
             };
-            return value.to_str().map(str::to_owned).ok_or_else(|| {
-                Failure::invalid(
-                    "This native path cannot be represented losslessly as clipboard text",
-                )
-            });
+            return value
+                .to_str()
+                .map(|text| {
+                    if field == "path" {
+                        crate::path_text::clipboard(text)
+                    } else {
+                        text.to_owned()
+                    }
+                })
+                .ok_or_else(|| {
+                    Failure::invalid(
+                        "This native path cannot be represented losslessly as clipboard text",
+                    )
+                });
         }
         if keys.is_empty() || keys.len() > 10000 {
             return Err(Failure::invalid("Select between 1 and 10,000 processes"));
@@ -472,9 +558,11 @@ impl Dataset {
                     process.name,
                     process.identity.pid,
                     process.user,
-                    process.executable.to_str().ok_or_else(|| Failure::invalid(
-                        "An executable path cannot be represented losslessly as clipboard text"
-                    ))?
+                    crate::path_text::clipboard(process.executable.to_str().ok_or_else(|| {
+                        Failure::invalid(
+                            "An executable path cannot be represented losslessly as clipboard text",
+                        )
+                    })?)
                 ),
                 _ => return Err(Failure::invalid("Unknown copy field")),
             });
@@ -537,7 +625,7 @@ fn row_path(process: &Process, usage: Option<usize>) -> &Path {
         .unwrap_or(&process.executable)
 }
 pub(crate) fn display(path: &Path) -> String {
-    safe(&path.to_string_lossy())
+    crate::path_text::display(path)
 }
 
 #[cfg(test)]
@@ -574,6 +662,66 @@ mod tests {
                 warnings: vec![],
             },
         )
+    }
+    #[test]
+    fn relevance_and_column_sorts_keep_metadata_and_file_matches_with_stable_order() {
+        let dataset = Dataset::new(
+            1,
+            Snapshot {
+                processes: [
+                    (10, "worker", "z", "zzz.bin"),
+                    (20, "other", "a", "worker.bin"),
+                ]
+                .into_iter()
+                .map(|(pid, name, exe, file)| Process {
+                    identity: Identity {
+                        pid,
+                        started: 10,
+                        ..Identity::default()
+                    },
+                    name: name.into(),
+                    executable: PathBuf::from(format!("/fixture/{exe}")),
+                    usages: vec![Usage {
+                        path: PathBuf::from(format!("/fixture/{file}")),
+                        ..Usage::default()
+                    }],
+                    ..Process::default()
+                })
+                .collect(),
+                warnings: vec![],
+            },
+        );
+        for handles in [false, true] {
+            for (sort, expected) in [
+                (Sort::Relevance, [10, 20]),
+                (Sort::Pid, [10, 20]),
+                (Sort::Name, [20, 10]),
+                (Sort::Path, [20, 10]),
+                (Sort::Cpu, [10, 20]),
+                (Sort::Memory, [10, 20]),
+            ] {
+                let mut query = TableQuery {
+                    handles,
+                    sort,
+                    text: "worker".into(),
+                    limit: 200,
+                    ..TableQuery::default()
+                };
+                for descending in [false, true] {
+                    query.descending = descending;
+                    let page = dataset.page(&query).unwrap();
+                    assert_eq!(page.total, 2);
+                    let mut expected = expected;
+                    if descending && !matches!(sort, Sort::Cpu | Sort::Memory) {
+                        expected.reverse();
+                    }
+                    assert_eq!(
+                        page.rows.iter().map(|row| row.pid).collect::<Vec<_>>(),
+                        expected
+                    );
+                }
+            }
+        }
     }
     #[test]
     fn column_filters_disambiguate_shared_paths_and_bound_unknown_metrics() {
@@ -735,6 +883,46 @@ mod tests {
             dataset.copy_text(&[], "filename", Some("7:0:0")).unwrap(),
             "FileLockExampleCli.dll"
         );
+    }
+    #[cfg(windows)]
+    #[test]
+    fn familiar_windows_text_never_replaces_native_path_references() {
+        let native = PathBuf::from(r"\\?\C:\Projects\file ü.bin");
+        let mut snapshot = fixture().snapshot;
+        snapshot.processes[0].executable = native.clone();
+        snapshot.processes[0].cwd = PathBuf::from(r"\\?\UNC\server\share\folder");
+        snapshot.processes[0].usages[0].path = native.clone();
+        let dataset = Dataset::new(9, snapshot);
+        let key = identity_key(dataset.snapshot.processes[0].identity);
+        let page = dataset.page(&TableQuery::default()).unwrap();
+        assert_eq!(page.rows[0].path, r"C:\Projects\file ü.bin");
+        let details = dataset.details(&key).unwrap();
+        assert_eq!(details.executable.display, r"C:\Projects\file ü.bin");
+        assert_eq!(details.cwd.display, r"\\server\share\folder");
+        assert_eq!(
+            dataset.copy_text(&[], "path", Some("9:0:0")).unwrap(),
+            r"C:\Projects\file ü.bin"
+        );
+        assert_eq!(dataset.path("9:0:0").unwrap(), native);
+        assert!(
+            dataset
+                .copy_text(&[key], "rows", None)
+                .unwrap()
+                .ends_with(r"C:\Projects\file ü.bin")
+        );
+    }
+    #[cfg(windows)]
+    #[test]
+    fn unpaired_utf16_paths_are_retained_and_never_copied_lossily() {
+        use std::os::windows::ffi::OsStringExt;
+        let mut units: Vec<u16> = r"\\?\C:\fixture\".encode_utf16().collect();
+        units.push(0xd800);
+        let path = PathBuf::from(std::ffi::OsString::from_wide(&units));
+        let mut snapshot = fixture().snapshot;
+        snapshot.processes[0].usages[0].path = path.clone();
+        let dataset = Dataset::new(9, snapshot);
+        assert_eq!(dataset.path("9:0:0").unwrap(), path);
+        assert!(dataset.copy_text(&[], "path", Some("9:0:0")).is_err());
     }
     #[cfg(unix)]
     #[test]
@@ -921,6 +1109,268 @@ mod port_tests {
                 .details(&row.process_key)
                 .unwrap()
                 .can_inspect_folder
+        );
+    }
+}
+
+#[cfg(test)]
+mod query_cache_tests {
+    use super::*;
+    use oflh_core::{Identity, Usage};
+    fn large_dataset(revision: u32) -> Dataset {
+        Dataset::new(
+            revision,
+            Snapshot {
+                processes: (0..1000)
+                    .map(|index| Process {
+                        identity: Identity {
+                            pid: 4000 + index,
+                            started: 10,
+                            started_sub: 0,
+                        },
+                        name: format!("worker-{index:04}"),
+                        usages: (0..20)
+                            .map(|usage| Usage {
+                                path: PathBuf::from(format!(
+                                    "/fixture/{index:04}/file-{usage:02}.bin"
+                                )),
+                                ..Usage::default()
+                            })
+                            .collect(),
+                        ..Process::default()
+                    })
+                    .collect(),
+                warnings: vec![],
+            },
+        )
+    }
+    #[test]
+    fn selection_safety_limit_does_not_truncate_inspection_or_late_pages() {
+        let dataset = Dataset::new(
+            1,
+            Snapshot {
+                processes: (4000..14001)
+                    .map(|pid| Process {
+                        identity: Identity {
+                            pid,
+                            started: 10,
+                            started_sub: 0,
+                        },
+                        name: "worker".into(),
+                        usages: vec![Usage {
+                            path: PathBuf::from("/fixture/shared.bin"),
+                            ..Usage::default()
+                        }],
+                        ..Process::default()
+                    })
+                    .collect(),
+                warnings: vec![],
+            },
+        );
+        let query = TableQuery {
+            sort: Sort::Pid,
+            offset: 9999,
+            limit: usize::MAX,
+            ..TableQuery::default()
+        };
+        let page = dataset.page(&query).unwrap();
+        assert_eq!(dataset.file_users(), 10001);
+        assert_eq!(page.total, 10001);
+        assert_eq!(
+            page.rows.iter().map(|row| row.pid).collect::<Vec<_>>(),
+            [13999, 14000]
+        );
+        let error = dataset.keys(&query).unwrap_err();
+        assert_eq!(error.kind, "invalid_request");
+        assert!(error.message.contains("10,000"));
+        assert_eq!(dataset.page(&query).unwrap().total, 10001);
+        let narrowed = TableQuery {
+            columns: ColumnFilters {
+                pid: Some(14000),
+                ..ColumnFilters::default()
+            },
+            ..query
+        };
+        assert_eq!(dataset.keys(&narrowed).unwrap(), ["14000:10:0"]);
+    }
+    #[test]
+    fn skipping_relevance_scores_preserves_all_per_observation_matches_and_selection() {
+        let dataset = large_dataset(1);
+        for handles in [false, true] {
+            for descending in [false, true] {
+                for sort in [
+                    Sort::Relevance,
+                    Sort::Pid,
+                    Sort::Name,
+                    Sort::Path,
+                    Sort::Cpu,
+                    Sort::Memory,
+                ] {
+                    let query = TableQuery {
+                        handles,
+                        descending,
+                        sort,
+                        text: "worker file-19".into(),
+                        offset: 950,
+                        limit: 200,
+                        ..TableQuery::default()
+                    };
+                    let matches = dataset.cached_matches(&query).unwrap();
+                    // Metadata supplies "worker"; exactly one observation supplies
+                    // "file-19". Ranking must never change the membership set.
+                    assert_eq!(matches.len(), 1000);
+                    let indices: std::collections::BTreeSet<_> = matches
+                        .iter()
+                        .map(|&(process, usage, score)| {
+                            assert_eq!(usage, handles.then_some(19));
+                            if sort == Sort::Relevance {
+                                assert!(score > 0);
+                            } else {
+                                assert_eq!(score, 0);
+                            }
+                            process
+                        })
+                        .collect();
+                    assert_eq!(indices, (0..1000).collect());
+                    let page = dataset.page(&query).unwrap();
+                    assert_eq!(page.total, 1000);
+                    assert_eq!(page.rows.len(), 50);
+                    let keys = dataset.keys(&query).unwrap();
+                    assert_eq!(keys.len(), 1000); // Selection includes offscreen matches.
+                    assert!(keys.contains(&"4000:10:0".to_owned()));
+                    assert!(keys.contains(&"4999:10:0".to_owned()));
+                    assert!(Arc::ptr_eq(
+                        &matches,
+                        &dataset.cached_matches(&query).unwrap()
+                    ));
+                    let split_terms = TableQuery {
+                        text: "worker file-01 file-19".into(),
+                        ..query
+                    };
+                    assert_eq!(dataset.page(&split_terms).unwrap().total, 0);
+                }
+            }
+        }
+    }
+    #[test]
+    fn a_new_snapshot_cannot_reuse_cached_lifetime_keys_or_native_path_references() {
+        let original = large_dataset(7);
+        let query = TableQuery {
+            handles: true,
+            process_key: Some("4000:10:0".into()),
+            ..TableQuery::default()
+        };
+        let old_page = original.page(&query).unwrap();
+        assert_eq!(old_page.total, 20);
+        assert_eq!(original.keys(&query).unwrap(), ["4000:10:0"]);
+        let old_reference = old_page.rows[0].path_ref.clone();
+        let mut snapshot = original.snapshot.clone();
+        snapshot.processes[0].identity.started = 11;
+        snapshot.processes[0].usages[0].path = PathBuf::from("/fixture/reused-pid.bin");
+        let refreshed = Dataset::new(8, snapshot);
+        assert_eq!(refreshed.page(&query).unwrap().total, 0);
+        assert!(refreshed.keys(&query).unwrap().is_empty());
+        assert!(refreshed.details("4000:10:0").is_err());
+        assert!(refreshed.path(&old_reference).is_err());
+        let new_query = TableQuery {
+            process_key: Some("4000:11:0".into()),
+            ..query
+        };
+        let new_page = refreshed.page(&new_query).unwrap();
+        assert_eq!(new_page.revision, 8);
+        assert_eq!(new_page.total, 20);
+        assert_eq!(refreshed.keys(&new_query).unwrap(), ["4000:11:0"]);
+        assert_eq!(
+            refreshed.path(&new_page.rows[0].path_ref).unwrap(),
+            PathBuf::from("/fixture/reused-pid.bin")
+        );
+        assert_eq!(
+            original.path(&old_reference).unwrap(),
+            PathBuf::from("/fixture/0000/file-00.bin")
+        );
+    }
+    #[test]
+    fn pages_and_selection_reuse_the_full_query_without_aliasing_filter_changes() {
+        let dataset = large_dataset(1);
+        let mut query = TableQuery {
+            handles: true,
+            sort: Sort::Pid,
+            ..TableQuery::default()
+        };
+        let original = dataset.cached_matches(&query).unwrap();
+        assert_eq!(original.len(), 20000);
+        query.offset = 199;
+        query.limit = 2;
+        assert!(Arc::ptr_eq(
+            &original,
+            &dataset.cached_matches(&query).unwrap()
+        ));
+        let boundary = dataset.page(&query).unwrap();
+        assert_eq!(boundary.total, 20000);
+        assert_eq!(boundary.rows.len(), 2);
+        assert_eq!(boundary.rows[0].pid, 4009);
+        assert_eq!(boundary.rows[1].pid, 4010);
+        assert_eq!(dataset.keys(&query).unwrap().len(), 1000);
+        assert!(Arc::ptr_eq(
+            &original,
+            &dataset.cached_matches(&query).unwrap()
+        ));
+        query.columns.pid = Some(4010);
+        let filtered = dataset.cached_matches(&query).unwrap();
+        assert_eq!(filtered.len(), 20);
+        assert!(!Arc::ptr_eq(&original, &filtered));
+        query.columns.pid = None;
+        query.descending = true;
+        assert_eq!(
+            dataset
+                .page(&TableQuery { offset: 0, ..query })
+                .unwrap()
+                .rows[0]
+                .pid,
+            4999
+        );
+        let refreshed = large_dataset(2);
+        assert!(!Arc::ptr_eq(
+            &original,
+            &refreshed
+                .cached_matches(&TableQuery {
+                    handles: true,
+                    sort: Sort::Pid,
+                    ..TableQuery::default()
+                })
+                .unwrap()
+        ));
+        assert_eq!(refreshed.usage_count(), 20000);
+    }
+    #[test]
+    fn cached_queries_do_not_bypass_validation_or_leak_between_ports_and_files() {
+        let dataset = large_dataset(1);
+        dataset.page(&TableQuery::default()).unwrap();
+        let ports = dataset
+            .page(&TableQuery {
+                ports: true,
+                ..TableQuery::default()
+            })
+            .unwrap();
+        assert_eq!(ports.total, 0);
+        assert!(
+            dataset
+                .page(&TableQuery {
+                    text: "a".repeat(4097),
+                    ..TableQuery::default()
+                })
+                .is_err()
+        );
+        assert!(
+            dataset
+                .page(&TableQuery {
+                    columns: ColumnFilters {
+                        cpu_min: Some(f64::NAN),
+                        ..ColumnFilters::default()
+                    },
+                    ..TableQuery::default()
+                })
+                .is_err()
         );
     }
 }

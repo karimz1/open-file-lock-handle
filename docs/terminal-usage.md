@@ -9,7 +9,7 @@ A file target shows references to that file; a folder target includes descendant
 **Processes** groups usages by process. **Locked files** shows only observations
 with lock or sharing-conflict evidence. Press `Enter` to inspect a process.
 
-Press `r` to refresh, or `a` for five-second auto-refresh. In details, `l` shows
+Press `r` or `F5` to refresh, or `a` for automatic refresh five seconds after the previous inspection finishes. Active inspections ignore further reloads. Press `z` to cancel; native calls already running may finish before cancellation is acknowledged. Progress shows elapsed time and attempted process/resource counts, not a completeness total. Accepted rows remain usable during refresh; the last successful scan duration stays visible. Automatic refresh pauses while editing search, reviewing confirmations/help or focusing the ancestry tree. In details, `l` shows
 only lock evidence. Search and filters stay active when you refresh. Use `←` and
 `→` to read a long path. On wider terminals, the side panel also shows process
 parents, CPU, and memory.
@@ -115,7 +115,9 @@ Press `?` for the full shortcut list. The main controls are:
 | `↑` / `↓`, `Enter` | Select and inspect |
 | `/`, then `Enter` / `Esc` | Edit search, then apply / cancel |
 | `Space` / `Ctrl+A` | Select one / all visible processes |
-| `r` / `a` | Refresh / five-second auto-refresh |
+| `r` / `F5` / `a` | Refresh / refresh / auto-refresh after completion |
+| `z` | Cancel active inspection |
+| `u` / `U` / `b` | Check releases / open available release / dismiss notice |
 | `k` / `x` | Terminate / force kill, with confirmation |
 | `Esc` | Go back or clear search |
 | `q` / `Ctrl+C` | Quit (`q` enters text while searching) |
@@ -128,3 +130,54 @@ Review the confirmation carefully. `Tab` changes focus, not views.
 Use an interactive terminal with Unicode and true-color support. A wider window
 provides room for the process table and side panel. No particular terminal
 emulator is required.
+
+### Windows drive roots
+
+`oflh 'C:\'` in PowerShell or `oflh C:\` in Command Prompt inspects the drive root.
+The terminal and desktop show ordinary drive/UNC paths in familiar form while keeping
+canonical native references for inspection and actions. Namespace-dependent names
+(such as devices, reserved names, trailing dots/spaces and alternate streams) retain
+the extended prefix. Clipboard conversion rejects non-Unicode paths and retains
+long verbatim paths when the destination's long-path support is unknown. On Unix,
+backslashes remain literal filename characters.
+
+## Terminal languages
+
+Use `oflh --language de .` for German or `oflh --language zh .` for Simplified Chinese.
+`--language en` selects English. `--language system` (the default) follows the first
+nonempty `LC_ALL`, `LC_MESSAGES` or `LANG`; Windows falls back to its native user
+locale when those variables are absent. Region variants such as `de_DE.UTF-8` and
+`zh-CN` resolve to the supported language; unsupported locales fall back to English.
+The same option localizes `--help` and CLI usage messages. Put options before PATH.
+
+Keyboard shortcuts, wildcard/port search syntax and access/relation search tokens
+(such as `read`, `mapped`, `locked`, `tcp` and `port:3000`) remain the same in every
+language. Process names, filenames and original OS diagnostic details are retained.
+`--version` always emits the same build/provenance format. Confirmations default to
+Cancel in every language and require enough terminal space to review the targets.
+
+## Release notices
+
+Versioned release builds check the same public stable-release manifest as desktop
+at startup and one hour after each completed check. A small footer line announces
+a newer stable version without replacing results, moving the grid, changing focus
+or starting another inspection. Press `u` to check, `U` to open the official release
+page when an update is visible, and `b` to dismiss that version for this session.
+A later version can appear again. These keys remain text while editing search and
+have no update action in process confirmations. Installation remains manual.
+
+Use `oflh --no-update-check .` to disable automatic and manual network checks.
+Unversioned development builds and pull-request artifacts also disable checks.
+Installed release candidates can be offered the corresponding stable release;
+build metadata does not change version precedence. Older releases and prereleases
+are never offered through the stable channel.
+
+Requests run on an independent worker with an eight-second request timeout,
+three-second connection timeout, verified HTTPS, restricted GitHub asset redirects
+and a 64 KiB response limit. Only the fixed public URL and generic request headers
+are sent; file paths, process data and credentials are not sent. The check bypasses
+proxy settings to avoid using proxy credentials; networks requiring a proxy may
+not support it. Automatic failures are quiet, and a known update survives a
+transient failure. Hourly checks do not cause periodic terminal redraws. The notice
+reads version information only, downloads no application binary and does not
+perform the desktop's signed installation workflow.

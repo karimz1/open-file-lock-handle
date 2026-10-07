@@ -16,3 +16,11 @@ oflh-platform.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
 unicode-width.workspace = true
+
+[features]
+# Developer-only synthetic profiles; excluded from normal application builds.
+profiling = []
+
+[[example]]
+name = "navigation_profile"
+required-features = ["profiling"]

@@ -1,10 +1,11 @@
+use crate::view::messages::Language;
 use crossterm::event::{KeyCode as K, KeyEvent, KeyModifiers as M};
 use oflh_core::ports::{PortIndex, PortQuery};
 use oflh_core::{
     search::{ProcessIndex, Query, Scratch},
     *,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Screen {
     Main,
@@ -43,17 +44,129 @@ pub enum Effect {
     None,
     Quit,
     Scan,
+    CancelScan,
+    CheckUpdate,
     FollowPort(Identity, std::path::PathBuf),
     Kill(Vec<Identity>, bool),
     Link(&'static str),
+}
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum UpdateFeedback {
+    #[default]
+    Quiet,
+    Checking,
+    Current,
+    Failed(String),
+}
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UpdateNotice {
+    pub enabled: bool,
+    pub checking: bool,
+    pub version: Option<String>,
+    dismissed: Option<String>,
+    manual: bool,
+    pub feedback: UpdateFeedback,
+}
+impl UpdateNotice {
+    pub fn visible_version(&self) -> Option<&str> {
+        self.version
+            .as_deref()
+            .filter(|version| self.dismissed.as_deref() != Some(*version))
+    }
+    pub fn begin(&mut self, manual: bool) -> bool {
+        if !self.enabled || self.checking {
+            return false;
+        }
+        self.checking = true;
+        self.manual = manual;
+        if manual {
+            self.feedback = UpdateFeedback::Checking;
+        }
+        true
+    }
+    pub fn complete(&mut self, result: std::result::Result<Option<String>, String>) -> bool {
+        let before = (
+            self.visible_version().map(str::to_owned),
+            self.feedback.clone(),
+        );
+        self.checking = false;
+        match result {
+            Ok(Some(version)) => {
+                self.version = Some(version);
+                self.feedback = UpdateFeedback::Quiet;
+            }
+            Ok(None) if self.manual => self.feedback = UpdateFeedback::Current,
+            Err(error) if self.manual => self.feedback = UpdateFeedback::Failed(error),
+            _ => {}
+        }
+        self.manual = false;
+        before
+            != (
+                self.visible_version().map(str::to_owned),
+                self.feedback.clone(),
+            )
+    }
+    pub fn dismiss(&mut self) {
+        self.dismissed = self.version.clone();
+        self.feedback = UpdateFeedback::Quiet;
+    }
+}
+/// Immutable search data prepared by the scanner, never by the render loop.
+pub struct PreparedSnapshot {
+    snapshot: Snapshot,
+    indices: Vec<ProcessIndex>,
+    port_indices: Vec<Vec<PortIndex>>,
+    positions: HashMap<Identity, usize>,
+    name_keys: Vec<String>,
+    file_processes: usize,
+}
+impl PreparedSnapshot {
+    pub fn new(snapshot: Snapshot, cancel: &Cancellation) -> Result<Self> {
+        cancel.set_phase(InspectionPhase::Indexing);
+        let mut indices = Vec::with_capacity(snapshot.processes.len());
+        let mut port_indices = Vec::with_capacity(snapshot.processes.len());
+        let mut positions = HashMap::with_capacity(snapshot.processes.len());
+        let mut name_keys = Vec::with_capacity(snapshot.processes.len());
+        let mut file_processes = 0;
+        for (position, process) in snapshot.processes.iter().enumerate() {
+            cancel.check()?;
+            indices.push(ProcessIndex::with_cancellation(process, cancel)?);
+            port_indices.push(
+                process
+                    .ports
+                    .iter()
+                    .map(|port| PortIndex::new(process, port))
+                    .collect(),
+            );
+            positions.insert(process.identity, position);
+            name_keys.push(process.name.to_lowercase());
+            file_processes += usize::from(!process.usages.is_empty());
+        }
+        cancel.check()?;
+        Ok(Self {
+            snapshot,
+            indices,
+            port_indices,
+            positions,
+            name_keys,
+            file_processes,
+        })
+    }
 }
 pub struct App {
     pub target: Target,
     pub follow_port_folder: bool,
     pub version: String,
+    pub language: Language,
+    pub update: UpdateNotice,
     pub snapshot: Snapshot,
     indices: Vec<ProcessIndex>,
     port_indices: Vec<Vec<PortIndex>>,
+    positions: HashMap<Identity, usize>,
+    name_keys: Vec<String>,
+    pub file_processes: usize,
+    pub locked_files: usize,
+    pub detail_locked_files: usize,
     pub rows: Vec<Row>,
     pub cursor: usize,
     pub screen: Screen,
@@ -80,6 +193,10 @@ pub struct App {
     pub hide_inspector: bool,
     pub auto: bool,
     pub scanning: bool,
+    pub scan_started: Option<std::time::Instant>,
+    pub scan_elapsed: std::time::Duration,
+    pub last_scan_elapsed: Option<std::time::Duration>,
+    pub scan_progress: InspectionProgress,
     pub stopping: bool,
     pub pulse: usize,
     pub pending: Vec<ActionTarget>,
@@ -99,9 +216,16 @@ impl App {
             target,
             follow_port_folder: false,
             version,
+            language: Language::English,
+            update: UpdateNotice::default(),
             snapshot: Snapshot::default(),
             indices: Vec::new(),
             port_indices: Vec::new(),
+            positions: HashMap::new(),
+            name_keys: Vec::new(),
+            file_processes: 0,
+            locked_files: 0,
+            detail_locked_files: 0,
             rows: Vec::new(),
             cursor: 0,
             screen: Screen::Main,
@@ -128,6 +252,10 @@ impl App {
             hide_inspector: false,
             auto: false,
             scanning: false,
+            scan_started: None,
+            scan_elapsed: std::time::Duration::ZERO,
+            last_scan_elapsed: None,
+            scan_progress: InspectionProgress::default(),
             stopping: false,
             pulse: 0,
             pending: Vec::new(),
@@ -142,6 +270,33 @@ impl App {
             page: 10,
         }
     }
+    pub fn can_auto_scan(&self) -> bool {
+        !self.scanning
+            && !self.stopping
+            && !self.editing
+            && self.tree.is_none()
+            && matches!(self.screen, Screen::Main | Screen::Details)
+    }
+    pub fn begin_scan(&mut self, now: std::time::Instant) {
+        self.scanning = true;
+        self.scan_started = Some(now);
+        self.scan_elapsed = std::time::Duration::ZERO;
+        self.scan_progress = InspectionProgress::default();
+    }
+    pub fn finish_scan(&mut self, now: std::time::Instant, success: bool) {
+        self.scanning = false;
+        if success && (self.error || self.status == self.language.text("Cancelling inspection…"))
+        {
+            self.status.clear();
+            self.error = false;
+        }
+        if let Some(started) = self.scan_started.take() {
+            self.scan_elapsed = now.saturating_duration_since(started);
+            if success {
+                self.last_scan_elapsed = Some(self.scan_elapsed);
+            }
+        }
+    }
     pub fn current(&self) -> Option<&Process> {
         self.rows
             .get(self.cursor)
@@ -149,13 +304,16 @@ impl App {
     }
     pub fn detail(&self) -> Option<&Process> {
         self.detail_id.and_then(|identity| {
-            self.snapshot
-                .processes
-                .iter()
-                .find(|process| process.identity == identity)
+            self.positions
+                .get(&identity)
+                .and_then(|&position| self.snapshot.processes.get(position))
         })
     }
+    #[cfg(test)]
     pub fn replace(&mut self, snapshot: Snapshot) {
+        self.accept(PreparedSnapshot::new(snapshot, &Cancellation::default()).unwrap());
+    }
+    pub fn accept(&mut self, prepared: PreparedSnapshot) {
         let selected = self.current().map(|process| process.identity);
         let selected_port = self.rows.get(self.cursor).and_then(|row| {
             row.port
@@ -189,31 +347,14 @@ impl App {
                     .and_then(|&i| process.usages.get(i))
             })
             .cloned();
-        self.snapshot = snapshot;
-        self.indices = self
-            .snapshot
-            .processes
-            .iter()
-            .map(ProcessIndex::new)
-            .collect();
-        self.port_indices = self
-            .snapshot
-            .processes
-            .iter()
-            .map(|process| {
-                process
-                    .ports
-                    .iter()
-                    .map(|port| PortIndex::new(process, port))
-                    .collect()
-            })
-            .collect();
-        self.selected.retain(|identity| {
-            self.snapshot
-                .processes
-                .iter()
-                .any(|process| process.identity == *identity)
-        });
+        self.snapshot = prepared.snapshot;
+        self.indices = prepared.indices;
+        self.port_indices = prepared.port_indices;
+        self.positions = prepared.positions;
+        self.name_keys = prepared.name_keys;
+        self.file_processes = prepared.file_processes;
+        self.selected
+            .retain(|identity| self.positions.contains_key(identity));
         self.refilter();
         if let Some(position) = self.rows.iter().position(|row| {
             Some(self.snapshot.processes[row.process].identity) == selected
@@ -253,10 +394,9 @@ impl App {
     pub fn metrics(&mut self, metrics: Vec<(Identity, Metrics)>) {
         for (identity, m) in metrics {
             if let Some(process) = self
-                .snapshot
-                .processes
-                .iter_mut()
-                .find(|process| process.identity == identity)
+                .positions
+                .get(&identity)
+                .and_then(|&position| self.snapshot.processes.get_mut(position))
             {
                 process.memory = m.memory;
                 process.cpu = m.cpu
@@ -281,44 +421,58 @@ impl App {
         let query = Query::new(&self.query);
         let mut scratch = Scratch::default();
         self.rows.clear();
+        let ranked = self.sort == Sort::Relevance && !query.is_empty();
+        let mut locked_paths = HashSet::new();
         for (i, process) in self.snapshot.processes.iter().enumerate() {
             let index = &self.indices[i];
+            // Terms already satisfied by metadata must not be recomputed for each file.
+            let file_query = query.file_terms(&index.metadata, &mut scratch);
             if self.locked {
+                let metadata_score = if ranked {
+                    query.score(&index.metadata, &mut scratch)
+                } else {
+                    0
+                };
                 for (j, usage) in process.usages.iter().enumerate() {
-                    if usage.lock.is_none() {
-                        continue;
-                    }
-                    let file_q = query.file_terms(&index.metadata, &mut scratch);
-                    if file_q.matches(&index.usages[j], &mut scratch) {
-                        let score = query
-                            .score(&index.metadata, &mut scratch)
-                            .max(query.score(&index.usages[j], &mut scratch));
+                    if usage.lock.is_some() && file_query.matches(&index.usages[j], &mut scratch) {
+                        locked_paths.insert(&usage.path);
+                        let score = if ranked {
+                            metadata_score.max(query.score(&index.usages[j], &mut scratch))
+                        } else {
+                            0
+                        };
                         self.rows.push(Row {
                             process: i,
                             usages: vec![j],
                             port: None,
                             score,
-                        })
+                        });
                     }
                 }
-            } else if index.matches(&query, &mut scratch) {
-                let file_q = query.file_terms(&index.metadata, &mut scratch);
+            } else {
+                // Every remaining term must match one observation, never separate files.
                 let usages: Vec<_> = index
                     .usages
                     .iter()
                     .enumerate()
-                    .filter_map(|(j, fields)| file_q.matches(fields, &mut scratch).then_some(j))
+                    .filter_map(|(j, fields)| file_query.matches(fields, &mut scratch).then_some(j))
                     .collect();
                 if !usages.is_empty() {
+                    let score = if ranked {
+                        index.score(&query, &mut scratch)
+                    } else {
+                        0
+                    };
                     self.rows.push(Row {
                         process: i,
                         usages,
                         port: None,
-                        score: index.score(&query, &mut scratch),
-                    })
+                        score,
+                    });
                 }
             }
         }
+        self.locked_files = locked_paths.len();
         self.sort_rows();
         self.cursor = self.cursor.min(self.rows.len().saturating_sub(1));
     }
@@ -340,10 +494,7 @@ impl App {
                         })
                 }
                 Sort::Relevance => b.score.cmp(&a.score),
-                Sort::Name => left_process
-                    .name
-                    .to_lowercase()
-                    .cmp(&right_process.name.to_lowercase()),
+                Sort::Name => self.name_keys[a.process].cmp(&self.name_keys[b.process]),
                 Sort::Pid => left_process.identity.pid.cmp(&right_process.identity.pid),
                 Sort::Memory => right_process.memory.cmp(&left_process.memory),
                 Sort::Cpu => right_process
@@ -356,15 +507,11 @@ impl App {
     }
     pub fn filter_details(&mut self) {
         self.usage_rows.clear();
+        self.detail_locked_files = 0;
         let Some(identity) = self.detail_id else {
             return;
         };
-        let Some(i) = self
-            .snapshot
-            .processes
-            .iter()
-            .position(|process| process.identity == identity)
-        else {
+        let Some(&i) = self.positions.get(&identity) else {
             return;
         };
         let process = &self.snapshot.processes[i];
@@ -398,6 +545,14 @@ impl App {
                 ranked.push((j, query.score(fields, &mut scratch)))
             }
         }
+        self.detail_locked_files = ranked
+            .iter()
+            .filter_map(|&(position, _)| {
+                let usage = &process.usages[position];
+                usage.lock.as_ref().map(|_| &usage.path)
+            })
+            .collect::<HashSet<_>>()
+            .len();
         ranked.sort_by_key(|&(_, text)| std::cmp::Reverse(text));
         self.usage_rows = ranked.into_iter().map(|(i, _)| i).collect();
         self.usage_cursor = self
@@ -535,8 +690,24 @@ impl App {
         if key.code == K::Char('q') {
             return Effect::Quit;
         }
+        if key.code == K::Char('z') && self.scanning {
+            return Effect::CancelScan;
+        }
         if self.screen == Screen::Confirm {
             return self.confirm_key(key.code);
+        }
+        if self.update.enabled && !key.modifiers.intersects(M::CONTROL | M::ALT) {
+            match key.code {
+                K::Char('u') => return Effect::CheckUpdate,
+                K::Char('U') if self.update.visible_version().is_some() => {
+                    return Effect::Link(oflh_platform::updates::RELEASE_PAGE);
+                }
+                K::Char('b') => {
+                    self.update.dismiss();
+                    return Effect::None;
+                }
+                _ => {}
+            }
         }
         if self.screen == Screen::Help {
             return self.help_key(key.code);
@@ -552,8 +723,10 @@ impl App {
                 K::End => tree.cursor = tree.nodes.len().saturating_sub(1),
                 K::Char('k' | 'x') => {
                     if self.width < 38 || self.height < 22 {
-                        self.status =
-                            "Enlarge the terminal to review the selected ancestor.".into();
+                        self.status = self
+                            .language
+                            .text("Enlarge the terminal to review the selected ancestor.")
+                            .into();
                         self.error = true
                     } else {
                         self.prepare_kill(key.code)
@@ -567,8 +740,8 @@ impl App {
         }
         match key.code {
             K::Char('/') => self.begin_search(),
-            K::Char('r') => {
-                if !self.stopping {
+            K::Char('r') | K::F(5) => {
+                if !self.scanning && !self.stopping {
                     return Effect::Scan;
                 }
             }
@@ -676,14 +849,14 @@ impl App {
                     K::Char('c') => Sort::Cpu,
                     _ => Sort::Pid,
                 };
-                self.refilter()
+                self.sort_rows()
             }
             _ => {}
         }
         Effect::None
     }
     fn port_folder_effect(&self, process: Option<&Process>) -> Effect {
-        if !self.follow_port_folder || self.ports_path_only || self.stopping {
+        if !self.follow_port_folder || self.ports_path_only || self.stopping || self.scanning {
             return Effect::None;
         }
         let Some(process) = process else {
@@ -718,7 +891,7 @@ impl App {
         }
         if self.ports && !self.ports_requested {
             self.ports_requested = true;
-            if self.stopping {
+            if self.stopping || self.scanning {
                 Effect::None
             } else {
                 Effect::Scan
@@ -823,8 +996,10 @@ impl App {
         if let Some(tree) = &self.tree {
             let target = tree.nodes[tree.cursor].clone();
             if target.identity.validate().is_err() {
-                self.status =
-                    "This ancestor cannot be terminated: protected or identity unavailable.".into();
+                self.status = self
+                    .language
+                    .text("This ancestor cannot be terminated: protected or identity unavailable.")
+                    .into();
                 self.error = true;
                 return;
             }
@@ -871,7 +1046,7 @@ impl App {
             .any(|target| target.identity.validate().is_err())
         {
             self.pending.clear();
-            self.status = "Cannot terminate: selection includes a protected process or an unavailable identity.".into();
+            self.status = self.language.text("Cannot terminate: selection includes a protected process or an unavailable identity.").into();
             self.error = true;
             return;
         }
@@ -894,14 +1069,16 @@ impl App {
                 if !self.confirm {
                     self.pending.clear();
                     self.screen = Screen::Main
-                } else if self.width < 38 || self.height < 12 {
-                    self.status =
-                        "Enlarge the terminal to review targets before confirming.".into();
+                } else if self.width < 38 || self.height < 22 {
+                    self.status = self
+                        .language
+                        .text("Enlarge the terminal to review targets before confirming.")
+                        .into();
                     self.error = true
                 } else {
                     self.screen = Screen::Main;
                     self.stopping = true;
-                    self.status = "Requesting termination…".into();
+                    self.status = self.language.text("Requesting termination…").into();
                     return Effect::Kill(
                         self.pending
                             .drain(..)

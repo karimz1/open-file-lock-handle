@@ -5,6 +5,7 @@ import {
   Activity,
   ChevronDown,
   Columns3,
+  MoveHorizontal,
   SlidersHorizontal,
   Star,
   LoaderCircle,
@@ -47,6 +48,8 @@ import {
   type ColumnFilters,
 } from "./api";
 import { acceptStatus, initialStatus, selectKey } from "./state";
+import { InspectionOverlay } from "./InspectionOverlay";
+import { scanDuration } from "./scanDuration";
 import { Inspector } from "./Inspector";
 import { Modal } from "./Modal";
 import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
@@ -62,6 +65,7 @@ import { AboutDialog } from "./AboutDialog";
 import { SettingsMenu } from "./SettingsMenu";
 import { useUpdates } from "./useUpdates";
 import { UpdateBanner } from "./UpdateBanner";
+import { BackgroundInspection } from "./BackgroundInspection";
 import { UpdateFeedback } from "./UpdateFeedback";
 import {
   languageOptions,
@@ -167,7 +171,26 @@ export function App() {
     }
   }, []);
   const [status, setStatus] = useState(initialStatus);
+  const statusRef = useRef(initialStatus);
+  const scanRequestPending = useRef(false);
+  const [startingScan, setStartingScan] = useState(false);
+  const scanBusy = status.scanning || startingScan;
+  const [backgroundScan, setBackgroundScan] = useState(false);
+  const backgroundRevision = useRef(0);
   const [view, setView] = useState<View>("processes");
+  const [gridRevision, setGridRevision] = useState(0);
+  // A failed page ends presentation work without making stale rows actionable.
+  // Permit a fresh scan to recover instead of leaving the reload barrier stuck.
+  const [failedGridRevision, setFailedGridRevision] = useState<number | null>(
+    null,
+  );
+  const gridFailed =
+    failedGridRevision === status.revision && gridRevision !== status.revision;
+  const gridReady =
+    !["processes", "handles", "ports"].includes(view) ||
+    gridRevision === status.revision ||
+    gridFailed;
+  const preparingRefresh = backgroundScan && !status.scanning && !gridReady;
   const [path, setPath] = useState("");
   const [pathEdited, setPathEdited] = useState(false);
   const previousTarget = useRef("");
@@ -197,6 +220,8 @@ export function App() {
     });
   };
   const [showColumns, setShowColumns] = useState(false);
+  const [fitAllRequest, setFitAllRequest] = useState(0);
+  const [columnsFitting, setColumnsFitting] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
@@ -239,6 +264,8 @@ export function App() {
   } | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
   const [details, setDetails] = useState<Details | null>(null);
+  const [detailsRevision, setDetailsRevision] = useState(0);
+  const [detailsMissing, setDetailsMissing] = useState(false);
   const [context, setContext] = useState<Row | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [ancestorOwner, setAncestorOwner] = useState<string | null>(null);
@@ -272,11 +299,17 @@ export function App() {
     initialTheme.firstUse,
   );
   const searchRef = useRef<HTMLInputElement>(null);
-  const apply = useCallback(
-    (incoming: Status) =>
-      setStatus((current) => acceptStatus(current, incoming)),
-    [],
-  );
+  const apply = useCallback((incoming: Status) => {
+    if (
+      incoming.scanning &&
+      incoming.generation > statusRef.current.generation &&
+      !scanRequestPending.current
+    )
+      setBackgroundScan(false);
+    const accepted = acceptStatus(statusRef.current, incoming);
+    statusRef.current = accepted;
+    setStatus(accepted);
+  }, []);
   const report = useCallback(
     (failure: unknown, context: string = t("app.k_desktop_operation")) => {
       const message = errorMessage(failure);
@@ -292,30 +325,35 @@ export function App() {
     [],
   );
   useEffect(() => {
-    if (!autoReloadSeconds || !status.revision) return;
+    if (!autoReloadSeconds || !status.revision || scanBusy || !gridReady)
+      return;
     const interval = window.setInterval(() => {
       if (
-        !status.scanning &&
+        !statusRef.current.scanning &&
+        !scanRequestPending.current &&
+        !document.querySelector("dialog[open]") &&
         !confirmation &&
         !acting &&
         !pathEdited &&
         !showErrorDetails &&
         !context
       )
-        void api.refresh().then(apply).catch(report);
+        runScan(() => api.refresh(), view, false, true);
     }, autoReloadSeconds * 1000);
     return () => window.clearInterval(interval);
   }, [
     acting,
     apply,
     autoReloadSeconds,
+    gridReady,
     confirmation,
     context,
     pathEdited,
     report,
     showErrorDetails,
     status.revision,
-    status.scanning,
+    scanBusy,
+    view,
   ]);
   const tableQuery: TableQuery = {
     columns,
@@ -396,21 +434,25 @@ export function App() {
     setDetails((current) =>
       current?.process.process_key === focused ? current : null,
     );
+    setDetailsMissing(false);
     if (focused)
       api
         .details(status.revision, focused)
         .then((value) => {
-          if (active)
+          if (active) {
+            setDetailsRevision(status.revision);
             setDetails((current) =>
               current?.process.process_key === value.process.process_key
                 ? { ...value, ancestors: current.ancestors }
                 : value,
             );
+          }
         })
         .catch((failure) => {
           if (active) {
-            setFocused(null);
-            report(failure);
+            setDetailsMissing(true);
+            if ((failure as Failure)?.kind !== "identity_changed")
+              report(failure);
           }
         });
     return () => {
@@ -431,22 +473,39 @@ export function App() {
     return () => clearTimeout(timer);
   }, [toast]);
   const runScan = (
-    work: Promise<Status | null>,
+    work: () => Promise<Status | null>,
     nextView: View = "processes",
     resetScope = true,
+    background = false,
   ) => {
+    if (
+      statusRef.current.scanning ||
+      scanRequestPending.current ||
+      (["processes", "handles", "ports"].includes(view) &&
+        gridRevision !== statusRef.current.revision &&
+        failedGridRevision !== statusRef.current.revision)
+    )
+      return;
+    scanRequestPending.current = true;
+    setBackgroundScan(background);
+    if (background) backgroundRevision.current = statusRef.current.revision;
+    setStartingScan(true);
     setError(null);
-    void work
+    void work()
       .then((value) => {
         if (value) {
           apply(value);
-          setView(nextView);
+          if (!background) setView(nextView);
           if (resetScope) setScope(null);
         }
       })
-      .catch(report);
+      .catch(report)
+      .finally(() => {
+        scanRequestPending.current = false;
+        setStartingScan(false);
+      });
   };
-  const refresh = () => runScan(api.refresh(), view, false);
+  const refresh = () => runScan(() => api.refresh(), view, false);
   const openIssueReport = () => {
     const body = [
       t("app.k_what_happened"),
@@ -566,7 +625,7 @@ export function App() {
         setResultContext({ confirmation, ancestorOwner });
         setResults(value);
         setSelected(new Set());
-        runScan(api.refresh(), view, false);
+        runScan(() => api.refresh(), view, false);
       })
       .catch(report)
       .finally(() => setActing(false));
@@ -671,7 +730,7 @@ export function App() {
         if (status.revision) refresh();
       } else if (command && event.key.toLowerCase() === "o") {
         event.preventDefault();
-        runScan(api.choose(event.shiftKey));
+        runScan(() => api.choose(event.shiftKey));
       } else if (!editing && command && event.key.toLowerCase() === "b") {
         event.preventDefault();
         toggleSidebarCollapsed();
@@ -725,7 +784,7 @@ export function App() {
     setDescending(false);
     if (next === "settings" || next === "history") setMaximized(false);
     if (next === "ports" && !status.revision && !status.scanning)
-      runScan(api.ports(), "ports");
+      runScan(() => api.ports(), "ports");
   };
   const inspecting =
     view === "processes" || view === "handles" || view === "ports";
@@ -838,14 +897,14 @@ export function App() {
           <div className="nav-section">{t("inspection.k_inspect_target")}</div>
           <button
             title={t("inspection.k_open_file")}
-            onClick={() => runScan(api.choose(false))}
+            onClick={() => runScan(() => api.choose(false))}
           >
             <File size={16} />
             <span className="nav-label">{t("inspection.k_open_file")}</span>
           </button>
           <button
             title={t("inspection.k_open_folder")}
-            onClick={() => runScan(api.choose(true))}
+            onClick={() => runScan(() => api.choose(true))}
           >
             <FolderOpen size={17} />
             <span className="nav-label">{t("inspection.k_open_folder")}</span>
@@ -952,7 +1011,7 @@ export function App() {
                   </div>
                   <button
                     className="primary"
-                    onClick={() => runScan(api.choose(true))}
+                    onClick={() => runScan(() => api.choose(true))}
                   >
                     <FolderOpen size={15} />
                     {t("inspection.k_open_folder")}
@@ -964,7 +1023,7 @@ export function App() {
                   className="target-bar"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    runScan(
+                    runScan(() =>
                       !pathEdited && status.target
                         ? api.refresh()
                         : api.inspect(path),
@@ -1006,12 +1065,12 @@ export function App() {
                   <div className="welcome-actions">
                     <button
                       className="primary"
-                      onClick={() => runScan(api.choose(false))}
+                      onClick={() => runScan(() => api.choose(false))}
                     >
                       <File size={15} />
                       {t("inspection.k_choose_file")}
                     </button>
-                    <button onClick={() => runScan(api.choose(true))}>
+                    <button onClick={() => runScan(() => api.choose(true))}>
                       <FolderOpen size={15} />
                       {t("inspection.k_choose_folder")}
                     </button>
@@ -1129,6 +1188,15 @@ export function App() {
                       <SlidersHorizontal size={14} />
                       {t("filters.k_column_filters")}
                       {columnCount ? ` (${columnCount})` : ""}
+                    </button>
+                    <button
+                      title={t("table.k_fit_all_columns_hint")}
+                      aria-controls="results-grid"
+                      disabled={status.scanning || columnsFitting}
+                      onClick={() => setFitAllRequest((current) => current + 1)}
+                    >
+                      <MoveHorizontal size={14} />{" "}
+                      {t("table.k_fit_all_columns")}
                     </button>
                     <span className="muted result-count">
                       {total} {t("app.k_results")}
@@ -1253,20 +1321,20 @@ export function App() {
                   )}
                   <div className="results-workspace">
                     <Table
+                      fitAllRequest={fitAllRequest}
+                      onFittingChange={setColumnsFitting}
                       fontSize={fontSize}
                       target={status.target}
                       expandedKey={
-                        focused &&
-                        activeRow?.revision === status.revision &&
-                        activeRow.row.process_key === focused
+                        focused && activeRow?.row.process_key === focused
                           ? activeRow.row.key
                           : null
                       }
-                      onToggle={(row) => {
+                      onToggle={(row, revision) => {
                         const closing =
                           focused === row.process_key &&
                           activeRow?.row.key === row.key;
-                        setActiveRow({ row, revision: status.revision });
+                        setActiveRow({ row, revision });
                         setFocused(closing ? null : row.process_key);
                       }}
                       key={view === "ports" ? "ports" : "files"}
@@ -1275,19 +1343,19 @@ export function App() {
                       hiddenColumns={hiddenColumns}
                       selected={selected}
                       focused={focused}
-                      onSelect={(row, additive) => {
+                      onSelect={(row, additive, revision) => {
                         setSelected((current) =>
                           selectKey(current, row.process_key, additive),
                         );
-                        setActiveRow({ row, revision: status.revision });
+                        setActiveRow({ row, revision });
                         setFocused(row.process_key);
                       }}
-                      onOpen={(row) => {
-                        setActiveRow({ row, revision: status.revision });
+                      onOpen={(row, revision) => {
+                        setActiveRow({ row, revision });
                         setFocused(row.process_key);
                       }}
-                      onContext={(row) => {
-                        if (status.scanning) {
+                      onContext={(row, revision) => {
+                        if (status.scanning || revision !== status.revision) {
                           setToast(
                             t(
                               "inspection.k_wait_for_the_current_scan_to_finish_bef_20cd41dd",
@@ -1296,11 +1364,32 @@ export function App() {
                           return;
                         }
                         setContext(row);
-                        setActiveRow({ row, revision: status.revision });
+                        setActiveRow({ row, revision });
                         setFocused(row.process_key);
                       }}
                       onSort={changeSort}
+                      onPage={(page) => {
+                        setGridRevision(page.revision);
+                        setFailedGridRevision(null);
+                        setActiveRow((current) => {
+                          if (!current) return current;
+                          const row = page.rows.find(
+                            (row) =>
+                              row.key === current.row.key &&
+                              row.path === current.row.path &&
+                              row.port?.endpoint === current.row.port?.endpoint,
+                          );
+                          return row
+                            ? { row, revision: page.revision }
+                            : current;
+                        });
+                      }}
                       onTotal={setTotal}
+                      onPageError={(failure, revision) => {
+                        if (revision !== statusRef.current.revision) return;
+                        setFailedGridRevision(revision);
+                        report(failure);
+                      }}
                       onError={report}
                     />
                     {details && (
@@ -1326,10 +1415,17 @@ export function App() {
                             .finally(() => setActing(false));
                         }}
                         details={details}
+                        rowCurrent={activeRow?.revision === status.revision}
+                        availability={
+                          detailsMissing
+                            ? "missing"
+                            : detailsRevision === status.revision
+                              ? "current"
+                              : "updating"
+                        }
                         row={
-                          activeRow?.revision === status.revision &&
-                          activeRow.row.process_key ===
-                            details.process.process_key
+                          activeRow?.row.process_key ===
+                          details.process.process_key
                             ? activeRow.row
                             : null
                         }
@@ -1347,7 +1443,7 @@ export function App() {
                           setPortQuery("");
                         }}
                         inspectFolder={() =>
-                          runScan(
+                          runScan(() =>
                             api.followProcess(
                               status.revision,
                               details.process.process_key,
@@ -1433,7 +1529,9 @@ export function App() {
                           <button
                             className="recent-target"
                             title={target.display}
-                            onClick={() => runScan(api.revisit(target.id))}
+                            onClick={() =>
+                              runScan(() => api.revisit(target.id))
+                            }
                           >
                             <FolderOpen size={18} />
                             <span className="mono">{target.display}</span>
@@ -1705,24 +1803,50 @@ export function App() {
         </main>
       </div>
       <footer className="statusbar">
-        <span className="status-current" role="status">
-          {status.scanning && <LoaderCircle size={13} className="spin" />}
-          <span className="status-current-label">
-            {status.scanning
-              ? t("inspection.k_scanning")
-              : status.revision
-                ? t("inspection.k_inspection_complete")
-                : t("inspection.k_ready_to_inspect")}
-          </span>
-          {status.scanning && (
-            <button
-              className="status-cancel"
-              onClick={() => void api.cancel().then(apply).catch(report)}
-            >
-              {t("common.k_cancel")}
-            </button>
+        <span
+          className="status-current"
+          role={backgroundScan && scanBusy ? undefined : "status"}
+        >
+          {backgroundScan && scanBusy ? (
+            <BackgroundInspection
+              status={status}
+              starting={startingScan}
+              complete={apply}
+            />
+          ) : (
+            <>
+              {(status.scanning || preparingRefresh) && (
+                <LoaderCircle size={13} className="spin" />
+              )}
+              <span className="status-current-label">
+                {gridFailed
+                  ? t("inspection.k_result_update_failed")
+                  : preparingRefresh
+                    ? t("inspection.k_preparing_results")
+                    : status.scanning
+                      ? t("inspection.k_scanning")
+                      : status.revision
+                        ? t(
+                            backgroundScan &&
+                              status.revision > backgroundRevision.current
+                              ? "inspection.k_results_refreshed"
+                              : "inspection.k_inspection_complete",
+                          )
+                        : t("inspection.k_ready_to_inspect")}
+              </span>
+            </>
           )}
         </span>
+        {status.last_scan_elapsed_ms != null && (
+          <span
+            className="scan-duration"
+            title={t("status.k_last_completed_scan_duration")}
+          >
+            {t("status.k_last_scan_duration", {
+              duration: scanDuration(status.last_scan_elapsed_ms),
+            })}
+          </span>
+        )}
         <span className="status-metrics">
           {status.processes} {t("status.k_file_users")} · {status.usages}{" "}
           {t("status.k_file_usages_d01933d6")} · {status.ports}{" "}
@@ -1761,7 +1885,7 @@ export function App() {
           </button>
         </span>
       </footer>
-      {dragging && (
+      {!scanBusy && dragging && (
         <div className="drop-overlay">
           <div>
             <FolderOpen size={42} />
@@ -1980,7 +2104,7 @@ export function App() {
               details.can_inspect_folder && (
                 <button
                   onClick={() => {
-                    runScan(
+                    runScan(() =>
                       api.followProcess(status.revision, context.process_key),
                     );
                     setContext(null);
@@ -2175,6 +2299,13 @@ export function App() {
             </button>
           </div>
         </Modal>
+      )}
+      {scanBusy && !backgroundScan && (
+        <InspectionOverlay
+          status={status}
+          starting={startingScan}
+          complete={apply}
+        />
       )}
     </div>
   );

@@ -73,6 +73,7 @@ const en = {
     k_reference: "reference",
     k_remove: "Remove",
     k_restart_manager: "restart manager",
+    k_native_file_user: "native file user",
     k_results: "results",
     k_reveal_in_file_manager: "Reveal in file manager",
     k_sharing_conflict_delete_denied_reported_9ec719fc:
@@ -189,6 +190,19 @@ const en = {
     k_search_recent_targets: "Search recent targets",
   },
   inspection: {
+    k_checking_process_references: "Checking process references",
+    k_checking_files: "Checking files",
+    k_checking_ports: "Checking local ports",
+    k_preparing_results: "Preparing results",
+    k_reload_paused: "Reloads are paused until this inspection finishes.",
+    k_starting_inspection: "Starting inspection…",
+    k_files_checked: "{{count}} files checked",
+    k_references_checked: "{{count}} references checked",
+    k_processes_checked: "{{count}} processes checked",
+    k_unknown_total: "The total is unknown while inspection is running.",
+    k_progress_unavailable:
+      "Progress is temporarily unavailable. Inspection continues.",
+
     k_1_open_oflh_desktop_and_inspect_a_file_or_folder:
       "1. Open OFLH Desktop and inspect a file or folder.",
     k_a_clear_view_of_files_in_use: "A clear view of files in use.",
@@ -231,6 +245,18 @@ const en = {
     k_target_processes_only: "Target processes only",
     k_wait_for_the_current_scan_to_finish_bef_20cd41dd:
       "Wait for the current scan to finish before opening row actions.",
+    k_updating_results: "Updating results…",
+    k_results_refreshed: "Results refreshed",
+    k_result_update_failed: "Could not update results",
+    k_background_hint:
+      "Previous results remain available while refreshing. Another scan cannot start until this one finishes.",
+    k_cancel_refresh: "Cancel automatic refresh",
+    k_updating_details:
+      "Updating these details. Actions resume when the new snapshot is ready.",
+    k_captured_process_missing:
+      "This captured process is absent from the latest inspection. It may have exited or stopped matching this target.",
+    k_captured_observation:
+      "This observation is from the previous inspection. Select a current row to use its file actions.",
   },
   inspector: {
     k_access: "Access",
@@ -347,6 +373,9 @@ const en = {
     k_zoom_out: "Zoom out",
   },
   status: {
+    k_last_scan_duration: "Last scan: {{duration}}",
+    k_last_completed_scan_duration:
+      "Duration of the last successfully completed inspection",
     k_about_automatic_refresh: "About automatic refresh",
     k_automatic_refresh: "Automatic refresh",
     k_automatic_refresh_information: "Automatic refresh information",
@@ -392,7 +421,9 @@ const en = {
     k_trade_off: "Trade-off:",
   },
   table: {
-    k_auto_fit_hint: "Double-click or press Enter to fit column to contents",
+    k_auto_fit_hint: "Double-click to fit column to contents",
+    k_fit_all_columns: "Fit all columns",
+    k_fit_all_columns_hint: "Fit all visible columns to every matching row",
     k_columns: "Columns",
     k_deleted: "deleted",
     k_file_was_deleted: "File was deleted",

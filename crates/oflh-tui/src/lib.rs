@@ -3,23 +3,30 @@
 #![deny(missing_docs)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 mod app;
+mod refresh;
+mod update_worker;
+pub use view::messages::{Language, LanguageError};
 mod view;
 mod worker;
-use app::{App, Effect, Screen};
+use app::{App, Effect, PreparedSnapshot, Screen};
 use crossterm::event::{self, Event as TerminalEvent, KeyCode, KeyEventKind, KeyModifiers};
 use oflh_core::*;
 use oflh_platform::Backend;
+use refresh::RefreshSchedule;
 use std::{
     sync::mpsc::{self, RecvTimeoutError},
     time::{Duration, Instant},
 };
+use update_worker::{UpdateSchedule, UpdateWorker};
+use view::messages::localized;
 use worker::{Work, Worker};
 enum Event {
     Input(std::io::Result<TerminalEvent>),
-    Scan(u64, Result<Snapshot>),
-    ScopedScan(u64, Box<Result<(Target, Snapshot)>>),
+    Scan(u64, Result<PreparedSnapshot>),
+    ScopedScan(u64, Box<Result<(Target, PreparedSnapshot)>>),
     Metrics(u64, Result<Vec<(Identity, Metrics)>>),
     Killed(usize, Vec<String>),
+    Update(std::result::Result<Option<String>, String>),
 }
 const REFRESH: Duration = Duration::from_secs(5);
 const PULSE: Duration = Duration::from_millis(120);
@@ -35,6 +42,10 @@ impl Drop for TerminalGuard {
 pub struct StartOptions {
     /// Follow a selected port owner’s folder when no explicit path was supplied.
     pub follow_port_folder: bool,
+    /// Explicit terminal language; None follows the environment/system locale.
+    pub language: Option<Language>,
+    /// Disable all network release checks, including manual requests.
+    pub no_update_check: bool,
     /// Start in the Ports tab and collect network bindings.
     pub ports: bool,
     /// Start with bindings associated with an explicitly supplied target path.
@@ -54,6 +65,9 @@ pub fn run(
     let _guard = TerminalGuard;
     crossterm::execute!(std::io::stdout(), event::EnableBracketedPaste)?;
     let mut app = App::new(target, version);
+    app.language = options.language.unwrap_or_else(Language::system);
+    app.update.enabled = !options.no_update_check
+        && oflh_core::releases::can_check_releases(VERSION, PULL_REQUEST_URL);
     app.ports = options.ports;
     app.ports_path_only = options.ports_path_only;
     app.follow_port_folder = options.follow_port_folder;
@@ -61,10 +75,16 @@ pub fn run(
     app.port_query = options
         .port
         .map_or_else(String::new, |port| format!("port:{port}"));
-    app.scanning = true;
+    app.begin_scan(Instant::now());
     terminal.draw(|frame| view::draw(frame, &mut app))?;
     let (sender, receiver) = mpsc::sync_channel(128);
     let mut worker = Worker::new(backend, sender.clone())?;
+    let mut updates = if app.update.enabled {
+        Some(UpdateWorker::new(sender.clone(), VERSION.into())?)
+    } else {
+        None
+    };
+    let mut update_schedule = UpdateSchedule::new(app.update.enabled, Instant::now());
     std::thread::Builder::new()
         .name("oflh-input".into())
         .spawn(move || {
@@ -79,17 +99,24 @@ pub fn run(
     let mut generation = 1;
     worker.request(generation, scan_work(&app));
     let mut pulse = Instant::now() + PULSE;
-    let mut refresh = Instant::now() + REFRESH;
+    let mut refresh = RefreshSchedule::new(REFRESH);
     let mut sample: Option<Instant> = None;
     let mut sampling = false;
     loop {
         let now = Instant::now();
         let mut deadline = now + Duration::from_secs(86400);
+        if let Some(at) = update_schedule.deadline() {
+            deadline = deadline.min(at);
+        }
         if app.scanning || app.stopping {
             deadline = deadline.min(pulse)
         }
-        if app.auto {
-            deadline = deadline.min(refresh)
+        if app.auto
+            && app.can_auto_scan()
+            && !sampling
+            && let Some(at) = refresh.deadline()
+        {
+            deadline = deadline.min(at)
         }
         if let Some(at) = sample {
             deadline = deadline.min(at)
@@ -110,7 +137,7 @@ pub fn run(
                     effect = app.key(key)
                 }
                 if auto != app.auto {
-                    refresh = Instant::now() + REFRESH
+                    refresh.completed(Instant::now())
                 }
                 dirty = true;
             }
@@ -121,36 +148,51 @@ pub fn run(
             Ok(Event::Input(Ok(TerminalEvent::Resize(..)))) => dirty = true,
             Ok(Event::Input(Err(error))) => return Err(error),
             Ok(Event::Scan(result_generation, result)) if result_generation == generation => {
-                app.scanning = false;
                 sampling = false;
+                let success = result.is_ok();
                 match result {
                     Ok(snapshot) => {
-                        app.replace(snapshot);
+                        app.accept(snapshot);
                         sample = Some(Instant::now() + Duration::from_secs(1))
                     }
-                    Err(Error::Cancelled) => {}
+                    Err(Error::Cancelled) => {
+                        app.status = app.language.text("Inspection cancelled").into();
+                        app.error = false;
+                    }
                     Err(error) => {
-                        app.status = format!("Scan failed: {error}");
+                        app.status =
+                            localized!(app.language, "Scan failed: {error}", error = error);
                         app.error = true
                     }
                 }
+                app.finish_scan(Instant::now(), success);
+                refresh.completed(Instant::now());
                 dirty = true
             }
             Ok(Event::ScopedScan(result_generation, result)) if result_generation == generation => {
-                app.scanning = false;
                 sampling = false;
+                let success = result.is_ok();
                 match *result {
                     Ok((target, snapshot)) => {
                         app.target = target;
-                        app.replace(snapshot);
+                        app.accept(snapshot);
                         sample = Some(Instant::now() + Duration::from_secs(1));
                     }
-                    Err(Error::Cancelled) => {}
+                    Err(Error::Cancelled) => {
+                        app.status = app.language.text("Inspection cancelled").into();
+                        app.error = false;
+                    }
                     Err(error) => {
-                        app.status = format!("Process folder scan failed: {error}");
+                        app.status = localized!(
+                            app.language,
+                            "Process folder scan failed: {error}",
+                            error = error
+                        );
                         app.error = true;
                     }
                 }
+                app.finish_scan(Instant::now(), success);
+                refresh.completed(Instant::now());
                 dirty = true;
             }
             Ok(Event::Metrics(result_generation, result)) if result_generation == generation => {
@@ -163,13 +205,15 @@ pub fn run(
             Ok(Event::Killed(sent, errors)) => {
                 app.stopping = false;
                 app.error = !errors.is_empty();
-                app.status = format!(
+                app.status = localized!(
+                    app.language,
                     "{sent} termination requests sent{}",
                     if errors.is_empty() {
                         String::new()
                     } else {
                         format!(" · {}", errors.join("; "))
-                    }
+                    },
+                    sent = sent
                 );
                 if sent > 0 {
                     app.tree = None;
@@ -178,25 +222,34 @@ pub fn run(
                 effect = Effect::Scan;
                 dirty = true
             }
+            Ok(Event::Update(result)) => {
+                if let Some(worker) = &mut updates {
+                    worker.completed();
+                }
+                dirty = app.update.complete(result);
+                update_schedule.completed(Instant::now());
+            }
             Err(RecvTimeoutError::Disconnected) => return Ok(()),
             _ => {}
         }
         match effect {
             Effect::Quit => return Ok(()),
-            Effect::Scan => {
+            Effect::Scan if !app.scanning && !app.stopping => {
                 generation += 1;
                 sample = None;
                 sampling = false;
-                app.scanning = true;
+                app.begin_scan(Instant::now());
+                refresh.started();
                 worker.request(generation, scan_work(&app));
                 pulse = Instant::now() + PULSE;
                 dirty = true
             }
-            Effect::FollowPort(identity, path) => {
+            Effect::FollowPort(identity, path) if !app.scanning && !app.stopping => {
                 generation += 1;
                 sample = None;
                 sampling = false;
-                app.scanning = true;
+                app.begin_scan(Instant::now());
+                refresh.started();
                 worker.request(generation, Work::FollowPort(identity, path));
                 pulse = Instant::now() + PULSE;
                 dirty = true;
@@ -204,7 +257,7 @@ pub fn run(
             Effect::Kill(ids, force) => {
                 generation += 1;
                 sample = None;
-                app.scanning = false;
+                app.finish_scan(Instant::now(), false);
                 sampling = false;
                 worker.request(generation, Work::Kill(ids, force));
                 pulse = Instant::now() + PULSE;
@@ -212,29 +265,53 @@ pub fn run(
             }
             Effect::Link(url) => {
                 if let Err(error) = open_link(url) {
-                    app.status = format!("Open browser: {error}");
+                    app.status = localized!(app.language, "Open browser: {error}", error = error);
                     app.error = true
                 }
                 dirty = true
             }
-            Effect::None => {}
+            Effect::CancelScan => {
+                worker.cancel_scan();
+                app.status = app.language.text("Cancelling inspection…").into();
+                app.error = false;
+                dirty = true;
+            }
+            Effect::CheckUpdate => {
+                if let Some(worker) = &mut updates
+                    && worker.request()
+                {
+                    app.update.begin(true);
+                    update_schedule.started();
+                    dirty = true;
+                }
+            }
+            Effect::None | Effect::Scan | Effect::FollowPort(..) => {}
         }
         let now = Instant::now();
+        if update_schedule.due(now)
+            && let Some(worker) = &mut updates
+            && worker.request()
+        {
+            app.update.begin(false);
+            update_schedule.started();
+        }
         if (app.scanning || app.stopping) && now >= pulse {
+            if let Some(started) = app.scan_started {
+                app.scan_elapsed = now.saturating_duration_since(started);
+                app.scan_progress = worker.progress();
+            }
             app.pulse = (app.pulse + 1) % 4;
             pulse = now + PULSE;
             dirty = true
         }
-        if app.auto && now >= refresh {
-            refresh = now + REFRESH;
-            if !app.scanning && !app.stopping && !sampling {
-                generation += 1;
-                sample = None;
-                app.scanning = true;
-                worker.request(generation, scan_work(&app));
-                pulse = now + PULSE;
-                dirty = true
-            }
+        if app.auto && app.can_auto_scan() && !sampling && refresh.due(now) {
+            generation += 1;
+            sample = None;
+            app.begin_scan(now);
+            refresh.started();
+            worker.request(generation, scan_work(&app));
+            pulse = now + PULSE;
+            dirty = true;
         }
         if sample.is_some_and(|at| now >= at) {
             sample = None;

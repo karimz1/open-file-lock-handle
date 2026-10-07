@@ -1,0 +1,119 @@
+{
+  "arch": "x86_64",
+  "fixtures": [
+    {
+      "baseline": {
+        "median_ms": 136.977,
+        "p95_ms": 148.887,
+        "samples": 5
+      },
+      "candidate": {
+        "median_ms": 136.251568,
+        "p95_ms": 149.566463,
+        "samples": 5
+      },
+      "counters": {
+        "directories": 0,
+        "file_identity_queries": 0,
+        "files": 0,
+        "module_snapshot_ms": 0.0,
+        "module_snapshots": 0,
+        "processes": 595,
+        "resource_queries": 0,
+        "resource_query_ms": 0.0,
+        "resources": 73987
+      },
+      "coverage_rows": 8,
+      "equivalent_fixture_coverage": true,
+      "files": 2048,
+      "fixture": "sparse",
+      "held_files": 8
+    },
+    {
+      "baseline": {
+        "median_ms": 121.297,
+        "p95_ms": 124.884,
+        "samples": 5
+      },
+      "candidate": {
+        "median_ms": 121.945266,
+        "p95_ms": 123.253717,
+        "samples": 5
+      },
+      "counters": {
+        "directories": 0,
+        "file_identity_queries": 0,
+        "files": 0,
+        "module_snapshot_ms": 0.0,
+        "module_snapshots": 0,
+        "processes": 578,
+        "resource_queries": 0,
+        "resource_query_ms": 0.0,
+        "resources": 69878
+      },
+      "coverage_rows": 128,
+      "equivalent_fixture_coverage": true,
+      "files": 2048,
+      "fixture": "dense",
+      "held_files": 128
+    },
+    {
+      "baseline": {
+        "median_ms": 121.849,
+        "p95_ms": 125.638,
+        "samples": 5
+      },
+      "candidate": {
+        "median_ms": 120.46712099999999,
+        "p95_ms": 121.43260000000001,
+        "samples": 5
+      },
+      "counters": {
+        "directories": 0,
+        "file_identity_queries": 0,
+        "files": 0,
+        "module_snapshot_ms": 0.0,
+        "module_snapshots": 0,
+        "processes": 578,
+        "resource_queries": 0,
+        "resource_query_ms": 0.0,
+        "resources": 69754
+      },
+      "coverage_rows": 0,
+      "equivalent_fixture_coverage": true,
+      "files": 2048,
+      "fixture": "idle",
+      "held_files": 0
+    }
+  ],
+  "os": "linux",
+  "schema": 1,
+  "whole_root": {
+    "baseline": {
+      "elapsed_ms": 199.275,
+      "outcome": "completed"
+    },
+    "budget_seconds": 120,
+    "candidate": {
+      "directory_cap_reached": false,
+      "elapsed_ms": 194.668453,
+      "outcome": "completed",
+      "processes": 153,
+      "usages": 48647,
+      "warning_count": 2
+    },
+    "counters": {
+      "directories": 0,
+      "file_identity_queries": 0,
+      "files": 0,
+      "module_snapshot_ms": 0.0,
+      "module_snapshots": 0,
+      "processes": 577,
+      "resource_queries": 0,
+      "resource_query_ms": 0.0,
+      "resources": 69723
+    },
+    "equivalent_coverage": false,
+    "scope": "root process references; no disk traversal"
+  }
+}

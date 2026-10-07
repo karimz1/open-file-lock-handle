@@ -3,6 +3,15 @@ export const initialStatus: Status = {
   generation: 0,
   revision: 0,
   scanning: false,
+  elapsed_ms: 0,
+  last_scan_elapsed_ms: null,
+  progress: {
+    phase: "processes",
+    processes: 0,
+    resources: 0,
+    files: 0,
+    directories: 0,
+  },
   target: "",
   processes: 0,
   ports: 0,
@@ -21,6 +30,13 @@ export function acceptStatus(current: Status, incoming: Status): Status {
     incoming.generation === current.generation &&
     !current.scanning &&
     incoming.scanning
+  )
+    return current;
+  if (
+    incoming.generation === current.generation &&
+    incoming.scanning &&
+    current.scanning &&
+    (incoming.elapsed_ms ?? 0) < (current.elapsed_ms ?? 0)
   )
     return current;
   return incoming;

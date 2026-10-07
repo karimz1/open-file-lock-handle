@@ -48,13 +48,19 @@ Drop a file or folder anywhere in the window, choose **Open file** / **Open fold
 or type a path and choose **Inspect**. **Recent targets** lets you revisit targets
 from previous launches. Folder scans include descendants.
 
+On Windows, ordinary drive and network paths use familiar text such as `C:\`
+or `\\server\share` in the target, history, details and copied paths. Native
+paths remain unchanged for inspection and file-manager actions. Paths requiring
+the Windows extended namespace retain their prefix; copied long paths also keep
+it so their meaning does not depend on the receiving application's settings.
+
 **Processes** groups results by process. **File usages** shows individual matching
 observations. Click a row to open details. Use the panel button or close button to
 close it. Table paths are shortened for readability. Full paths and copy/reveal
 actions are available in details. Drag column dividers or the details panel edge
 to resize. Double-click a column divider to fit that column to its heading and
 all matching values, including results outside the visible viewport. A focused
-divider also supports Enter to auto-fit and arrow keys to resize.
+divider supports arrow keys for manual resizing. **Fit all columns** in the grid toolbar fits every visible column in one pass through the matching rows. Enter on a divider does not fit columns.
 
 Details show **Matching handles**, **Local ports**, and **Process ancestry**.
 The ancestry tree lists parents above the selected process. Click a parent to
@@ -145,8 +151,15 @@ unavailable to the unprivileged UI even after a successful privileged request.
 The full shortcut list is shown in Settings and beside relevant controls. Press
 `F5` or `Ctrl/Cmd+R` to refresh. Choose an automatic refresh interval beside the
 Refresh button. Automatic scans pause during active scans and process-action
-confirmations. Scan progress and Cancel stay in the footer without moving the
-results table.
+confirmations. Automatic refresh runs in the background: the current results
+remain visible, and search, scrolling and process details stay usable. The footer
+shows **Updating results…**, elapsed time and **Cancel**, followed by **Results
+refreshed** on success. New pages replace the corresponding visible results when
+ready, retaining the scroll position and captured process identities.
+
+Opening a target or manually refreshing uses a blocking progress panel with
+elapsed time, work counts and Cancel. See
+[long-running inspections](#long-running-inspections).
 
 ## Appearance
 
@@ -203,3 +216,26 @@ testing and packaging details, see [development](development.md).
 
 Choose **Donate** to open the support dialog, then choose Buy Me a Coffee,
 GitHub Sponsors, or PayPal. The selected service opens in your browser.
+
+## Long-running inspections
+
+The footer keeps the duration of the last completed scan or refresh, including
+result preparation. Short scans use milliseconds, longer scans use seconds or
+minutes. The previous completed duration stays visible while another scan runs
+and after cancellation or failure. This also applies to local-port inspections.
+
+While an inspection is running, a modal progress panel blocks workspace actions and reload shortcuts. It shows elapsed time, the current stage and native work counts. The total is unknown; the bar does not imply a percentage. Windows file counts are distinct from descriptors, mappings or module references. Results may still be partial because of permissions or platform limits.
+This modal panel applies to opening a new target or manually refreshing. Automatic
+refresh uses the footer described in [Keyboard and refresh](#keyboard-and-refresh).
+
+Use **Cancel** to keep the previous accepted results and stop the current request cooperatively. A native call already running can finish later; its results cannot replace the accepted snapshot. F5, automatic refresh and other targets cannot restart an active inspection. Automatic refresh waits a full selected interval after completion or cancellation.
+
+Automatic refresh keeps the previous accepted viewport until the replacement
+page is ready. It does not reset search, filters, column widths or the details
+panel. Captured details remain visible when the process exits or no longer
+matches; a notice identifies this state and actions stay disabled until a current
+observation is available. PID reuse cannot substitute another process for the
+captured identity. A different target or query clears stale matches normally.
+If loading the replacement page fails, the old viewport stays visible with an
+explicit error. Stale path actions remain disabled, and a new refresh can recover;
+the reload barrier does not stay stuck after failed presentation work.

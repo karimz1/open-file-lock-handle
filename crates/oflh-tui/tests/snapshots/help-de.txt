@@ -1,0 +1,50 @@
+  oflh  ·  Open File Lock Handle
+
+  LINKS
+  R  GitHub: https://github.com/karimz1/open-file-lock-handle
+  D  Spenden: https://buymeacoffee.com/karimz1
+  Großes R oder D öffnet den Link im Browser.
+
+
+  VERSION development
+  Mit `oflh --version` den vollständigen Buildbericht kopieren.
+
+  OPEN FILE LOCK HANDLE
+  1 / 2 / 3      Prozesse / gesperrte Dateien / Ports
+  s              Ports: alle / Prozesse mit Referenzen auf diesen Pfad
+  p / f          Details: Ports / Dateireferenzen
+  ↑ / ↓, j       Ergebnisse durchgehen
+  PgUp / PgDn    Eine Seite bewegen
+  Home / End     Erstes / letztes Ergebnis
+  Enter          Passende Pfade untersuchen
+  Space          Prozess auswählen
+  Ctrl+A         Alle sichtbaren Prozesse auswählen / abwählen
+  /              PID, Name, Benutzer, Pfad, Zugriff suchen
+  *              Platzhalter: micro*dll, FLEC*.json
+                 Fragmente und CamelCase; Leerzeichen verknüpfen Begriffe.
+  Esc            Suche löschen / zurück / abbrechen
+  r / F5         Aktualisieren (während Untersuchung ignoriert)
+  a              Auto-Refresh umschalten (5s nach Abschluss)
+  z              Aktive Untersuchung abbrechen
+  i              Seitenleiste umschalten
+  Tab / →        Prozessbaum fokussieren; ↑↓ wählt Aktionsziel
+  Tab / ← / Esc  Prozessbaum verlassen
+  l              Details: nur Sperren umschalten
+  m / c          RAM / CPU absteigend sortieren
+  n / p          Nach Name / PID sortieren
+  k / x          Auswahl oder aktuellen Prozess beenden / erzwingen
+  K / X          Auswahl; sonst alle gefilterten Prozesse
+  Tab            Abbrechen / Beenden wählen
+  ?              Hilfe anzeigen
+  R / D          Repository / Spendenseite öffnen
+  u / U / b      Version prüfen / Downloads / ausblenden (Release-Builds)
+  q / Ctrl+C     Beenden (q schreibt Text in der Suche)
+
+  Jedes Beenden erfordert Bestätigung. Abbrechen ist vorausgewählt.
+  Ausgefilterte Auswahl zählt mit. Die Prozessidentität wird erneut geprüft.
+  Ein Elternprozess wird ohne rekursives Beenden seiner Kinder gestoppt.
+
+  PORTSUCHE
+  50 findet Ports mit 50; port:3000 ist exakt; pid:123 sucht eine PID.
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  ↑↓ blättern · R GitHub · D Spenden · Esc zurück · q beenden

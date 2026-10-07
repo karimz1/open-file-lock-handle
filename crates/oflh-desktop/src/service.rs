@@ -32,6 +32,9 @@ struct State {
     pending: Option<ScanJob>,
     cancellation: Cancellation,
     scanning: bool,
+    started: Option<std::time::Instant>,
+    elapsed_ms: u64,
+    last_scan_elapsed_ms: Option<u64>,
     shutdown: bool,
     target: Option<PathBuf>,
     recent: Vec<(u32, PathBuf)>,
@@ -108,6 +111,9 @@ impl Service {
                 pending: None,
                 cancellation: Cancellation::default(),
                 scanning: false,
+                started: None,
+                elapsed_ms: 0,
+                last_scan_elapsed_ms: None,
                 shutdown: false,
                 target: None,
                 recent,
@@ -147,7 +153,7 @@ impl Service {
                         if state.generation != job.generation || state.shutdown {
                             continue;
                         }
-                        state.scanning = false;
+                        let succeeded = result.is_ok();
                         match result {
                             Ok((path, dataset)) => {
                                 state.error = None;
@@ -168,6 +174,11 @@ impl Service {
                             }
                             Err(error) => state.error = Some(error),
                         }
+                        state.elapsed_ms = elapsed_ms(&state);
+                        state.scanning = false;
+                        if succeeded {
+                            state.last_scan_elapsed_ms = Some(state.elapsed_ms);
+                        }
                         status(&state)
                     };
                     notify(status);
@@ -175,7 +186,7 @@ impl Service {
             })?;
         Ok(Self { shared })
     }
-    /// Replace queued scans, cancel active work, and preserve the displayed snapshot.
+    /// Start an inspection. Requests during queued or active work preserve that request.
     pub fn inspect(&self, path: PathBuf) -> Result<Status, Failure> {
         if path.as_os_str().is_empty() {
             return Err(Failure::invalid("Choose a file or folder first"));
@@ -198,6 +209,11 @@ impl Service {
     }
     fn enqueue(&self, path: Option<PathBuf>, owner: Option<Identity>) -> Result<Status, Failure> {
         let mut state = self.shared.lock();
+        // Coalesce all entry points atomically: timer, keyboard, dialogs and drops
+        // cannot cancel an inspection merely because its acknowledgment is delayed.
+        if state.scanning {
+            return Ok(status(&state));
+        }
         state.generation = state
             .generation
             .checked_add(1)
@@ -210,6 +226,8 @@ impl Service {
             owner,
             cancel: state.cancellation.clone(),
         });
+        state.started = Some(std::time::Instant::now());
+        state.elapsed_ms = 0;
         state.scanning = true;
         state.error = None;
         self.shared.ready.notify_one();
@@ -217,6 +235,12 @@ impl Service {
     }
     /// Rescan the last successful native target without a display-string round trip.
     pub fn refresh(&self) -> Result<Status, Failure> {
+        {
+            let state = self.shared.lock();
+            if state.scanning {
+                return Ok(status(&state));
+            }
+        }
         let path = self.shared.lock().target.clone();
         if path.is_none() && self.status().revision == 0 {
             return Err(Failure::invalid(
@@ -229,6 +253,7 @@ impl Service {
     pub fn cancel(&self) -> Status {
         let mut state = self.shared.lock();
         state.cancellation.cancel();
+        state.elapsed_ms = elapsed_ms(&state);
         state.pending = None;
         // Advance the generation so even a native backend that returns after cancellation
         // cannot publish over the last accepted snapshot.
@@ -629,10 +654,21 @@ fn scan(backend: &mut dyn Backend, job: &ScanJob) -> Result<(Option<PathBuf>, Da
             oflh_platform::scan_ports(&job.cancel).map_err(Failure::from)?,
         ),
     };
+    job.cancel.set_phase(oflh_core::InspectionPhase::Indexing);
     snapshot.normalize();
     let dataset = Dataset::new(job.generation, snapshot);
     job.cancel.check().map_err(Failure::from)?;
     Ok((path, dataset))
+}
+
+fn elapsed_ms(state: &State) -> u64 {
+    if state.scanning {
+        state.started.map_or(0, |started| {
+            started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
+        })
+    } else {
+        state.elapsed_ms
+    }
 }
 
 fn status(state: &State) -> Status {
@@ -640,28 +676,13 @@ fn status(state: &State) -> Status {
         generation: state.generation,
         revision: state.dataset.revision,
         scanning: state.scanning,
+        elapsed_ms: elapsed_ms(state),
+        last_scan_elapsed_ms: state.last_scan_elapsed_ms,
+        progress: state.cancellation.progress().into(),
         target: state.target.as_deref().map(display).unwrap_or_default(),
-        processes: state
-            .dataset
-            .snapshot
-            .processes
-            .iter()
-            .filter(|process| !process.usages.is_empty())
-            .count(),
-        ports: state
-            .dataset
-            .snapshot
-            .processes
-            .iter()
-            .map(|process| process.ports.len())
-            .sum(),
-        usages: state
-            .dataset
-            .snapshot
-            .processes
-            .iter()
-            .map(|process| process.usages.len())
-            .sum(),
+        processes: state.dataset.file_users(),
+        ports: state.dataset.port_count(),
+        usages: state.dataset.usage_count(),
         warnings: state
             .dataset
             .snapshot
@@ -703,7 +724,7 @@ mod tests {
         }
     }
     #[test]
-    fn pending_scans_coalesce_and_late_results_never_publish() {
+    fn active_inspection_is_preserved_until_explicit_cancellation() {
         let (started_sender, started) = channel();
         let (release, release_receiver) = channel();
         let (notifications, received) = channel();
@@ -718,37 +739,137 @@ mod tests {
         )
         .unwrap();
         let base = std::env::temp_dir();
-        service.inspect(base.join("oflh-desktop-first")).unwrap();
+        let initial = service.inspect(base.join("oflh-desktop-first")).unwrap();
+        assert_eq!(initial.last_scan_elapsed_ms, None);
         started.recv_timeout(TIMEOUT).unwrap();
-        service.inspect(base.join("oflh-desktop-obsolete")).unwrap();
-        service.inspect(base.join("oflh-desktop-final")).unwrap();
+        service.shared.lock().started =
+            std::time::Instant::now().checked_sub(Duration::from_secs(2));
+        for _ in 0..20 {
+            assert_eq!(service.refresh().unwrap().generation, initial.generation);
+            assert_eq!(
+                service
+                    .inspect(base.join("oflh-desktop-obsolete"))
+                    .unwrap()
+                    .generation,
+                initial.generation
+            );
+            assert_eq!(service.ports().unwrap().generation, initial.generation);
+        }
+        assert!(service.shared.lock().cancellation.check().is_ok());
+        assert!(started.try_recv().is_err());
+        release.send(()).unwrap();
+        let completed = received.recv_timeout(TIMEOUT).unwrap();
+        assert_eq!(completed.revision, initial.generation);
+        assert!(!completed.scanning);
+        assert_eq!(completed.last_scan_elapsed_ms, Some(completed.elapsed_ms));
+        assert!(completed.elapsed_ms >= 2000);
+        assert!(completed.target.ends_with("oflh-desktop-first"));
+        assert_eq!(service.recent().len(), 1);
+        let second = service
+            .inspect(base.join("oflh-desktop-cancelled"))
+            .unwrap();
+        started.recv_timeout(TIMEOUT).unwrap();
+        assert_eq!(second.last_scan_elapsed_ms, completed.last_scan_elapsed_ms);
+        service
+            .shared
+            .lock()
+            .cancellation
+            .record(oflh_core::InspectionCounter::Files, 17);
+        service.shared.lock().started =
+            std::time::Instant::now().checked_sub(std::time::Duration::from_secs(2));
+        let progress = service.status();
+        assert_eq!(progress.progress.files, 17);
+        assert!(progress.scanning);
+        assert!(progress.elapsed_ms >= 2000);
+        let cancelled = service.cancel();
+        assert!(!cancelled.scanning);
+        assert_eq!(cancelled.revision, completed.revision);
+        assert_eq!(
+            cancelled.last_scan_elapsed_ms,
+            completed.last_scan_elapsed_ms
+        );
+        assert!(cancelled.generation > second.generation);
+        assert!(cancelled.elapsed_ms >= progress.elapsed_ms);
+        assert_eq!(service.status().elapsed_ms, cancelled.elapsed_ms);
+        let next = service.inspect(base.join("oflh-desktop-next")).unwrap();
+        assert_eq!(next.last_scan_elapsed_ms, completed.last_scan_elapsed_ms);
+        assert_eq!(next.progress.files, 0);
         release.send(()).unwrap();
         assert!(
             started
                 .recv_timeout(TIMEOUT)
                 .unwrap()
-                .ends_with("oflh-desktop-final")
+                .ends_with("oflh-desktop-next")
         );
         release.send(()).unwrap();
-        let status = received.recv_timeout(TIMEOUT).unwrap();
-        assert_eq!(status.revision, 3);
-        assert!(!status.scanning);
+        let completed = received.recv_timeout(TIMEOUT).unwrap();
+        assert_eq!(completed.revision, next.generation);
+        assert_eq!(completed.last_scan_elapsed_ms, Some(completed.elapsed_ms));
         assert!(received.try_recv().is_err());
-        assert_eq!(service.recent().len(), 1);
-        service
-            .inspect(base.join("oflh-desktop-cancelled"))
-            .unwrap();
+    }
+    #[test]
+    fn failed_inspection_preserves_completed_duration_and_refresh_updates_it() {
+        let (started_sender, started) = channel();
+        let (release, release_receiver) = channel();
+        let (notifications, received) = channel();
+        let service = Service::new(
+            Box::new(Gated {
+                started: started_sender,
+                release: release_receiver,
+            }),
+            move |status| {
+                notifications.send(status).unwrap();
+            },
+        )
+        .unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        service.inspect(folder.path().to_path_buf()).unwrap();
         started.recv_timeout(TIMEOUT).unwrap();
-        let status = service.cancel();
-        assert_eq!(status.revision, 3);
-        assert!(!status.scanning);
+        service.shared.lock().started =
+            std::time::Instant::now().checked_sub(Duration::from_secs(3));
         release.send(()).unwrap();
-        service.inspect(base.join("oflh-desktop-next")).unwrap();
+        let first = received.recv_timeout(TIMEOUT).unwrap();
+        assert!(
+            first
+                .last_scan_elapsed_ms
+                .is_some_and(|duration| duration >= 3000)
+        );
+        let native_target = service.shared.lock().target.clone().unwrap();
+        assert_eq!(native_target, std::fs::canonicalize(folder.path()).unwrap());
+        // The duration PR is independent of Windows path presentation. Both
+        // ordinary and extended text must resolve to the exact native target.
+        assert_eq!(std::fs::canonicalize(&first.target).unwrap(), native_target);
+
+        service.inspect(folder.path().join("\0invalid")).unwrap();
+        let failed = received.recv_timeout(TIMEOUT).unwrap();
+        assert!(failed.error.is_some());
+        assert_eq!(failed.revision, first.revision);
+        assert_eq!(failed.last_scan_elapsed_ms, first.last_scan_elapsed_ms);
+        assert!(started.try_recv().is_err());
+
+        let refresh = service.refresh().unwrap();
+        assert_eq!(refresh.last_scan_elapsed_ms, first.last_scan_elapsed_ms);
+        assert_eq!(started.recv_timeout(TIMEOUT).unwrap(), native_target);
+        service.shared.lock().started =
+            std::time::Instant::now().checked_sub(Duration::from_secs(4));
+        release.send(()).unwrap();
+        let refreshed = received.recv_timeout(TIMEOUT).unwrap();
+        assert_eq!(refreshed.revision, refresh.generation);
+        assert!(
+            refreshed
+                .last_scan_elapsed_ms
+                .is_some_and(|duration| duration >= 4000)
+        );
+        assert_eq!(refreshed.last_scan_elapsed_ms, Some(refreshed.elapsed_ms));
+        assert_eq!(service.shared.lock().target, Some(native_target));
+
+        service.ports().unwrap();
         started.recv_timeout(TIMEOUT).unwrap();
         release.send(()).unwrap();
-        let status = received.recv_timeout(TIMEOUT).unwrap();
-        assert_eq!(status.revision, 6);
-        assert_eq!(service.recent().len(), 2);
+        let ports = received.recv_timeout(TIMEOUT).unwrap();
+        assert!(!ports.scanning);
+        assert!(ports.error.is_none());
+        assert_eq!(ports.last_scan_elapsed_ms, Some(ports.elapsed_ms));
     }
     #[derive(Default)]
     struct Recorder {

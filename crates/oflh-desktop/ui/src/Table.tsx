@@ -10,6 +10,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { api, type Page, type Row, type Sort, type TableQuery } from "./api";
+import { createPageLoader } from "./pageLoader";
 import { columnText, columnMeasurer } from "./columnSizing";
 import { memory, compactPath } from "./state";
 import { t, tValue, type MessageKey } from "./i18n";
@@ -30,20 +31,24 @@ export interface ColumnDefinition {
   width: number;
 }
 interface Props {
+  fitAllRequest: number;
+  onFittingChange: (fitting: boolean) => void;
   fontSize: number;
   target: string;
   expandedKey: string | null;
-  onToggle: (row: Row) => void;
+  onToggle: (row: Row, revision: number) => void;
   revision: number;
   query: TableQuery;
   hiddenColumns: Set<ColumnKey>;
   selected: Set<string>;
   focused: string | null;
-  onSelect: (row: Row, additive: boolean) => void;
-  onOpen: (row: Row) => void;
-  onContext: (row: Row) => void;
+  onSelect: (row: Row, additive: boolean, revision: number) => void;
+  onOpen: (row: Row, revision: number) => void;
+  onContext: (row: Row, revision: number) => void;
   onSort: (sort: Sort) => void;
+  onPage: (page: Page) => void;
   onTotal: (total: number) => void;
+  onPageError: (error: unknown, revision: number) => void;
   onError: (error: unknown) => void;
 }
 export const fileColumns: ColumnDefinition[] = [
@@ -75,7 +80,13 @@ export function Table(props: Props) {
       column.key === "process" || !props.hiddenColumns.has(column.key),
   );
   const fitRequest = useRef(0);
-  const [fitting, setFitting] = useState<ColumnKey | null>(null);
+  const loader = useRef(createPageLoader());
+  const [fitting, setFitting] = useState<ColumnKey | "all" | null>(null);
+  useEffect(
+    () => props.onFittingChange(fitting !== null),
+    [fitting, props.onFittingChange],
+  );
+  useEffect(() => () => props.onFittingChange(false), [props.onFittingChange]);
   const scroll = useRef<HTMLDivElement>(null);
   const resizing = useRef<{
     key: ColumnKey;
@@ -84,12 +95,30 @@ export function Table(props: Props) {
     startWidth: number;
   } | null>(null);
   const [page, setPage] = useState<
-    (Page & { offset: number; queryKey: string }) | null
+    (Page & { offset: number; queryKey: string; target: string }) | null
   >(null);
+  const [failedPage, setFailedPage] = useState<{
+    revision: number;
+    target: string;
+    queryKey: string;
+    offset: number;
+  } | null>(null);
+  const queryKey = JSON.stringify({ ...props.query, offset: 0 });
+  // Keep the accepted viewport during a same-target refresh. A different query
+  // or target must never inherit stale matches. Actions retain the page revision.
+  const displayPage =
+    page?.queryKey === queryKey && page.target === props.target ? page : null;
+  const currentPage =
+    displayPage?.revision === props.revision ? displayPage : null;
   const [cursor, setCursor] = useState(0);
-  const pendingNavigation = useRef<{ index: number; additive: boolean } | null>(
-    null,
-  );
+  const viewport = useRef({ page: displayPage, cursor });
+  viewport.current = { page: displayPage, cursor };
+  const pendingNavigation = useRef<{
+    index: number;
+    additive: boolean;
+    revision: number;
+    queryKey: string;
+  } | null>(null);
   const [widths, setWidths] = useState<Record<ColumnKey, number>>({
     process: 220,
     pid: 84,
@@ -107,7 +136,7 @@ export function Table(props: Props) {
   const minWidth = columns.reduce((sum, column) => sum + widthFor(column), 0);
   const rowHeight = Math.round((38 * props.fontSize) / 13);
   const virtual = useVirtualizer({
-    count: page?.total ?? 0,
+    count: displayPage?.total ?? 0,
     getScrollElement: () => scroll.current,
     estimateSize: () => rowHeight,
     overscan: 10,
@@ -116,41 +145,81 @@ export function Table(props: Props) {
     virtual.measure();
   }, [props.fontSize, props.query.handles]);
   const items = virtual.getVirtualItems();
-  const offset = Math.floor((items[0]?.index ?? 0) / 100) * 100;
-  const queryKey = JSON.stringify({ ...props.query, offset: 0 });
+  const firstVisible = items[0]?.index ?? 0;
+  const lastVisible = items.at(-1)?.index ?? firstVisible;
+  // Retain a page while it covers the complete visible/overscan window.
+  const offset =
+    displayPage &&
+    firstVisible >= displayPage.offset &&
+    lastVisible < displayPage.offset + displayPage.rows.length
+      ? displayPage.offset
+      : Math.floor(firstVisible / 100) * 100;
+  const pageFailed =
+    failedPage?.revision === props.revision &&
+    failedPage.target === props.target &&
+    failedPage.queryKey === queryKey &&
+    failedPage.offset === offset;
   useEffect(() => {
     scroll.current?.scrollTo({ top: 0 });
     setCursor(0);
     pendingNavigation.current = null;
-  }, [queryKey]);
+  }, [props.target, queryKey]);
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {
-      api
-        .page(props.revision, { ...props.query, offset, limit: 200 })
-        .then((result) => {
+      loader.current.request(
+        props.revision,
+        { ...props.query, offset, limit: 200 },
+        (result) => {
           if (active) {
-            setPage({ ...result, offset, queryKey });
+            const previous = viewport.current;
+            const oldCursor =
+              previous.page?.rows[previous.cursor - previous.page.offset]?.key;
+            if (oldCursor) {
+              const nextCursor = result.rows.findIndex(
+                (row) => row.key === oldCursor,
+              );
+              if (nextCursor >= 0) setCursor(offset + nextCursor);
+            }
+            setPage({ ...result, offset, queryKey, target: props.target });
+            setFailedPage(null);
+            props.onPage(result);
             props.onTotal(result.total);
           }
-        })
-        .catch((error) => {
-          if (active) props.onError(error);
-        });
+        },
+        (error) => {
+          if (active) {
+            setFailedPage({
+              revision: props.revision,
+              target: props.target,
+              queryKey,
+              offset,
+            });
+            props.onPageError(error, props.revision);
+          }
+        },
+      );
     }, 45);
     return () => {
       active = false;
       clearTimeout(timer);
+      loader.current.cancel();
     };
-  }, [props.revision, queryKey, offset]); // Snapshot/compiled query/viewport are the request identity.
+  }, [props.revision, props.target, queryKey, offset]); // Snapshot/compiled query/viewport are the request identity.
   useEffect(() => {
     const pending = pendingNavigation.current;
-    const row = pending && page?.rows[pending.index - page.offset];
-    if (pending && row) {
+    const row =
+      pending && currentPage?.rows[pending.index - currentPage.offset];
+    if (
+      pending &&
+      row &&
+      pending.revision === props.revision &&
+      pending.queryKey === queryKey
+    ) {
       pendingNavigation.current = null;
-      props.onSelect(row, pending.additive);
+      props.onSelect(row, pending.additive, currentPage!.revision);
     }
-  }, [page]);
+  }, [page, props.revision, queryKey]);
   useEffect(() => {
     // Discard measurements after filters, snapshot, view, or font changes.
     fitRequest.current++;
@@ -168,19 +237,22 @@ export function Table(props: Props) {
     },
     [],
   );
-  const autoFit = async (column: ColumnDefinition) => {
+  const autoFit = async (fitColumns: ColumnDefinition[]) => {
     if (!scroll.current) return;
     const request = ++fitRequest.current;
-    setFitting(column.key);
+    setFitting(fitColumns.length === 1 ? fitColumns[0].key : "all");
     try {
       await document.fonts.ready;
       if (request !== fitRequest.current || !scroll.current) return;
-      const measurement = columnMeasurer(
-        scroll.current,
-        columns.indexOf(column),
-        column.key,
-        t(column.label),
-      );
+      const measurements = fitColumns.map((column) => ({
+        column,
+        measurement: columnMeasurer(
+          scroll.current!,
+          columns.indexOf(column),
+          column.key,
+          t(column.label),
+        ),
+      }));
       let offset = 0;
       // The grid is virtualized. Walk bounded IPC pages so offscreen matches
       // participate without creating DOM nodes for the complete snapshot.
@@ -197,10 +269,13 @@ export function Table(props: Props) {
               });
         if (request !== fitRequest.current) return;
         if (result.revision !== props.revision) return;
-        for (const row of result.rows)
-          measurement.include(
-            columnText(row, column.key, props.query.handles, props.target),
-          );
+        for (const row of result.rows) {
+          for (const { column, measurement } of measurements) {
+            measurement.include(
+              columnText(row, column.key, props.query.handles, props.target),
+            );
+          }
+        }
         offset += result.rows.length;
         if (!result.rows.length || offset >= result.total) break;
         // Keep navigation and cancellation responsive between pages.
@@ -209,7 +284,12 @@ export function Table(props: Props) {
       if (request === fitRequest.current)
         setWidths((current) => ({
           ...current,
-          [column.key]: measurement.width(),
+          ...Object.fromEntries(
+            measurements.map(({ column, measurement }) => [
+              column.key,
+              measurement.width(),
+            ]),
+          ),
         }));
     } catch (error) {
       if (request === fitRequest.current) props.onError(error);
@@ -217,39 +297,53 @@ export function Table(props: Props) {
       if (request === fitRequest.current) setFitting(null);
     }
   };
-  const rowAt = (index: number) => page?.rows[index - page.offset];
+  const previousFitAllRequest = useRef(props.fitAllRequest);
+  useEffect(() => {
+    if (previousFitAllRequest.current === props.fitAllRequest) return;
+    previousFitAllRequest.current = props.fitAllRequest;
+    void autoFit(columns);
+  }, [props.fitAllRequest]);
+  const rowAt = (index: number) =>
+    displayPage?.rows[index - displayPage.offset];
   const navigate = (event: KeyboardEvent<HTMLDivElement>) => {
     let index = cursor;
     if (event.key === "ArrowDown") index++;
     else if (event.key === "ArrowUp") index--;
     else if (event.key === "Home") index = 0;
-    else if (event.key === "End") index = (page?.total ?? 1) - 1;
+    else if (event.key === "End") index = (displayPage?.total ?? 1) - 1;
     else if (event.key === "Enter") {
       const row = rowAt(cursor);
-      if (row) props.onOpen(row);
+      if (row) props.onOpen(row, displayPage!.revision);
       event.preventDefault();
       return;
     } else if (event.key === " ") {
       const row = rowAt(cursor);
-      if (row) props.onSelect(row, true);
+      if (row) props.onSelect(row, true, displayPage!.revision);
       event.preventDefault();
       return;
     } else if (event.key === "F10" && event.shiftKey) {
       const row = rowAt(cursor);
-      if (row) props.onContext(row);
+      if (row) props.onContext(row, displayPage!.revision);
       event.preventDefault();
       return;
     } else return;
     event.preventDefault();
-    index = Math.max(0, Math.min((page?.total ?? 1) - 1, index));
+    index = Math.max(0, Math.min((displayPage?.total ?? 1) - 1, index));
     setCursor(index);
     virtual.scrollToIndex(index);
     const row = rowAt(index);
-    if (row) props.onSelect(row, event.shiftKey);
-    else pendingNavigation.current = { index, additive: event.shiftKey };
+    if (row) props.onSelect(row, event.shiftKey, displayPage!.revision);
+    else
+      pendingNavigation.current = {
+        index,
+        additive: event.shiftKey,
+        revision: props.revision,
+        queryKey,
+      };
   };
   return (
     <div
+      id="results-grid"
       className="table-scroll"
       ref={scroll}
       role="grid"
@@ -260,8 +354,9 @@ export function Table(props: Props) {
             ? t("inspector.k_matching_file_usages_selection_applies_56df1d76")
             : t("inspector.k_processes_using_this_target")
       }
-      aria-rowcount={(page?.total ?? 0) + 1}
+      aria-rowcount={(displayPage?.total ?? 0) + 1}
       aria-colcount={columns.length}
+      aria-busy={!currentPage && !pageFailed}
       aria-multiselectable
       aria-activedescendant={
         items.some((item) => item.index === cursor)
@@ -321,12 +416,12 @@ export function Table(props: Props) {
               aria-orientation="vertical"
               aria-valuenow={widthFor(column)}
               aria-valuemin={70}
-              aria-busy={fitting === column.key}
+              aria-busy={fitting === "all" || fitting === column.key}
               title={t("table.k_auto_fit_hint")}
               onDoubleClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                void autoFit(column);
+                void autoFit([column]);
               }}
               tabIndex={0}
               className="resize-handle"
@@ -334,7 +429,7 @@ export function Table(props: Props) {
                 if (event.key === "Enter") {
                   event.preventDefault();
                   event.stopPropagation();
-                  void autoFit(column);
+                  // Enter on a divider must not fit a column or open a grid row.
                   return;
                 }
                 if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
@@ -386,12 +481,12 @@ export function Table(props: Props) {
           </div>
         ))}
       </div>
-      {!page ? (
+      {!displayPage ? (
         <div className="empty">
           <Search size={28} />
           <h3>{t("table.k_loading_results")}</h3>
         </div>
-      ) : page.total === 0 ? (
+      ) : displayPage.total === 0 ? (
         <div className="empty">
           <FileSearch size={32} />
           <h3>
@@ -422,7 +517,7 @@ export function Table(props: Props) {
             const row = rowAt(item.index);
             return (
               <div
-                key={item.key}
+                key={row?.key ?? item.key}
                 id={`result-row-${item.index}`}
                 role="row"
                 data-cursor={item.index === cursor}
@@ -444,14 +539,17 @@ export function Table(props: Props) {
                     props.onSelect(
                       row,
                       event.ctrlKey || event.metaKey || event.shiftKey,
+                      displayPage!.revision,
                     );
                   }
                 }}
-                onDoubleClick={() => row && props.onOpen(row)}
+                onDoubleClick={() =>
+                  row && props.onOpen(row, displayPage!.revision)
+                }
                 onContextMenu={(event) => {
                   if (row) {
                     event.preventDefault();
-                    props.onContext(row);
+                    props.onContext(row, displayPage!.revision);
                   }
                 }}
               >
@@ -470,7 +568,7 @@ export function Table(props: Props) {
                         aria-expanded={props.expandedKey === row.key}
                         onClick={(event) => {
                           event.stopPropagation();
-                          props.onToggle(row);
+                          props.onToggle(row, displayPage!.revision);
                         }}
                         onDoubleClick={(event) => event.stopPropagation()}
                       >

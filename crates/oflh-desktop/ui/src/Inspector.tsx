@@ -12,6 +12,8 @@ import { memory } from "./state";
 import { t, tValue, type MessageKey } from "./i18n";
 export function Inspector({
   details,
+  availability,
+  rowCurrent,
   row,
   close,
   copy,
@@ -23,6 +25,8 @@ export function Inspector({
   terminateCurrent,
 }: {
   details: Details;
+  availability: "current" | "updating" | "missing";
+  rowCurrent: boolean;
   row: Row | null;
   close: () => void;
   copy: (field: string, reference?: string) => void;
@@ -33,6 +37,7 @@ export function Inspector({
   terminateAncestor: (key: string, force: boolean) => void;
   terminateCurrent: (force: boolean) => void;
 }) {
+  const current = availability === "current";
   const panel = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(() => {
     try {
@@ -74,7 +79,7 @@ export function Inspector({
   });
   const ancestor = nodes.find((item) => item.key === ancestorKey);
   const currentSelected = ancestorKey === details.process.process_key;
-  const path = (label: MessageKey, value: PathValue) => (
+  const path = (label: MessageKey, value: PathValue, available = current) => (
     <section>
       <h4>{t(label)}</h4>
       <p className="detail-path mono">
@@ -82,11 +87,14 @@ export function Inspector({
       </p>
       {value.display && (
         <div className="inline-actions">
-          <button onClick={() => copy("path", value.reference)}>
+          <button
+            disabled={!available}
+            onClick={() => copy("path", value.reference)}
+          >
             <Copy size={13} />
             {t("selection.k_copy_path")}
           </button>
-          <button onClick={() => reveal(value.reference)}>
+          <button disabled={!available} onClick={() => reveal(value.reference)}>
             <ExternalLink size={13} />
             {t("common.k_reveal")}
           </button>
@@ -159,6 +167,11 @@ export function Inspector({
             <X size={16} />
           </button>
         </header>
+        {availability === "missing" && (
+          <p className="hint detail-refresh-note" role="status">
+            {t("inspection.k_captured_process_missing")}
+          </p>
+        )}
         <div className="detail-title">
           <div className="detail-icon">
             <Files size={22} />
@@ -241,6 +254,7 @@ export function Inspector({
               {ancestor.actionable ? (
                 <div className="inline-actions">
                   <button
+                    disabled={!current}
                     onClick={() =>
                       currentSelected
                         ? terminateCurrent(false)
@@ -253,6 +267,7 @@ export function Inspector({
                   </button>
                   <button
                     className="danger-text"
+                    disabled={!current}
                     onClick={() =>
                       currentSelected
                         ? terminateCurrent(true)
@@ -290,16 +305,21 @@ export function Inspector({
           <h4>{t("inspector.k_account")}</h4>
           <p>{details.process.user}</p>
           <div className="inline-actions">
-            <button onClick={() => copy("pid")}>
+            <button disabled={!current} onClick={() => copy("pid")}>
               <Copy size={13} />
               {t("selection.k_copy_pid")}
             </button>
-            <button onClick={() => copy("name")}>
+            <button disabled={!current} onClick={() => copy("name")}>
               <Copy size={13} />
               {t("selection.k_copy_name")}
             </button>
           </div>
         </section>
+        {row && !rowCurrent && (
+          <p className="hint" role="status">
+            {t("inspection.k_captured_observation")}
+          </p>
+        )}
         {row &&
           (row.port ? (
             <section>
@@ -311,10 +331,14 @@ export function Inspector({
             </section>
           ) : (
             <>
-              {path("inspector.k_selected_file_full_path", {
-                display: row.path,
-                reference: row.path_ref,
-              })}
+              {path(
+                "inspector.k_selected_file_full_path",
+                {
+                  display: row.path,
+                  reference: row.path_ref,
+                },
+                current && rowCurrent,
+              )}
               <section>
                 <h4>{t("inspector.k_file_observation")}</h4>
                 <p>
@@ -332,13 +356,17 @@ export function Inspector({
         {path("inspector.k_working_directory", details.cwd)}
         {details.can_inspect_folder && (
           <section>
-            <button onClick={inspectFolder}>
+            <button disabled={!current} onClick={inspectFolder}>
               {t("inspector.k_inspect_owner_folder")}
             </button>
           </section>
         )}
         <p className="hint detail-footnote">
-          {t("inspector.k_matching_handles_are_target_observation_13c2ef67")}
+          {t(
+            availability === "updating"
+              ? "inspection.k_updating_details"
+              : "inspector.k_matching_handles_are_target_observation_13c2ef67",
+          )}
         </p>
       </aside>
     </div>

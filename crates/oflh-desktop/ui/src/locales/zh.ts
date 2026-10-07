@@ -76,6 +76,7 @@ const zh: TranslationSchema<typeof en> = {
     k_reference: "引用",
     k_remove: "移除",
     k_restart_manager: "重启管理器",
+    k_native_file_user: "Windows 文件使用者",
     k_results: "结果",
     k_reveal_in_file_manager: "在文件管理器中显示",
     k_sharing_conflict_delete_denied_reported_9ec719fc:
@@ -189,6 +190,18 @@ const zh: TranslationSchema<typeof en> = {
     k_search_recent_targets: "搜索最近目标",
   },
   inspection: {
+    k_checking_process_references: "正在检查进程引用",
+    k_checking_files: "正在检查文件",
+    k_checking_ports: "正在检查本地端口",
+    k_preparing_results: "正在准备结果",
+    k_reload_paused: "检查完成前，刷新已暂停。",
+    k_starting_inspection: "正在开始检查…",
+    k_files_checked: "已检查 {{count}} 个文件",
+    k_references_checked: "已检查 {{count}} 个引用",
+    k_processes_checked: "已检查 {{count}} 个进程",
+    k_unknown_total: "检查期间总数未知。",
+    k_progress_unavailable: "暂时无法获取进度，检查仍在继续。",
+
     k_1_open_oflh_desktop_and_inspect_a_file_or_folder:
       "1. 打开 OFLH 桌面版并检查文件或文件夹。",
     k_a_clear_view_of_files_in_use: "清楚查看文件使用情况。",
@@ -230,6 +243,17 @@ const zh: TranslationSchema<typeof en> = {
     k_target_processes_only: "仅目标进程",
     k_wait_for_the_current_scan_to_finish_bef_20cd41dd:
       "请等待当前扫描完成后再打开行操作。",
+    k_updating_results: "正在更新结果…",
+    k_results_refreshed: "结果已更新",
+    k_result_update_failed: "无法更新结果",
+    k_background_hint:
+      "刷新期间仍可查看之前的结果。本次检查完成后才能开始下一次检查。",
+    k_cancel_refresh: "取消自动刷新",
+    k_updating_details: "正在更新详情。新结果准备好后即可恢复操作。",
+    k_captured_process_missing:
+      "最新检查中没有此已记录的进程。它可能已退出或不再使用此目标。",
+    k_captured_observation:
+      "此记录来自上一次检查。请选择当前结果中的行以执行文件操作。",
   },
   inspector: {
     k_access: "访问权限",
@@ -343,6 +367,8 @@ const zh: TranslationSchema<typeof en> = {
     k_reset_to_default: "恢复默认",
   },
   status: {
+    k_last_scan_duration: "上次扫描：{{duration}}",
+    k_last_completed_scan_duration: "上次成功完成检查所用的时间",
     k_about_automatic_refresh: "关于自动刷新",
     k_automatic_refresh: "自动刷新",
     k_automatic_refresh_information: "自动刷新说明",
@@ -385,7 +411,9 @@ const zh: TranslationSchema<typeof en> = {
     k_trade_off: "注意事项：",
   },
   table: {
-    k_auto_fit_hint: "双击或按 Enter 键以按内容调整列宽",
+    k_auto_fit_hint: "双击以按内容调整列宽",
+    k_fit_all_columns: "调整所有列宽",
+    k_fit_all_columns_hint: "根据所有匹配行调整所有可见列宽",
     k_focus_mode_hint:
       "专注模式：侧栏已收起，额外面板已隐藏。按 {{shortcut}} 恢复完整布局。",
     k_maximize_grid: "最大化表格",

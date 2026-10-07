@@ -1,0 +1,518 @@
+{
+  "schema": 1,
+  "os": "linux",
+  "arch": "x86_64",
+  "fixture": "50000 usages; 500 and 10000 processes; complete name-sorted wildcard matches; 100 End/draw frames",
+  "samples": {
+    "baseline": [
+      [
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 54.173,
+          "search_ms": 80.616,
+          "render_100_ms": 39.325
+        },
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 54.173,
+          "search_ms": 130.129,
+          "render_100_ms": 255.368
+        },
+        {
+          "processes": 500,
+          "metrics_ms": 0.059
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 35.86,
+          "search_ms": 91.965,
+          "render_100_ms": 39.635
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 35.86,
+          "search_ms": 142.892,
+          "render_100_ms": 274.103
+        },
+        {
+          "processes": 10000,
+          "metrics_ms": 29.0
+        }
+      ],
+      [
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 50.573,
+          "search_ms": 78.792,
+          "render_100_ms": 39.108
+        },
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 50.573,
+          "search_ms": 131.365,
+          "render_100_ms": 254.362
+        },
+        {
+          "processes": 500,
+          "metrics_ms": 0.059
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 35.938,
+          "search_ms": 91.533,
+          "render_100_ms": 39.333
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 35.938,
+          "search_ms": 144.408,
+          "render_100_ms": 272.434
+        },
+        {
+          "processes": 10000,
+          "metrics_ms": 29.014
+        }
+      ],
+      [
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 51.061,
+          "search_ms": 78.257,
+          "render_100_ms": 40.035
+        },
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 51.061,
+          "search_ms": 130.211,
+          "render_100_ms": 255.535
+        },
+        {
+          "processes": 500,
+          "metrics_ms": 0.059
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 35.491,
+          "search_ms": 91.392,
+          "render_100_ms": 39.938
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 35.491,
+          "search_ms": 142.222,
+          "render_100_ms": 270.914
+        },
+        {
+          "processes": 10000,
+          "metrics_ms": 29.946
+        }
+      ],
+      [
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 53.744,
+          "search_ms": 79.483,
+          "render_100_ms": 39.159
+        },
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 53.744,
+          "search_ms": 129.979,
+          "render_100_ms": 256.57
+        },
+        {
+          "processes": 500,
+          "metrics_ms": 0.063
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 36.312,
+          "search_ms": 91.335,
+          "render_100_ms": 39.589
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 36.312,
+          "search_ms": 142.908,
+          "render_100_ms": 272.895
+        },
+        {
+          "processes": 10000,
+          "metrics_ms": 28.615
+        }
+      ],
+      [
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 52.248,
+          "search_ms": 78.195,
+          "render_100_ms": 39.325
+        },
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 52.248,
+          "search_ms": 130.344,
+          "render_100_ms": 259.909
+        },
+        {
+          "processes": 500,
+          "metrics_ms": 0.058
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 35.945,
+          "search_ms": 91.43,
+          "render_100_ms": 39.299
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 35.945,
+          "search_ms": 144.401,
+          "render_100_ms": 270.689
+        },
+        {
+          "processes": 10000,
+          "metrics_ms": 28.903
+        }
+      ]
+    ],
+    "candidate": [
+      [
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 53.533,
+          "search_ms": 11.66,
+          "render_100_ms": 39.456
+        },
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 53.533,
+          "search_ms": 23.96,
+          "render_100_ms": 32.863
+        },
+        {
+          "processes": 500,
+          "metrics_ms": 0.013
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 40.17,
+          "search_ms": 16.112,
+          "render_100_ms": 38.769
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 40.17,
+          "search_ms": 30.572,
+          "render_100_ms": 33.33
+        },
+        {
+          "processes": 10000,
+          "metrics_ms": 0.392
+        }
+      ],
+      [
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 55.157,
+          "search_ms": 11.737,
+          "render_100_ms": 39.327
+        },
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 55.157,
+          "search_ms": 23.963,
+          "render_100_ms": 32.614
+        },
+        {
+          "processes": 500,
+          "metrics_ms": 0.013
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 40.008,
+          "search_ms": 16.42,
+          "render_100_ms": 38.795
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 40.008,
+          "search_ms": 30.306,
+          "render_100_ms": 32.773
+        },
+        {
+          "processes": 10000,
+          "metrics_ms": 0.371
+        }
+      ],
+      [
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 53.752,
+          "search_ms": 12.262,
+          "render_100_ms": 39.359
+        },
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 53.752,
+          "search_ms": 25.961,
+          "render_100_ms": 32.828
+        },
+        {
+          "processes": 500,
+          "metrics_ms": 0.014
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 39.513,
+          "search_ms": 17.802,
+          "render_100_ms": 38.88
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 39.513,
+          "search_ms": 32.332,
+          "render_100_ms": 32.827
+        },
+        {
+          "processes": 10000,
+          "metrics_ms": 0.364
+        }
+      ],
+      [
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 55.241,
+          "search_ms": 11.912,
+          "render_100_ms": 40.371
+        },
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 55.241,
+          "search_ms": 24.563,
+          "render_100_ms": 34.065
+        },
+        {
+          "processes": 500,
+          "metrics_ms": 0.014
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 39.361,
+          "search_ms": 16.832,
+          "render_100_ms": 39.861
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 39.361,
+          "search_ms": 30.449,
+          "render_100_ms": 33.782
+        },
+        {
+          "processes": 10000,
+          "metrics_ms": 0.367
+        }
+      ],
+      [
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 52.674,
+          "search_ms": 11.959,
+          "render_100_ms": 39.22
+        },
+        {
+          "processes": 500,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 52.674,
+          "search_ms": 25.257,
+          "render_100_ms": 32.772
+        },
+        {
+          "processes": 500,
+          "metrics_ms": 0.014
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": false,
+          "indexing_ms": 39.268,
+          "search_ms": 16.888,
+          "render_100_ms": 38.949
+        },
+        {
+          "processes": 10000,
+          "usages": 50000,
+          "locked": true,
+          "indexing_ms": 39.268,
+          "search_ms": 32.118,
+          "render_100_ms": 32.854
+        },
+        {
+          "processes": 10000,
+          "metrics_ms": 0.356
+        }
+      ]
+    ]
+  },
+  "medians": {
+    "baseline": [
+      {
+        "processes": 500,
+        "usages": 50000,
+        "locked": false,
+        "indexing_ms": 52.248,
+        "search_ms": 78.792,
+        "render_100_ms": 39.325
+      },
+      {
+        "processes": 500,
+        "usages": 50000,
+        "locked": true,
+        "indexing_ms": 52.248,
+        "search_ms": 130.211,
+        "render_100_ms": 255.535
+      },
+      {
+        "processes": 500,
+        "metrics_ms": 0.059
+      },
+      {
+        "processes": 10000,
+        "usages": 50000,
+        "locked": false,
+        "indexing_ms": 35.938,
+        "search_ms": 91.43,
+        "render_100_ms": 39.589
+      },
+      {
+        "processes": 10000,
+        "usages": 50000,
+        "locked": true,
+        "indexing_ms": 35.938,
+        "search_ms": 142.908,
+        "render_100_ms": 272.434
+      },
+      {
+        "processes": 10000,
+        "metrics_ms": 29.0
+      }
+    ],
+    "candidate": [
+      {
+        "processes": 500,
+        "usages": 50000,
+        "locked": false,
+        "indexing_ms": 53.752,
+        "search_ms": 11.912,
+        "render_100_ms": 39.359
+      },
+      {
+        "processes": 500,
+        "usages": 50000,
+        "locked": true,
+        "indexing_ms": 53.752,
+        "search_ms": 24.563,
+        "render_100_ms": 32.828
+      },
+      {
+        "processes": 500,
+        "metrics_ms": 0.014
+      },
+      {
+        "processes": 10000,
+        "usages": 50000,
+        "locked": false,
+        "indexing_ms": 39.513,
+        "search_ms": 16.832,
+        "render_100_ms": 38.88
+      },
+      {
+        "processes": 10000,
+        "usages": 50000,
+        "locked": true,
+        "indexing_ms": 39.513,
+        "search_ms": 30.572,
+        "render_100_ms": 32.854
+      },
+      {
+        "processes": 10000,
+        "metrics_ms": 0.367
+      }
+    ]
+  }
+}

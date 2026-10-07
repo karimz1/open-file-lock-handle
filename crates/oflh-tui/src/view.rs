@@ -1,4 +1,7 @@
 use crate::app::*;
+#[path = "messages.rs"]
+pub(crate) mod messages;
+use messages::localized;
 use oflh_core::*;
 use ratatui::{
     Frame,
@@ -84,11 +87,13 @@ fn search(frame: &mut Frame, area: Rect, app: &App, detail: bool) {
     let value = app.input();
     let label = if value.is_empty() {
         if (!detail && app.ports) || (detail && app.detail_ports) {
-            "/ Search port, process, address…"
+            app.language.text("/ Search port, process, address…")
         } else if detail {
-            "/ Search files, DLLs, paths… · * wildcard"
+            app.language
+                .text("/ Search files, DLLs, paths… · * wildcard")
         } else {
-            "/ Search PID, process, path… · * wildcard"
+            app.language
+                .text("/ Search PID, process, path… · * wildcard")
         }
     } else {
         value
@@ -140,10 +145,14 @@ fn confirmation_buttons(app: &App) -> Line<'static> {
         )
     };
     Line::from(vec![
-        button("Cancel", !app.confirm, cancel_color),
+        button(app.language.text("Cancel"), !app.confirm, cancel_color),
         Span::raw("   "),
         button(
-            if app.force { "Force kill" } else { "Terminate" },
+            if app.force {
+                app.language.text("Force kill")
+            } else {
+                app.language.text("Terminate")
+            },
             app.confirm,
             terminate_color,
         ),
@@ -152,40 +161,40 @@ fn confirmation_buttons(app: &App) -> Line<'static> {
 
 fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
     let (keys, status) = match app.screen {
-        Screen::Confirm => ("Tab / ←→ choose · Enter confirm · Esc cancel", ""),
+        Screen::Confirm => (app.language.text("Tab / ←→ choose · Enter confirm · Esc cancel"), ""),
         Screen::Details if app.detail_ports => (
-            "/ search · f files · r refresh · a auto · k stop · x force · ? help · Esc back · q quit",
+            app.language.text("/ search · f files · r refresh · a auto · k stop · x force · ? help · Esc back · q quit"),
             "",
         ),
         Screen::Main if app.ports && app.tree.is_none() => (
-            "1/2/3 tabs · / search · s all/this path · Enter inspect · Space select · r refresh · a auto · k stop · x force · ? help · q quit",
+            app.language.text("1/2/3 tabs · / search · s all/this path · Enter inspect · Space select · r refresh · a auto · k stop · x force · ? help · q quit"),
             "",
         ),
         Screen::Details => (
-            "/ search · p ports · l locks only · ↑↓ select · ←→ path · r refresh · a auto · k stop · x force · R GitHub · D Donate · Esc back · q quit",
+            app.language.text("/ search · p ports · l locks only · ↑↓ select · ←→ path · r refresh · a auto · k stop · x force · R GitHub · D Donate · Esc back · q quit"),
             "",
         ),
-        Screen::Help => ("↑↓ scroll · R GitHub · D Donate · Esc back · q quit", ""),
+        Screen::Help => (app.language.text("↑↓ scroll · R GitHub · D Donate · Esc back · q quit"), ""),
         Screen::Main if app.tree.is_some() => (
-            "↑↓ process · k stop target · x force kill target · Tab/← back",
+            app.language.text("↑↓ process · k stop target · x force kill target · Tab/← back"),
             "",
         ),
         _ => (
-            "1/2/3 tabs · / search · ↑↓ move · Enter inspect · Space select · Ctrl+A all · Tab/→ tree · i panel · m/c RAM/CPU · a auto · r refresh · k stop · x force · ? help · R GitHub · D Donate · q quit",
-            "Enter inspect · Space select · m RAM / c CPU / n name / p PID",
+            app.language.text("1/2/3 tabs · / search · ↑↓ move · Enter inspect · Space select · Ctrl+A all · Tab/→ tree · i panel · m/c RAM/CPU · a auto · r refresh · k stop · x force · ? help · R GitHub · D Donate · q quit"),
+            app.language.text("Enter inspect · Space select · m RAM / c CPU / n name / p PID"),
         ),
     };
     let keys = if width < 60 {
         match app.screen {
             Screen::Main if app.ports && app.tree.is_none() => keys,
             Screen::Details if app.detail_ports => {
-                "/ search · r refresh · a auto · ? help · Esc back · q quit"
+                app.language.text("/ search · r refresh · a auto · ? help · Esc back · q quit")
             }
             Screen::Main if app.tree.is_none() => {
-                "1/2/3 tabs · / search · Enter inspect · k stop · x force · ? help · R GitHub · D Donate · q quit"
+                app.language.text("1/2/3 tabs · / search · Enter inspect · k stop · x force · ? help · R GitHub · D Donate · q quit")
             }
             Screen::Details => {
-                "↑↓ select · / search · p ports · l locks · r refresh · ? help · Esc back · q quit"
+                app.language.text("↑↓ select · / search · p ports · l locks · r refresh · ? help · Esc back · q quit")
             }
             _ => keys,
         }
@@ -193,6 +202,67 @@ fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
         keys
     };
     let mut lines = Vec::new();
+    // Reserve this line from startup for enabled release builds. A background
+    // notice changes its text, never the grid's height, cursor or viewport.
+    if app.update.enabled && app.screen != Screen::Confirm {
+        let text = if let Some(version) = app.update.visible_version() {
+            if width < 60 {
+                localized!(
+                    app.language,
+                    "↑ {version} · U releases · b hide",
+                    version = version
+                )
+            } else {
+                localized!(
+                    app.language,
+                    "Update {version} available · U releases · b dismiss",
+                    version = version
+                )
+            }
+        } else {
+            match &app.update.feedback {
+                crate::app::UpdateFeedback::Checking => {
+                    app.language.text("Checking updates…").into()
+                }
+                crate::app::UpdateFeedback::Current => app
+                    .language
+                    .text("No newer stable release · u check updates")
+                    .into(),
+                crate::app::UpdateFeedback::Failed(error) => localized!(
+                    app.language,
+                    "Update check failed: {error} · u retry · b dismiss",
+                    error = safe(error)
+                ),
+                crate::app::UpdateFeedback::Quiet => app.language.text("u check updates").into(),
+            }
+        };
+        lines.push(Line::styled(text, Style::default().fg(MUTED)));
+    }
+    if app.scanning {
+        let phase = match app.scan_progress.phase {
+            InspectionPhase::Processes => app.language.text("processes"),
+            InspectionPhase::Files => app.language.text("files"),
+            InspectionPhase::Ports => app.language.text("ports"),
+            InspectionPhase::Indexing => app.language.text("indexing"),
+        };
+        lines.push(Line::styled(
+            localized!(
+                app.language,
+                "{} {phase} · {:.1}s · {} processes / {} resources · z cancel",
+                ["◐", "◓", "◑", "◒"][app.pulse % 4],
+                app.scan_elapsed.as_secs_f64(),
+                app.scan_progress.processes,
+                app.scan_progress.resources,
+                phase = phase
+            ),
+            accent(),
+        ));
+    } else if let Some(elapsed) = app.last_scan_elapsed {
+        lines.push(Line::styled(
+            localized!(app.language, "Last scan {:.2}s", elapsed.as_secs_f64()),
+            Style::default().fg(MUTED),
+        ));
+    }
     if !app.status.is_empty() {
         lines.push(Line::styled(
             safe(&app.status),
@@ -203,7 +273,7 @@ fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
     }
     if !app.snapshot.warnings.is_empty() && app.screen != Screen::Help {
         lines.push(Line::styled(
-            "Results may be incomplete · ? details",
+            app.language.text("Results may be incomplete · ? details"),
             Style::default().fg(MUTED),
         ))
     }
@@ -234,7 +304,7 @@ fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
     }
     if app.editing {
         lines = vec![Line::styled(
-            "Enter apply · Esc cancel · ↑↓ browse",
+            app.language.text("Enter apply · Esc cancel · ↑↓ browse"),
             accent(),
         )]
     }
@@ -262,11 +332,16 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         text(
             frame,
             area,
-            format!(
+            localized!(
+                app.language,
                 "oflh {}\n{}\nResize for full view · Esc back · q quit",
-                safe(&app.target.path.to_string_lossy()),
+                display_path(&app.target.path),
                 if app.screen == Screen::Confirm {
-                    format!("{} targets. Enlarge to review.", app.pending.len())
+                    localized!(
+                        app.language,
+                        "{} targets. Enlarge to review.",
+                        app.pending.len()
+                    )
                 } else {
                     app.current().map_or_else(String::new, |process| {
                         format!("{} {}", process.identity.pid, safe(&process.name))
@@ -284,13 +359,19 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
 }
 fn main_view(frame: &mut Frame, area: Rect, app: &mut App) {
+    let full_tab_width = [" 1 Processes ", " 2 Locked files ", " 3 Ports "]
+        .iter()
+        .map(|label| unicode_width::UnicodeWidthStr::width(app.language.text(label)))
+        .sum::<usize>()
+        + 6;
+    let compact_tabs = usize::from(area.width) < 48.max(full_tab_width);
     let tabs = vec![
         Span::styled("oflh  ", accent()),
         Span::styled(
-            if area.width < 48 {
-                " 1 Proc "
+            if compact_tabs {
+                app.language.text(" 1 Proc ")
             } else {
-                " 1 Processes "
+                app.language.text(" 1 Processes ")
             },
             if !app.locked && !app.ports {
                 selected()
@@ -301,10 +382,10 @@ fn main_view(frame: &mut Frame, area: Rect, app: &mut App) {
             },
         ),
         Span::styled(
-            if area.width < 48 {
-                " 2 Locks "
+            if compact_tabs {
+                app.language.text(" 2 Locks ")
             } else {
-                " 2 Locked files "
+                app.language.text(" 2 Locked files ")
             },
             if app.locked {
                 selected()
@@ -315,7 +396,7 @@ fn main_view(frame: &mut Frame, area: Rect, app: &mut App) {
             },
         ),
         Span::styled(
-            " 3 Ports ",
+            app.language.text(" 3 Ports "),
             if app.ports {
                 selected()
             } else {
@@ -340,32 +421,34 @@ fn main_view(frame: &mut Frame, area: Rect, app: &mut App) {
         );
     }
     let activity = if app.stopping {
-        "requesting termination…".to_owned()
+        app.language.text("requesting termination…").to_owned()
     } else if app.scanning {
-        format!("{} scanning", ["◐", "◓", "◑", "◒"][app.pulse % 4])
+        localized!(
+            app.language,
+            "{} scanning",
+            ["◐", "◓", "◑", "◒"][app.pulse % 4]
+        )
     } else if app.auto {
-        "LIVE · every 5s".into()
+        app.language.text("LIVE · every 5s").into()
     } else {
-        "MANUAL · r refresh".into()
+        app.language.text("MANUAL · r refresh").into()
     };
     text(
         frame,
         line_area(area, 1),
-        format!(
-            "{}  ·  {activity}",
-            safe(&app.target.path.to_string_lossy())
-        ),
+        format!("{}  ·  {activity}", display_path(&app.target.path)),
         Style::default().fg(MUTED),
     );
     text(
         frame,
         line_area(area, 2),
         if app.editing {
-            "Search · Enter apply · Esc cancel"
+            app.language.text("Search · Enter apply · Esc cancel")
         } else if app.tree.is_some() {
-            "Tree · ↑↓ choose process · k stop / x force kill · Tab/← back"
+            app.language
+                .text("Tree · ↑↓ choose process · k stop / x force kill · Tab/← back")
         } else {
-            "Navigation · / search · Tab/→ tree"
+            app.language.text("Navigation · / search · Tab/→ tree")
         },
         Style::default().fg(MUTED),
     );
@@ -376,34 +459,29 @@ fn main_view(frame: &mut Frame, area: Rect, app: &mut App) {
         false,
     );
     let summary = if app.ports {
-        format!(
+        localized!(
+            app.language,
             "{} bindings · {} · s scope",
             app.rows.len(),
             if app.ports_path_only {
-                "THIS PATH"
+                app.language.text("THIS PATH")
             } else {
-                "ALL PORTS"
+                app.language.text("ALL PORTS")
             }
         )
     } else if app.locked {
-        format!(
+        localized!(
+            app.language,
             "{} locked files · {} lock entries",
-            app.rows
-                .iter()
-                .map(|row| &app.snapshot.processes[row.process].usages[row.usages[0]].path)
-                .collect::<std::collections::HashSet<_>>()
-                .len(),
+            app.locked_files,
             app.rows.len()
         )
     } else {
-        format!(
+        localized!(
+            app.language,
             "{} of {} processes",
             app.rows.len(),
-            app.snapshot
-                .processes
-                .iter()
-                .filter(|process| !process.usages.is_empty())
-                .count()
+            app.file_processes
         )
     };
     text(
@@ -415,31 +493,33 @@ fn main_view(frame: &mut Frame, area: Rect, app: &mut App) {
                 if app.selected.is_empty() {
                     String::new()
                 } else {
-                    format!(" · {} selected", app.selected.len())
+                    localized!(app.language, " · {} selected", app.selected.len())
                 }
             )
         } else {
-            format!(
+            localized!(
+                app.language,
                 "{summary}{} · sort: {}",
                 if app.selected.is_empty() {
                     String::new()
                 } else {
-                    format!(" · {} selected", app.selected.len())
+                    localized!(app.language, " · {} selected", app.selected.len())
                 },
                 match app.sort {
-                    Sort::Name => "name",
-                    Sort::Pid => "pid",
+                    Sort::Name => app.language.text("name"),
+                    Sort::Pid => app.language.text("pid"),
                     Sort::Memory => "RAM",
                     Sort::Cpu => "CPU",
                     Sort::Relevance =>
                         if app.ports {
-                            "port"
+                            app.language.text("port")
                         } else if app.query.is_empty() {
-                            "pid"
+                            app.language.text("pid")
                         } else {
-                            "match"
+                            app.language.text("match")
                         },
-                }
+                },
+                summary = summary
             )
         },
         accent(),
@@ -494,11 +574,13 @@ fn render_main_table(frame: &mut Frame, area: Rect, app: &App) {
             frame,
             area,
             if app.scanning && app.snapshot.processes.is_empty() {
-                "Discovering processes…\nYou can keep navigating while the scan runs."
+                app.language
+                    .text("Discovering processes…\nYou can keep navigating while the scan runs.")
             } else if !app.query.is_empty() {
-                "No processes match your filter.\nPress / to edit it or Esc to clear."
+                app.language
+                    .text("No processes match your filter.\nPress / to edit it or Esc to clear.")
             } else {
-                "No visible processes are using this path.\nPress r to scan again. Permissions may hide usage."
+                app.language.text("No visible processes are using this path.\nPress r to scan again. Permissions may hide usage.")
             },
             Style::default().fg(MUTED),
         );
@@ -553,20 +635,38 @@ fn render_main_table(frame: &mut Frame, area: Rect, app: &App) {
         vec![
             "",
             "PID",
-            "PROCESS",
-            "USER",
+            app.language.text("PROCESS"),
+            app.language.text("USER"),
             "CPU%",
             "RAM",
-            "ACCESS",
-            "PORTS",
-            "MATCHED PATH",
+            app.language.text("ACCESS"),
+            app.language.text("PORTS"),
+            app.language.text("MATCHED PATH"),
         ]
     } else if medium {
-        vec!["", "PID", "PROCESS", "ACCESS", "PORTS", "MATCHED PATH"]
+        vec![
+            "",
+            "PID",
+            app.language.text("PROCESS"),
+            app.language.text("ACCESS"),
+            app.language.text("PORTS"),
+            app.language.text("MATCHED PATH"),
+        ]
     } else if show_ports {
-        vec!["", "PID", "PROCESS", "PORTS", "PATH"]
+        vec![
+            "",
+            "PID",
+            app.language.text("PROCESS"),
+            app.language.text("PORTS"),
+            app.language.text("PATH"),
+        ]
     } else {
-        vec!["", "PID", "PROCESS", "PATH"]
+        vec![
+            "",
+            "PID",
+            app.language.text("PROCESS"),
+            app.language.text("PATH"),
+        ]
     };
     let rows = app.rows.iter().skip(start).take(count).map(|row| {
         let process = &app.snapshot.processes[row.process];
@@ -577,17 +677,18 @@ fn render_main_table(frame: &mut Frame, area: Rect, app: &App) {
             " "
         };
         let path = if app.target.directory {
-            usage
-                .path
-                .strip_prefix(&app.target.path)
-                .unwrap_or(&usage.path)
+            display_path_relative_to(&usage.path, &app.target.path)
         } else {
-            &usage.path
+            display_path(&usage.path)
         };
         let path = format!(
             "{}{}{}",
-            safe(&path.to_string_lossy()),
-            if usage.deleted { " (deleted)" } else { "" },
+            path,
+            if usage.deleted {
+                app.language.text(" (deleted)")
+            } else {
+                ""
+            },
             if row.usages.len() > 1 {
                 format!(" +{}", row.usages.len() - 1)
             } else {
@@ -609,13 +710,16 @@ fn render_main_table(frame: &mut Frame, area: Rect, app: &App) {
         }
         if medium {
             cells.push(
-                Cell::from(if app.locked { "locked" } else { access.label() }).style(
-                    if app.locked {
-                        Style::default().fg(LOCK)
-                    } else {
-                        access_style(access)
-                    },
-                ),
+                Cell::from(if app.locked {
+                    app.language.text("locked")
+                } else {
+                    app.language.text(access.label())
+                })
+                .style(if app.locked {
+                    Style::default().fg(LOCK)
+                } else {
+                    access_style(access)
+                }),
             )
         }
         if show_ports {
@@ -639,14 +743,14 @@ fn render_main_table(frame: &mut Frame, area: Rect, app: &App) {
     let mut state = TableState::default().with_selected(Some(app.cursor - start));
     frame.render_stateful_widget(table, area, &mut state);
 }
-fn process_port_summary(process: &Process) -> String {
+fn process_port_summary(process: &Process, language: messages::Language) -> String {
     let ports: std::collections::BTreeSet<_> = process
         .ports
         .iter()
         .map(|port| (port.protocol, port.number))
         .collect();
     if ports.is_empty() {
-        return "none detected".into();
+        return language.text("none detected").into();
     }
     let mut summary = ports
         .iter()
@@ -655,7 +759,7 @@ fn process_port_summary(process: &Process) -> String {
         .collect::<Vec<_>>()
         .join(" · ");
     if ports.len() > 3 {
-        summary.push_str(&format!(" · +{} more", ports.len() - 3));
+        summary.push_str(&localized!(language, " · +{} more", ports.len() - 3));
     }
     summary
 }
@@ -688,15 +792,15 @@ fn inspector(frame: &mut Frame, area: Rect, app: &App) {
         Line::styled("─".repeat(area.width as usize), Style::default().fg(MUTED)),
         Line::raw(format!("CPU {}   RAM {}", cpu(process), memory(process))),
         Line::styled(
-            "CPU = share of machine · RAM = RSS",
+            app.language.text("CPU = share of machine · RAM = RSS"),
             Style::default().fg(MUTED),
         ),
         Line::raw(""),
         Line::styled(
             if app.tree.is_some() {
-                "ANCESTRY · focused"
+                app.language.text("ANCESTRY · focused")
             } else {
-                "ANCESTRY"
+                app.language.text("ANCESTRY")
             },
             accent(),
         ),
@@ -754,7 +858,7 @@ fn inspector(frame: &mut Frame, area: Rect, app: &App) {
         let node = &tree.nodes[tree.cursor];
         lines.extend([
             Line::raw(""),
-            Line::styled("ACTION TARGET", accent()),
+            Line::styled(app.language.text("ACTION TARGET"), accent()),
             Line::raw(format!("{} · PID {}", safe(&node.name), node.identity.pid)),
         ]);
     }
@@ -762,18 +866,18 @@ fn inspector(frame: &mut Frame, area: Rect, app: &App) {
         Line::raw(""),
         Line::styled(
             if app.tree.is_some() {
-                "PORTS"
+                app.language.text("PORTS")
             } else if app.ports {
-                "PORTS · Enter to inspect"
+                app.language.text("PORTS · Enter to inspect")
             } else {
-                "PORTS · Enter, then p to inspect"
+                app.language.text("PORTS · Enter, then p to inspect")
             },
             accent(),
         ),
-        Line::raw(process_port_summary(process)),
+        Line::raw(process_port_summary(process, app.language)),
         Line::raw(""),
-        Line::styled("EXECUTABLE", accent()),
-        Line::raw(safe(&process.executable.to_string_lossy())),
+        Line::styled(app.language.text("EXECUTABLE"), accent()),
+        Line::raw(display_path(&process.executable)),
     ]);
     if let Some(row) = app.rows.get(app.cursor)
         && let Some(usage) = row
@@ -783,8 +887,8 @@ fn inspector(frame: &mut Frame, area: Rect, app: &App) {
     {
         lines.extend([
             Line::raw(""),
-            Line::styled("SELECTED PATH", accent()),
-            Line::raw(safe(&usage.path.to_string_lossy())),
+            Line::styled(app.language.text("SELECTED PATH"), accent()),
+            Line::raw(display_path(&usage.path)),
         ]);
     }
     frame.render_widget(Paragraph::new(lines), area);
@@ -796,7 +900,7 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
     text(
         frame,
         line_area(area, 0),
-        "oflh  /  process details",
+        app.language.text("oflh  /  process details"),
         accent(),
     );
     let Some(process) = app.detail() else {
@@ -804,7 +908,8 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
         text(
             frame,
             Rect::new(area.x, area.y + 2, area.width, 3),
-            "Process exited or PID was reused. Press Esc to return.",
+            app.language
+                .text("Process exited or PID was reused. Press Esc to return."),
             Style::default().fg(LOCK),
         );
         footer(
@@ -829,19 +934,18 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
             ),
             accent(),
         ),
-        Line::raw(format!(
-            "EXE {}",
-            safe(&process.executable.to_string_lossy())
-        )),
-        Line::raw(format!("CWD {}", safe(&process.cwd.to_string_lossy()))),
-        Line::raw(format!(
+        Line::raw(format!("EXE {}", display_path(&process.executable))),
+        Line::raw(format!("CWD {}", display_path(&process.cwd))),
+        Line::raw(localized!(
+            app.language,
             "PARENT {}",
             process.ancestors.first().map_or_else(
-                || "unavailable".into(),
+                || app.language.text("unavailable").into(),
                 |access| format!("{} ({})", safe(&access.name), access.identity.pid)
             )
         )),
-        Line::raw(format!(
+        Line::raw(localized!(
+            app.language,
             "CPU {} machine · RAM {} RSS",
             cpu(process),
             memory(process)
@@ -852,7 +956,8 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
     if compact {
         let lines = vec![
             header[0].clone(),
-            Line::raw(format!(
+            Line::raw(localized!(
+                app.language,
                 "CPU {} · RAM {} · PARENT {}",
                 cpu(process),
                 memory(process),
@@ -872,7 +977,11 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
     text(
         frame,
         line_area(area, head_height - 1),
-        format!("PORTS · p inspect · {}", process_port_summary(process)),
+        localized!(
+            app.language,
+            "PORTS · p inspect · {}",
+            process_port_summary(process, app.language)
+        ),
         accent(),
     );
     search(
@@ -881,26 +990,17 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
         app,
         true,
     );
-    let locked = app
-        .usage_rows
-        .iter()
-        .filter_map(|&i| {
-            process.usages[i]
-                .lock
-                .as_ref()
-                .map(|_| &process.usages[i].path)
-        })
-        .collect::<std::collections::HashSet<_>>()
-        .len();
+    let locked = app.detail_locked_files;
     text(
         frame,
         line_area(area, head_height + 3),
-        format!(
+        localized!(
+            app.language,
             "{} · {} of {} usages · {locked} locked files   {} / {}",
             if app.detail_locks {
-                "LOCKS ONLY"
+                app.language.text("LOCKS ONLY")
             } else {
-                "ALL USAGES"
+                app.language.text("ALL USAGES")
             },
             app.usage_rows.len(),
             process.usages.len(),
@@ -909,7 +1009,8 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
             } else {
                 app.usage_cursor + 1
             },
-            app.usage_rows.len()
+            app.usage_rows.len(),
+            locked = locked
         ),
         accent(),
     );
@@ -920,7 +1021,8 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
     text(
         frame,
         line_area(area, head_height + 4),
-        format!(
+        localized!(
+            app.language,
             "FILE {}",
             current.map_or_else(String::new, |usage| safe(
                 &usage.path.file_name().unwrap_or_default().to_string_lossy()
@@ -935,7 +1037,7 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
         text(
             frame,
             body,
-            "No usage entries match this filter.",
+            app.language.text("No usage entries match this filter."),
             Style::default().fg(MUTED),
         )
     } else {
@@ -962,26 +1064,30 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
                     &usage.path.file_name().unwrap_or_default().to_string_lossy(),
                 ))];
                 if wide {
-                    cells.push(Cell::from(usage.relation.label()).style(
+                    cells.push(Cell::from(app.language.text(usage.relation.label())).style(
                         Style::default().fg(if usage.lock.is_some() { LOCK } else { ACCENT }),
                     ));
-                    cells.push(Cell::from(usage.access.label()).style(access_style(usage.access)));
-                    cells.push(Cell::from(safe(
-                        &usage
-                            .path
-                            .parent()
-                            .unwrap_or(std::path::Path::new(""))
-                            .to_string_lossy(),
+                    cells.push(
+                        Cell::from(app.language.text(usage.access.label()))
+                            .style(access_style(usage.access)),
+                    );
+                    cells.push(Cell::from(display_path(
+                        usage.path.parent().unwrap_or(std::path::Path::new("")),
                     )))
                 } else {
-                    cells.push(Cell::from(usage.relation.label()))
+                    cells.push(Cell::from(app.language.text(usage.relation.label())))
                 }
                 TableRow::new(cells)
             });
         let headers = if wide {
-            vec!["FILE", "RELATION", "ACCESS", "DIRECTORY"]
+            vec![
+                app.language.text("FILE"),
+                app.language.text("RELATION"),
+                app.language.text("ACCESS"),
+                app.language.text("DIRECTORY"),
+            ]
         } else {
-            vec!["FILE", "RELATION"]
+            vec![app.language.text("FILE"), app.language.text("RELATION")]
         };
         let table = Table::new(rows, widths)
             .column_spacing(1)
@@ -1001,16 +1107,17 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
         text(
             frame,
             Rect::new(area.x, preview_y, area.width, 1),
-            format!(
+            localized!(
+                app.language,
                 "SELECTED PATH · {} · {}",
-                usage.relation.label(),
-                usage.access.label()
+                app.language.text(usage.relation.label()),
+                app.language.text(usage.access.label())
             ),
             access_style(usage.access),
         );
         let full = format!(
             "{}{}",
-            safe(&usage.path.to_string_lossy()),
+            display_path(&usage.path),
             usage
                 .lock
                 .as_ref()
@@ -1047,28 +1154,37 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
     let mut lines = Vec::new();
     if app.screen == Screen::Confirm {
         lines.push(Line::styled(
-            format!(
+            localized!(
+                app.language,
                 "{} {} processes?",
-                if app.force { "FORCE KILL" } else { "Terminate" },
+                if app.force {
+                    app.language.text("FORCE KILL")
+                } else {
+                    app.language.text("Terminate")
+                },
                 app.pending.len()
             ),
             Style::default().fg(LOCK).add_modifier(Modifier::BOLD),
         ));
         lines.push(Line::raw(if app.force {
-            "Immediate termination: no cleanup. Unsaved work may be lost."
+            app.language
+                .text("Immediate termination: no cleanup. Unsaved work may be lost.")
         } else {
-            "Request a normal shutdown. Unsaved work may be lost."
+            app.language
+                .text("Request a normal shutdown. Unsaved work may be lost.")
         }));
         if app.parent_action {
             lines.push(Line::styled(
-                "Target: selected ancestor. Its application and children may be affected.",
+                app.language.text(
+                    "Target: selected ancestor. Its application and children may be affected.",
+                ),
                 Style::default().fg(LOCK),
             ))
         }
         lines.push(Line::raw(""));
-        lines.push(Line::raw(
+        lines.push(Line::raw(app.language.text(
             "Affected processes (including selections hidden by filters):",
-        ));
+        )));
         for process in &app.pending {
             lines.push(Line::raw(format!(
                 "  {:<9} {}",
@@ -1077,41 +1193,57 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
             )))
         }
     } else {
-        lines.push(Line::styled("LINKS", accent()));
+        lines.push(Line::styled(app.language.text("LINKS"), accent()));
         lines.push(Line::raw(
             "R  GitHub: https://github.com/karimz1/open-file-lock-handle",
         ));
-        lines.push(Line::raw("D  Donate: https://buymeacoffee.com/karimz1"));
-        lines.push(Line::raw("Press uppercase R or D to open in your browser."));
+        lines.push(Line::raw(
+            app.language
+                .text("D  Donate: https://buymeacoffee.com/karimz1"),
+        ));
+        lines.push(Line::raw(
+            app.language
+                .text("Press uppercase R or D to open in your browser."),
+        ));
         lines.push(Line::raw(""));
         if !app.snapshot.warnings.is_empty() {
-            lines.push(Line::styled("SCAN DETAILS", accent()));
+            lines.push(Line::styled(app.language.text("SCAN DETAILS"), accent()));
         }
         for warning in &app.snapshot.warnings {
             lines.push(Line::raw(safe(warning)))
         }
         lines.push(Line::raw(""));
         lines.push(Line::styled(
-            format!("VERSION {}", oflh_core::VERSION),
+            localized!(app.language, "VERSION {}", oflh_core::VERSION),
             accent(),
         ));
         if !oflh_core::BUILD_COMMIT.is_empty() {
-            lines.push(Line::raw(format!("Commit {}", oflh_core::BUILD_COMMIT)));
+            lines.push(Line::raw(localized!(
+                app.language,
+                "Commit {}",
+                oflh_core::BUILD_COMMIT
+            )));
         }
         if !oflh_core::BUILD_URL.is_empty() {
-            lines.push(Line::raw(format!("Build {}", oflh_core::BUILD_URL)));
+            lines.push(Line::raw(localized!(
+                app.language,
+                "Build {}",
+                oflh_core::BUILD_URL
+            )));
         }
         if !oflh_core::PULL_REQUEST_URL.is_empty() {
-            lines.push(Line::raw(format!(
+            lines.push(Line::raw(localized!(
+                app.language,
                 "Pull request {}",
                 oflh_core::PULL_REQUEST_URL
             )));
         }
         lines.push(Line::raw(
-            "Run `oflh --version` to copy the full build report.",
+            app.language
+                .text("Run `oflh --version` to copy the full build report."),
         ));
         lines.push(Line::raw(""));
-        lines.extend(HELP.lines().map(|s| Line::raw(s.to_owned())));
+        lines.extend(app.language.help().lines().map(|s| Line::raw(s.to_owned())));
     }
     let footer_height = (footer_lines(area.width, app).len() as u16).min(area.height);
     let height = area.height.saturating_sub(footer_height + 2);
@@ -1134,58 +1266,6 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
         app,
     );
 }
-const HELP: &str = "OPEN FILE LOCK HANDLE
-1 / 2 / 3      Processes / locked files / ports
-s              Ports: all ports / processes using this path
-p / f          Details: ports / file usages
-↑ / ↓, j       Navigate results
-PgUp / PgDn    Move one page
-Home / End     First / last result
-Enter          Inspect matching paths
-Space          Select process
-Ctrl+A         Select / deselect all visible processes
-/              Search PID, name, user, path, access
-*              Wildcards: micro*dll, FLEC*.json
-               Fragments and CamelCase; spaces combine terms.
-Esc            Clear search / back / cancel
-r              Refresh; cancels previous scan
-a              Toggle five-second auto-refresh
-i              Toggle side inspector
-Tab / →        Focus ancestry; ↑↓ chooses action target
-Tab / ← / Esc  Leave ancestry
-l              Details: toggle locks only
-m / c          Sort RAM / CPU descending
-n / p          Sort name / PID
-k / x          Stop / force kill selection or current process
-K / X          Selection; otherwise all filtered processes
-Tab            Choose Cancel / Terminate
-?              Show help
-R / D          Open repository / donation page
-q / Ctrl+C     Quit (q types text while searching)
-
-Every termination requires confirmation. Cancel is the default.
-Hidden selections are included. Process identity is revalidated.
-Stopping a parent does not recursively terminate its children.
-
-PORT SEARCH
-50 matches ports containing 50; port:3000 is exact; pid:123 matches a PID.
-Combine terms: tcp 3000 server, udp, ipv6, or an address.
-THIS PATH uses observed file references, not a guessed project name.
-TCP LISTEN and UDP BOUND do not imply remote reachability.
-Unknown owners have no actionable PID. Enter opens process details.
-
-READING THE EVIDENCE
-An open file is not necessarily locked.
-locked         Platform lock / sharing-conflict evidence
-open           Observed file descriptor
-cwd            Current working directory
-executable     Process executable
-mapped         Mapped file / loaded module
-restart manager  Windows resource user, owner unverified
-unknown        OS did not expose this information
-
-CPU is a share of total machine capacity, sampled twice.
-Permissions, namespaces and races may limit visibility.";
 
 fn locked_table(frame: &mut Frame, area: Rect, app: &App) {
     if app.rows.is_empty() {
@@ -1193,11 +1273,11 @@ fn locked_table(frame: &mut Frame, area: Rect, app: &App) {
             frame,
             area,
             if app.scanning {
-                "Scanning for file locks…"
+                app.language.text("Scanning for file locks…")
             } else if !app.query.is_empty() {
-                "No locked files match your filter."
+                app.language.text("No locked files match your filter.")
             } else {
-                "No confirmed locks found in this scan.\nVisibility depends on permissions; press r to refresh."
+                app.language.text("No confirmed locks found in this scan.\nVisibility depends on permissions; press r to refresh.")
             },
             Style::default().fg(MUTED),
         );
@@ -1213,10 +1293,10 @@ fn locked_table(frame: &mut Frame, area: Rect, app: &App) {
     let mut headers = vec!["", "PID"];
     if show_name {
         widths.push(Constraint::Length(if area.width < 62 { 10 } else { 18 }));
-        headers.push("PROCESS");
+        headers.push(app.language.text("PROCESS"));
     }
     widths.push(Constraint::Min(4));
-    headers.push("LOCKED FILE");
+    headers.push(app.language.text("LOCKED FILE"));
     let rows = app.rows.iter().skip(start).take(count).map(|row| {
         let process = &app.snapshot.processes[row.process];
         let usage = &process.usages[row.usages[0]];
@@ -1233,8 +1313,12 @@ fn locked_table(frame: &mut Frame, area: Rect, app: &App) {
         }
         cells.push(Cell::from(format!(
             "{}{}",
-            safe(&usage.path.to_string_lossy()),
-            if usage.deleted { " (deleted)" } else { "" }
+            display_path(&usage.path),
+            if usage.deleted {
+                app.language.text(" (deleted)")
+            } else {
+                ""
+            }
         )));
         TableRow::new(cells)
     });
@@ -1257,10 +1341,12 @@ fn port_table(frame: &mut Frame, area: Rect, app: &App, detail: bool) {
             frame,
             area,
             if app.scanning {
-                "Scanning local ports…"
+                app.language.text("Scanning local ports…")
             } else {
-                "No matching port bindings.
-/ search · r refresh · s all/this path"
+                app.language.text(
+                    "No matching port bindings.
+/ search · r refresh · s all/this path",
+                )
             },
             Style::default().fg(MUTED),
         );
@@ -1303,16 +1389,20 @@ fn port_table(frame: &mut Frame, area: Rect, app: &App, detail: bool) {
     };
     let mut headers = vec![
         "",
-        "PORT",
-        if medium { "PROTO" } else { "NET" },
+        app.language.text("PORT"),
+        if medium {
+            app.language.text("PROTO")
+        } else {
+            app.language.text("NET")
+        },
         "PID",
-        "PROCESS",
+        app.language.text("PROCESS"),
     ];
     if medium {
-        headers.push("ADDRESS");
+        headers.push(app.language.text("ADDRESS"));
     }
     if wide {
-        headers.extend(["STATE", "THIS PATH"]);
+        headers.extend([app.language.text("STATE"), app.language.text("THIS PATH")]);
     }
     let mut rows = Vec::new();
     for position in start..(start + count).min(length) {
@@ -1359,11 +1449,11 @@ fn port_table(frame: &mut Frame, area: Rect, app: &App, detail: bool) {
         }
         if wide {
             cells.extend([
-                Cell::from(port.protocol.state()),
+                Cell::from(app.language.text(port.protocol.state())),
                 Cell::from(if process.usages.is_empty() {
                     "—"
                 } else {
-                    "yes"
+                    app.language.text("yes")
                 }),
             ]);
         }
@@ -1381,16 +1471,16 @@ fn port_details(frame: &mut Frame, area: Rect, app: &mut App) {
     text(
         frame,
         line_area(area, 0),
-        "oflh / process details · ports",
+        app.language.text("oflh / process details · ports"),
         accent(),
     );
     text(
         frame,
         line_area(area, 1),
         if app.auto {
-            "LIVE · every 5s"
+            app.language.text("LIVE · every 5s")
         } else {
-            "MANUAL · r refresh"
+            app.language.text("MANUAL · r refresh")
         },
         Style::default().fg(MUTED),
     );
@@ -1398,7 +1488,8 @@ fn port_details(frame: &mut Frame, area: Rect, app: &mut App) {
         text(
             frame,
             line_area(area, 3),
-            "Process exited or PID was reused. Esc back.",
+            app.language
+                .text("Process exited or PID was reused. Esc back."),
             Style::default().fg(LOCK),
         );
         return;
@@ -1410,7 +1501,7 @@ fn port_details(frame: &mut Frame, area: Rect, app: &mut App) {
             "{} · PID {}",
             safe(&process.name),
             if process.identity.pid == 0 {
-                "unavailable".into()
+                app.language.text("unavailable").into()
             } else {
                 process.identity.pid.to_string()
             }
@@ -1420,13 +1511,13 @@ fn port_details(frame: &mut Frame, area: Rect, app: &mut App) {
     text(
         frame,
         line_area(area, 3),
-        format!("EXE {}", safe(&process.executable.to_string_lossy())),
+        format!("EXE {}", display_path(&process.executable)),
         Style::default(),
     );
     text(
         frame,
         line_area(area, 4),
-        format!("CWD {}", safe(&process.cwd.to_string_lossy())),
+        format!("CWD {}", display_path(&process.cwd)),
         Style::default(),
     );
     search(
@@ -1438,7 +1529,8 @@ fn port_details(frame: &mut Frame, area: Rect, app: &mut App) {
     text(
         frame,
         line_area(area, 8),
-        format!(
+        localized!(
+            app.language,
             "{} of {} bindings · f file usages",
             app.usage_rows.len(),
             process.ports.len()
@@ -1466,7 +1558,7 @@ fn port_details(frame: &mut Frame, area: Rect, app: &mut App) {
                 "{} {} · {}",
                 port.protocol.label(),
                 std::net::SocketAddr::new(port.address, port.number),
-                port.protocol.state()
+                app.language.text(port.protocol.state())
             ),
             accent(),
         );

@@ -14,14 +14,29 @@ Press `?` for the full scan details.
 | --- | --- | --- |
 | Linux | `/proc`: file descriptors, CWD, executable, mapped files, deleted-but-open files | `SIGTERM` with `pidfd` identity validation |
 | macOS | `libproc`: vnode descriptors, CWD, executable, mapped files | `SIGTERM` after start-time validation |
-| Windows | Restart Manager, Toolhelp modules and executables | `WM_CLOSE` for process windows |
+| Windows | Live file handles and data mappings for folders; Restart Manager/native file-user recovery for individual files; Toolhelp modules and executables | `WM_CLOSE` for process windows |
 
 Actions revalidate PID and process birth identity before signaling. Linux uses
 an owned pidfd; Windows force termination uses a validated process handle. macOS
 checks start time before signaling, but its APIs leave a narrow exit/PID-reuse race.
 
 Windows console and service processes may require explicit force termination.
-Windows discovery does not cover CWD, directory handles, or deleted files.
+Windows folder inspection follows process references rather than walking unused
+files. Accessible directory handles and delete-pending handles with resolvable names are included;
+working-directory classification is unavailable. POSIX-style unlink on modern Windows can discard the old parent/name while the handle remains live. Such handles cannot be assigned to their former folder safely and produce explicit partial-coverage warnings. Data mappings are inspected even
+when the file handle has closed. Their native device paths must have a supported
+DOS-drive or UNC translation; mounted-volume-only paths and outside-name hard-link
+aliases of closed-handle mappings may be missed. Open-file hard-link aliases are
+checked using the held file identity. Permissions, changed handles and unresolved
+paths are reported as partial inspection warnings. No process-list cutoff applies.
+The native handle ABI is checked; helpers that cannot start fall back to limited
+Restart Manager discovery, with its 10,000-file cap explicitly disclosed.
+Individual-file inspection retains the existing identity-aware backend.
+When Restart Manager returns error 6, the scanner attempts a native file-user
+query and labels recovered observations `native file user`. This query is
+reserved by Microsoft; unsupported filesystems or failed queries retain explicit
+warnings. Each recovered PID must match a process birth captured before the query
+and checked again before publication. Neither source proves lock ownership.
 On Linux, other mount namespaces may require running `oflh` inside the relevant
 container. Elevated privileges can improve visibility but do not remove every
 platform limitation.
@@ -35,7 +50,7 @@ evidence:
 | --- | --- | --- |
 | Linux | Held FLOCK, POSIX, and OFD locks from `/proc/PID/fdinfo` | Subject to permissions, namespaces, and scan timing |
 | macOS | POSIX byte-range conflicts queried with `F_GETLK` | First conflicting range per readable file; flock-only locks and additional ranges may be missed |
-| Windows | Read, write, or delete sharing conflicts, correlated with Restart Manager resource users | Reported users are labeled **owner unverified**; byte-range locks are not enumerated |
+| Windows | Read, write, or delete sharing conflicts, correlated with observed file users | Reported users are labeled **owner unverified**; byte-range locks are not enumerated |
 
 On Windows, a sharing conflict confirms the file is restricted, but does not
 prove which reported process imposed that restriction. Permission-denied errors

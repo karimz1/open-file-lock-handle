@@ -235,9 +235,10 @@ fn export_visual(name: &str, buffer: &ratatui::buffer::Buffer) {
                 if bg != "#202028" {
                     write!(
                         svg,
-                        "<rect x=\"{}\" y=\"{}\" width=\"9\" height=\"18\" fill=\"{bg}\"/>",
+                        "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"18\" fill=\"{bg}\"/>",
                         column * 9,
-                        row * 18
+                        row * 18,
+                        unicode_width::UnicodeWidthStr::width(cell.symbol()).max(1) * 9
                     )
                     .unwrap();
                 }
@@ -710,4 +711,444 @@ fn port_folder_fallback_and_unknown_owner() {
     key(&mut application, K::Esc);
     key(&mut application, K::End);
     assert!(matches!(key(&mut application, K::Enter), Effect::None));
+}
+
+#[test]
+fn complete_large_snapshot_navigation_search_and_identity_metrics() {
+    let mut app = app();
+    let snapshot = Snapshot {
+        processes: (0..10001)
+            .map(|index| Process {
+                identity: Identity {
+                    pid: 1000 + index,
+                    started: 10,
+                    started_sub: index as u64,
+                },
+                name: format!("Worker-{index:05}"),
+                usages: vec![
+                    Usage {
+                        path: format!("/fixture/{index:05}/one.bin").into(),
+                        ..Usage::default()
+                    },
+                    Usage {
+                        path: format!("/fixture/{index:05}/two.txt").into(),
+                        ..Usage::default()
+                    },
+                ],
+                ..Process::default()
+            })
+            .collect(),
+        warnings: vec![],
+    };
+    app.replace(snapshot);
+    assert_eq!(app.rows.len(), 10001);
+    key(&mut app, K::End);
+    assert_eq!(app.current().unwrap().identity.pid, 11000);
+    app.select_all();
+    assert_eq!(app.selected.len(), 10001);
+    app.query = "one.bin two.txt".into();
+    app.refilter();
+    assert!(
+        app.rows.is_empty(),
+        "different files cannot jointly satisfy the query"
+    );
+    app.query = "worker one.bin".into();
+    app.refilter();
+    for sort in [
+        Sort::Name,
+        Sort::Pid,
+        Sort::Memory,
+        Sort::Cpu,
+        Sort::Relevance,
+    ] {
+        app.sort = sort;
+        app.refilter();
+        assert_eq!(app.rows.len(), 10001);
+        assert!(app.rows.iter().all(|row| row.usages == [0]));
+        assert_eq!(
+            app.rows
+                .iter()
+                .map(|row| app.snapshot.processes[row.process].identity)
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            10001
+        );
+    }
+    let original = app.snapshot.processes[10000].identity;
+    let mut stale = original;
+    stale.started_sub += 1;
+    app.metrics(vec![
+        (
+            stale,
+            Metrics {
+                memory: Some(999),
+                cpu: Some(99.0),
+            },
+        ),
+        (
+            original,
+            Metrics {
+                memory: Some(123),
+                cpu: None,
+            },
+        ),
+    ]);
+    assert_eq!(app.snapshot.processes[10000].memory, Some(123));
+    assert_eq!(app.snapshot.processes[10000].cpu, None);
+    assert!(
+        app.snapshot.processes[..10000]
+            .iter()
+            .all(|process| process.memory.is_none())
+    );
+    let mut snapshot = app.snapshot.clone();
+    snapshot.processes[10000].identity = stale;
+    app.replace(snapshot);
+    assert!(!app.selected.contains(&original));
+    assert!(!app.selected.contains(&stale));
+    assert_eq!(app.selected.len(), 10000);
+}
+
+#[test]
+fn active_inspection_retains_rows_rejects_reloads_and_allows_cancel() {
+    let mut app = app();
+    key(&mut app, K::Enter);
+    let captured = app.detail_id;
+    let now = Instant::now();
+    app.begin_scan(now);
+    for code in [K::Char('r'), K::F(5)] {
+        assert!(matches!(key(&mut app, code), Effect::None));
+    }
+    assert!(!app.can_auto_scan());
+    assert_eq!(app.detail_id, captured);
+    assert_eq!(app.usage_rows.len(), 3);
+    assert!(matches!(key(&mut app, K::Char('z')), Effect::CancelScan));
+    app.finish_scan(now + Duration::from_secs(12), false);
+    assert_eq!(app.last_scan_elapsed, None);
+    app.begin_scan(now + Duration::from_secs(20));
+    app.finish_scan(now + Duration::from_secs(22), true);
+    assert_eq!(app.last_scan_elapsed, Some(Duration::from_secs(2)));
+    app.begin_scan(now + Duration::from_secs(30));
+    app.finish_scan(now + Duration::from_secs(45), false);
+    assert_eq!(app.last_scan_elapsed, Some(Duration::from_secs(2)));
+    assert!(app.can_auto_scan());
+    app.editing = true;
+    assert!(!app.can_auto_scan());
+    app.editing = false;
+    for screen in [Screen::Help, Screen::Confirm] {
+        app.screen = screen;
+        assert!(!app.can_auto_scan());
+    }
+    app.screen = Screen::Main;
+    key(&mut app, K::Tab);
+    assert!(!app.can_auto_scan());
+    app.begin_scan(now + Duration::from_secs(50));
+    assert!(matches!(key(&mut app, K::Char('z')), Effect::CancelScan));
+}
+
+#[test]
+fn summaries_follow_the_accepted_query_and_do_not_limit_viewport_rows() {
+    let mut app = app();
+    let duplicate = app.snapshot.processes[0].usages[0].clone();
+    app.snapshot.processes[0].usages.push(duplicate);
+    app.replace(app.snapshot.clone());
+    app.locked = true;
+    app.refilter();
+    assert_eq!(app.locked_files, 1);
+    assert_eq!(app.rows.len(), 2);
+    key(&mut app, K::Enter);
+    assert_eq!(app.detail_locked_files, 1);
+    app.detail_query = "absent".into();
+    app.filter_details();
+    assert_eq!(app.detail_locked_files, 0);
+    let token = Cancellation::default();
+    token.cancel();
+    assert!(matches!(
+        PreparedSnapshot::new(app.snapshot.clone(), &token),
+        Err(Error::Cancelled)
+    ));
+}
+
+#[cfg(windows)]
+#[test]
+fn terminal_drive_root_and_details_use_familiar_text_without_mutating_references() {
+    let mut app = app();
+    app.target = Target::new(r"C:\").unwrap();
+    let native_target = app.target.path.clone();
+    let mut snapshot = app.snapshot.clone();
+    snapshot.processes[0].executable = r"\\?\C:\fixture\worker.exe".into();
+    snapshot.processes[0].cwd = r"\\?\C:\fixture".into();
+    snapshot.processes[0].usages[0].path = r"\\?\C:\fixture\file.bin".into();
+    let native_usage = snapshot.processes[0].usages[0].path.clone();
+    app.replace(snapshot);
+    for screen in [Screen::Main, Screen::Details] {
+        if screen == Screen::Details {
+            key(&mut app, K::Enter);
+        }
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(160, 40)).unwrap();
+        terminal.draw(|frame| view::draw(frame, &mut app)).unwrap();
+        let text = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(text.contains(r"C:\"));
+        assert!(!text.contains(r"\\?\"));
+        assert_eq!(app.target.path, native_target);
+        assert_eq!(app.snapshot.processes[0].usages[0].path, native_usage);
+    }
+}
+
+fn readable_buffer(buffer: &ratatui::buffer::Buffer) -> String {
+    let mut result = String::new();
+    for row in buffer.content.chunks(buffer.area.width as usize) {
+        let mut line = String::new();
+        let mut column = 0;
+        while column < row.len() {
+            let symbol = row[column].symbol();
+            line.push_str(symbol);
+            column += unicode_width::UnicodeWidthStr::width(symbol).max(1);
+        }
+        result.push_str(line.trim_end());
+        result.push('\n');
+    }
+    result
+}
+
+#[test]
+fn translated_workflows_keep_search_identities_default_cancel_and_review_guards() {
+    for language in [Language::English, Language::German, Language::Chinese] {
+        let mut app = self::app();
+        app.language = language;
+        key(&mut app, K::Char(' '));
+        let identity = app.current().unwrap().identity;
+        key(&mut app, K::Char('/'));
+        app.paste("absent");
+        key(&mut app, K::Enter);
+        assert!(app.rows.is_empty());
+        key(&mut app, K::Char('x'));
+        assert_eq!(app.pending[0].identity, identity);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+        terminal.draw(|frame| view::draw(frame, &mut app)).unwrap();
+        let text = readable_buffer(terminal.backend().buffer());
+        assert!(text.contains(language.text("Cancel")));
+        assert!(text.contains("dotnet"));
+        assert!(text.contains("424242"));
+        assert!(!app.confirm);
+        assert!(matches!(key(&mut app, K::Enter), Effect::None));
+        key(&mut app, K::Char('x'));
+        key(&mut app, K::Tab);
+        app.height = 12;
+        assert!(matches!(key(&mut app, K::Enter), Effect::None));
+        assert!(app.error);
+        app.height = 24;
+        assert!(
+            matches!(key(&mut app,K::Enter),Effect::Kill(identities,true) if identities == [identity])
+        );
+        let mut app = self::app();
+        app.language = language;
+        for (width, height) in [(1, 1), (28, 18), (48, 20), (80, 24), (120, 40)] {
+            for screen in [Screen::Main, Screen::Details, Screen::Help, Screen::Confirm] {
+                app.screen = Screen::Main;
+                key(&mut app, K::Enter);
+                app.screen = screen;
+                let mut terminal =
+                    ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
+                        .unwrap();
+                terminal.draw(|frame| view::draw(frame, &mut app)).unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn translated_terminal_goldens() {
+    for (language, locale) in [(Language::German, "de"), (Language::Chinese, "zh")] {
+        for (name, screen, width, height) in [
+            ("processes", Screen::Main, 160, 40),
+            ("compact", Screen::Main, 48, 20),
+            ("details", Screen::Details, 160, 40),
+            ("help", Screen::Help, 100, 50),
+            ("confirm", Screen::Confirm, 80, 24),
+        ] {
+            let mut app = self::app();
+            app.language = language;
+            app.target.path = "/build".into();
+            app.snapshot.processes[0].executable = "/usr/bin/dotnet".into();
+            app.snapshot.processes[0].cwd = "/build".into();
+            if screen == Screen::Details {
+                key(&mut app, K::Enter);
+            }
+            if screen == Screen::Confirm {
+                key(&mut app, K::Char('x'));
+            }
+            app.screen = screen;
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+            terminal.draw(|frame| view::draw(frame, &mut app)).unwrap();
+            let text = readable_buffer(terminal.backend().buffer());
+            let name = format!("{name}-{locale}");
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("tests/snapshots/{name}.txt"));
+            if std::env::var_os("OFLH_UPDATE_SNAPSHOTS").is_some() {
+                std::fs::write(&path, &text).unwrap();
+            }
+            assert_eq!(std::fs::read_to_string(path).unwrap(), text, "{name}");
+            export_visual(&name, terminal.backend().buffer());
+        }
+    }
+}
+
+#[test]
+fn update_notice_preserves_rows_selection_detail_tree_and_confirmation_identity() {
+    let mut app = self::app();
+    app.update.enabled = true;
+    key(&mut app, K::Char(' '));
+    let selected = app.selected.clone();
+    let identity = app.current().unwrap().identity;
+    key(&mut app, K::Enter);
+    let detail = app.detail_id;
+    let usages = app.usage_rows.clone();
+    app.begin_scan(Instant::now());
+    assert!(app.update.begin(false));
+    assert!(app.update.complete(Ok(Some("1.2.0".into()))));
+    assert!(app.scanning);
+    assert_eq!(app.screen, Screen::Details);
+    assert_eq!(app.detail_id, detail);
+    assert_eq!(app.usage_rows, usages);
+    assert_eq!(app.selected, selected);
+    assert_eq!(app.current().unwrap().identity, identity);
+    key(&mut app, K::Esc);
+    key(&mut app, K::Tab);
+    let captured = app
+        .tree
+        .as_ref()
+        .unwrap()
+        .nodes
+        .iter()
+        .map(|node| node.identity)
+        .collect::<Vec<_>>();
+    app.update.begin(false);
+    assert!(!app.update.complete(Err("offline".into())));
+    assert_eq!(
+        app.tree
+            .as_ref()
+            .unwrap()
+            .nodes
+            .iter()
+            .map(|node| node.identity)
+            .collect::<Vec<_>>(),
+        captured
+    );
+    key(&mut app, K::Esc);
+    key(&mut app, K::Char('x'));
+    assert_eq!(app.screen, Screen::Confirm);
+    let pending = app
+        .pending
+        .iter()
+        .map(|target| target.identity)
+        .collect::<Vec<_>>();
+    app.update.begin(false);
+    app.update.complete(Ok(Some("1.3.0".into())));
+    for shortcut in ['u', 'U', 'b'] {
+        assert!(matches!(key(&mut app, K::Char(shortcut)), Effect::None));
+    }
+    assert_eq!(
+        app.pending
+            .iter()
+            .map(|target| target.identity)
+            .collect::<Vec<_>>(),
+        pending
+    );
+    assert!(!app.confirm);
+    assert!(matches!(key(&mut app, K::Enter), Effect::None));
+    assert!(!app.stopping);
+}
+
+#[test]
+fn update_actions_preserve_search_text_and_open_only_the_fixed_release_page() {
+    let mut app = self::app();
+    assert!(matches!(key(&mut app, K::Char('u')), Effect::None));
+    app.update.enabled = true;
+    assert!(matches!(key(&mut app, K::Char('u')), Effect::CheckUpdate));
+    assert!(matches!(key(&mut app, K::Char('U')), Effect::None));
+    app.update.begin(false);
+    app.update.complete(Ok(Some("1.2.0".into())));
+    assert!(
+        matches!(key(&mut app,K::Char('U')),Effect::Link(url) if url==oflh_platform::updates::RELEASE_PAGE)
+    );
+    key(&mut app, K::Char('/'));
+    for character in ['u', 'U', 'b'] {
+        assert!(matches!(key(&mut app, K::Char(character)), Effect::None));
+    }
+    assert_eq!(app.query, "uUb");
+    assert_eq!(app.update.visible_version(), Some("1.2.0"));
+    app.key(KeyEvent::new(K::Char('u'), KeyModifiers::CONTROL));
+    assert!(app.query.is_empty());
+    key(&mut app, K::Enter);
+    key(&mut app, K::Char('b'));
+    assert_eq!(app.update.visible_version(), None);
+    assert!(matches!(key(&mut app, K::Char('U')), Effect::None));
+}
+
+#[test]
+fn update_state_coalesces_retains_known_updates_and_dismisses_one_version() {
+    let mut notice = UpdateNotice::default();
+    assert!(!notice.begin(true));
+    notice.enabled = true;
+    assert!(notice.begin(false));
+    assert!(!notice.begin(true));
+    assert!(notice.complete(Ok(Some("1.2.0".into()))));
+    notice.dismiss();
+    notice.begin(false);
+    assert!(!notice.complete(Ok(Some("1.2.0".into()))));
+    assert_eq!(notice.visible_version(), None);
+    notice.begin(false);
+    assert!(!notice.complete(Err("offline".into())));
+    assert_eq!(notice.version.as_deref(), Some("1.2.0"));
+    notice.begin(false);
+    assert!(notice.complete(Ok(Some("1.3.0".into()))));
+    assert_eq!(notice.visible_version(), Some("1.3.0"));
+    notice.begin(true);
+    assert!(notice.complete(Err("offline".into())));
+    assert_eq!(notice.visible_version(), Some("1.3.0"));
+    notice.dismiss();
+    notice.begin(true);
+    assert!(notice.complete(Ok(None)));
+    assert_eq!(notice.feedback, UpdateFeedback::Current);
+}
+
+#[test]
+fn translated_update_footer_has_stable_viewport_and_no_modal_overlay() {
+    for language in [Language::English, Language::German, Language::Chinese] {
+        let mut app = self::app();
+        app.language = language;
+        app.update.enabled = true;
+        for (width, height) in [(160, 40), (48, 20)] {
+            app.update = UpdateNotice::default();
+            app.update.enabled = true;
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+            terminal.draw(|frame| view::draw(frame, &mut app)).unwrap();
+            let before = terminal.backend().buffer().clone();
+            let page = app.page;
+            app.update.begin(false);
+            app.update.complete(Ok(Some("1.2.0".into())));
+            terminal.draw(|frame| view::draw(frame, &mut app)).unwrap();
+            let after = terminal.backend().buffer();
+            assert_eq!(app.page, page);
+            let changed_rows = (0..height)
+                .filter(|row| {
+                    (0..width).any(|column| before[(column, *row)] != after[(column, *row)])
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(changed_rows.len(), 1, "{language:?} {width}x{height}");
+            assert!(changed_rows[0] > height / 2);
+            assert!(readable_buffer(after).contains("1.2.0"));
+            export_visual(&format!("update-{language:?}-{width}"), after);
+        }
+    }
 }

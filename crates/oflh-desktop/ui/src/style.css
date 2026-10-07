@@ -1006,6 +1006,11 @@ main {
   gap: 8px;
   min-width: 0;
 }
+.scan-duration {
+  flex: none;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 .footer-attribution,
 .status-metrics {
   min-width: 0;
@@ -2243,4 +2248,92 @@ kbd.shortcut {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+}
+
+.inspection-dialog {
+  width: min(30rem, calc(100vw - 2rem));
+}
+.inspection-heading {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.inspection-heading > svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.inspection-heading h2 {
+  margin: 0 0 0.4rem;
+}
+.inspection-heading p {
+  margin: 0;
+  color: var(--muted);
+}
+.inspection-timing {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.7rem;
+}
+.inspection-progress {
+  height: 0.4rem;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: var(--accent-bg);
+}
+.inspection-progress::before {
+  content: "";
+  display: block;
+  width: 35%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: inspection-progress 1.8s ease-in-out infinite;
+}
+.inspection-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-top: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+@keyframes inspection-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .inspection-progress::before {
+    animation: none;
+  }
+}
+
+/* Quiet refresh occupies the existing footer; progress never shifts the grid. */
+.background-inspection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.background-inspection > button {
+  min-height: 24px;
+  flex: none;
+  padding: 2px 6px;
+  font-size: inherit;
+}
+.background-elapsed {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.background-error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.detail-refresh-note {
+  padding: 8px 0;
 }

@@ -89,6 +89,7 @@ fn permission(error: &std::io::Error, restricted: &mut bool) {
 }
 impl Backend for Native {
     fn scan(&mut self, target: &Target, cancel: &Cancellation) -> Result<Snapshot> {
+        cancel.set_phase(InspectionPhase::Processes);
         let mut snapshot = Snapshot::default();
         let mut denied = 0;
         let mut foreign = 0;
@@ -107,6 +108,7 @@ impl Backend for Native {
             if pid == std::process::id() {
                 continue;
             }
+            cancel.record(InspectionCounter::Processes, 1);
             let stats = match stat(pid) {
                 Ok(stats) => stats,
                 Err(Error::Io { source, .. }) => {
@@ -125,6 +127,7 @@ impl Backend for Native {
                 continue;
             }
             let mut restricted = false;
+            let mut resources_inspected = 0;
             let mut process = Process {
                 identity: stats.identity,
                 name: stats.name,
@@ -172,6 +175,7 @@ impl Backend for Native {
                     for descriptor in fds {
                         cancel.check()?;
                         let Ok(descriptor) = descriptor else { continue };
+                        resources_inspected += 1;
                         let reference = descriptor.path();
                         let path = match fs::read_link(&reference) {
                             Ok(process) => process,
@@ -257,6 +261,7 @@ impl Backend for Native {
                             }
                         }
                         if let Some((path, access, dev, ino)) = mapping(&line) {
+                            resources_inspected += 1;
                             let (path, deleted) = deleted_path(&base, path);
                             if target.directory {
                                 if !target.contains(&path) {
@@ -280,6 +285,7 @@ impl Backend for Native {
                     }
                 }
             }
+            cancel.record(InspectionCounter::Resources, resources_inspected);
             if restricted {
                 denied += 1
             }
@@ -504,6 +510,92 @@ pub(super) fn port_processes(cancel: &Cancellation) -> Result<Vec<Process>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn stat_fixture(name: &[u8], fields: &[&str]) -> Vec<u8> {
+        let mut bytes = b"999 (".to_vec();
+        bytes.extend_from_slice(name);
+        bytes.extend_from_slice(b") ");
+        bytes.extend_from_slice(fields.join(" ").as_bytes());
+        bytes
+    }
+    fn stat_fields() -> [&'static str; 22] {
+        let mut fields = ["0"; 22];
+        fields[0] = "R";
+        fields[1] = "123";
+        fields[11] = "7";
+        fields[12] = "8";
+        fields[19] = "987654321";
+        fields[21] = "2";
+        fields
+    }
+    #[test]
+    fn process_stat_keeps_birth_identity_with_nested_names_and_non_utf8_bytes() {
+        let fields = stat_fields();
+        let parsed = parse_stat(999, &stat_fixture(b"worker (nested) \xff", &fields)).unwrap();
+        assert_eq!(
+            parsed.identity,
+            Identity {
+                pid: 999,
+                started: 987654321,
+                started_sub: 0
+            }
+        );
+        assert_eq!(parsed.parent, 123);
+        assert_eq!(parsed.ticks, 15);
+        assert_eq!(parsed.name, "worker (nested) \u{fffd}");
+        assert!(parsed.rss.is_some_and(|bytes| bytes > 0));
+        assert!(!parsed.exited);
+        for state in ["Z", "X", "x"] {
+            let mut fields = fields;
+            fields[0] = state;
+            assert!(
+                parse_stat(999, &stat_fixture(b"worker", &fields))
+                    .unwrap()
+                    .exited
+            );
+        }
+    }
+    #[test]
+    fn malformed_identity_and_cpu_overflow_do_not_produce_a_process() {
+        let fields = stat_fields();
+        for count in 0..22 {
+            assert!(parse_stat(999, &stat_fixture(b"worker", &fields[..count])).is_none());
+        }
+        for (index, value) in [
+            (1, "4294967296"),
+            (19, "-1"),
+            (19, "not-a-number"),
+            (11, "18446744073709551615"),
+        ] {
+            let mut invalid = fields;
+            invalid[index] = value;
+            assert!(parse_stat(999, &stat_fixture(b"worker", &invalid)).is_none());
+        }
+        for raw in [&b"999 worker R"[..], &b"999 )("[..], &b"999 (worker"[..]] {
+            assert!(parse_stat(999, raw).is_none());
+        }
+    }
+    #[test]
+    fn unknown_rss_and_lossless_mapping_paths_keep_valid_identity_and_evidence() {
+        for rss in ["-1", "18446744073709551615"] {
+            let mut fields = stat_fields();
+            fields[21] = rss;
+            let parsed = parse_stat(999, &stat_fixture(b"worker", &fields)).unwrap();
+            assert_eq!(parsed.identity.started, 987654321);
+            assert!(parsed.rss.is_none());
+        }
+        let (path, access, _, inode) =
+            mapping(b"100-200 r-xp 0000 00:13 12 /fixture/\xff file\\012name\n").unwrap();
+        assert_eq!(path.as_os_str().as_bytes(), b"/fixture/\xff file\nname");
+        assert_eq!(access, Access::Execute);
+        assert_eq!(inode, 12);
+        for raw in [
+            &b"100-200 rw-p 0000 invalid 12 /fixture/file"[..],
+            &b"100-200 rw-p 0000 00:13 invalid /fixture/file"[..],
+            &b"100-200 rw-p 0000 00:13 12 [anonymous]"[..],
+        ] {
+            assert!(mapping(raw).is_none());
+        }
+    }
     #[test]
     fn held_locks_only() {
         assert_eq!(
