@@ -1,109 +1,186 @@
-# Platform behavior
+# Platform support
 
-[Back to the README](../README.md) · [Terminal guide](terminal-usage.md) · [Desktop guide](desktop-usage.md)
+oflh behaves the same way on every platform, but what it can detect depends on
+what each operating system exposes. This page explains how each backend works
+and where its blind spots are, so you can tell a real "nothing is using this"
+from "oflh could not see it".
 
-The workflow is shared across platforms, but discovery and lock semantics depend
-on the operating system. Results are a snapshot of what the current user can
-inspect. Permissions, process exits, and concurrent file activity can limit them.
-When a scan has limitations, the footer shows "Results may be incomplete."
-Press `?` for the full scan details.
+Supported targets: Windows, Linux, and macOS, each on x86-64 and ARM64. ARM32 is
+not supported.
 
-## File discovery and termination
+- [General rules](#general-rules)
+- [How files are found](#file-discovery-and-termination)
+- [Lock evidence](#lock-evidence)
+- [Access modes](#access-modes)
+- [CPU, memory, and ancestry](#cpu-memory-and-ancestry)
+- [Ports](#ports)
+- [Stopping processes](#stopping-processes)
 
-| Platform | Discovery | Normal termination (`k`) |
-| --- | --- | --- |
-| Linux | `/proc`: file descriptors, CWD, executable, mapped files, deleted-but-open files | `SIGTERM` with `pidfd` identity validation |
-| macOS | `libproc`: vnode descriptors, CWD, executable, mapped files | `SIGTERM` after start-time validation |
-| Windows | Live file handles and data mappings for folders; Restart Manager/native file-user recovery for individual files; Toolhelp modules and executables | `WM_CLOSE` for process windows |
+## General rules
 
-Actions revalidate PID and process birth identity before signaling. Linux uses
-an owned pidfd; Windows force termination uses a validated process handle. macOS
-checks start time before signaling, but its APIs leave a narrow exit/PID-reuse race.
+- Every result is a snapshot. Processes can open or close files between the
+  scan and the moment you read it.
+- oflh sees what the current account can inspect. Running elevated (`sudo`,
+  an Administrator terminal) shows more processes, but does not remove every
+  OS restriction.
+- When anything was skipped, the footer says *Results may be incomplete*. Press
+  `?` in the terminal app, or open **coverage notices** in the desktop app, for
+  the reasons.
+- oflh never reads file contents and never modifies the files it inspects.
 
-Windows console and service processes may require explicit force termination.
-Windows folder inspection follows process references rather than walking unused
-files. Accessible directory handles and delete-pending handles with resolvable names are included;
-working-directory classification is unavailable. POSIX-style unlink on modern Windows can discard the old parent/name while the handle remains live. Such handles cannot be assigned to their former folder safely and produce explicit partial-coverage warnings. Data mappings are inspected even
-when the file handle has closed. Their native device paths must have a supported
-DOS-drive or UNC translation; mounted-volume-only paths and outside-name hard-link
-aliases of closed-handle mappings may be missed. Open-file hard-link aliases are
-checked using the held file identity. Permissions, changed handles and unresolved
-paths are reported as partial inspection warnings. No process-list cutoff applies.
-The native handle ABI is checked; helpers that cannot start fall back to limited
-Restart Manager discovery, with its 10,000-file cap explicitly disclosed.
-Individual-file inspection retains the existing identity-aware backend.
-When Restart Manager returns error 6, the scanner attempts a native file-user
-query and labels recovered observations `native file user`. This query is
-reserved by Microsoft; unsupported filesystems or failed queries retain explicit
-warnings. Each recovered PID must match a process birth captured before the query
-and checked again before publication. Neither source proves lock ownership.
-On Linux, other mount namespaces may require running `oflh` inside the relevant
-container. Elevated privileges can improve visibility but do not remove every
-platform limitation.
+<a id="file-discovery-and-termination"></a>
+
+## How files are found
+
+On every platform, oflh enumerates the files that running processes reference
+and keeps those under the target. It does not walk the directory tree, so a
+folder with a million unused files costs no more than an empty one.
+
+| | Linux | macOS | Windows |
+| --- | --- | --- | --- |
+| Source | `/proc/<pid>` | `libproc` | Native handle snapshot, Restart Manager, Toolhelp |
+| Open files | `fd/` | vnode descriptors | Open disk handles |
+| Working directory | `cwd` | yes | Not available |
+| Executable | `exe` | yes | yes |
+| Mapped files, DLLs, shared libraries | `maps` | yes | Data mappings and loaded modules |
+| Deleted but still open | yes | — | When the name is still resolvable |
+
+### Linux
+
+oflh reads `/proc/<pid>/fd`, `cwd`, `exe`, and `maps`, and recognizes files
+that were deleted while still open. Processes in another mount namespace
+(containers) report paths relative to that namespace; run oflh inside the
+container to inspect it.
+
+### macOS
+
+oflh uses `libproc` to list vnode descriptors, working directory, executable,
+and mapped files. Processes are inspected in parallel, at most two workers per
+logical CPU and no more than eight in total.
+
+### Windows
+
+Folder and drive scans use a helper process that takes one system-wide handle
+snapshot, resolves the names of open disk handles, and lists each process's
+data mappings with `VirtualQueryEx` and `GetMappedFileNameW`. Loaded modules and
+executables come from Toolhelp. There is no file-count or process-count limit.
+
+Known gaps:
+
+- Working directories cannot be read, so a shell sitting in a folder is not
+  reported as using it.
+- A file deleted with POSIX semantics (the default on recent Windows) can lose
+  its original name while the handle stays open. oflh then cannot place it in a
+  folder and reports a partial-coverage warning instead of guessing.
+- Mappings whose native path has no drive-letter or UNC equivalent (for
+  example, volumes mounted only as a folder) may be missed, as may other
+  hard-link names of a mapped file whose handle is already closed.
+- If the helper cannot start, oflh falls back to Restart Manager, which is
+  limited to 10,000 files per scan. The warning says so.
+
+Single-file targets use Restart Manager, which reports which processes use the
+file. If Restart Manager fails with error 6 (`ERROR_INVALID_HANDLE`, seen with
+files shared by many processes), oflh asks the file system directly using
+`FileProcessIdsUsingFileInformation` and labels those rows `native file user`.
+Microsoft documents this query as reserved for system use, so failures are
+reported rather than hidden. Neither source proves which process holds a lock.
 
 ## Lock evidence
 
-An open file is not necessarily locked. The Locked files view requires additional
-evidence:
+An open file is not necessarily a locked file. The **Locked files** view (and
+the desktop's **Lock evidence only** filter) requires extra evidence:
 
-| Platform | Evidence | Scope |
+| Platform | Evidence | Limits |
 | --- | --- | --- |
-| Linux | Held FLOCK, POSIX, and OFD locks from `/proc/PID/fdinfo` | Subject to permissions, namespaces, and scan timing |
-| macOS | POSIX byte-range conflicts queried with `F_GETLK` | First conflicting range per readable file; flock-only locks and additional ranges may be missed |
-| Windows | Read, write, or delete sharing conflicts, correlated with observed file users | Reported users are labeled **owner unverified**; byte-range locks are not enumerated |
+| Linux | `flock`, POSIX, and OFD locks held, from `/proc/<pid>/fdinfo` | Subject to permissions, namespaces, and timing |
+| macOS | POSIX byte-range conflicts, queried with `F_GETLK` | Only the first conflicting range per readable file; `flock`-only locks can be missed |
+| Windows | A read, write, or delete sharing violation when probing the file | Byte-range locks are not enumerated; see below |
 
-On Windows, a sharing conflict confirms the file is restricted, but does not
-prove which reported process imposed that restriction. Permission-denied errors
-alone are never classified as locks. Lock queries do not modify file contents.
-Advisory locks do not necessarily prevent ordinary reads or writes.
+On Windows, a sharing violation proves the file is restricted, but not which of
+the processes using it imposed the restriction. Those rows are labeled
+**owner unverified**. A permission-denied error alone is never treated as a
+lock. The Windows probe opens the file with maximum sharing and without
+triggering offline-file recall, then closes it without reading or writing.
+
+Advisory locks on Linux and macOS do not stop other programs from reading or
+writing unless they also check the lock.
 
 ## Access modes
 
-The **ACCESS** column summarizes the usages matching the current search.
-`read/write` means both modes were observed, possibly on different files. `cwd`
-means the process uses the folder as its working directory; it does not imply
-read or write access. These labels describe observed access modes, not live I/O
-activity or proof of a lock.
+The **ACCESS** column summarizes how the matching files were opened:
 
-Read access uses green, write access uses amber, and confirmed locks use muted
-red. Text labels carry the meaning without relying on color.
+| Label | Meaning |
+| --- | --- |
+| `read`, `write`, `read/write` | Open mode of the descriptor or handle. `read/write` can also mean different files were opened in different modes. |
+| `execute` | Executable image |
+| `directory` | A directory, including a working directory. Says nothing about read or write access. |
+| `mapped` | Memory mapping with unknown access flags |
+| `reference` | Reference-only descriptor, such as Linux `O_PATH` |
+| `unknown` | Mode could not be determined |
+
+These labels describe how a file was opened, not whether it is being read or
+written right now. Color is only a hint (green read, amber write, muted red
+lock); the text label always carries the meaning.
 
 ## CPU, memory, and ancestry
 
-All three platforms collect resident memory and up to eight observed ancestors.
-Memory is RSS on Unix and working set on Windows.
+All platforms report resident memory (RSS on Linux and macOS, working set on
+Windows) and up to eight ancestors per process.
 
-CPU measures a process's share of total machine capacity over the sampling
-interval: 100% means all CPUs. It requires two samples of the same process. A
-lightweight metrics sample runs about one second after the initial results;
-use `a` for regular updates. Unavailable metrics appear as a dash, for example when
-permissions or process exit prevent inspection.
+CPU is the process's share of the whole machine over the sampling interval:
+100% means every core is busy. It needs two samples, so it appears about a
+second after the first results. A dash means the value could not be measured,
+for example because of permissions or because the process exited. An
+unmeasured value is not zero.
 
 ## Ports
 
-Ports are collected through `netstat2` using native OS APIs, without executing
-`lsof`, `ss`, or `netstat` and without connecting to services.
+Ports are read from the OS socket tables through the `netstat2` crate. oflh does
+not run `lsof`, `ss`, or `netstat` and never connects to a port.
 
-| Platform | Socket discovery | Path association |
+| Platform | Sockets from | Owner from |
 | --- | --- | --- |
-| Linux | Netlink socket diagnostics; procfs for owner PIDs | Existing file, mapping, executable, and working-directory observations |
-| macOS | `libproc` socket descriptors | Existing file, mapping, executable, and working-directory observations |
-| Windows | IP Helper TCP/UDP owner tables | Existing Restart Manager, executable, and module observations; no working-directory inspection |
+| Linux | Netlink socket diagnostics | `/proc` |
+| macOS | `libproc` socket descriptors | `libproc` |
+| Windows | IP Helper TCP and UDP owner tables | IP Helper |
 
-TCP results include LISTEN sockets only, not established connections or TIME_WAIT
-entries. UDP results include bound local sockets, including client sockets;
-BOUND does not mean a listening TCP-style service. IPv4 and IPv6 are enumerated
-separately, so failure in one family does not discard the other's results.
+- TCP: listening sockets only. Established connections and `TIME_WAIT` entries
+  are not listed.
+- UDP: every bound local socket, including client sockets. `BOUND` does not
+  mean a server is listening.
+- IPv4 and IPv6 are queried separately; a failure in one does not hide the
+  other. IPv6 scope IDs are not shown.
+- An owner is shown only if the same process (PID and start time) was seen both
+  before and after reading the socket table. Otherwise the row says *owner
+  unavailable* and cannot be acted on.
+- Linux only sees the current network namespace. Docker port forwarding is not
+  resolved to the container process.
+- On macOS, permissions can hide sockets entirely.
 
-Ownership is joined only when the same PID and birth identity were observed
-before and after socket discovery. Missing, inaccessible, new, or changed owners
-appear as unavailable, with no actionable PID. Permissions can hide entire
-sockets on macOS. Linux discovery is limited to the current network namespace;
-run inside a container to inspect its namespace. Docker forwarding metadata is
-not queried. IPv6 interface scope identifiers are not exposed by the socket
-collector; addresses are informational, not ready-to-use connection commands.
+**THIS PATH** (terminal) and **Target processes only** (desktop) link ports to a
+path by checking which socket owners also appear in the file results. On
+Windows that link can only come from open files, modules, and executables, not
+the working directory. The two scans run one after the other, so a process that
+changes in between may only appear after a refresh. No port result says
+anything about firewall rules or reachability from another machine.
 
-Path and socket scans are sequential snapshots. A process starting or changing
-its file references between them may not appear in THIS PATH until a refresh.
-Folder association remains subject to the file-discovery limits above. No result
-proves firewall access or reachability from another machine.
+## Stopping processes
+
+| Platform | Terminate | Force | Identity check |
+| --- | --- | --- | --- |
+| Linux | `SIGTERM` | `SIGKILL` | Owned `pidfd`, so the signal cannot reach a reused PID |
+| macOS | `SIGTERM` | `SIGKILL` | Start time re-checked just before signaling |
+| Windows | `WM_CLOSE` to the process's windows | `TerminateProcess` | Validated process handle |
+
+On Linux, process actions need kernel 5.3 or newer for `pidfd_open`; older
+kernels report an error instead of falling back to an unchecked signal.
+
+macOS has no `pidfd` equivalent, so a very narrow window remains in which a
+process could exit and its PID be reused between the check and the signal.
+
+Windows console programs and services have no window to close and usually need
+**Force**.
+
+oflh refuses to act on PID 0, PID 1 (`init`/`launchd`), itself, and any process
+whose start time it could not read. Administrator rights do not change that,
+and the OS may still refuse processes it protects.

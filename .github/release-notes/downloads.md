@@ -1,6 +1,6 @@
 ## Download OFLH
 
-[Visit the OFLH website for the latest stable release and documentation](https://oflh.karimzouine.com#downnload).
+[Visit the OFLH website for the latest stable release and documentation](https://oflh.karimzouine.com#download).
 The website helps newcomers choose the right download for Linux, macOS, or Windows
 and get started.
 

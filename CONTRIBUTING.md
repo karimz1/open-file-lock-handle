@@ -1,38 +1,57 @@
-# Contributing
+# Contributing to oflh
 
-Bug reports, documentation fixes, and focused code changes are welcome.
+Bug reports, documentation fixes, translations, and focused code changes are
+all welcome.
 
 ## Report a bug
 
 Search [existing issues](https://github.com/karimz1/open-file-lock-handle/issues)
-before opening a new one. Include:
+first. A good report includes:
 
-- App version (`oflh --version` or Desktop Settings), operating system, and architecture.
-- Which interface you used; include the terminal application for CLI issues.
-- Steps to reproduce, expected behavior, and what happened instead.
-- Relevant warnings shown by `oflh` and whether the target is a file, folder, or port.
+- The output of `oflh --version`, or the details copied from **About OFLH** in
+  the desktop app.
+- Your OS, version, and CPU architecture.
+- Terminal or desktop app, and for the terminal, which terminal emulator.
+- What you inspected (file, folder, drive root, or port), what you expected,
+  and what you saw.
+- Any warning oflh showed. Press `?` in the terminal app or open **coverage
+  notices** in the desktop app.
 
-Use a minimal example with temporary files where possible. Redact usernames,
-private paths, hostnames, process arguments, and credentials from screenshots or
-logs. Do not post sensitive data in a public issue.
+Reproduce with temporary files where you can. Before posting, remove user
+names, private paths, host names, process command lines, and credentials from
+logs and screenshots.
 
-## Make a change
+## Submit a change
 
-1. Follow [Development](docs/development.md) to build and run the project.
-2. Keep the change focused and follow the boundaries in [Architecture](docs/architecture.md).
-3. Add regression coverage for behavior changes. Include before/after screenshots
-   for terminal layout changes, using synthetic process names and paths.
-4. Run `cargo xtask check`. For Desktop changes, follow the checks in the
-   [Desktop CI workflow](.github/workflows/desktop.yml).
-   Review your diff for generated files and sensitive data.
-5. Open a pull request explaining the problem, resulting behavior, and validation.
+1. Build and run the project with [Development](docs/development.md).
+2. Keep the change focused, and put code in the crate that owns it
+   ([Architecture](docs/architecture.md)).
+3. Add a regression test for any behavior change. For terminal layout changes,
+   update the golden snapshots and include before/after screenshots that use
+   synthetic process names and paths.
+4. Run `cargo xtask check`. For desktop changes, also run the frontend checks
+   listed in [Development](docs/development.md#validate-changes).
+5. Review your diff for generated files and personal data.
+6. Open a pull request that explains the problem, the new behavior, and how
+   you tested it.
 
-Use standard Rust formatting and descriptive names. Prefer small functions,
-typed errors, owned resources, and safe Rust. Document public APIs and explain
-native ABI or lifetime assumptions beside each unsafe block. Do not weaken
-identity checks or confirmation behavior to simplify a change.
+## Code expectations
 
-Native changes need tests on the affected operating systems and architectures;
-cross-compilation alone cannot validate operating-system behavior. Performance
-changes should include reproducible measurements using the same workload and
-inspection coverage.
+- Standard `rustfmt` formatting, descriptive names, small functions.
+- Typed errors (`thiserror`) that keep the operation and the OS error code; no
+  `unwrap()` or `expect()` in production code.
+- Safe Rust outside `oflh-platform`. Every `unsafe` block there has a
+  `// SAFETY:` comment explaining the ABI or lifetime assumption.
+- Never weaken process-identity checks, protected-process guards, or
+  default-cancel confirmations to simplify a change.
+- Keep the distinction between "file is open" and "file is locked".
+
+Changes to a platform backend need to pass on the affected operating systems
+and both architectures; CI runs all six for every pull request.
+Cross-compiling does not test OS behavior. Performance claims need
+reproducible numbers with identical coverage; see
+[Inspection performance](docs/inspection-performance.md).
+
+Translations: see the
+[desktop translation guide](crates/oflh-desktop/ui/src/locales/README.md) and
+the terminal notes in [Development](docs/development.md#terminal-snapshots-and-translations).
