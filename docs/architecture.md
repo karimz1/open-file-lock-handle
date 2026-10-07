@@ -1,90 +1,155 @@
 # Architecture
 
-Both interfaces use the same Rust search and native inspection code. Neither UI
-implements its own file or port scanner.
+oflh is a Cargo workspace. One scanner library serves two frontends: a terminal
+app and a Tauri desktop app. Neither frontend has its own file or port scanner.
 
-| Crate | Responsibility |
-| --- | --- |
-| `oflh-core` | Targets, process identities, observations, search, and errors |
-| `oflh-platform` | Native discovery, metrics, and process actions |
-| `oflh-tui` | Terminal state, input, rendering, and background work |
-| `oflh` | CLI arguments and application startup |
-| `oflh-desktop` | Desktop service, Tauri shell, and React frontend |
-| `xtask` | Checks and release packaging |
+```text
+              ┌──────────────┐      ┌──────────────────────────────┐
+              │  oflh (CLI)  │      │  oflh-desktop                │
+              │  args, start │      │  Rust service + Tauri shell  │
+              └──────┬───────┘      │  React UI (ui/)              │
+                     │              └──────────────┬───────────────┘
+              ┌──────▼───────┐                     │
+              │  oflh-tui    │                     │
+              │  state, view │                     │
+              └──────┬───────┘                     │
+                     └───────────┬─────────────────┘
+                          ┌──────▼────────┐
+                          │ oflh-platform │  native APIs, unsafe lives here
+                          └──────┬────────┘
+                          ┌──────▼────────┐
+                          │  oflh-core    │  targets, identities, search
+                          └───────────────┘
+```
 
-## Scanning
+| Crate | Owns | Must not contain |
+| --- | --- | --- |
+| [`oflh-core`](../crates/oflh-core) | Targets, process identities, observations, search, version rules, errors | OS calls, `unsafe` |
+| [`oflh-platform`](../crates/oflh-platform) | Linux, macOS, and Windows backends; ports; metrics; termination; elevation; update HTTP client | UI state |
+| [`oflh-tui`](../crates/oflh-tui) | Terminal state, input, rendering, background workers, translations | Native calls, `unsafe` |
+| [`oflh`](../crates/oflh) | Argument parsing and startup of the `oflh` binary | Business logic, `unsafe` (`#![forbid(unsafe_code)]`) |
+| [`oflh-desktop`](../crates/oflh-desktop) | Desktop service, Tauri shell (`desktop` feature), React frontend in `ui/` | A second scanner |
+| [`xtask`](../xtask) | `cargo xtask check`, packaging, release assembly, updater signing | Anything shipped to users |
 
-A background worker owns the native backend. The UI handles selection, filters,
-and rendering. Requests have generation numbers; refresh cancels old work and
-results from older generations are ignored. Queues are bounded and repeated
-requests replace pending work. Cancellation is checked between native calls;
-it cannot interrupt every OS operation.
+## The backend trait
 
-Metrics can be sampled without repeating file discovery. Idle terminal screens
-redraw only when something changes. Port discovery uses `netstat2` and joins owners
-to file results by PID and birth identity. Unknown owners cannot be action targets.
+Every platform implements `oflh_platform::Backend` (abridged; `is_running` has
+a default that reports "unavailable"):
 
-## Process safety
+```rust
+pub trait Backend: Send + 'static {
+    fn scan(&mut self, target: &Target, cancel: &Cancellation) -> Result<Snapshot>;
+    fn sample(&mut self, ids: &[Identity], cancel: &Cancellation)
+        -> Result<Vec<(Identity, Metrics)>>;
+    fn is_running(&mut self, id: Identity) -> Result<bool>;
+    fn terminate(&mut self, id: Identity, force: bool, cancel: &Cancellation) -> Result<()>;
+}
+```
 
-A PID alone is not an identity. Actions and metrics also use process birth time
-so a reused PID cannot silently select a different process. Selection and focused
-ancestry retain captured identities across refreshes. Confirmation defaults to
-Cancel and includes selected processes hidden by filters.
+`oflh_platform::native()` returns the backend for the current OS. A backend is
+owned by one worker thread and never shared. `scan` returns a `Snapshot` of
+processes and their observations (path, relation, access, lock evidence) plus
+coverage warnings. `sample` refreshes CPU and memory for known identities
+without repeating file discovery.
 
-Linux uses owned pidfds. Windows force termination uses a validated process handle;
-normal termination sends window-close requests. macOS validates start time before
-signaling, but lacks a pidfd equivalent and retains a narrow exit/PID-reuse race.
-Normal termination never silently escalates to force termination.
+## Scanning off the UI thread
 
-## Native boundaries
+A background worker owns the backend; the UI only handles input, filtering, and
+drawing.
 
-Unsafe native code belongs in `oflh-platform`, with checked buffer lengths,
-documented ABI assumptions, and owned resources released through RAII. Core,
-terminal UI, and CLI remain safe Rust. Errors retain operation context and original
-OS codes. Native paths remain lossless; sanitization applies only to display text.
+- Every request carries a generation number. A refresh supersedes older work,
+  and results from older generations are discarded.
+- Queues are bounded, and a new request replaces a pending one instead of
+  piling up.
+- Cancellation is checked between native calls. It cannot interrupt an OS call
+  that is already running.
+- The terminal redraws only when something changed; an idle screen costs
+  nothing.
+- Port discovery uses `netstat2` and joins socket owners to file results by
+  process identity. A socket without a confirmed owner can never be an action
+  target.
 
-Open-file observations do not prove locks. Missing metrics stay unknown and
-incomplete scans carry warnings. See [Platform support](platform-support.md) for
-backend coverage. Terminal cleanup uses drop guards; release builds retain unwinding.
-Tests, fixtures, benchmarks, and developer tooling are separate from app binaries.
+On Windows, folder scans run in a headless helper: the same executable started
+with a hidden argument, placed in a kill-on-close job object, speaking a small
+versioned binary protocol over pipes. If a native name query blocks, the parent
+can stop the helper without stopping any inspected process. See
+[inspection performance](inspection-performance.md#process-reference-windows-folder-inspection)
+for details.
+
+## Process identity and safety
+
+A PID alone is not an identity, because the OS reuses PIDs. oflh identifies
+every process by PID plus birth time (`Identity`). Metrics, selections, the
+focused ancestry tree, and every action are bound to that pair.
+
+- Linux signals through an owned `pidfd`. Windows force termination uses a
+  validated process handle; normal termination posts `WM_CLOSE` to the
+  process's windows. macOS re-checks the start time just before signaling,
+  which leaves a narrow exit-and-reuse race the OS offers no way to close.
+- Normal termination never silently escalates to force.
+- Confirmation defaults to **Cancel** and lists selected processes that the
+  current filter hides.
+- `Identity::validate` refuses PID 0, PID 1, oflh's own process, and any
+  process whose start time is unknown. Backends call it before every action, so
+  the guard does not depend on the UI. (oflh also leaves itself out of scan
+  results.)
+
+## Native code boundaries
+
+All `unsafe` code lives in `oflh-platform`. Each block has a `// SAFETY:`
+comment, buffer lengths and record layouts are checked before reading, and OS
+resources are owned by RAII guards. The workspace denies
+`clippy::undocumented_unsafe_blocks` and `unsafe_op_in_unsafe_fn`.
+
+Native paths are kept losslessly (`OsString`/`PathBuf`, including invalid UTF-8
+or unpaired UTF-16). Control and formatting characters are sanitized only when
+displayed. Errors keep the failing operation and the original OS error code.
+
+Release builds keep `panic = "unwind"` so terminal and handle guards can restore
+state. Tests, fixtures, benchmarks, and developer tools are never linked into the
+shipped binaries.
 
 ## Desktop
 
-The desktop service keeps snapshots and search indices in Rust. React requests
-bounded result pages and details rather than receiving the whole dataset. Tauri
-shell dependencies are behind the `desktop` feature.
+The Rust service keeps the snapshot and its search index. The React frontend
+asks for one page of at most 200 rows at a time plus the details of the selected
+row, so a scan with tens of thousands of rows never crosses the IPC boundary in
+full. The grid is virtualized.
 
-IPC uses process-lifetime keys and snapshot-scoped path references. Native actions
-resolve these references rather than trusting displayed paths. Single-use
-confirmation tickets capture process identities and action mode; the backend
-revalidates identity before signaling.
+IPC refers to processes and paths by keys scoped to the current process
+lifetime and snapshot. Native actions resolve those keys on the Rust side
+instead of trusting text from the frontend. A process action needs a
+single-use confirmation ticket that captures the identities and the
+normal/force mode; the backend re-validates identities before signaling.
 
-See [Development](development.md) to build and test, and [Releasing](releasing.md)
-for packaging.
+### Desktop administrator recovery
 
-## Desktop administrator recovery
+When a termination fails with *permission denied*, the service keeps the denied
+targets (with their identities) on the action receipt. **Retry with
+administrator privileges** consumes that receipt and creates a new single-use
+confirmation for the same targets and mode; the frontend cannot add targets.
 
-The desktop service retains permission-denied targets with their original PID and
-birth identity under the completed action receipt. An administrator retry consumes
-that receipt and creates a new single-use confirmation with the same normal/force
-mode. Neither the frontend selection nor a refreshed dataset supplies the targets.
-Only an explicit confirmation launches the headless `--admin-terminate` mode of
-the current desktop executable, before renderer initialization.
+After confirmation, the service starts the desktop executable itself in a
+headless `--admin-terminate` mode, before any WebView is created, through the
+platform's elevation mechanism:
 
-Native authorization stays in `oflh-platform`: UAC via an owned helper process
-handle on Windows, polkit `pkexec` on Linux, and `osascript` administrator
-authorization on macOS. Executable paths are passed losslessly on Windows/Linux;
-macOS rejects non-UTF-8 executable paths rather than changing them. Shell and
-AppleScript quoting protect the macOS executable path. Numeric-only arguments
-carry the full identity, requester PID, and explicit mode. The requester remains
-protected despite the helper having a separate PID. Native backends revalidate
-birth identity and retain their existing native handle and signal invariants.
+| OS | Mechanism | Result channel |
+| --- | --- | --- |
+| Windows | UAC, owned helper process handle | Exit code |
+| Linux | polkit `pkexec` | stdout |
+| macOS | `osascript` administrator authorization | stdout |
 
-The helper returns a bounded numeric outcome, preserving native OS error codes.
-Unix carries it over stdout; Windows uses the owned process's exit code. No
-privileged result files, persistent daemons, or arbitrary shell commands are
-accepted. Authorization cancellation stops subsequent targets. Exit checks remain
-in the unprivileged service, so they may report unknown state. The six native CI
-jobs test helper identity guards, mode parsing and force termination; Unix jobs
-also check a denied different-user request followed by a privileged request.
-Interactive consent dialogs require manual OS testing.
+The helper receives only numbers (PID, birth identity, requester PID, mode), so
+there is no shell command to inject into. It re-validates identity and
+protection with the normal backend and returns a bounded numeric outcome that
+preserves the OS error code. There is no daemon and no privileged result file.
+Cancelling the OS prompt stops the remaining targets. CI tests the helper's
+identity guards and mode parsing on all six native targets; the interactive
+consent dialogs are tested manually.
+
+## Where to go next
+
+- [Development](development.md): build, test, and project layout.
+- [Regression coverage](inspection-regressions.md): the contracts that guard
+  scanner changes.
+- [Releasing](releasing.md): packaging and updater signing.

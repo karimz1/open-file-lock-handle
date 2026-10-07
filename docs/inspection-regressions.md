@@ -1,113 +1,91 @@
-# Inspection and desktop regression coverage
+# Regression coverage
 
-Use these contracts when changing native discovery, scan scheduling or the desktop
-grid. The performance work in [#59](https://github.com/karimz1/open-file-lock-handle/pull/59),
-[#60](https://github.com/karimz1/open-file-lock-handle/pull/60),
-[#61](https://github.com/karimz1/open-file-lock-handle/pull/61),
-[#63](https://github.com/karimz1/open-file-lock-handle/pull/63),
-[#65](https://github.com/karimz1/open-file-lock-handle/pull/65) and
-[#67](https://github.com/karimz1/open-file-lock-handle/pull/67) was combined by
-[#69](https://github.com/karimz1/open-file-lock-handle/pull/69).
-[The integration report](https://github.com/karimz1/open-file-lock-handle/issues/68#issuecomment-6020352749)
-records its original native validation. [Issue 77](https://github.com/karimz1/open-file-lock-handle/issues/77)
-tracks the additional parser, native-buffer and snapshot regressions.
+These are the behaviors that scanner, scheduling, and desktop-grid changes
+must preserve, and the tests that enforce them. If a change makes one of these
+tests fail, the change is wrong until proven otherwise: investigate, don't
+relax the assertion.
 
-## Contracts and test locations
-
-| Change or contract | Regression coverage | Test location |
-| --- | --- | --- |
-| #59: adaptive Windows resource batches and progress | Tiny directories share batches; self-only groups stop splitting; file-identity caches remain scan-local; fallback caps stay explicit; directory/file native users and progress are checked | `crates/oflh-platform/src/windows.rs`, `crates/oflh-platform/tests/native.rs` |
-| Native inspection, cancellation and identity | Real file users, lock release, CPU/memory sampling, deleted replacements/hard links, protected processes, parent termination and an independent C lock fixture | `crates/oflh-platform/tests/native.rs` |
-| #60: bounded desktop queries and responsive paging | Full 20,000-observation query cache reused across pages and selection; invalid queries rejected; file/port queries isolated; all 1,000 matching process lifetimes selected despite a 50-row final viewport | `crates/oflh-desktop/src/dataset.rs`, `query_cache_tests` |
-| #61: column fitting | Enter leaves divider width unchanged; double-click fits; Fit all includes offscreen rows and skips hidden columns; changed filters abandon stale measurements | `crates/oflh-desktop/ui/tests/workspace.spec.ts` |
-| #63: parallel Windows resource discovery | Every batch/file retained, native work overlaps within worker/queue bounds, cancellation disconnects blocked dispatch, errors/panics join all workers; explicit fallback cap warnings | `crates/oflh-platform/src/windows.rs`, unit tests |
-| #65: uncapped Windows process-reference discovery | 160 distinct native users; a held file beyond 10,000 unused entries; read-only/write-only/metadata handles; directory handles; closed-file mappings; outside hard links; deleted-name evidence or an explicit warning; unacknowledged oplock breaks | `crates/oflh-platform/tests/native.rs`, Windows tests |
-| #65: native ABI and owned-helper boundary | All 4,096 decoded handle records and pointer-width fields retained; malformed extents/counts rejected; lossless UTF-16 and birth identities; bounded IPC, cancellation/reaping, partial failures, unchanged-heartbeat stall limits | `crates/oflh-platform/src/windows/handles/snapshot.rs`, `inspection_protocol.rs`, `inspection_transport.rs` |
-| #67: macOS workers | Each PID dispatched once; independent scans share a concurrency ceiling; errors, panics and waiting cancellation release only owned permits | `crates/oflh-platform/src/process_pool.rs` |
-| #60: cold grid column sorts | Lazy relevance scoring preserves the same complete per-observation match set for every supported file-column sort, including both sort directions and offscreen selection | `crates/oflh-desktop/src/dataset.rs`, `query_cache_tests` |
-| Linux fast process parsing | Nested/non-Unicode names, birth identity, exited states, truncated/overflowing metrics, unknown RSS, lossless mapping paths and malformed mapping evidence | `crates/oflh-platform/src/linux.rs`, unit tests |
-| macOS descriptor initialization | Native returned bytes fit the allocation and contain whole ABI records before `set_len`; exact-full/empty/failed reads retain conservative partial coverage; invalid geometry and partial records fail | `crates/oflh-platform/src/native_buffer.rs`, called by `macos.rs` |
-| CPU/memory lifetime isolation | CPU deltas never carry across a reused PID or an absent lifetime; zero/backwards clocks and counters remain unknown; later valid samples recover; only the full birth identity receives memory/CPU samples | `crates/oflh-platform/src/lib.rs`, `metric_identity_tests` |
-| Snapshot lifetime isolation | A reused PID cannot inherit the old process key, selected scope, detail lookup or native path reference; the old immutable snapshot retains its own references | `crates/oflh-desktop/src/dataset.rs`, `query_cache_tests` |
-| #74: familiar Windows paths | Display/copy text uses drive/UNC forms when equivalent; namespace-dependent names and long clipboard paths retain their prefix; original native references remain lossless, including non-Unicode paths | `crates/oflh-desktop/src/path_text.rs`, Windows dataset tests |
-| #75: completed duration | Only successful accepted scans publish a duration; cancel/failure/stale work retains the previous value; ms/s/min formatting, localized/minimum-window footer | `crates/oflh-desktop/src/service.rs`, `ui/src/scanDuration.test.ts`, browser tests |
-| #76: quiet automatic refresh | Old viewport remains until a matching page is ready; search/scroll/focus/details stay usable; one scan and page request at a time; no idle progress polling; no refresh timer restart before accepted rows; stale/reused identities and changed observations cannot gain actions | `crates/oflh-desktop/ui/tests/workspace.spec.ts` |
-
-A 200-row IPC page limits one response, not native discovery. A 10,001-process
-fixture requires the complete count and the last page to remain accessible even
-after select-all reports its explicit 10,000-process safety limit. It does not
-truncate the inspected dataset. Tests assert result membership and identity separately from
-viewport sizes and timings.
-
-## Run and review
+## Run the suites
 
 ```sh
-cargo xtask check
-cargo build --release --locked --bin oflh
+cargo xtask check                                  # fmt, clippy, all Rust tests
+cargo build --release --locked --bin oflh          # the binary CI packages
 npm --prefix crates/oflh-desktop/ui ci
+npm --prefix crates/oflh-desktop/ui run format:check
 npm --prefix crates/oflh-desktop/ui test
 npm --prefix crates/oflh-desktop/ui run build
-npm --prefix crates/oflh-desktop/ui run test:ui
-npm --prefix crates/oflh-desktop/ui run format:check
+npm --prefix crates/oflh-desktop/ui run test:ui    # Playwright
 ```
 
-`cargo xtask check` includes formatting, Clippy and every workspace test. Native
-fixtures need permission to create processes, PTYs and loopback sockets. Investigate
-a permission or timing failure; do not remove the assertion or skip the fixture.
-Run browser suites against one local test server at a time.
+Native tests need permission to create processes, pseudo-terminals, and
+loopback sockets. Run one browser suite at a time; they share a local test
+server.
 
-The [CI workflow](../.github/workflows/ci.yml) runs native tests, repeated terminal
-workflows, equivalent-coverage profiles and the tested release executable on Linux,
-macOS and Windows, each on x86-64 and ARM64. The
-[desktop workflow](../.github/workflows/desktop.yml) checks UI tests, desktop packages,
-administrator recovery and updater behavior. Inspect the checks for the exact PR
-head and the combined development branch before merging. Cross-compilation cannot
-replace native execution. Review intentional terminal snapshots and synthetic UI
-screenshots when rendering changes.
+[CI](../.github/workflows/ci.yml) runs native tests, repeated terminal
+workflows, equivalent-coverage profiles, and the release executable on Linux,
+macOS, and Windows for x86-64 and ARM64.
+[Desktop CI](../.github/workflows/desktop.yml) adds UI tests, packaging,
+administrator recovery, and updater checks. Before merging, check the results
+for the exact pull request head.
 
-Native fixtures, C interoperability tools, profiling examples and dev-dependencies
-remain outside the distributed application. The public test data uses synthetic
-paths and process names; timing artifacts contain aggregate measurements.
+## Native discovery
 
-## What the tests cannot establish
+| Contract | Test location |
+| --- | --- |
+| Real file users are found; locks are released when the holder exits; CPU and memory are sampled; deleted and replaced files, hard links, protected processes, and parent termination behave correctly, checked against an independent C lock fixture | `crates/oflh-platform/tests/native.rs` |
+| Windows: 160 distinct users of one file; a held file behind 10,000 unused entries; read-only, write-only, and metadata-only handles; directory handles; mappings after the file handle closed; outside hard links; deleted names reported or explicitly warned about; an unacknowledged oplock break does not stall or create a false conflict | `crates/oflh-platform/tests/native.rs` (Windows) |
+| Windows handle snapshot: all 4,096 decoded records and pointer-width fields kept; malformed extents and counts rejected; lossless UTF-16; bounded IPC; cancellation and reaping; partial failures; unchanged heartbeats do not reset the stall limit | `crates/oflh-platform/src/windows/handles/snapshot.rs`, `inspection_protocol.rs`, `inspection_transport.rs` |
+| Windows Restart Manager fallback: tiny folders share batches; self-only groups stop splitting; identity caches are per scan; the 10,000-file cap is disclosed; parallel batches are all kept, workers are bounded, and errors or panics join every worker | `crates/oflh-platform/src/windows.rs` |
+| Linux `/proc` parsing: nested and non-Unicode names, birth identity, exited states, truncated or overflowing metrics, unknown RSS, lossless mapping paths, malformed mapping lines | `crates/oflh-platform/src/linux.rs` |
+| macOS descriptor buffers: returned bytes fit the allocation and hold whole records before use; full, empty, and failed reads keep conservative coverage; invalid geometry fails | `crates/oflh-platform/src/native_buffer.rs` |
+| macOS workers: each PID dispatched once; concurrent scans share one ceiling; errors, panics, and cancellation release only their own permits | `crates/oflh-platform/src/process_pool.rs` |
+| Ports: TCP and UDP owners on IPv4 and IPv6 are found and disappear after release | `crates/oflh-platform/tests/ports.rs` |
 
-Coverage gates catch specific regressions; they cannot guarantee that every future
-change or live system behaves correctly. Protected processes, permissions, native
-name loss, network filesystems and filter drivers still affect discovery. Open
-references are not proof of locks; Windows resource users are not proven lock
-owners. Preserve partial-result warnings and unknown metrics.
+## Identity and metrics
 
-Use [inspection performance](inspection-performance.md) for reproducible profiles
-and equivalent-coverage speed comparisons. Shared-runner timings and changing
-whole-disk observations are diagnostics, not a universal latency guarantee or a
-comparison of operating-system speed. Further investigation remains recorded in
-issues [56](https://github.com/karimz1/open-file-lock-handle/issues/56),
-[57](https://github.com/karimz1/open-file-lock-handle/issues/57),
-[58](https://github.com/karimz1/open-file-lock-handle/issues/58),
-[62](https://github.com/karimz1/open-file-lock-handle/issues/62) and
-[66](https://github.com/karimz1/open-file-lock-handle/issues/66).
+| Contract | Test location |
+| --- | --- |
+| CPU deltas never carry across a reused PID; zero or backwards clocks stay unknown; later valid samples recover; only the exact birth identity receives samples | `crates/oflh-platform/src/lib.rs` (`metric_identity_tests`) |
+| A reused PID cannot inherit the previous process's key, scope, details, or path references; old snapshots keep their own | `crates/oflh-desktop/src/dataset.rs` (`query_cache_tests`) |
 
-## Terminal follow-ups
+## Desktop grid and refresh
 
-Issue #79 adds complete 10,001-process navigation and selection, per-observation
-matching across every sort, full birth-identity metric updates, cancelled index
-publication, retained details during reload, completion-based scheduling and
-modal/editor/tree auto-refresh suppression. The synthetic terminal profile also
-requires all 50,000 usages and a reachable final row on every native target.
-Existing English terminal goldens remain unchanged.
+| Contract | Test location |
+| --- | --- |
+| One cached 20,000-observation query is reused across pages and selection; invalid queries are rejected; file and port queries are isolated; all 1,000 matching processes are selected even when the last page shows 50 rows | `crates/oflh-desktop/src/dataset.rs` (`query_cache_tests`) |
+| Every column sort, in both directions, returns the same complete match set with lazy relevance scoring | `crates/oflh-desktop/src/dataset.rs` (`query_cache_tests`) |
+| A 10,001-process result keeps its full count and last page reachable; select-all reports its 10,000-process safety limit without truncating the data | `crates/oflh-desktop/src/dataset.rs` |
+| Column fitting: `Enter` on a divider changes nothing; double-click fits; **Fit all** includes off-screen rows, skips hidden columns, and drops stale measurements | `crates/oflh-desktop/ui/tests/workspace.spec.ts` |
+| Windows paths display as drive/UNC where equivalent; namespace-dependent names and long copied paths keep `\\?\`; native references stay lossless | `crates/oflh-desktop/src/path_text.rs` |
+| Only successful scans update the "last scan took" duration; ms/s/min formatting | `crates/oflh-desktop/src/service.rs`, `ui/src/scanDuration.test.ts` |
+| Background refresh keeps the old rows until matching new ones arrive; search, scroll, focus, and details stay usable; one scan and one page request at a time; stale identities never gain actions | `crates/oflh-desktop/ui/tests/workspace.spec.ts` |
 
-Issue #80 shares familiar Windows drive/UNC presentation across both frontends;
-native Windows tests retain canonical paths and namespace-sensitive relative rows.
-Issue #82 covers English/German/Chinese search, confirmations, locale resolution,
-CLI help and native Windows locale lookup, with ten multilingual terminal snapshots.
+A 200-row page limits one IPC response, not discovery. Tests assert result
+membership and identity separately from viewport sizes and timings.
 
-Issue #84 covers the read-only terminal release notice. Core tests check numeric
-SemVer precedence, release candidates, metadata and invalid versions. Platform tests
-use loopback HTTP fixtures for response/status/redirect failures and header/body
-timeouts, plus bounded malformed/oversized manifests and original error codes.
-Independent-worker tests hold a request while inspection events flow, verify request
-coalescing and discard results after shutdown. UI tests retain full process birth
-identities, selection, details, ancestry and default-cancel confirmations; translated
-notices change only one footer row at wide and compact sizes. Tests never require
-the public update service. The synthetic profile now verifies every original
-process/usage pair exactly once, as well as totals and final-row reachability.
+## Terminal
+
+| Contract | Test location |
+| --- | --- |
+| 10,001-process navigation and selection; per-observation matching for every sort; identity-bound metric updates; cancelled index builds are discarded; details survive reload; auto refresh pauses in dialogs, search, and the tree | `crates/oflh-tui/src/tests.rs` |
+| Golden screens in English, German, and Chinese at wide and compact sizes, including default-cancel confirmations | `crates/oflh-tui/tests/snapshots/` |
+| Real PTY workflows of the shipped binary; explicit `--language` and locale environment priority | `crates/oflh/tests/terminal.rs` |
+| Release notice: SemVer precedence ignores build metadata; RCs; invalid versions; HTTP status, redirect, timeout, oversized and malformed manifests over loopback; the update worker never blocks inspection; one footer row changes | `crates/oflh-core/src/releases.rs`, `crates/oflh-platform/src/updates.rs`, `crates/oflh-tui/src/tests.rs` |
+
+No test depends on the public update service.
+
+## What these tests cannot prove
+
+They catch known regressions. They cannot prove that every live system
+behaves: protected processes, permissions, lost native names, network file
+systems, and filter drivers still limit discovery. Open references are not
+locks, and Windows resource users are not proven lock owners, so keep
+partial-result warnings and unknown metrics intact.
+
+For speed comparisons use [inspection performance](inspection-performance.md).
+Background and design decisions are recorded in the (closed) investigations
+[#56](https://github.com/karimz1/open-file-lock-handle/issues/56),
+[#57](https://github.com/karimz1/open-file-lock-handle/issues/57),
+[#58](https://github.com/karimz1/open-file-lock-handle/issues/58),
+[#62](https://github.com/karimz1/open-file-lock-handle/issues/62),
+[#66](https://github.com/karimz1/open-file-lock-handle/issues/66).

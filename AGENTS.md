@@ -1,55 +1,167 @@
-# Instructions for agents working on oflh
+# AGENTS.md
 
-## Rust quality
+Instructions for coding agents working in this repository. Human contributors
+should read [CONTRIBUTING.md](CONTRIBUTING.md) first; everything here applies to
+them too.
 
-- Follow standard `rustfmt`; format edited Rust before presenting or committing it.
-- Use descriptive `snake_case` names. Single letters are limited to conventional loop indices and short, unambiguous closure parameters.
-- Keep functions focused. Extract parsing, native resource management, observation collection, and UI state transitions into named helpers rather than growing monolithic functions or nested iterator expressions.
-- Document public types and APIs with `///`. Explain non-obvious search, identity, cancellation, and native ABI invariants.
-- Preserve typed library errors using `thiserror`, operation context, and original OS error codes. Propagate failures with `?`.
-- Do not use `unwrap()` or `expect()` in production code unless failure is statically impossible and the reason is documented. Tests may assert fixture assumptions with them.
-- Optimize through measured reductions in system calls, allocations, copies, and idle work. Keep the code readable. Do not claim speedups without reproducible measurements and equivalent inspection coverage.
+## Project in one paragraph
 
-## Architecture and safety
+oflh (Open File Lock Handle) shows which processes use a file, folder, or local
+port on Linux, macOS, and Windows (x86-64 and ARM64). It ships two frontends
+over one Rust scanner: `oflh`, an interactive terminal app (ratatui), and
+`oflh-desktop`, a Tauri 2 app with a React/TypeScript UI. It finds file users
+by enumerating process references (descriptors, handles, mappings, modules),
+not by walking directories. Licensed MIT.
 
-- Keep domain/search logic in `oflh-core`, native APIs in `oflh-platform`, terminal state/rendering in `oflh-tui`, CLI composition in `oflh`, and developer/release tooling in `xtask`.
-- Core, UI, and CLI must remain safe Rust. Confine unavoidable `unsafe` to native boundaries, with a `SAFETY` comment for each block and verified buffer lengths/layouts.
-- Use owned descriptors/handles and RAII. Retain native paths losslessly; sanitize control and formatting characters only for display.
-- Bind actions and metrics to PID plus birth identity. Never weaken stale-identity checks, protected-process guards, default-cancel confirmation, or hidden-selection disclosure.
-- Open files do not prove locks. Preserve each platform's evidence limitations, unknown metrics, and partial-result warnings. Windows resource users are not proven lock owners.
-- Keep scanning off the UI thread, queues bounded, cancellation cooperative, and stale generations rejected. Avoid periodic redraws while idle.
-- Preserve the current keyboard workflow and responsive terminal appearance. A focused ancestry tree retains its captured identities across refreshes.
+## Commands
 
-## README and documentation
+Run from the repository root. The toolchain is pinned in `rust-toolchain.toml`
+(rustup installs it automatically).
 
-- Write for someone trying to find which process is using a file. Lead with what `oflh` does, when to use it, supported platforms, installation, and a short path to the first useful result. Use plain language and concrete examples.
-- Keep `README.md` as the landing page: purpose, common problems, installation, quick start, essential shortcuts, and key limitations. Keep complete search rules, selection behavior, and process actions in `docs/terminal-usage.md`; keep detailed OS coverage in `docs/platform-support.md`. Link to reference sections rather than duplicating them. The README owns the quick start.
-- Keep architecture, contributor workflows, release procedures, and historical Go-to-Rust comparisons in their dedicated documents. Link to benchmarks from the README without making implementation history the main selling point.
-- Improve discoverability with descriptive headings and natural terms users search for, such as files in use, locked files, and open handles. Avoid keyword stuffing, artificial AI-specific wording, unsupported superlatives, and promises of better search rankings. Clear documentation should serve both readers and automated tools.
-- Verify commands, flags, shortcuts, platform claims, and output formats against the implementation. Verify download filenames and available architectures against published release assets when changing installation instructions. Show how to run a standalone download before assuming it is on `PATH`.
-- Preserve the distinction between file usage and proven lock evidence, Windows owner uncertainty, permission limits, and termination consequences. Keep essential limitations near the relevant claims even when fuller explanations live elsewhere.
-- When moving or renaming sections, preserve existing README anchors where practical and point readers to the new reference location. Check relative links, anchors, image paths, and Markdown formatting; inspect the rendered page when changing layout or visuals.
-- Keep repository descriptions concise and topics focused on actual capabilities, platforms, and use cases. Avoid redundant topics and other tools' names as tags. Change live GitHub metadata only within the user's authorized scope; documentation maintenance alone does not authorize publishing or pushing changes.
-- Review edits for accuracy, ease of getting started, repetition, and useful navigation. Report what was verified and any remaining gaps; distinguish editorial assessments from measured search or traffic results.
+| Task | Command |
+| --- | --- |
+| Build the shipped CLI | `cargo build --release --locked --bin oflh` |
+| Run the CLI | `cargo run -- <path>` (needs a real TTY) |
+| All Rust gates (required before handoff) | `cargo xtask check` |
+| Format only | `cargo fmt --all` |
+| One crate's tests | `cargo test -p oflh-core --locked` |
+| Regenerate terminal snapshots | `OFLH_UPDATE_SNAPSHOTS=1 cargo test -p oflh-tui --locked` |
+| Desktop frontend install | `npm --prefix crates/oflh-desktop/ui ci` |
+| Desktop frontend checks | `npm --prefix crates/oflh-desktop/ui run format:check`, `... test`, `... run build` |
+| Desktop browser tests | `npm --prefix crates/oflh-desktop/ui run test:ui` |
+| Desktop app build | `npm --prefix crates/oflh-desktop/ui run tauri -- build --no-bundle -- --locked` |
+| Updater tests | `cargo test -p oflh-desktop --features updater-tests --locked` |
 
-## Required validation
+`cargo xtask check` runs `cargo fmt --all --check`, then
+`cargo clippy --workspace --all-targets --locked -- -D warnings`, then
+`cargo test --workspace --locked`. It does not need WebKitGTK or Node.js: the
+Tauri shell is behind the `oflh-desktop` crate's `desktop` feature.
 
-- Run `cargo xtask check` before a final implementation handoff. It runs `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, and `cargo test --workspace --locked`.
-- Add meaningful regression tests for native behavior, state transitions, and previously failing cases. Place unit tests in `#[cfg(test)]` modules; standard Cargo integration tests under `tests/` are also separate test executables.
-- Golden terminal snapshots must be reviewed when updated. Use `OFLH_UPDATE_SNAPSHOTS=1` only for intentional UI changes, and inspect the changed fixtures.
-- Validate changes to platform backends on native Linux, macOS, and Windows runners for both x86-64 and ARM64. Cross-checks are useful but do not replace native execution. Report unverified targets explicitly.
-- Retain the independent C lock fixture as test-only interoperability coverage. Never compile or link fixtures, benchmarks, developer tools, or dev-dependencies into the application binary.
-- Build the distributed app with `cargo build --release --locked --bin oflh`; build/package the exact executable tested for its native target.
-- When a check fails, investigate the cause. Do not disable tests or relax a safety contract merely to make CI green.
+## Layout
 
-## Releases and task scope
+| Path | Contents | Rules |
+| --- | --- | --- |
+| `crates/oflh-core` | Targets, identities, observations, search, version rules | `#![forbid(unsafe_code)]`, no OS calls |
+| `crates/oflh-platform` | Native backends (`linux.rs`, `macos.rs`, `windows/`), ports, metrics, termination, elevation, update HTTP | The only crate allowed `unsafe` |
+| `crates/oflh-tui` | Terminal state (`app.rs`), rendering (`view.rs`), workers, strings (`messages.rs`) | `#![forbid(unsafe_code)]` |
+| `crates/oflh` | `oflh` binary: argument parsing (`main.rs`), CLI help (`messages.rs`) | `#![forbid(unsafe_code)]` |
+| `crates/oflh-desktop` | Desktop service (`src/`), Tauri config, React UI (`ui/src`), locales (`ui/src/locales`) | `#![forbid(unsafe_code)]` |
+| `xtask` | `check`, packaging, release assembly, updater signing | Never shipped |
+| `docs/` | User and contributor guides; `docs/measurements/` holds raw benchmark JSON | See documentation rules below |
+| `.github/workflows` | `ci.yml` (six native runners), `desktop.yml`, `release.yml`, `homebrew.yml`, `updater-website.yml` | |
 
-- Keep release packaging and checksums in the Rust `xtask` workflow. Release automation must consume the six tested native artifacts, reject unexpected/missing artifacts, and refuse to overwrite a published release.
-- Respect requested branch names and release scope. A request for a local release candidate does not authorize pushing a release tag or publishing a release.
-- Preserve unrelated work. Describe changes, validation, measured performance, and remaining limitations honestly.
+Details: [docs/architecture.md](docs/architecture.md),
+[docs/development.md](docs/development.md).
+
+## Things that surprise people
+
+- The CLI has no non-interactive mode. It exits with status 1 when stdin or
+  stdout is not a terminal, so you cannot capture its output with a pipe. Test
+  UI behavior through `crates/oflh-tui` unit tests, golden snapshots, or the
+  PTY tests in `crates/oflh/tests/terminal.rs`.
+- Options must come before the path; a second positional argument is an error
+  (exit status 2).
+- Native tests start real processes that hold files, locks, and sockets, and
+  compile a C fixture with the `cc` crate. They can fail in sandboxes that
+  restrict `/proc`, netlink, or PTYs. That is an environment limitation to
+  report, not a reason to change the test.
+- Behaviour differs per OS. A change that passes on Linux can still break macOS
+  or Windows. CI on the six native runners is the source of truth; say which
+  targets you could not run.
+- Profiling harnesses in `examples/` and the `native-query-experiment` and
+  `profiling` features must never be linked into shipped binaries.
+
+## Rust conventions
+
+- Standard `rustfmt`; descriptive `snake_case` names. Single letters only for
+  conventional loop indices and short, obvious closure parameters.
+- Keep functions focused. Extract parsing, native resource management,
+  observation collection, and UI state transitions into named helpers.
+- Document public types and APIs with `///`, including non-obvious search,
+  identity, cancellation, and native ABI invariants.
+- Errors: typed with `thiserror`, carrying operation context and the original OS
+  error code; propagate with `?`.
+- No `unwrap()` or `expect()` in production code unless failure is statically
+  impossible and the reason is written down. Tests may use them.
+- Optimize by measurably reducing system calls, allocations, copies, and idle
+  work. Do not claim a speedup without reproducible measurements at equal
+  inspection coverage.
+
+## Safety invariants (do not weaken)
+
+- Confine `unsafe` to `oflh-platform`. Every block gets a `// SAFETY:` comment;
+  verify buffer lengths and layouts before reading. The workspace denies
+  `clippy::undocumented_unsafe_blocks` and `unsafe_op_in_unsafe_fn`.
+- Use owned handles and descriptors with RAII. Keep native paths lossless;
+  sanitize control and formatting characters only for display.
+- Bind actions and metrics to PID plus birth identity. Keep stale-identity
+  checks, protected-process guards (`Identity::validate`), default-cancel
+  confirmations, and disclosure of hidden selections.
+- An open file is not proof of a lock. Keep each platform's evidence limits,
+  unknown metrics, and partial-result warnings. Windows resource users are not
+  proven lock owners.
+- Keep scanning off the UI thread, queues bounded, cancellation cooperative,
+  and stale generations rejected. No periodic redraws while idle.
+- Keep the existing keyboard workflow. A focused ancestry tree keeps its
+  captured identities across refreshes.
+
+## Tests
+
+- Add a regression test for every behavior change or fixed bug. Unit tests go
+  in `#[cfg(test)]` modules; integration tests under `tests/`.
+- Golden snapshots in `crates/oflh-tui/tests/snapshots/` change only for
+  intentional UI changes. Regenerate with `OFLH_UPDATE_SNAPSHOTS=1` and review
+  every changed file.
+- Keep the independent C lock fixture (`crates/oflh-platform/tests/fixtures/lock-fixture.c`).
+- Platform backend changes need native validation on Linux, macOS, and Windows
+  for both x86-64 and ARM64. Report unverified targets explicitly.
+- When a check fails, find the cause. Never disable a test or relax a safety
+  contract to make CI green.
+- [docs/inspection-regressions.md](docs/inspection-regressions.md) maps each
+  scanner contract to its tests.
+
+## Documentation rules
+
+- `README.md` is the landing page: what oflh does, when to use it, install,
+  quick start, essential keys, limitations, FAQ. Reference material lives in
+  `docs/`: terminal behavior in `docs/terminal-usage.md`, desktop in
+  `docs/desktop-usage.md`, per-OS detection limits in
+  `docs/platform-support.md`. Link rather than duplicate.
+- Verify every command, flag, shortcut, label, and output sample against the
+  code (`crates/oflh/src/main.rs`, `crates/oflh-tui/src/app.rs`,
+  `crates/oflh-desktop/ui/src/App.tsx`, the snapshot files). Verify download
+  names against the latest release's assets.
+- Keep "open" vs "locked", Windows owner uncertainty, permission limits, and
+  termination consequences next to the claims they qualify.
+- Benchmarks: quote only numbers present in `docs/measurements/`, with their
+  context (single run, which machine).
+- Preserve existing heading anchors, or add an `<a id="...">` for the old one.
+  The website and older links point at README anchors such as `#install`,
+  `#getting-started`, `#desktop-install`, and `#cli-tui-install`.
+- Write plainly: no marketing adjectives, no unsupported superlatives, no
+  keyword stuffing. Check relative links and Markdown formatting before
+  handing off.
+- `llms.txt` at the repository root is a link index for tools; update it when
+  adding or renaming docs.
+
+## Scope and releases
+
+- Do not push, tag, publish releases, or change GitHub settings unless the user
+  asked for that specific action. A request for a local release candidate does
+  not authorize pushing a tag.
+- Release packaging and checksums stay in `xtask`. Release automation consumes
+  the six tested native artifacts, rejects missing or unexpected ones, and never
+  overwrites a published release. See [docs/releasing.md](docs/releasing.md).
+- Preserve unrelated work. Report what you changed, how you validated it, and
+  what you could not verify.
 
 ## Privacy
 
-- Never commit credentials, tokens, private keys, personal contact details, private paths, or machine hostnames in code, fixtures, screenshots, logs, or benchmark data. Public project names and links may be retained.
-- Use synthetic data in examples and test fixtures. Record only the environment details needed to reproduce a measurement.
-- If sensitive information is found, report its category and location without echoing the value. Remove it from current files; do not rewrite shared history or rotate credentials without authorization.
+- Never commit credentials, tokens, private keys, personal contact details,
+  private paths, or host names, in code, fixtures, screenshots, logs, or
+  benchmark data.
+- Use synthetic data in examples and fixtures (the snapshots use `/build`,
+  `dotnet`, PID 424242, user `alice`).
+- If you find sensitive data, report its category and location without
+  repeating the value. Do not rewrite shared history or rotate credentials
+  without authorization.

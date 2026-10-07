@@ -1,245 +1,266 @@
-# Measuring inspection performance
+# Inspection performance
 
-Linux, macOS and the Windows folder backend enumerate process references instead of every unused file below a folder. Windows uses an owned headless helper for live disk handles and data mappings, alongside existing executable/module discovery. Healthy folder inspection has no 10,000-file cap or process-count cutoff. Permissions, native-query failures and unsupported paths remain explicit limitations; observations do not prove lock ownership. Individual files retain Restart Manager and the identity-aware native recovery backend. An embedding binary without a helper uses an explicitly limited Restart Manager folder fallback.
+oflh finds file users by asking the OS which files each process references,
+not by walking the target folder. Scan time therefore depends on how many
+processes and open handles exist, not on how many files are on disk. This page
+records the measurements behind that claim, explains how to reproduce them, and
+documents the implementation choices that make it work.
 
-Correctness gates and their test locations are listed in
-[inspection regression coverage](inspection-regressions.md). Preserve those contracts
-when comparing faster implementations.
+- [Recorded results](#recorded-results)
+- [Reproducing the measurements](#native-comparison)
+- [What the counters mean](#what-the-counters-mean)
+- [Windows folder backend](#process-reference-windows-folder-inspection)
+- [Windows single files and fallback](#windows-single-files-and-fallback)
+- [macOS process workers](#macos-process-workers-and-phase-profiling)
+- [Desktop grid](#desktop-search-and-navigation)
+- [Terminal navigation](#terminal-navigation-and-search)
 
-## Recorded Windows results
+## Recorded results
 
-The final handle backend was compared with the parallel Restart Manager backend
-from PR #63 on native GitHub runners. Five alternating timed samples after one
-warmup preserved equivalent synthetic fixture evidence:
+All numbers below come from the JSON files in
+[`measurements/`](measurements/). They describe the machines they ran on;
+they are not guarantees, and the Windows and Linux rows ran on different
+hardware, so they do not rank operating systems.
 
-| Target | Fixture | Baseline median | Handle backend median |
+### Whole drive or root
+
+| Platform | Target | Time | Visible users | References visited | Warnings | Data |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Windows x64 (GitHub runner) | `C:\` | 352.474 ms | 137 | 8,754 | 10 | [JSON](measurements/inspection-windows-x64-2026-10-06.json) |
+| Windows ARM64 (GitHub runner) | `C:\` | 509.999 ms | 144 | 10,241 | 9 | [JSON](measurements/inspection-windows-arm64-2026-10-06.json) |
+| Linux x86-64 (local) | `/` | 194.668 ms | 153 | 69,723 | 2 | [JSON](measurements/inspection-linux-2026-10-05.json) |
+
+The Linux scan returned 48,647 usages and traversed no directories. Each is a
+single run of the backend only, excluding startup and rendering. Warnings are
+permission and coverage notices; live systems never give two runs identical
+coverage, so these numbers show scale, not a speedup ratio.
+
+### Windows: handle backend vs. Restart Manager
+
+The current Windows folder backend was compared on native GitHub runners with
+the parallel Restart Manager backend it replaced
+([PR #63](https://github.com/karimz1/open-file-lock-handle/pull/63)). Each
+figure is the median of five alternating runs after one warm-up, and both
+backends had to report identical fixture results:
+
+| Runner | Fixture | Restart Manager | Handle backend |
 | --- | --- | ---: | ---: |
-| Windows x64 | 2,048 files, 8 held | 795.589 ms | 310.709 ms |
-| Windows x64 | 2,048 files, 128 held | 3,302.953 ms | 315.291 ms |
-| Windows x64 | 2,048 unused files | 215.860 ms | 302.405 ms |
-| Windows ARM64 | 2,048 files, 8 held | 989.248 ms | 345.099 ms |
-| Windows ARM64 | 2,048 files, 128 held | 5,383.856 ms | 353.413 ms |
-| Windows ARM64 | 2,048 unused files | 213.727 ms | 353.960 ms |
+| x64 | 2,048 files, 8 held | 795.589 ms | 310.709 ms |
+| x64 | 2,048 files, 128 held | 3,302.953 ms | 315.291 ms |
+| x64 | 2,048 files, none held | 215.860 ms | 302.405 ms |
+| ARM64 | 2,048 files, 8 held | 989.248 ms | 345.099 ms |
+| ARM64 | 2,048 files, 128 held | 5,383.856 ms | 353.413 ms |
+| ARM64 | 2,048 files, none held | 213.727 ms | 353.960 ms |
 
-These measurements improve occupied folders while adding about 87–140 ms for
-the empty fixture. Process-reference work is independent of unused entry count;
-it still visits accessible system references for an empty target. The native
-[x64 data](measurements/inspection-windows-x64-2026-10-06.json) and
-[ARM64 data](measurements/inspection-windows-arm64-2026-10-06.json) preserve counters,
-sample counts and p95 timings from [the final Windows CI run](https://github.com/karimz1/open-file-lock-handle/actions/runs/37474997933).
-Shared-runner measurements are diagnostic and do not promise these latencies on
-every machine, filesystem or filter driver.
+The handle backend is up to 15× faster on busy folders and 87–140 ms slower on
+a folder nobody is using, because it always inspects every accessible process
+reference. Its cost stays flat as the folder grows. Counters, sample counts,
+and p95 timings are in the
+[x64](measurements/inspection-windows-x64-2026-10-06.json) and
+[ARM64](measurements/inspection-windows-arm64-2026-10-06.json) data from
+[this CI run](https://github.com/karimz1/open-file-lock-handle/actions/runs/37474997933).
+Design history is in
+[issue #62](https://github.com/karimz1/open-file-lock-handle/issues/62#issuecomment-6018347156).
 
-Single whole-`C:\` diagnostics finished in 352.474 ms on x64 and 509.999 ms on
-ARM64, without a helper stall or directory cap. They returned 137/144 visible
-users, 8,754/10,241 references, and 10/9 warnings respectively. Live roots have
-changing, permission-limited and unequal coverage: their baseline timings do
-not establish a speedup ratio, complete access to protected processes, or an OS
-speed ranking. The local Linux x86-64 `/` diagnostic finished in 194.668 ms,
-returning 48,647 usages across 153 visible users with two warnings. Its
-[recorded data](measurements/inspection-linux-2026-10-05.json) reports 69,723
-visited process references and no directory traversal. These timings measure
-backend inspection rather than application startup or rendering.
+<a id="native-comparison"></a>
 
-[Issue 62 records the design goals, discovered sharing-probe stall,
-coverage gates and future profiling targets](https://github.com/karimz1/open-file-lock-handle/issues/62#issuecomment-6018347156).
+## Reproducing the measurements
 
-## Native comparison
+`inspection_profile` creates 2,048 files in 16 folders and holds 8 (sparse) or
+128 (dense) of them open from a separate process; an idle fixture has 2,048
+unused files in one folder. Every held file must be found, and a candidate's
+users, paths, access, deletion, and sharing evidence must match the baseline
+before its timings count.
 
-`inspection_profile` is a developer example; its helpers and dependencies are excluded from `cargo build --release --locked --bin oflh`. It creates 2,048 synthetic files in 16 folders and holds 8 files for the sparse fixture or 128 for the dense fixture in a separate process. The idle fixture has 2,048 unused files in one directory. Each held file must be discovered. The candidate must retain the same fixture users, paths, access, deletion and sharing-conflict evidence before timings are accepted. Windows `open`, `restart manager` and `native file user` sources are compared as file-user associations; their different evidence sources remain distinct in application rows. Other relations remain exact. This comparison does not certify arbitrary live-system coverage; independent native regressions cover additional handle and mapping cases.
-
-Build `scan_bench` on the baseline revision, then run from the candidate checkout:
+To compare a change against a baseline, build `scan_bench` on the baseline
+revision, then run from the candidate checkout:
 
 ```sh
 cargo build --release --locked -p oflh-platform --example inspection_profile
-./target/release/examples/inspection_profile --baseline /path/to/baseline/target/release/examples/scan_bench
+./target/release/examples/inspection_profile \
+  --baseline /path/to/baseline/target/release/examples/scan_bench
 ```
 
-On Windows, both executable paths end in `.exe`. Omit `--baseline` for a candidate-only profile. The harness warms each implementation once, alternates execution order and records five timed scans with a fresh backend each time. Baseline subprocess startup is excluded from the timing. Five samples are a diagnostic, not a reliable estimate of long-tail latency. Run repeated comparisons on the same otherwise idle machine before making performance claims.
+Omit `--baseline` for a candidate-only profile. On Windows both paths end in
+`.exe`. The harness warms each implementation once, alternates their order, and
+times five scans with a fresh backend each time; baseline process startup is
+excluded. Five samples are a diagnostic. Repeat on the same idle machine before
+claiming a speedup.
 
-CI runs the comparison on native Linux, macOS and Windows, on both x86-64 and ARM64. Every run uploads JSON counters and a combined Markdown comparison. The summary refuses missing/duplicate targets, invalid timings and unequal fixture coverage. Different runner hardware, permissions and OS evidence mean the table cannot rank operating systems by speed. The artifacts contain aggregate synthetic coverage and timing data, without native paths, process names, PIDs, accounts or hostnames.
+Add `--whole-disk --budget-seconds 120` to profile `/` or `C:\`. Each
+implementation gets one scan within the budget; a cancelled or failed scan is
+reported as such, never as a result. Whole-root runs find extreme costs and
+cancellation problems; use the synthetic fixtures for base-vs-candidate
+comparisons.
+
+CI runs the comparison against the pull request's base on all six native
+targets and uploads JSON counters plus a combined Markdown summary
+(`cargo xtask inspection-summary`). The summary rejects missing or duplicate
+targets, invalid timings, and unequal fixture coverage. Artifacts contain
+aggregate numbers only: no paths, process names, PIDs, accounts, or hostnames.
 
 ## What the counters mean
 
-- `processes`: process inspection attempts, including unavailable processes.
-- `resources`: descriptors, mappings or modules visited, including references outside the target. These are not unique files.
-- `files` and `directories`: matching Windows file paths and fallback resource-inspection work. Healthy handle inspection does not walk directories; Unix backends report zero here.
-- `resource_queries` and `resource_query_ms`: Restart Manager calls, including resource registration, retries and failed calls.
-- `module_snapshots` and `module_snapshot_ms`: Windows module snapshot attempts and their duration.
-- `file_identity_queries`: Windows metadata opens used to compare file identity, including the target probe.
-- `native_file_user_queries`: native compatibility queries after Restart Manager error 6, including buffer retries.
+| Counter | Meaning |
+| --- | --- |
+| `processes` | Process inspection attempts, including processes that could not be opened |
+| `resources` | Descriptors, mappings, or modules visited, including those outside the target. Not unique files. |
+| `files`, `directories` | Windows fallback work. Zero on Unix and for a healthy Windows handle scan. |
+| `resource_queries`, `resource_query_ms` | Restart Manager calls, including registration, retries, and failures. Concurrent calls are summed, so the time can exceed wall time. |
+| `resource_workers` | Restart Manager fallback worker count |
+| `module_snapshots`, `module_snapshot_ms` | Windows module snapshots and their duration |
+| `file_identity_queries` | Windows metadata opens used to compare file identities |
+| `native_file_user_queries` | `FileProcessIdsUsingFileInformation` calls after Restart Manager error 6, including buffer retries |
 
-Counters belong to one cancellation token. Clones share the same progress; a new inspection starts with empty counters. Reads are approximate and monotonic, without a lock on the worker. Native calls already running can finish before cancellation is observed. Counts are work attempted, not proof of complete coverage.
+Counters belong to one cancellation token and are read without locking, so a
+live read is approximate but never goes backwards. They count work attempted,
+not proof of complete coverage. The progress displays in both apps show the
+attempted process and resource counts.
 
-## Windows changes and remaining costs
+<a id="process-reference-windows-folder-inspection"></a>
 
-The limited Restart Manager fallback uses a bounded pool of two workers per logical CPU, capped at eight, with at most two queued 128-file batches per worker. Enumeration and resource queries overlap. Each worker owns its process metadata cache and native sessions; no query runs under the queue lock. Every worker is joined before results are published. Cancellation stops dispatch and queued work, while a native call already running can finish later. `resource_workers` records the actual worker count; `resource_query_ms` sums overlapping calls and can exceed scan elapsed time. Its native comparisons are recorded in [PR #63](https://github.com/karimz1/open-file-lock-handle/pull/63); the handle backend removes folder traversal from healthy production inspection.
+## Windows folder backend
 
-Parallel directory batches stay at 128 to avoid excessive subdivisions in occupied areas. Single-file inspection and the serial regression helper retain the following adaptive policy.
+Folder and drive scans run in a headless helper process:
 
-The scanner starts with 128 files and doubles the batch size up to 1,024 after an empty result. Occupied or unavailable results return to 128. Growth resets at directory boundaries, while small tails carry across directories to avoid one expensive registration per tiny folder. Empty batches need one query; occupied batches still split down to individual files because a batch user is not evidence that it uses every file. Self-only batches stop immediately because the scanner excludes itself from results. Repeated module paths reuse file-identity probes within one scan; the next scan starts a fresh cache. Process birth identities are still checked before publication and before actions.
+1. Take one system-wide handle snapshot (`NtQuerySystemInformation` class 64)
+   and check its record layout against
+   [phnt](https://github.com/winsiderss/phnt/blob/master/ntexapi.h) before
+   reading. An unexpected layout fails explicitly.
+2. Identify file objects by comparing with a handle the helper opened itself.
+3. Spread the owning processes across two workers per logical CPU, at most
+   eight. Each worker duplicates handles into owned guards, queries their
+   names, and reads data mappings with `VirtualQueryEx` and
+   [`GetMappedFileNameW`](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getmappedfilenamew),
+   which also catches files mapped after their handle closed.
+4. Check hard-link aliases opened under another name by full file ID
+   ([`FindFirstFileNameW`](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-findfirstfilenamew)).
+5. Probe matching files for sharing conflicts (see below).
+6. Re-check each process's birth identity before publishing results.
 
-[Microsoft documents expensive registry writes in resource registration](https://learn.microsoft.com/en-us/windows/win32/api/restartmanager/nf-restartmanager-rmregisterresources). Adaptive grouping reduces registration count in unused areas, but occupied areas still require expensive queries. Initial native measurements showed fixed 1,024-file batches regressed Windows sparse/dense cases by about 9–36%; the scanner therefore keeps small batches in occupied regions rather than applying a global increase. System-wide process references remove that dependence on unused disk files. The implementation and coverage gates are described below; no whole-drive speedup is inferred from different live-system coverage.
+Kernel object addresses are never dereferenced or used as cache keys, and
+access flags captured in the snapshot are not trusted after a handle slot could
+have been reused.
 
-Local Linux measurements are recorded in [the synthetic profile](measurements/inspection-linux-2026-10-05.json). Windows and macOS performance claims require their native CI artifacts. This fixture does not reproduce every C-drive permission, network, antivirus or filesystem condition.
+**Helper isolation.** The helper is the same executable started with a hidden
+argument. The parent puts it in a job object with kill-on-close before sending
+work, and talks to it over a private versioned binary protocol that preserves
+UTF-16 exactly (including unpaired surrogates) and rejects malformed or
+oversized frames. If the helper does not start within five seconds, or makes no
+progress for twenty, the parent stops it, keeps the observations already
+received, and reports a warning. A scan that keeps progressing has no time
+limit. Cancel stops only the helper, never an inspected process. Library
+embedders configure their own helper entry point with
+`native_with_inspection_helper`.
 
-## Windows completeness recovery and discovery experiments
+**Sharing probe.** Whole-drive diagnostics once stalled on a file with an
+oplock. Probes now use `NtCreateFile` with `FILE_COMPLETE_IF_OPLOCKED`, maximum
+sharing, and `FILE_OPEN_NO_RECALL`
+([Microsoft docs](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ntcreatefile)),
+close the handle without reading or writing, and count only
+`STATUS_SHARING_VIOLATION` as evidence. Other failures stay "unknown" with
+their status code. A regression fixture holds an oplock without acknowledging
+the break and requires the scan to finish with no false conflict. Other
+file-system or filter-driver calls can still block, which is why the helper
+stall limit exists.
 
-The native 160-process regression found that Restart Manager returns error 6 (`ERROR_INVALID_HANDLE`) for a file shared by many users on the tested Windows runners. Successful resource queries keep their existing evidence. Failed groups are split down to individual files, where the scanner attempts `FileProcessIdsUsingFileInformation`. It captures process births before this PID-only query and verifies them before publication. Recovered rows say `native file user`; sharing-conflict evidence remains separate and owner uncertainty is preserved. The original error and use of this reserved query remain visible in warnings. Unsupported queries produce explicit partial-result warnings, never a shortened list presented as complete.
+**Deleted files.** With POSIX-style delete, Windows can drop a file's original
+name while a handle stays open. A native fixture checks both cases: if the name
+is still visible the scanner must report it, otherwise it must warn that the
+folder is unknown rather than guess.
 
-`windows_native_probe` tests the native file-user query separately from the production backend. It requires the opt-in `native-query-experiment` feature, which the distributed CLI and desktop do not enable. Its dedicated workflow runs on Windows x86-64 and ARM64 and uploads aggregate synthetic results. Run it on a native Windows development machine with:
+Native regressions for this backend require 160 independent users of one file,
+a held file behind 10,000 unused ones, read-only, write-only, and
+metadata-only handles, directory handles, mappings after close, outside hard
+links, and deleted-name handling. See
+[regression coverage](inspection-regressions.md).
+
+## Windows single files and fallback
+
+Single-file targets use Restart Manager, with file-identity checks for loaded
+modules. If the helper cannot start, folder scans fall back to Restart Manager
+too, with a disclosed 10,000-file cap.
+
+The fallback uses two workers per logical CPU (at most eight), each with up to
+two queued batches of 128 files. Batches start at 128 files and double up to
+1,024 while results stay empty; an occupied or failed batch drops back to 128
+and is split down to single files, because a user of a batch is not necessarily
+a user of every file in it. Batches carry across tiny folders to avoid one
+expensive registration per folder.
+[Resource registration writes to the registry](https://learn.microsoft.com/en-us/windows/win32/api/restartmanager/nf-restartmanager-rmregisterresources),
+so fewer, larger batches help in unused areas. A fixed 1,024-file batch made
+occupied fixtures 9–36% slower, which is why batches stay small where files are
+in use.
+
+**Error 6 recovery.** On the test runners, Restart Manager returns
+`ERROR_INVALID_HANDLE` for a file shared by many processes. oflh then calls
+`FileProcessIdsUsingFileInformation` for that file, captures process births
+before the PID-only query, verifies them afterwards, and labels the rows
+`native file user`. Microsoft
+[reserves this query for system use](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/ne-wdm-_file_information_class),
+so its use is limited to this recovery path and every failure is reported.
+
+**Developer probe.** `windows_native_probe` measures that query and an
+experimental parallel handle scan in isolation. It needs an opt-in feature that
+shipped builds never enable:
 
 ```sh
 cargo run --release --locked -p oflh-platform --example windows_native_probe --features native-query-experiment
 ```
 
-The probe measures discovery of 128 held files among 2,048 files, then checks 160 processes sharing one file against both the direct query and the current backend. Discovery timings exclude process metadata, birth validation, mappings and lock evidence; they must not be presented as complete inspection speedups. It reads file metadata, not file contents. Variable-length native results are checked against the SDK layout and returned byte count; an exceeded buffer budget is an error, never a truncated list.
-
-[Microsoft reserves `FileProcessIdsUsingFileInformation` for system use](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/ne-wdm-_file_information_class). Its production use is limited to compatibility recovery after Restart Manager error 6, with explicit warnings and failures. It remains the individual-file/fallback compatibility path; the handle backend supplies uncapped folder discovery without walking unused files. Track these decisions in [the Windows algorithm investigation](https://github.com/karimz1/open-file-lock-handle/issues/62).
-
-The same probe also experiments with one system-wide handle snapshot and parallel inspection of open disk handles. It derives the file object type from its own live metadata handle, verifies the [phnt native record layout](https://github.com/winsiderss/phnt/blob/master/ntexapi.h), duplicates handles into owned guards and rejects observations after the source process exits or its birth identity changes. It does not cache results by kernel object address. Permission failures and handles that disappear are counted explicitly. This scope omits mappings whose file handles have closed, modules and lock evidence; it is not a complete replacement backend.
-
-Native handle-path queries can block, so this experiment runs in a separate helper process with a 30-second budget. A budget outcome is not a completed scan. The parent terminates only its own experimental helper, never an inspected application. [Microsoft warns that `NtQuerySystemInformation` can change](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntquerysysteminformation); the snapshot ABI and buffer extents are checked before any record is read. The developer probe measures a narrower discovery scope than the production folder backend and must not be presented as an end-to-end application speedup.
-
-## Whole-root diagnostics
-
-Add `--whole-disk --budget-seconds 120` to profile `/` on Linux/macOS or `C:\` on Windows. CI includes this extreme case alongside the stable fixtures. Each implementation gets one scan with a two-minute budget. The candidate requests cooperative cancellation; an already running native call may finish later. The baseline process is stopped if it exceeds the budget. Cancelled/failed scans are reported as such, with aggregate candidate work counters; they are never counted as completed scans or improvements.
-
-These are backend root inspections, not equivalent traversal of every disk file. Unix enumerates visible process references. Windows follows accessible handles, data mappings, executables and modules; its fallback retains a disclosed 10,000-file cap. Both implementations retain permission warnings. Live processes also change between runs, so the root diagnostic does not claim equal inspection coverage. Use the stable synthetic fixtures for base/candidate speed comparisons and the root diagnostic to find extreme costs or cancellation limits.
-
-## Process-reference Windows folder inspection
-
-The production folder helper takes one checked class-64 handle snapshot, identifies
-file objects using its own live metadata handle, and distributes source processes
-across two workers per logical CPU, capped at eight. Workers own process handles
-and duplicated file handles. No kernel pointer is dereferenced or used as a path
-cache; captured access flags are not trusted after a handle slot can change.
-Actual disk handles are named, directory/delete-pending metadata is queried (original deleted names may be unavailable), and
-outside-opened hard-link aliases are verified using full file IDs. Data mappings
-are found with `VirtualQueryEx` and `GetMappedFileNameW`, including mappings after
-the file handle closes. Loaded modules and executables keep their existing scan.
-
-[Microsoft documents mapping-name lookup](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getmappedfilenamew)
-and [hard-link name enumeration](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-findfirstfilenamew).
-The checked, undocumented handle layout follows
-[phnt's native declarations](https://github.com/winsiderss/phnt/blob/master/ntexapi.h);
-an unsupported layout fails explicitly. The process birth is captured from owned
-handles and checked again before publication. Sharing probes run only on matching
-paths inside the helper; reported users remain unverified lock owners.
-
-The private versioned binary protocol preserves UTF-16 (including unpaired
-surrogates), rejects malformed or oversized frames, and uses bounded queues.
-The parent assigns its helper to a job with kill-on-close before submitting work.
-Cancel stops only that owned helper and joins its pipe threads; inspected processes
-are never stopped. Five-second startup and twenty-second stalled-work limits
-prevent blocked native queries from stranding the UI. Repeated unchanged heartbeats
-do not reset the stall limit. A progressing scan has no total-time cutoff.
-Incomplete helper work keeps completed observations with explicit warnings.
-
-Native regressions require all 160 independent C users, distinct file users,
-a held file beyond 10,000 unused entries, directory references, available deleted names or explicit name-loss warnings, outside
-hard links and data mappings after file close. The synthetic timing comparison
-must also preserve file-user associations and sharing evidence. Remaining native
-limits are in [platform support](platform-support.md).
-
-`native_with_inspection_helper` lets library embedders configure their own headless
-entry point. The shipped CLI, desktop and profiling harnesses dispatch the hidden
-helper argument before terminal or WebView startup. Missing helpers fall back
-explicitly; no fixture or developer benchmark is linked into the application.
-New aggregate counters separate handle snapshot duration, handle names, queried
-memory regions and mapped-file names from Restart Manager calls.
-
-Modern Windows POSIX-style unlink can make both final-path modes and file-name
-information lose the original name. A native fixture independently checks those
-APIs: if the original name remains visible, the scanner must retain the deleted
-reference; otherwise it must disclose the unknown original folder and must not
-guess an association. This is an OS evidence limitation, not a process-count cap.
-
-Helper stall warnings now identify only aggregate operation categories (process
-open, handle duplication, metadata, naming, aliases, mappings or sharing).
-Activity messages contain no paths or process identifiers and do not reset the
-stall deadline. Root profiling labels helper failures and capped fallback results
-`partial`, even when the backend returns useful rows. The summary keeps that
-outcome explicit; a returned partial snapshot is not completed native discovery.
-Native minimal-rights fixtures separately require read-only, write-only and
-metadata-only users to survive folder inspection without invented access modes.
-
-Whole-drive diagnostics identified a sharing-probe stall on the x64 runner.
-Folder probes now open existing files through `NtCreateFile` with
-`FILE_COMPLETE_IF_OPLOCKED`, maximal sharing and `FILE_OPEN_NO_RECALL`.
-[Microsoft documents the immediate oplock-break completion](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ntcreatefile).
-The probe closes alternate-success handles without reading or writing content,
-and records only `STATUS_SHARING_VIOLATION` as sharing evidence. Permission,
-offline-file and other native failures remain explicit unknown evidence with
-original status codes. An independent read/handle oplock fixture deliberately
-withholds break acknowledgment and requires complete folder discovery without a
-false sharing-conflict row. Other filesystem/filter calls can still block, so
-the owned-helper stall protection remains. The recorded native diagnostics above
-finished without the previously observed sharing-probe stall; they do not certify
-that every filesystem/filter operation will finish promptly.
+It measures discovery only (no metadata, mappings, or lock evidence), so its
+timings must not be presented as end-to-end speedups. A
+[dedicated workflow](../.github/workflows/windows-probe.yml) runs it on Windows
+x64 and ARM64.
 
 ## macOS process workers and phase profiling
 
-macOS dispatches each captured PID once across two workers per logical CPU,
-capped at eight. Every worker owns its matching processes, username cache and
-partial-inspection count. A shared atomic cursor bounds dispatch without a queue
-of per-process results. All workers finish before publication, including on
-cancellation, typed failure or panic. Process births are checked after native
-inspection and again after user/ancestry enrichment. Lock detection, snapshot
-normalization and metric sampling retain their existing parent-side behavior.
-Linux enumeration remains unchanged.
+macOS hands each PID to one of two workers per logical CPU (at most eight)
+through a shared atomic cursor. Each worker owns its processes, user-name cache,
+and partial-coverage count, and all workers finish before results are
+published, including after cancellation, an error, or a panic. Concurrent scans
+in the same app share one budget of worker permits, so two scans do not double
+the pressure on the OS. Birth identities are checked after inspection and again
+after enrichment.
 
-Independent scans in one application process share an active-process work budget
-sized to the available logical CPUs, capped at eight. Extra workers wait for a
-permit with cooperative cancellation; the counter mutex is released before
-native work. Error and panic cleanup release the permit. This prevents parallel
-scan instances from multiplying native query pressure while retaining every
-captured PID and worker-local result. The CPU-busy Intel regression suite exposed
-long execution under the previous per-scan-only bounds; native profiles and the
-unchanged fixtures determine whether the shared budget is retained.
-
-The profiler reports `process_workers`, `process_concurrency_slots`, `process_metadata_ms`, `descriptor_ms`,
-`mapping_ms`, and `lock_probe_ms` for process metadata/ancestry, descriptors,
-mappings, and lock probes. `process_concurrency_slots` records the shared work
-ceiling separately from spawned workers for a fresh scan; reusing one cancellation
-token sums the ceilings contributed by its scans. Concurrent durations are summed
-and can exceed elapsed time; they identify work, not a sequential breakdown of
-latency. Native six-target CI compares the same held-file fixtures against the PR
-base and requires native regressions on both macOS architectures. No macOS
-speedup is inferred from Linux worker tests. Track the
-results and further decisions in [the macOS investigation](https://github.com/karimz1/open-file-lock-handle/issues/66).
+The profiler reports `process_workers`, `process_concurrency_slots`,
+`process_metadata_ms`, `descriptor_ms`, `mapping_ms`, and `lock_probe_ms`.
+Concurrent durations are summed and can exceed wall time. Investigation:
+[issue #66](https://github.com/karimz1/open-file-lock-handle/issues/66).
 
 ## Desktop search and navigation
 
-The desktop keeps the full native snapshot and search indices in Rust, sends at most 200 rows per IPC page and virtualizes the visible grid. A snapshot-local cache retains one complete filtered/sorted row-index list. Paging, selection and content-width measurement share that list; a changed filter or snapshot builds another. Memory is bounded to one cached query. The frontend keeps one page request in flight and replaces one pending request with the latest viewport/search, so typing cannot accumulate obsolete native searches. Stale snapshot/query responses and pending keyboard selections are rejected.
+The desktop keeps the snapshot and search index in Rust, sends at most 200 rows
+per page, and virtualizes the grid. One filtered and sorted index list is
+cached per snapshot and shared by paging, selection, and column fitting. The
+frontend keeps one page request in flight and replaces any pending request with
+the latest, so fast typing cannot queue stale searches.
 
-The [50,000-row synthetic grid measurement](measurements/desktop-grid-linux-2026-10-05.json) has 500 processes and 100 paged requests. On the local Linux machine, median page retrieval fell from 39.540 ms to 0.139 ms (p95 40.886 to 0.145 ms). Initial search stayed about 41–42 ms, and indexing about 36–37 ms. This measures Rust search/paging, not webview frame latency or overall inspection speed. CI compares the same grid workload against the PR base on all six native targets, compiling the same developer harness against both revisions. Run `cargo run --release --locked -p oflh-desktop --example grid_profile` to reproduce it; add `-- --baseline /path/to/baseline/grid_profile` for a comparison. The helper is excluded from distributed binaries.
+On a [50,000-row synthetic grid](measurements/desktop-grid-linux-2026-10-05.json)
+(500 processes, 100 page requests, local Linux machine), median page retrieval
+fell from 39.540 ms to 0.139 ms (p95 40.886 to 0.145 ms). Initial search stayed
+at 41–42 ms and indexing at 36–37 ms. Skipping relevance scoring when the user
+sorts by another column cut the
+[first path-sorted query](measurements/desktop-grid-lazy-score-linux-2026-10-06.json)
+from 40.04 ms to 3.57 ms. These measure Rust search and paging, not WebView
+rendering.
 
-Keep fixed-size virtualization and bounded IPC before changing the UI layout. [TanStack describes the rendering/overscan tradeoff](https://tanstack.com/virtual/latest/docs/api/virtualizer). [React's deferred-value guidance](https://react.dev/reference/react/useDeferredValue) can help expensive rendering, but does not itself reduce requests; this grid instead bounds requests and removes repeated Rust search/sort work. The progress dialog updates locally during scans so it does not redraw the underlying grid on every polling tick. Further cold-search optimization should be driven by profiles of the shared matcher and index construction, preserving word boundaries, wildcards, per-usage matching and selection identities.
-
-The desktop also skips relevance scoring when the requested order is path, PID,
-name or another column. Relevance sorts compute process metadata scores once per
-process instead of once per usage. Ranking and tie ordering remain covered for
-both process and handle views. A [local 50,000-row path-sort comparison](measurements/desktop-grid-lazy-score-linux-2026-10-06.json)
-measured first-query time of 40.04 ms before this change and 3.57 ms after it, with
-all 50,000 rows retained; cached pages stayed about 0.14 ms. This local run does
-not establish the same gain for every query, sort, machine or WebView. Six-target
-CI records the combined search/paging comparison against the PR base.
+```sh
+cargo run --release --locked -p oflh-desktop --example grid_profile
+cargo run --release --locked -p oflh-desktop --example grid_profile -- --baseline /path/to/baseline/grid_profile
+```
 
 ## Terminal navigation and search
 
-The TUI renders only the current terminal viewport. It retains the complete snapshot;
-viewport sizing never limits inspection or selection. Scanner workers now prepare
-search fields, lowercase name keys and full PID/birth lookup tables before publication,
-with cooperative index cancellation. Name/RAM/CPU/PID sorting skips unused relevance
-scoring. Sort shortcuts reuse accepted matches, metric updates use identity lookups,
-and lock summaries are recomputed when matches change rather than on each frame.
+The terminal draws only the visible rows but keeps the full snapshot. Search
+fields, lower-case name keys, and PID lookup tables are built on the scanner
+thread before results reach the UI. Sorting by name, RAM, CPU, or PID skips
+relevance scoring, and metric updates use identity lookups.
 
 [Five alternating local Linux runs](measurements/tui-navigation-linux-2026-10-07.json)
-compare development `30f429b` with this change. Both discover all 50,000 synthetic
-usages and reach the last row:
+over 50,000 synthetic usages, before and after that change:
 
-| Workload | Before median | After median |
+| Workload | Before | After |
 | --- | ---: | ---: |
 | 500 processes: wildcard/name search | 78.792 ms | 11.912 ms |
 | 10,000 processes: wildcard/name search | 91.430 ms | 16.832 ms |
@@ -248,15 +269,14 @@ usages and reach the last row:
 | 10,000 identity-bound metric updates | 29.000 ms | 0.367 ms |
 | 100 lock-table End/draw frames, 10,000 processes | 272.434 ms | 32.854 ms |
 
-Indexing plus initial matching increases from 52.248 to 53.752 ms for 500 processes
-and 35.938 to 39.513 ms for 10,000; preparation is moved off the render/input thread,
-not claimed to be cheaper. Process-table frame times remain about 39 ms per 100 draws.
-These are synthetic TestBackend timings, excluding terminal output latency and native
-scanning. Search still examines the complete snapshot; relevance sorting and much
-larger results can cost more. No absolute speed guarantee is inferred.
+Indexing plus initial matching rose slightly (52.248 → 53.752 ms for 500
+processes, 35.938 → 39.513 ms for 10,000) because that work moved off the input
+thread. Timings use ratatui's `TestBackend` and exclude terminal output and
+native scanning.
 
-Reproduce with `cargo run --release --locked -p oflh-tui --features profiling --example navigation_profile`.
-Native CI builds the same harness against the PR base and candidate on all six targets,
-checks complete match membership and final-row reachability, and uploads baseline and
-candidate JSONL artifacts. Each CI profile is one diagnostic, not a timing assertion.
-The example/feature is excluded from the distributed CLI build.
+```sh
+cargo run --release --locked -p oflh-tui --features profiling --example navigation_profile
+```
+
+CI builds this harness for the base and the candidate on all six targets and
+checks that every usage is matched exactly once and the last row is reachable.

@@ -1,179 +1,314 @@
-# Terminal user guide
+# Terminal guide
 
-[Back to the README](../README.md) · [Platform behavior](platform-support.md)
+`oflh` is an interactive terminal app. It shows which processes use a file,
+folder, or local port, lets you search and drill into the results, and can ask
+a process to exit. For installation, see the [README](../README.md#install).
 
-## File inspection
+- [Usage](#usage)
+- [Reading the results](#file-inspection)
+- [Search](#search)
+- [Ports](#ports)
+- [Process actions](#process-actions)
+- [Refresh and cancel](#refresh-and-cancel)
+- [Keyboard reference](#keyboard-reference)
+- [Languages](#terminal-languages)
+- [Release notices](#release-notices)
+- [Terminal requirements](#terminal-support)
 
-For installation and a first scan, see the [README quick start](../README.md#getting-started).
-A file target shows references to that file; a folder target includes descendants.
-**Processes** groups usages by process. **Locked files** shows only observations
-with lock or sharing-conflict evidence. Press `Enter` to inspect a process.
+## Usage
 
-Press `r` or `F5` to refresh, or `a` for automatic refresh five seconds after the previous inspection finishes. Active inspections ignore further reloads. Press `z` to cancel; native calls already running may finish before cancellation is acknowledged. Progress shows elapsed time and attempted process/resource counts, not a completeness total. Accepted rows remain usable during refresh; the last successful scan duration stays visible. Automatic refresh pauses while editing search, reviewing confirmations/help or focusing the ancestry tree. In details, `l` shows
-only lock evidence. Search and filters stay active when you refresh. Use `←` and
-`→` to read a long path. On wider terminals, the side panel also shows process
-parents, CPU, and memory.
+```text
+oflh [OPTIONS] [PATH]
+```
 
-## Ports
-
-Press `3` for **Ports**, or start directly with `oflh --ports`. The default is all
-visible local bindings when no path is supplied. An explicit path starts in
-**THIS PATH**: `oflh --ports ./project` shows ports of processes associated with
-that project, and `oflh --port 5040 ./project` adds an exact port filter.
-Press `s` to switch between this path and all ports. File and port search text are
-independent, so switching tabs does not mix their filters.
-
-| Query | Meaning |
+| Command | What it shows |
 | --- | --- |
-| `50` | Port numbers containing 50, such as 5040; updates while typing |
-| `port:3000` | Exact local port; does not match `13000` or a PID |
-| `tcp port:3000` | TCP listeners on port 3000 |
-| `udp` | Bound UDP sockets |
-| `ipv6` | IPv6 bindings |
-| `127.0.0.1` | Bindings matching that address |
-| `pid:424242` | Search the process ID explicitly |
-| `node port:3000` | Both the process text and exact port must match |
+| `oflh` | Processes using anything under the current directory |
+| `oflh ./build` | Processes using `./build` or anything below it |
+| `oflh ./build/plugin.dll` | Processes using that one file |
+| `oflh /` or `oflh 'C:\'` | Processes using anything on the filesystem or drive |
+| `oflh --ports` | All local TCP listeners and bound UDP sockets |
+| `oflh --port 3000` | Only bindings on local port 3000 |
+| `oflh --ports ./project` | Ports owned by processes that use `./project` |
+| `oflh --port 5040 ./project` | The same, filtered to port 5040 |
 
-Exact ports must be between 1 and 65535. Each address, protocol, and port has its
-own row; IPv4 and IPv6 are separate. Other text follows the search rules below.
+| Option | Effect |
+| --- | --- |
+| `--ports` | Start in the Ports tab |
+| `--port PORT` | Start in the Ports tab filtered to one port (1–65535) |
+| `--language en\|de\|zh\|system` | Interface language; `system` (default) follows the locale |
+| `--no-update-check` | Never contact the network to check for releases |
+| `--version` | Print the version and build provenance |
+| `--help`, `-h` | Print help in the selected language |
 
-**THIS PATH** shows ports of processes observed using the target in the header.
-This does not prove the project created those sockets. On Windows, some development
-servers appear only in **ALL PORTS** because working directories cannot be inspected.
+Put options before `PATH`; anything after the path is treated as a second path
+and rejected. Use `--` to pass a path that starts with a dash:
+`oflh -- --weird-name`. Quote paths that contain spaces.
 
-Press `Enter` for the owner's port details, `f` for its file usages, and `p` to
-return to ports. `Esc` goes back; if you switched between detail views, it returns
-to the original detail view first. File and port searches remain separate.
+oflh needs an interactive terminal. When stdin or stdout is redirected it exits
+with status 1 and the message `an interactive terminal is required`. Invalid
+options exit with status 2.
 
-If you started without a path, inspecting an owner or switching to a file tab
-scans its working directory, or its executable's folder if that is unavailable.
-Check the header for the chosen folder. Failed scans keep the previous target.
-Supplying a path on the command line keeps that target fixed.
+<a id="file-inspection"></a>
 
-Port counts describe the whole process, regardless of the file search. Zero
-means none detected. **Owner unavailable** rows cannot be terminated. Selecting
-several ports of one process selects that process only once.
+## Reading the results
+
+The header shows the inspected target. A folder target includes everything
+below it. There are three tabs:
+
+**1 Processes** groups observations by process: PID, name, user, CPU, memory,
+access mode, port count, and the best-matching path (`+N` means N more matching
+paths).
+
+**2 Locked files** lists only observations with lock or sharing-conflict
+evidence. See [platform support](platform-support.md#lock-evidence) for what
+counts as evidence on each OS.
+
+**3 Ports** lists local port bindings; see [Ports](#ports).
+
+Press `Enter` on a process to open its details: every matching file with its
+relation and access mode, plus executable, working directory, parent, CPU,
+memory, and ports. In details, `l` limits the list to lock evidence and `←`/`→`
+scroll a long path.
+
+```text
+  oflh  /  process details
+  dotnet   PID 424242 · alice
+  EXE /usr/bin/dotnet
+  CWD /build
+  PARENT parent (424241)
+  CPU 2.4% machine · RAM 31.0 MiB RSS
+  ALL USAGES · 3 of 3 usages · 1 locked files   1 / 3
+  FILE                          RELATION   ACCESS       DIRECTORY
+  FileLockExampleCli.dll        locked     read/write   /build
+  FileLockExampleCli.deps.json  open       unknown      /build
+  other.dll                     open       unknown      /build
+  SELECTED PATH · locked · read/write
+  /build/FileLockExampleCli.dll · POSIX WRITE
+```
+
+The **RELATION** column says how the process references the file:
+
+| Relation | Meaning |
+| --- | --- |
+| `open` | Open file descriptor or handle |
+| `cwd` | The process's working directory (Linux and macOS) |
+| `executable` | The process's own executable |
+| `mapped` | Memory-mapped file or loaded module (DLL, shared library) |
+| `locked` | Open, with lock or sharing-conflict evidence |
+| `restart manager` | Windows Restart Manager reports this process as a user of the file |
+| `native file user` | Windows file-user query reports this process as a user of the file |
+
+The last two do not prove that process holds a lock. **ACCESS** shows the
+observed mode: `read`, `write`, `read/write`, `execute`, `directory`, `mapped`,
+`reference`, or `unknown`. It describes how the file was opened, not live I/O.
+
+The side panel (toggle with `i`) appears on wide terminals and shows the
+selected process's parent tree, metrics, ports, and executable. CPU is the share
+of the whole machine (100% = all cores) over the last sample; RAM is RSS on Unix
+and working set on Windows. A dash means the value could not be measured.
+
+When a scan could not see everything, for example because of permissions, the
+footer says *Results may be incomplete*. Press `?` for the details.
 
 ## Search
 
-Search is case-insensitive and updates as you type. The same rules apply to
-Processes, Locked files, and file-usage details. Ports use partial numeric matching and explicit exact port terms as described above.
+Press `/`, type, then `Enter` to keep the filter or `Esc` to discard it. The
+list updates as you type. Search is case-insensitive and applies to process
+names, PIDs, paths, and the relation/access labels above.
 
-| Query | Meaning |
+| Query | Matches |
 | --- | --- |
-| `dll` | Text within a name or path, such as `plugin.dll` |
-| `MIMJWT` | Initials of words in `Microsoft.IdentityModel.JsonWebTokens.dll` |
-| `micro*dll` | `micro` followed by `dll`, with any text between them |
-| `FLEC.` / `FLEC*` | Shortened name matching `FileLockExampleCli.dll` or `FileLockExampleCli.deps.json` |
-| `FLEC*.json` | Shortened name followed by `.json` |
-| `*.dll` | A field containing `.dll` |
-| `micro*dll mapped` | Both terms must match |
+| `dll` | Any name or path containing `dll` |
+| `MIMJWT` | Initials of words: `Microsoft.IdentityModel.JsonWebTokens.dll` |
+| `FLEC.` | Initials followed by a dot: `FileLockExampleCli.dll` |
+| `FLEC*.json` | Initials, anything, then `.json`: `FileLockExampleCli.deps.json` |
+| `micro*dll` | `micro`, then anything (including `/`), then `dll` |
+| `*.dll` | Any field containing `.dll`, including `plugin.dll.backup` |
+| `node mapped` | Both terms must match |
+| `pid:424242` | That process ID only |
 
-Search matches parts of names and paths, or the beginnings of words in a name.
-It does not match arbitrary scattered letters. `*` allows any text, including
-folder separators; each part around it also accepts shortened names. Punctuation
-is literal: `FLEC.` needs a dot after the shortened name. Patterns match anywhere,
-so `*.dll` can also match `plugin.dll.backup`. All space-separated terms must match.
+Initials match the starts of words; scattered letters do not match. Punctuation
+is literal. Matches in a file or process name rank above matches that occur
+only in a folder name, unless you sort by another column (`n` name, `p` PID,
+`m` RAM, `c` CPU).
 
-Filename and process-name matches rank above folder-only matches unless you choose
-a sort such as CPU or PID. The matching path and `+N` count reflect your filter.
-File-related search terms carry into details; process-only terms stay in the main
-view. Clear the detail search with `/`, `Ctrl+U`, then `Enter` to see every usage.
+File-related terms carry over into process details, so the details view opens
+already filtered. To see every file a process uses, clear the detail search with
+`/`, `Ctrl+U`, `Enter`. Search and filters stay active across refreshes.
+
+## Ports
+
+Press `3` or start with `oflh --ports`. Each row is one address, protocol, and
+port; IPv4 and IPv6 are listed separately.
+
+```text
+  5 bindings · ALL PORTS · s scope
+    PORT   PROTO PID      PROCESS           ADDRESS     STATE   THIS PATH
+    3000   TCP   424242   dotnet            127.0.0.1   LISTEN  yes
+    3000   TCP   424242   dotnet            ::1         LISTEN  yes
+    3000   TCP   424243   other-project     127.0.0.1   LISTEN  —
+    5300   UDP   424242   dotnet            127.0.0.1   BOUND   yes
+    9000   TCP   —        owner unavailable 0.0.0.0     LISTEN  —
+```
+
+TCP rows are listening sockets only, not established connections. UDP rows are
+bound sockets, including client sockets, so `BOUND` does not mean a server is
+listening. *owner unavailable* means oflh could not confirm which process owns
+the socket; such rows cannot be terminated.
+
+**Scope.** Without a path, the tab shows all ports. With a path
+(`oflh --ports ./project`) it starts in **THIS PATH**, which shows only ports of
+processes that also use that path. Press `s` to switch between the two. THIS
+PATH does not prove the project created the socket, and on Windows some dev
+servers only appear under ALL PORTS because their working directory cannot be
+read.
+
+**Port search** uses its own query, separate from file search:
+
+| Query | Matches |
+| --- | --- |
+| `50` | Port numbers containing 50, such as 5040 |
+| `port:3000` | Exactly port 3000 (not 13000, not a PID) |
+| `tcp port:3000` | TCP listeners on 3000 |
+| `udp`, `ipv6`, `127.0.0.1` | Protocol, address family, or address |
+| `node port:3000` | Process text and exact port must both match |
+
+**From a port to its files.** `Enter` opens the owner's port details, `f` shows
+the files it uses, `p` returns to its ports, and `Esc` goes back. If you started
+without a path, opening an owner re-targets the file scan to that process's
+working directory (or its executable's folder); the header shows which folder
+was chosen. If you gave a path, the target stays fixed.
 
 ## Process actions
 
-Press `Space` to select processes, or `Ctrl+A` to select or deselect all visible
-processes. Selections survive filtering, so a selection may include processes
-that are no longer visible.
+The usual way to free a file or port is to close the program that holds it.
+oflh can do that for you:
 
-- `k` requests normal termination of the selection, or the current process if nothing is selected.
-- `x` force kills the same targets.
-- Every action requires confirmation, with **Cancel** selected by default. The dialog lists the targets, including hidden selections.
+| Key | Action |
+| --- | --- |
+| `Space` | Select or deselect the current process |
+| `Ctrl+A` | Select or deselect all visible processes |
+| `k` | Request normal termination of the selection, or the current process |
+| `x` | Force-kill the selection, or the current process |
+| `K` / `X` | Same, but with no selection they target **all filtered processes** |
 
-To act on a parent, press `Tab` or `→` to focus the ancestry tree. It initially
-selects the current process. Use `↑` to move toward its parents and `↓` to return
-toward the current process. Here, `k` and `x` apply only to the highlighted tree
-node, regardless of selections in the main list.
+Normal termination sends `SIGTERM` on Linux and macOS and a window-close
+request (`WM_CLOSE`) on Windows. Windows console and service processes have no
+window and may need `x`. Normal termination never escalates to force on its own.
 
-The tree keeps the processes it captured across refreshes. oflh checks that a PID
-still belongs to the same process before acting. Protected processes and parents
-that could not be identified cannot be stopped. Results refresh after a successful
-request. A termination request does not guarantee the process has exited.
+Every action opens a confirmation that lists all targets, including selected
+processes hidden by the current filter, with **Cancel** preselected:
 
-Stopping a parent may close its application and affect its children. It does not
-recursively terminate the entire tree. To free a file or port, close the application
-normally or use these actions to stop the process holding it. Once the process
-exits, its resources can be released. Save your work before stopping a process.
+```text
+  FORCE KILL 1 processes?
+  Immediate termination: no cleanup. Unsaved work may be lost.
+
+  Affected processes (including selections hidden by filters):
+    424242    dotnet
+
+  ▶ Cancel      Force kill
+```
+
+Before sending anything, oflh checks that each PID still belongs to the same
+process (PID plus start time). Protected processes and parents that could not
+be identified cannot be stopped. A successful request triggers a refresh, but
+does not guarantee the process has exited.
+
+### Act on a parent process
+
+A worker process often belongs to a larger app. Press `Tab` or `→` to focus the
+parent tree in the side panel. The current process is highlighted; `↑` moves
+toward its parents and `↓` back. In the tree, `k` and `x` apply only to the
+highlighted node and ignore the main selection. `Esc`, `←`, or `Tab` leaves the
+tree.
+
+The tree keeps the processes it captured across refreshes. Stopping a parent
+may close its application and affect its children, but oflh does not
+recursively kill the tree. Save your work first.
+
+## Refresh and cancel
+
+| Key | Action |
+| --- | --- |
+| `r` or `F5` | Rescan now |
+| `a` | Toggle automatic rescans, five seconds after each scan finishes |
+| `z` | Cancel the running scan |
+
+While a scan runs, the previous results stay usable and the progress line shows
+elapsed time and how many processes and resources have been visited (there is no
+total, so no percentage). Further refresh requests are ignored until it
+finishes. Cancellation is cooperative: an OS call already in progress finishes
+first. Automatic refresh pauses while you edit a search, read help or a
+confirmation, or focus the parent tree.
 
 ## Keyboard reference
 
-Press `?` for the full shortcut list. The main controls are:
+Press `?` in the app for the complete list.
 
 | Key | Action |
 | --- | --- |
 | `1` / `2` / `3` | Processes / Locked files / Ports |
-| `↑` / `↓`, `Enter` | Select and inspect |
-| `/`, then `Enter` / `Esc` | Edit search, then apply / cancel |
-| `Space` / `Ctrl+A` | Select one / all visible processes |
-| `r` / `F5` / `a` | Refresh / refresh / auto-refresh after completion |
-| `z` | Cancel active inspection |
-| `u` / `U` / `b` | Check releases / open available release / dismiss notice |
-| `k` / `x` | Terminate / force kill, with confirmation |
-| `Esc` | Go back or clear search |
-| `q` / `Ctrl+C` | Quit (`q` enters text while searching) |
+| `↑` `↓` `PgUp` `PgDn` `Home` `End` | Move (`j`, `g`, `G` also work) |
+| `Enter` | Open process details |
+| `Esc` | Back, clear search, or clear selection |
+| `/` | Edit search; `Enter` applies, `Esc` cancels |
+| `Tab` / `→` | Focus the parent tree |
+| `i` | Show or hide the side panel |
+| `n` / `p` / `m` / `c` | Sort by name / PID / RAM / CPU |
+| `s` | Ports: switch between THIS PATH and ALL PORTS |
+| `f` / `p` / `l` | Details: files / ports / lock evidence only |
+| `Space` / `Ctrl+A` | Select one / all visible |
+| `k` / `x` / `K` / `X` | Terminate / force-kill (see [actions](#process-actions)) |
+| `r` / `F5` / `a` / `z` | Refresh / refresh / auto-refresh / cancel scan |
+| `u` / `U` / `b` | Check for release / open release page / dismiss notice |
+| `R` / `D` | Open the GitHub repository / donation page |
+| `q` / `Ctrl+C` | Quit (`q` types a letter while editing search) |
 
-`K` / `X` act on the selection, or all filtered processes if nothing is selected.
-Review the confirmation carefully. `Tab` changes focus, not views.
+<a id="terminal-languages"></a>
 
-## Terminal support
+## Languages
 
-Use an interactive terminal with Unicode and true-color support. A wider window
-provides room for the process table and side panel. No particular terminal
-emulator is required.
+The interface and `--help` are available in English, German, and Simplified
+Chinese:
 
-### Windows drive roots
+```sh
+oflh --language de .
+oflh --language zh --help
+```
 
-`oflh 'C:\'` in PowerShell or `oflh C:\` in Command Prompt inspects the drive root.
-The terminal and desktop show ordinary drive/UNC paths in familiar form while keeping
-canonical native references for inspection and actions. Namespace-dependent names
-(such as devices, reserved names, trailing dots/spaces and alternate streams) retain
-the extended prefix. Clipboard conversion rejects non-Unicode paths and retains
-long verbatim paths when the destination's long-path support is unknown. On Unix,
-backslashes remain literal filename characters.
-
-## Terminal languages
-
-Use `oflh --language de .` for German or `oflh --language zh .` for Simplified Chinese.
-`--language en` selects English. `--language system` (the default) follows the first
-nonempty `LC_ALL`, `LC_MESSAGES` or `LANG`; Windows falls back to its native user
-locale when those variables are absent. Region variants such as `de_DE.UTF-8` and
-`zh-CN` resolve to the supported language; unsupported locales fall back to English.
-The same option localizes `--help` and CLI usage messages. Put options before PATH.
-
-Keyboard shortcuts, wildcard/port search syntax and access/relation search tokens
-(such as `read`, `mapped`, `locked`, `tcp` and `port:3000`) remain the same in every
-language. Process names, filenames and original OS diagnostic details are retained.
-`--version` always emits the same build/provenance format. Confirmations default to
-Cancel in every language and require enough terminal space to review the targets.
+The default, `--language system`, uses the first non-empty `LC_ALL`,
+`LC_MESSAGES`, or `LANG`, then the Windows user locale. Region variants such as
+`de_DE.UTF-8` or `zh-CN` resolve to the matching language; anything else falls
+back to English. Shortcuts, search tokens (`read`, `mapped`, `locked`, `tcp`,
+`port:3000`), file names, and OS error text are the same in every language.
 
 ## Release notices
 
-Versioned release builds check the same public stable-release manifest as desktop
-at startup and one hour after each completed check. A small footer line announces
-a newer stable version without replacing results, moving the grid, changing focus
-or starting another inspection. Press `u` to check, `U` to open the official release
-page when an update is visible, and `b` to dismiss that version for this session.
-A later version can appear again. These keys remain text while editing search and
-have no update action in process confirmations. Installation remains manual.
+Release builds check for a newer stable version at startup and an hour after
+each check. If one exists, a single footer line says so; nothing else on screen
+moves. Press `u` to check now, `U` to open the release page, or `b` to hide the
+notice for this session. oflh never installs updates itself.
 
-Use `oflh --no-update-check .` to disable automatic and manual network checks.
-Unversioned development builds and pull-request artifacts also disable checks.
-Installed release candidates can be offered the corresponding stable release;
-build metadata does not change version precedence. Older releases and prereleases
-are never offered through the stable channel.
+The check fetches a version manifest from the OFLH website over HTTPS, with
+GitHub as a fallback. It sends no paths, process data, or credentials. It does
+not use proxy settings, so it may fail behind a proxy; automatic failures are
+silent. Disable it with `--no-update-check`. Development builds never check.
 
-Checks run in the background over HTTPS without sending file paths, process data,
-or credentials. They contact the OFLH website, with GitHub as a fallback, and
-download version information only. Networks requiring a proxy may block the
-check because it bypasses proxy settings. Failed automatic checks stay quiet;
-press `u` for an explicit result. Download and install terminal updates manually.
+<a id="terminal-support"></a>
+
+## Terminal requirements
+
+Any terminal emulator with Unicode and true-color support works. Wider windows
+show the side panel; narrow ones switch to a compact layout. Confirmations need
+enough room to list their targets and will ask you to enlarge the window
+otherwise.
+
+### Windows drive roots and paths
+
+Inspect a drive root with `oflh 'C:\'` in PowerShell or `oflh C:\` in Command
+Prompt. Paths are displayed in their familiar drive or UNC form (`C:\`,
+`\\server\share`) while oflh keeps the exact native path internally. Names that
+only make sense in the extended namespace (devices, reserved names, trailing
+dots or spaces, alternate streams) keep their `\\?\` prefix. On Linux and macOS,
+a backslash is an ordinary filename character.

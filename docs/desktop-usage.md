@@ -1,249 +1,239 @@
-# Using OFLH Desktop
+# Desktop guide
 
-Find which processes are using a file, folder or local port without opening a
-terminal. For installation and the first scan, see the [README quick start](../README.md#getting-started).
-The [terminal guide](terminal-usage.md) covers the separate CLI/TUI interface.
+OFLH Desktop shows which processes use a file, folder, or local port, in a
+window. It uses the same scanner as the [terminal app](terminal-usage.md). For
+downloads, see the [README](../README.md#desktop-install).
+
+- [Inspect a file or folder](#inspect-files-and-processes)
+- [Follow the parent process tree](#follow-the-parent-process-tree)
+- [Search and filters](#search-and-filters)
+- [Ports](#ports)
+- [Selection and copying](#selection-and-copying)
+- [Process actions](#process-actions)
+- [Refresh and long scans](#keyboard-and-refresh)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+- [Appearance and language](#appearance)
+- [Updates](#updates)
+- [Linux archive installation](#linux-archive-installation)
+
+## Inspect files and processes
+
+Open a target in any of these ways:
+
+- Drop a file or folder onto the window.
+- Choose **Open file** (`Ctrl+O`) or **Open folder** (`Ctrl+Shift+O`).
+- Type a path into the target box and choose **Inspect**.
+- Pick one of your last twelve targets under **Recent targets** (`Ctrl+4`).
+
+A folder target includes everything below it, so you can open `C:\` or `/` to
+search the whole system. The sidebar switches between two views of the result:
+
+- **Processes** (`Ctrl+1`) has one row per process.
+- **File usages** (`Ctrl+2`) has one row per matching file reference.
+
+Click a row to open its details panel: **Matching handles**, **Local ports**,
+and **Process ancestry**, with full paths and buttons to copy a path or reveal
+it in the file manager. Table paths are shortened to fit; the details show them
+in full.
+
+An open file is not proof of a lock. Tick **Lock evidence only** to keep only
+rows with lock or sharing-conflict evidence. On Windows, reported users of a
+locked file are not proven to be the process holding the lock. When a scan
+could not see everything, open **coverage notices** below the table to see why.
+
+On Windows, ordinary drive and network paths are shown as `C:\…` or
+`\\server\share\…`. Paths that need the extended namespace keep their `\\?\`
+prefix, including in copied text, so they mean the same thing wherever you
+paste them.
+
+## Follow the parent process tree
+
+A helper such as `node`, `dotnet`, or `python` rarely tells you which app to
+close. Select it and look at **Process ancestry** in the details panel. The tree
+runs from the oldest recorded parent (up to eight levels) down to the selected
+process. Click any parent to inspect it or use its process actions.
+
+Parents oflh could not identify are shown as unavailable and cannot be acted
+on. Stopping a parent can close its whole application and affect its children.
+
+## Search and filters
+
+![Column filters narrowing the Processes view to processes named node](../images/desktop-filters.png)
+
+The search box (`Ctrl+F` or `/`) matches process names, PIDs, and full paths
+with the same rules as the [terminal search](terminal-usage.md#search),
+including `*` wildcards and initials. Because full paths are searched, a folder
+name can match every row; to match names only, use **Column filters**.
+
+**Column filters** add per-column conditions: process name, exact PID, full path,
+access or relation, CPU and memory ranges, and evidence type. They combine with
+the main search. Numeric bounds are inclusive, and a process whose CPU or memory
+could not be measured never matches a numeric bound. Choose **Apply filters**
+to apply them or **Clear filters** to remove them.
+
+Search, filters, column widths, and the details panel all survive a refresh.
+
+## Ports
+
+![The Ports view listing a TCP listener and a bound UDP socket](../images/desktop-ports.png)
+
+**Ports** (`Ctrl+3`) lists local TCP listeners and bound UDP sockets with their
+owning process. It does not show established connections or tell you whether a
+port is reachable from another machine.
+
+Search `port:3000` for an exact port, `30` for any port containing 30, or
+combine terms: `port:3000 tcp`, `udp`, `ipv6`, `pid:1234`. **Target processes
+only** keeps owners that also use the inspected path.
+
+Opening **Local ports** from a process's details scopes the view to that one
+process. The scope survives refresh and termination, so an empty list confirms
+the process's ports are gone. Clear the scope to see everything again.
+
+## Selection and copying
+
+Click selects a row, `Ctrl`/`Cmd`-click toggles a process, `Shift`-click selects
+a range, and **Select all** (`Ctrl+A`) selects every row that matches the
+current filters. Selection is per process: several file rows of the same
+process highlight together. Selections can include processes that the current
+filter hides; the action bar and confirmation say so.
+
+`Ctrl+C` copies the selected rows. The context menu and details panel copy a
+path, file name, process name, or PID, and **Reveal** opens the file manager at
+the native path.
+
+## Process actions
+
+The safest way to free a file or port is to close the application normally.
+When that is not possible:
+
+- **Terminate** asks the process to exit (`SIGTERM` on Linux and macOS, a
+  window-close request on Windows).
+- **Force terminate** kills it immediately, without cleanup.
+
+Both open a confirmation listing every target by name and PID, with **Cancel**
+as the default. Save your work first. Before acting, oflh checks that each PID
+still belongs to the process you selected; results refresh afterwards.
+
+If a normal termination fails or the process is still running, the results
+dialog offers **Force terminate** for just those processes, again behind a
+confirmation. Normal termination never escalates automatically, and processes
+whose identity changed or could not be checked are not offered this option.
+
+### Administrator retry
+
+When termination fails only because of permissions, the results dialog offers
+**Retry with administrator privileges…** for the denied processes, keeping the
+same normal or force mode. It opens a fresh confirmation; nothing is elevated
+without your approval.
+
+The app itself stays unprivileged. On confirmation it starts a short-lived,
+headless copy of itself with administrator rights, which re-checks each
+process's identity and protection before acting:
+
+| OS | Elevation prompt |
+| --- | --- |
+| Windows | UAC |
+| Linux | `/usr/bin/pkexec` (needs polkit and an authentication agent) |
+| macOS | System administrator prompt via `osascript` |
+
+The OS may prompt once per process; cancelling a prompt stops the remaining
+requests. Administrator rights do not override protected processes, and the
+unprivileged app may be unable to confirm afterwards that the process exited.
+
+<a id="long-running-inspections"></a>
+<a id="keyboard-and-refresh"></a>
+
+## Refresh and long scans
+
+Refresh with `F5` or `Ctrl+R`. The **Auto** control next to **Refresh** repeats
+the scan at an interval you choose; it is off at every launch and pauses during
+scans and confirmations.
+
+Opening a target or refreshing manually shows a progress panel with elapsed
+time, current stage, work done so far, and **Cancel**. There is no percentage,
+because the total amount of work is not known in advance. **Cancel** keeps the
+previous results; an OS call already in progress may take a moment to return.
+
+Automatic refreshes run in the background instead: the current results stay
+usable, the footer shows **Updating results…** with a **Cancel** button, and new
+rows replace old ones in place without losing your scroll position. The footer
+also shows how long the last completed scan took.
+
+If a process exits or stops matching, its open details panel says so and its
+actions are disabled. A failed refresh keeps the old results and shows the
+error.
+
+## Keyboard shortcuts
+
+`Ctrl` is `Cmd` on macOS. The full list is in **Settings**.
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+O` / `Ctrl+Shift+O` | Open file / open folder |
+| `Ctrl+1` … `Ctrl+4` | Processes / File usages / Ports / Recent targets |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous view |
+| `Ctrl+F` or `/` | Focus search |
+| `F5` or `Ctrl+R` | Refresh |
+| `Ctrl+A` / `Ctrl+C` | Select all / copy selected rows |
+| `Ctrl+Shift+D` | Toggle the details panel |
+| `Ctrl+B` | Collapse or expand the sidebar |
+| `Ctrl++` / `Ctrl+-` / `Ctrl+0` | Larger / smaller / default font size |
+| `Ctrl+,` | Settings |
+| `Esc` | Leave search, or clear the selection |
+
+Double-click a column divider to fit the column to its contents, including rows
+that are scrolled out of view. A focused divider can be resized with the arrow
+keys. **Fit all columns** fits every visible column.
+
+## Appearance
+
+The gear menu at the bottom left opens **Settings** and **Themes**. Themes are
+Light, System, Rider Dark, VS Code Dark, and OFLH Purple; **System** switches
+between Light and VS Code Dark with your OS. Settings also controls font size
+and language (English, German, Simplified Chinese, or the system language). The
+app remembers theme, font size, language, and details panel width.
+
+## Updates
+
+The app checks for a new release at startup and hourly. An available update
+shows a **1** badge on the gear; nothing pops up on its own. Choose **Check for
+updates** in the gear menu to check immediately.
+
+On Windows and macOS, **Install and restart** downloads the signed update,
+installs it, and relaunches the app. On Linux, the dialog links to the
+[download page](https://oflh.karimzouine.com/#download); install the new
+package or extract the new archive yourself.
+
+**About OFLH** in the gear menu shows the installed version, commit, OS, and
+license, with a button to copy them for bug reports.
+
+**Donate**, at the bottom right, opens Buy Me a Coffee, GitHub Sponsors, or
+PayPal in your browser.
 
 ## Linux archive installation
 
-Use `oflh-desktop.linux.amd64.tar.gz` (x86-64) or
-`oflh-desktop.linux.arm64.tar.gz` (AArch64) when you need an archive instead of
-a `.deb` or `.rpm` installer. ARM32 builds are not available. Download the archive
-matching your CPU from
+Use the archive when a `.deb` or `.rpm` doesn't suit your distribution. Download
+`oflh-desktop.linux.amd64.tar.gz` (x86-64) or `oflh-desktop.linux.arm64.tar.gz`
+(AArch64) from
 [GitHub Releases](https://github.com/karimz1/open-file-lock-handle/releases),
-check it against the release's `checksums.txt`, then extract and run it in your
-graphical desktop session. For x86-64:
+verify it against `checksums.txt`, and run it from your graphical session:
 
 ```sh
+sha256sum --ignore-missing -c checksums.txt
 tar -xzf oflh-desktop.linux.amd64.tar.gz
 ./oflh-desktop/oflh-desktop
 ```
 
-No package conversion, administrator privileges, or `PATH` changes are needed
-to launch the extracted app. Keep the directory in a location you can write to.
-It includes the executable, license, icon, and startup instructions. Updates are
-manual: close the app, download the new archive, and extract it into a fresh directory.
+No root, package manager, or `PATH` change is needed. To update, download the
+new archive and extract it into a fresh directory.
 
-The archive includes the executable, not its system libraries. It requires a
-compatible glibc runtime (built on Ubuntu 24.04), GTK 3, WebKitGTK 4.1, libsoup 3,
-and their runtime dependencies. Alpine/musl and older incompatible glibc systems
-are not supported by these binaries. A tarball does not guarantee compatibility
-with every Linux distribution.
-
-On Arch Linux, install the runtime packages before launching:
+The archive contains the executable but not its system libraries. It needs a
+glibc at least as new as Ubuntu 24.04's, GTK 3, WebKitGTK 4.1, and libsoup 3.
+musl-based distributions such as Alpine are not supported. On Arch Linux:
 
 ```sh
 sudo pacman -Syu webkit2gtk-4.1 gtk3
 ```
 
-See Arch's official [WebKitGTK 4.1](https://archlinux.org/packages/extra/x86_64/webkit2gtk-4.1/)
-and [GTK 3](https://archlinux.org/packages/extra/x86_64/gtk3/) package pages.
-CI checks archive extraction and startup as an unprivileged user on Ubuntu and
-Fedora for both architectures, and on Arch Linux for x86-64. Arch Linux ARM
-is a separate distribution and is not covered by this Arch smoke test.
-
-## Inspect files and processes
-
-Drop a file or folder anywhere in the window, choose **Open file** / **Open folder**,
-or type a path and choose **Inspect**. **Recent targets** lets you revisit targets
-from previous launches. Folder scans include descendants.
-
-On Windows, ordinary drive and network paths use familiar text such as `C:\`
-or `\\server\share` in the target, history, details and copied paths. Native
-paths remain unchanged for inspection and file-manager actions. Paths requiring
-the Windows extended namespace retain their prefix; copied long paths also keep
-it so their meaning does not depend on the receiving application's settings.
-
-**Processes** groups results by process. **File usages** shows individual matching
-observations. Click a row to open details. Use the panel button or close button to
-close it. Table paths are shortened for readability. Full paths and copy/reveal
-actions are available in details. Drag column dividers or the details panel edge
-to resize. Double-click a column divider to fit that column to its heading and
-all matching values, including rows outside the visible viewport. A focused
-divider supports arrow keys for manual resizing. **Fit all columns** fits every
-visible column. Enter on a divider does not fit columns.
-
-Details show **Matching handles**, **Local ports**, and **Process ancestry**.
-
-An open file is not proof of a lock. **Lock evidence only** restricts results to
-reported evidence. Windows resource users are not proven lock owners. Open
-**coverage notices** below the table for permissions and scan limitations.
-
-## Follow the parent process tree
-
-Select a process to view **Process ancestry** in its details. The tree runs from
-the oldest recorded parent down to the selected process. It helps connect a
-background worker to its parent app, such as an editor or terminal session.
-Click a parent to inspect its details or use its process actions.
-
-Parents that cannot be identified appear as unavailable. Refresh to check current
-file usage; stopping a parent can affect its children and unsaved work.
-
-## Search and filters
-
-Search checks process names, PIDs and full paths using the Rust matcher. A shared
-folder name can match every row. To search only names, open **Column filters**
-and fill **Process name**. Filters combine with the main search and process scope.
-
-Column filters include exact PID, path, CPU and memory bounds, evidence, and
-access/relation. Numeric bounds are inclusive. Unknown metrics do not match a
-numeric bound. An unavailable CPU sample is not zero. Choose **Apply filters**
-to apply, or **Clear filters** to reset column predicates.
-
-
-In **Ports**, search `port:3000` for an exact port or `30` for matching fragments.
-You can combine terms such as `port:3000 tcp`, `udp`, `ipv6` or `pid:1234`.
-The view lists local TCP listeners and bound UDP sockets, not network reachability.
-**Target processes only** limits owners to processes seen using the inspected path.
-Opening **Local ports** from details scopes results to that captured process.
-Refresh and termination preserve that scope: an empty result can confirm that the
-process's bindings disappeared. Clear the scope explicitly to see other owners.
-
-The **Auto** control can repeat a completed scan at a chosen interval. Its menu
-follows your theme and interface font size. Automatic refresh starts disabled
-and lasts only for the current session. The information popup closes when you
-click outside it, move focus away, or press Escape.
-
-## Selection and copying
-
-Click a row for details. Ctrl/Cmd-click adds or removes a process. Shift-click
-selects a range. Selection represents processes, so several file rows belonging
-to one process can highlight together. Select All applies to the filtered results.
-Selections can include processes outside the current view. The action bar and
-confirmation disclose that.
-
-Use the context menu or details actions to copy paths, filenames, process names,
-or PIDs. Ctrl/Cmd+C copies selected rows while the table is focused. Reveal opens
-the OS file manager for the selected native path.
-
-## Process actions
-
-To free a file or port, close the application using it normally when possible.
-Stopping its process can release the files and ports it holds. Save your work
-first: unsaved changes can be lost. **Terminate** requests the
-normal platform action. **Force terminate** is a separate, stronger action.
-Review the named processes and PIDs before confirming. Cancel is the default.
-Stopping a parent process can affect its children or your session.
-
-oflh checks that each PID still belongs to the selected process before acting.
-Results refresh afterward. Permission failures and processes still running are
-reported. After a failed normal termination request or a verified still-running
-process, the results dialog suggests **Force terminate** instead of **Refresh
-again**. This opens a new confirmation for only the unsuccessful captured targets,
-including a selected ancestor. Cancel remains the default. Force termination
-skips normal cleanup and may lose unsaved work; permissions and identity checks
-still apply. Unknown exit checks and changed or protected identities do not offer
-this recovery action. Normal termination never escalates automatically.
-
-### Administrator retry
-
-When a normal or force termination fails specifically because of permissions,
-**Retry with administrator privileges…** opens a fresh confirmation for only the
-permission-denied original targets, including ancestors and hidden selections.
-The normal or force mode stays the same. Cancel is the default; elevation and
-termination never happen automatically.
-
-The UI stays unprivileged. A headless instance of the same executable rechecks
-PID plus birth identity and protected-process guards before acting. Windows uses
-UAC, Linux uses `/usr/bin/pkexec` (polkit and an authentication agent must be
-available), and macOS uses the system administrator authorization prompt through
-`osascript`. The OS may request authorization separately for each target.
-Cancelling authorization stops the remaining requests. Already elevated sessions
-and elevated failures do not offer another administrator retry.
-
-Administrator privileges do not guarantee termination or prove a file lock.
-Protected processes and OS restrictions still apply. Exit verification may remain
-unavailable to the unprivileged UI even after a successful privileged request.
-
-## Keyboard and refresh
-
-The full shortcut list is shown in Settings and beside relevant controls. Press
-`F5` or `Ctrl/Cmd+R` to refresh. Choose an automatic refresh interval beside the
-Refresh button. Automatic scans pause during active scans and process-action
-confirmations. Automatic refresh runs in the background: the current results
-remain visible, and search, scrolling and process details stay usable. The footer
-shows **Updating results…**, elapsed time and **Cancel**, followed by **Results
-refreshed** on success. New pages replace the corresponding visible results when
-ready, retaining the scroll position and captured process identities.
-
-Opening a target or manually refreshing uses a blocking progress panel with
-elapsed time, work counts and Cancel. See
-[long-running inspections](#long-running-inspections).
-
-## Appearance
-
-The gear is the last item at the bottom left and opens a menu with **Settings**
-and **Themes**. The GitHub star sits at the bottom right next to **Donate**.
-The Themes submenu offers Light, System, Rider Dark, VS Code Dark and OFLH Purple,
-with a check beside the design currently in use. **System** follows your device:
-dark mode uses VS Code Dark, and light mode uses Light. The current design is
-marked **Used by System** while automatic appearance is enabled. Choosing a
-concrete design disables automatic appearance.
-
-Focus outlines appear during keyboard navigation, without pre-highlighting
-actions when you open a menu or dialog with the mouse. Process confirmations
-still default to Cancel.
-
-Settings also offers font size. Your theme, font size and details width persist.
-The first launch offers a theme choice. The app remembers these settings between
-launches.
-
-In Settings, choose English, German, or Simplified Chinese under **Language**,
-or follow your system language. Your preference is saved between launches.
-
-## Updates
-
-OFLH Desktop checks for a newer release at startup and every hour while open.
-These background checks stay quiet; an available update adds a **1** badge to
-the gear. **About OFLH** sits above the update action at the bottom of the gear
-menu. Its dialog shows the installed version, commit (when available), system,
-and license, with an option to copy these details. Checks pause while
-you review an update dialog or install an update.
-A failed background check keeps any known update badge.
-
-Choose **Check for updates** in the gear menu for an immediate check. If you
-already have the latest version, a toast confirms it; a failed check also shows
-feedback. When a new version is found, a dialog offers release notes and asks
-whether to install it. You can also open this dialog from **New update available**
-in the gear menu. Choose **Later** to keep working; the badge stays visible.
-The **Updates** section in Settings shows the same result and lets you check again.
-
-On Windows and macOS, **Install and restart** downloads the signed update,
-installs it, and relaunches the app after you confirm in the dialog. On Linux,
-the dialog explains that automatic installation is unavailable for this package.
-Choose **Go to download page** to open the
-[download page](https://oflh.karimzouine.com/#download) and download the latest
-version for your operating system; install the new package or replace your
-extracted archive manually. A failed check or installation can be retried.
-The installed version appears in Settings under **About OFLH**, where it links
-to its GitHub release. Development and RC builds also provide a pipeline link.
-
-For OS limitations, see [platform support](platform-support.md). For build,
-testing and packaging details, see [development](development.md).
-
-## Support OFLH
-
-Choose **Donate** to open the support dialog, then choose Buy Me a Coffee,
-GitHub Sponsors, or PayPal. The selected service opens in your browser.
-
-## Long-running inspections
-
-The footer keeps the duration of the last completed scan or refresh, including
-result preparation. Short scans use milliseconds, longer scans use seconds or
-minutes. The previous completed duration stays visible while another scan runs
-and after cancellation or failure. This also applies to local-port inspections.
-
-Opening a target or manually refreshing shows a progress panel with elapsed time,
-the current stage, work counts, and **Cancel**. The total is unknown, so the bar
-does not show a completion percentage. Reload shortcuts and new targets wait
-until the scan finishes. Permissions and platform limits can leave partial results.
-
-Choose **Cancel** to keep the previous results. A native query already running
-may take time to finish. Automatic refresh waits a full interval after completion
-or cancellation; it uses the footer described in
-[Keyboard and refresh](#keyboard-and-refresh).
-
-Refresh preserves your search, filters, column widths, and details panel. If a
-process exits or no longer matches, its captured details show a notice and actions
-are disabled. A failed refresh keeps the old results and shows an error; refresh
-again to retry.
+CI extracts and launches the archive as an unprivileged user on Ubuntu and
+Fedora (x86-64 and ARM64) and on Arch Linux (x86-64).

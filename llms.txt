@@ -1,0 +1,34 @@
+# oflh (Open File Lock Handle)
+
+> Cross-platform tool that shows which processes are using a file, folder, or local port, and lets you close or terminate them safely. Interactive terminal app (`oflh`) and desktop app (OFLH Desktop) for Windows, Linux, and macOS on x86-64 and ARM64. Written in Rust, MIT licensed.
+
+Key facts:
+
+- Finds file users by enumerating process references (open descriptors/handles, memory mappings, loaded modules, executables, working directories), not by walking directories, so whole-drive scans (`oflh 'C:\'`, `oflh /`) take well under a second on the recorded machines.
+- Usage: `oflh [OPTIONS] [PATH]`. Options: `--ports`, `--port PORT`, `--language en|de|zh|system`, `--no-update-check`, `--version`, `--help`. Options go before PATH.
+- The CLI is interactive only: it requires a TTY and has no JSON or script output mode.
+- "Open" is not "locked": lock evidence is reported separately (Linux flock/POSIX/OFD locks, macOS F_GETLK conflicts, Windows sharing violations with the owner marked unverified).
+- Process actions verify PID plus start time before signaling and never close handles inside another process.
+- Ports: local TCP listeners and bound UDP sockets only, read from OS socket tables without running lsof, ss, or netstat.
+
+## Docs
+
+- [README](https://github.com/karimz1/open-file-lock-handle/blob/main/README.md): what it does, install, quick start, limitations, FAQ
+- [Terminal guide](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/terminal-usage.md): options, search syntax, ports, process actions, keyboard reference
+- [Desktop guide](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/desktop-usage.md): inspecting, filters, ports, actions, shortcuts, updates
+- [Platform support](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/platform-support.md): how each OS backend finds files, locks, and ports, and what it can miss
+
+## Development
+
+- [AGENTS.md](https://github.com/karimz1/open-file-lock-handle/blob/main/AGENTS.md): commands, layout, invariants for coding agents
+- [Development](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/development.md): build, test, project layout, snapshots, profiling
+- [Architecture](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/architecture.md): crates, Backend trait, threading, process identity, desktop IPC
+- [Regression coverage](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/inspection-regressions.md): contracts and the tests that enforce them
+- [Contributing](https://github.com/karimz1/open-file-lock-handle/blob/main/CONTRIBUTING.md): bug reports and pull requests
+
+## Optional
+
+- [Inspection performance](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/inspection-performance.md): benchmarks, methodology, Windows backend internals
+- [Releasing](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/releasing.md): release workflow, updater manifest, signing keys
+- [Releases](https://github.com/karimz1/open-file-lock-handle/releases): downloads and checksums
+- [Website](https://oflh.karimzouine.com/)
