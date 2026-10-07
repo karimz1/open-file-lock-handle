@@ -73,6 +73,8 @@ impl UpdateWorker {
         })
     }
     pub fn completed(&mut self) {
+        // Only the UI acknowledges a delivered result. Releasing this flag in
+        // the worker would race with manual input before the result is consumed.
         self.busy = false;
     }
     /// Never queue another request while a check or its result delivery is active.
@@ -116,10 +118,16 @@ mod tests {
         let (events, receiver) = mpsc::sync_channel(2);
         let (entered_tx, entered_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
+        let mut attempts = 0;
         let mut worker = UpdateWorker::with_checker(events.clone(), move || {
             entered_tx.send(()).unwrap();
             release_rx.recv().unwrap();
-            Ok(Some("1.2.0".into()))
+            attempts += 1;
+            if attempts == 1 {
+                Ok(Some("1.2.0".into()))
+            } else {
+                Err("offline".into())
+            }
         })
         .unwrap();
         assert!(worker.request());
@@ -136,6 +144,16 @@ mod tests {
         assert!(
             matches!(receiver.recv_timeout(Duration::from_secs(2)).unwrap(),Event::Update(Ok(Some(version))) if version=="1.2.0")
         );
+        assert!(!worker.request());
+        worker.completed();
+        assert!(worker.request());
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(!worker.request());
+        release_tx.send(()).unwrap();
+        assert!(
+            matches!(receiver.recv_timeout(Duration::from_secs(2)).unwrap(), Event::Update(Err(error)) if error=="offline")
+        );
+        assert!(!worker.request());
         drop(worker);
         assert!(entered_rx.recv_timeout(Duration::from_secs(2)).is_err());
     }
