@@ -1,0 +1,40 @@
+  oflh  /  Prozessdetails
+  dotnet   PID 424242 · alice
+  EXE /usr/bin/dotnet
+  CWD /build
+  ELTERNPROZESS parent (424241)
+  CPU — System · RAM — RSS
+  PORTS · p untersuchen · keine erkannt
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │/ Dateien, DLLs, Pfade suchen… · * Platzhalter                                                                                                            │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  ALLE REFERENZEN · Referenzen: 3 / 3 · gesperrte Dateien: 1   1 / 3
+  DATEI FileLockExampleCli.dll
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │DATEI                                                  BEZUG          ZUGRIFF       ORDNER                                                                │
+  │FileLockExampleCli.dll                                 gesperrt       lesen/schr.   /build                                                                │
+  │FileLockExampleCli.deps.json                           offen          unbekannt     /build                                                                │
+  │other.dll                                              offen          unbekannt     /build                                                                │
+  │                                                                                                                                                          │
+  │                                                                                                                                                          │
+  │                                                                                                                                                          │
+  │                                                                                                                                                          │
+  │                                                                                                                                                          │
+  │                                                                                                                                                          │
+  │                                                                                                                                                          │
+  │                                                                                                                                                          │
+  │                                                                                                                                                          │
+  │                                                                                                                                                          │
+  │                                                                                                                                                          │
+  │                                                                                                                                                          │
+  │                                                                                                                                                          │
+  │                                                                                                                                                          │
+  │                                                                                                                                                          │
+  │                                                                                                                                                          │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  GEWÄHLTER PFAD · gesperrt · lesen/schr.
+  /build/FileLockExampleCli.dll · POSIX WRITE
+
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  / suchen · p Ports · l nur Sperren · ↑↓ auswählen · ←→ Pfad · r aktualisieren · a automatisch · k beenden · x erzwingen · R GitHub · D Spenden · Esc zurück
+  q beenden

@@ -1,3 +1,4 @@
+use crate::view::messages::Language;
 use crossterm::event::{KeyCode as K, KeyEvent, KeyModifiers as M};
 use oflh_core::ports::{PortIndex, PortQuery};
 use oflh_core::{
@@ -94,6 +95,7 @@ pub struct App {
     pub target: Target,
     pub follow_port_folder: bool,
     pub version: String,
+    pub language: Language,
     pub snapshot: Snapshot,
     indices: Vec<ProcessIndex>,
     port_indices: Vec<Vec<PortIndex>>,
@@ -151,6 +153,7 @@ impl App {
             target,
             follow_port_folder: false,
             version,
+            language: Language::English,
             snapshot: Snapshot::default(),
             indices: Vec::new(),
             port_indices: Vec::new(),
@@ -218,7 +221,8 @@ impl App {
     }
     pub fn finish_scan(&mut self, now: std::time::Instant, success: bool) {
         self.scanning = false;
-        if success && (self.error || self.status == "Cancelling inspection…") {
+        if success && (self.error || self.status == self.language.text("Cancelling inspection…"))
+        {
             self.status.clear();
             self.error = false;
         }
@@ -642,8 +646,10 @@ impl App {
                 K::End => tree.cursor = tree.nodes.len().saturating_sub(1),
                 K::Char('k' | 'x') => {
                     if self.width < 38 || self.height < 22 {
-                        self.status =
-                            "Enlarge the terminal to review the selected ancestor.".into();
+                        self.status = self
+                            .language
+                            .text("Enlarge the terminal to review the selected ancestor.")
+                            .into();
                         self.error = true
                     } else {
                         self.prepare_kill(key.code)
@@ -913,8 +919,10 @@ impl App {
         if let Some(tree) = &self.tree {
             let target = tree.nodes[tree.cursor].clone();
             if target.identity.validate().is_err() {
-                self.status =
-                    "This ancestor cannot be terminated: protected or identity unavailable.".into();
+                self.status = self
+                    .language
+                    .text("This ancestor cannot be terminated: protected or identity unavailable.")
+                    .into();
                 self.error = true;
                 return;
             }
@@ -961,7 +969,7 @@ impl App {
             .any(|target| target.identity.validate().is_err())
         {
             self.pending.clear();
-            self.status = "Cannot terminate: selection includes a protected process or an unavailable identity.".into();
+            self.status = self.language.text("Cannot terminate: selection includes a protected process or an unavailable identity.").into();
             self.error = true;
             return;
         }
@@ -984,14 +992,16 @@ impl App {
                 if !self.confirm {
                     self.pending.clear();
                     self.screen = Screen::Main
-                } else if self.width < 38 || self.height < 12 {
-                    self.status =
-                        "Enlarge the terminal to review targets before confirming.".into();
+                } else if self.width < 38 || self.height < 22 {
+                    self.status = self
+                        .language
+                        .text("Enlarge the terminal to review targets before confirming.")
+                        .into();
                     self.error = true
                 } else {
                     self.screen = Screen::Main;
                     self.stopping = true;
-                    self.status = "Requesting termination…".into();
+                    self.status = self.language.text("Requesting termination…").into();
                     return Effect::Kill(
                         self.pending
                             .drain(..)

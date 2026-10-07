@@ -1,0 +1,50 @@
+  oflh  ·  Open File Lock Handle
+
+  链接
+  R  GitHub: https://github.com/karimz1/open-file-lock-handle
+  D  捐赠：https://buymeacoffee.com/karimz1
+  按大写 R 或 D 在浏览器中打开链接。
+
+
+  版本 development
+  运行 `oflh --version` 可复制完整构建信息。
+
+  OPEN FILE LOCK HANDLE
+  1 / 2 / 3      进程 / 锁定文件 / 端口
+  s              端口：所有端口 / 引用此路径的进程
+  p / f          详情：端口 / 文件引用
+  ↑ / ↓, j       浏览结果
+  PgUp / PgDn    移动一页
+  Home / End     第一项 / 最后一项
+  Enter          检查匹配路径
+  Space          选择进程
+  Ctrl+A         选择 / 取消选择所有可见进程
+  /              搜索 PID、名称、用户、路径、访问方式
+  *              通配符：micro*dll、FLEC*.json
+                 支持片段和 CamelCase；空格连接搜索词。
+  Esc            清除搜索 / 返回 / 取消
+  r / F5         刷新（检查期间忽略）
+  a              切换自动刷新（完成后间隔 5 秒）
+  z              取消正在进行的检查
+  i              切换侧栏
+  Tab / →        聚焦进程树；↑↓ 选择操作目标
+  Tab / ← / Esc  离开进程树
+  l              详情：切换仅锁定项
+  m / c          按 RAM / CPU 降序排序
+  n / p          按名称 / PID 排序
+  k / x          终止 / 强制终止所选或当前进程
+  K / X          使用所选项；未选择时使用所有筛选结果
+  Tab            选择取消 / 终止
+  ?              显示帮助
+  R / D          打开项目仓库 / 捐赠页面
+  q / Ctrl+C     退出（搜索中 q 用于输入文本）
+
+  每次终止都需要确认，默认选择取消。
+  被筛选条件隐藏的选择也包括在内。操作前会重新验证进程身份。
+  终止父进程不会递归终止其子进程。
+
+  端口搜索
+  50 匹配包含 50 的端口；port:3000 精确匹配；pid:123 匹配 PID。
+  组合搜索词：tcp 3000 server、udp、ipv6 或地址。
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  ↑↓ 滚动 · R GitHub · D 捐赠 · Esc 返回 · q 退出

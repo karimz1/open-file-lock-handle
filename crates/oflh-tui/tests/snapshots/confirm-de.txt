@@ -1,0 +1,24 @@
+  oflh  ·  Open File Lock Handle
+
+  BEENDEN ERZWINGEN · Prozesse: 1?
+  Sofortiges Beenden ohne Aufräumen. Ungespeicherte Arbeit kann verloren
+  gehen.
+
+  Betroffene Prozesse (einschließlich ausgefilterter Auswahl):
+    424242    dotnet
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ────────────────────────────────────────────────────────────────────────────
+  ▶ Abbrechen      Beenden erzwingen
+  Tab / ←→ wählen · Enter bestätigen · Esc abbrechen

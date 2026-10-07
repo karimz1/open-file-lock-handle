@@ -139,3 +139,18 @@ canonical native references for inspection and actions. Namespace-dependent name
 the extended prefix. Clipboard conversion rejects non-Unicode paths and retains
 long verbatim paths when the destination's long-path support is unknown. On Unix,
 backslashes remain literal filename characters.
+
+## Terminal languages
+
+Use `oflh --language de .` for German or `oflh --language zh .` for Simplified Chinese.
+`--language en` selects English. `--language system` (the default) follows the first
+nonempty `LC_ALL`, `LC_MESSAGES` or `LANG`; Windows falls back to its native user
+locale when those variables are absent. Region variants such as `de_DE.UTF-8` and
+`zh-CN` resolve to the supported language; unsupported locales fall back to English.
+The same option localizes `--help` and CLI usage messages. Put options before PATH.
+
+Keyboard shortcuts, wildcard/port search syntax and access/relation search tokens
+(such as `read`, `mapped`, `locked`, `tcp` and `port:3000`) remain the same in every
+language. Process names, filenames and original OS diagnostic details are retained.
+`--version` always emits the same build/provenance format. Confirmations default to
+Cancel in every language and require enough terminal space to review the targets.

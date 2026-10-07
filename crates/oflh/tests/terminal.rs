@@ -22,7 +22,7 @@ fn native_terminal_workflow() {
         })
         .unwrap();
     let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_oflh"));
-    cmd.arg("--ports");
+    cmd.args(["--language", "en", "--ports"]);
     cmd.arg(dir.path());
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
@@ -171,7 +171,57 @@ fn cli_contract() {
         .output()
         .unwrap();
     assert_eq!(bad.status.code(), Some(2));
-    let piped = std::process::Command::new(bin).output().unwrap();
+    let piped = std::process::Command::new(bin)
+        .args(["--language", "en"])
+        .output()
+        .unwrap();
     assert_eq!(piped.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&piped.stderr).contains("interactive terminal"));
+}
+
+#[test]
+fn language_options_and_locale_precedence_work_in_the_real_cli() {
+    let binary = env!("CARGO_BIN_EXE_oflh");
+    for (language, heading, terminal_error) in [
+        ("en", "Usage:", "interactive terminal"),
+        ("de", "Aufruf:", "interaktives Terminal"),
+        ("zh", "用法：", "交互式终端"),
+    ] {
+        let output = std::process::Command::new(binary)
+            .args(["--help", "--language", language])
+            .env("LC_ALL", "fr_FR.UTF-8")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let help = String::from_utf8(output.stdout).unwrap();
+        assert!(help.contains(heading));
+        assert!(help.contains("--language en|de|zh|system"));
+        assert!(help.contains("--port PORT"));
+        let output = std::process::Command::new(binary)
+            .args(["--language", language])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        assert!(
+            String::from_utf8(output.stderr)
+                .unwrap()
+                .contains(terminal_error)
+        );
+    }
+    let output = std::process::Command::new(binary)
+        .args(["--language", "system", "--help"])
+        .env("LC_ALL", "de_DE.UTF-8")
+        .env("LANG", "zh_CN.UTF-8")
+        .output()
+        .unwrap();
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("Aufruf:")
+    );
+    let output = std::process::Command::new(binary)
+        .args(["--language", "invalid"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
 }

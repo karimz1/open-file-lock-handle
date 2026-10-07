@@ -1,0 +1,20 @@
+  oflh   1 Proz  2 Sperren  3 Ports
+  /build  ·  MANUELL · r aktualisieren
+  Navigation · / suchen · Tab/→ Baum
+  ╭──────────────────────────────────────────╮
+  │/ PID, Prozess, Pfad suchen… · * Platzhalt│
+  ╰──────────────────────────────────────────╯
+  Prozesse: 1 / 1 · Sortierung: PID
+     PID     PROZESS        PORTS PFAD
+     424242  dotnet         0     FileLockExam
+
+
+
+
+
+
+  Enter untersuchen · Space auswählen · m RAM
+  ────────────────────────────────────────────
+  1/2/3 Ansichten · / suchen
+  Enter untersuchen · k beenden · x erzwingen
+  ? Hilfe · R GitHub · D Spenden · q beenden
