@@ -1139,7 +1139,6 @@ Ctrl+A         Select / deselect all visible processes
 *              Wildcards: micro*dll, FLEC*.json
                Fragments and CamelCase; spaces combine terms.
 Esc            Clear search / back / cancel
-r              Refresh; cancels previous scan
 a              Toggle auto-refresh (5s after completion)
 r / F5         Refresh (ignored during inspection)
 z              Cancel an active inspection
