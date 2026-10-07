@@ -18,6 +18,19 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+      - name: Require website publishing credential
+        env:
+          WEBSITE_TOKEN: ${{ secrets.OFLH_WEBSITE_TOKEN }}
+        run: |
+          if [ -z "$WEBSITE_TOKEN" ]; then
+            echo '::error::Set OFLH_WEBSITE_TOKEN with Contents write access to karimz1/oflh-website.'
+            exit 1
+          fi
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Test static updater metadata validation
+        run: node --test .github/scripts/sync-updater.test.cjs
       - name: Require the selected tag to match this workflow revision
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
@@ -75,6 +88,9 @@ jobs:
   draft:
     needs: [test, homebrew, desktop]
     runs-on: ubuntu-24.04
+    concurrency:
+      group: updater-website-publish
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -123,6 +139,19 @@ jobs:
           else
             gh release create "$TAG" --verify-tag --draft "${PRERELEASE[@]}" --title "OFLH $TAG" --notes-file .github/release-notes/downloads.md --generate-notes
           fi
+          mkdir -p updater-dist
+          mv release-dist/latest.json updater-dist/latest.json
           gh release upload "$TAG" release-dist/* --clobber
           echo '### Release ready for review' >> "$GITHUB_STEP_SUMMARY"
           echo 'All platform jobs passed. The release remains a draft until you publish it.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Check out static website
+        uses: actions/checkout@v7
+        with:
+          repository: karimz1/oflh-website
+          ref: main
+          path: updater-website
+          token: ${{ secrets.OFLH_WEBSITE_TOKEN }}
+      - name: Commit versioned updater manifest to website
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: bash .github/scripts/sync-updater.sh updater-website updater-dist/latest.json "$TAG" stage
