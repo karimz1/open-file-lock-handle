@@ -1,0 +1,33 @@
+name: Publish static updater endpoint
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: updater-website-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - name: Check out static website
+        uses: actions/checkout@v7
+        with:
+          repository: karimz1/oflh-website
+          ref: main
+          path: updater-website
+          token: ${{ secrets.OFLH_WEBSITE_TOKEN }}
+      - name: Promote the latest published stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh api repos/karimz1/open-file-lock-handle/releases/latest --jq .tag_name)
+          MANIFEST="updater-website/public/api/releases/$TAG/latest.json"
+          test -f "$MANIFEST"
+          bash .github/scripts/sync-updater.sh updater-website "$MANIFEST" "$TAG" publish
