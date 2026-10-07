@@ -24,13 +24,13 @@ hardware, so they do not rank operating systems.
 
 ### Whole drive or root
 
-| Platform | Target | Time | Visible users | References visited | Warnings | Data |
+| Platform | Target | Time | Visible users | Usages | Warnings | Data |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
 | Windows x64 (GitHub runner) | `C:\` | 352.474 ms | 137 | 8,754 | 10 | [JSON](measurements/inspection-windows-x64-2026-10-06.json) |
 | Windows ARM64 (GitHub runner) | `C:\` | 509.999 ms | 144 | 10,241 | 9 | [JSON](measurements/inspection-windows-arm64-2026-10-06.json) |
-| Linux x86-64 (local) | `/` | 194.668 ms | 153 | 69,723 | 2 | [JSON](measurements/inspection-linux-2026-10-05.json) |
+| Linux x86-64 (local) | `/` | 194.668 ms | 153 | 48,647 | 2 | [JSON](measurements/inspection-linux-2026-10-05.json) |
 
-The Linux scan returned 48,647 usages and traversed no directories. Each is a
+The Linux scan visited 69,723 process resources and traversed no directories. Each is a
 single run of the backend only, excluding startup and rendering. Warnings are
 permission and coverage notices; live systems never give two runs identical
 coverage, so these numbers show scale, not a speedup ratio.
