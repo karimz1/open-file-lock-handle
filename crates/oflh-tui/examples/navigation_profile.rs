@@ -69,6 +69,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 app.rows.iter().map(|row| row.usages.len()).sum::<usize>(),
                 50000
             );
+            // Equal counts alone can conceal duplicated rows and missing usages.
+            // Verify every original process/observation pair exactly once, outside
+            // the measured sections, for both the baseline and candidate harness.
+            let members = app
+                .rows
+                .iter()
+                .flat_map(|row| row.usages.iter().map(move |usage| (row.process, *usage)))
+                .collect::<std::collections::HashSet<_>>();
+            assert_eq!(members.len(), 50000);
+            for process in 0..process_count as usize {
+                for usage in 0..usages_per_process as usize {
+                    assert!(members.contains(&(process, usage)));
+                }
+            }
             let render_100_ms = timed(|| {
                 for _ in 0..100 {
                     app.key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE));

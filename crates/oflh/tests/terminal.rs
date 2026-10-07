@@ -22,7 +22,7 @@ fn native_terminal_workflow() {
         })
         .unwrap();
     let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_oflh"));
-    cmd.args(["--language", "en", "--ports"]);
+    cmd.args(["--no-update-check", "--language", "en", "--ports"]);
     cmd.arg(dir.path());
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
@@ -197,6 +197,7 @@ fn language_options_and_locale_precedence_work_in_the_real_cli() {
         assert!(help.contains(heading));
         assert!(help.contains("--language en|de|zh|system"));
         assert!(help.contains("--port PORT"));
+        assert!(help.contains("--no-update-check"));
         let output = std::process::Command::new(binary)
             .args(["--language", language])
             .output()

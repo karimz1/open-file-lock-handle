@@ -51,6 +51,7 @@ pub fn version_report(application: &str) -> String {
 }
 
 pub mod ports;
+pub mod releases;
 pub mod search;
 pub use ports::{Port, Protocol};
 

@@ -37,6 +37,7 @@
   Tab            Abbrechen / Beenden wählen
   ?              Hilfe anzeigen
   R / D          Repository / Spendenseite öffnen
+  u / U / b      Version prüfen / Downloads / ausblenden (Release-Builds)
   q / Ctrl+C     Beenden (q schreibt Text in der Suche)
 
   Jedes Beenden erfordert Bestätigung. Abbrechen ist vorausgewählt.
@@ -45,6 +46,5 @@
 
   PORTSUCHE
   50 findet Ports mit 50; port:3000 ist exakt; pid:123 sucht eine PID.
-  Begriffe kombinieren: tcp 3000 server, udp, ipv6 oder eine Adresse.
   ────────────────────────────────────────────────────────────────────────────────────────────────
   ↑↓ blättern · R GitHub · D Spenden · Esc zurück · q beenden

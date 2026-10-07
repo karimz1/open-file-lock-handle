@@ -13,3 +13,4 @@ workspace = true
 [dependencies]
 thiserror.workspace = true
 unicode-general-category.workspace = true
+semver = "1"

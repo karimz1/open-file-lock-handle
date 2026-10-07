@@ -95,3 +95,19 @@ publication, retained details during reload, completion-based scheduling and
 modal/editor/tree auto-refresh suppression. The synthetic terminal profile also
 requires all 50,000 usages and a reachable final row on every native target.
 Existing English terminal goldens remain unchanged.
+
+Issue #80 shares familiar Windows drive/UNC presentation across both frontends;
+native Windows tests retain canonical paths and namespace-sensitive relative rows.
+Issue #82 covers English/German/Chinese search, confirmations, locale resolution,
+CLI help and native Windows locale lookup, with ten multilingual terminal snapshots.
+
+Issue #84 covers the read-only terminal release notice. Core tests check numeric
+SemVer precedence, release candidates, metadata and invalid versions. Platform tests
+use loopback HTTP fixtures for response/status/redirect failures and header/body
+timeouts, plus bounded malformed/oversized manifests and original error codes.
+Independent-worker tests hold a request while inspection events flow, verify request
+coalescing and discard results after shutdown. UI tests retain full process birth
+identities, selection, details, ancestry and default-cancel confirmations; translated
+notices change only one footer row at wide and compact sizes. Tests never require
+the public update service. The synthetic profile now verifies every original
+process/usage pair exactly once, as well as totals and final-row reachability.

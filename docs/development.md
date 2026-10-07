@@ -108,3 +108,20 @@ Multilingual fixtures cover narrow/wide grids, details, help and default-cancel 
 When intentionally changing layouts, update snapshots and inspect every changed fixture
 and optional `OFLH_VISUAL_DIR` SVG. Wide glyphs occupy their actual terminal columns.
 The Windows user-locale boundary must also pass native x86-64/ARM64 execution.
+
+### Terminal release-check design
+
+The TUI has its own bounded worker; it never uses the scanner queue for HTTP.
+`oflh-core::releases` owns version rules, `oflh-platform::updates` owns the verified
+HTTPS request and bounded parsing, and the terminal owns notice/schedule state.
+The fixed endpoint matches desktop; the displayed link is always the official
+release page, never a URL from JSON. This is a notification, with manual install.
+
+Use [SemVer precedence](https://docs.rs/semver/latest/semver/struct.Version.html#method.cmp_precedence)
+when comparing releases: ordinary version ordering includes build metadata, which
+must not create an update. The transport uses
+[reqwest request timeouts and redirect policy](https://docs.rs/reqwest/latest/reqwest/blocking/struct.ClientBuilder.html)
+and its maintained default Rustls provider with OS certificate verification.
+Automatic errors cause no modal or redraw; explicit checks report errors locally.
+`--no-update-check`, development and PR artifacts create no network worker.
+Review intentional help snapshot changes and optional `OFLH_VISUAL_DIR` exports.
