@@ -80,3 +80,21 @@ fn display_cannot_replace_distinct_non_unicode_native_paths() {
     assert!(root.contains(&first));
     assert!(root.contains(&second));
 }
+
+#[cfg(windows)]
+#[test]
+fn relative_rows_preserve_namespace_dependent_names() {
+    use std::path::Path;
+    let base = Path::new(r"\\?\C:\fixture");
+    assert_eq!(
+        display_path_relative_to(Path::new(r"\\?\C:\fixture\ordinary.bin"), base),
+        "ordinary.bin"
+    );
+    for path in [
+        r"\\?\C:\fixture\file.",
+        r"\\?\C:\fixture\nul.txt",
+        r"\\?\C:\fixture\file:stream",
+    ] {
+        assert_eq!(display_path_relative_to(Path::new(path), base), path);
+    }
+}

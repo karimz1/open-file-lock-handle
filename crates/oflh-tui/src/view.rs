@@ -585,16 +585,13 @@ fn render_main_table(frame: &mut Frame, area: Rect, app: &App) {
             " "
         };
         let path = if app.target.directory {
-            usage
-                .path
-                .strip_prefix(&app.target.path)
-                .unwrap_or(&usage.path)
+            display_path_relative_to(&usage.path, &app.target.path)
         } else {
-            &usage.path
+            display_path(&usage.path)
         };
         let path = format!(
             "{}{}{}",
-            display_path(path),
+            path,
             if usage.deleted { " (deleted)" } else { "" },
             if row.usages.len() > 1 {
                 format!(" +{}", row.usages.len() - 1)

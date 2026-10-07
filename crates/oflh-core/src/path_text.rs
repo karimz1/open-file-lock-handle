@@ -11,6 +11,20 @@ pub fn display_path(path: &Path) -> String {
     crate::safe(&text)
 }
 
+/// Show a path relative to a folder while retaining namespace-sensitive Windows names.
+/// The base and native path remain unchanged; only ordinary names may be shortened.
+pub fn display_path_relative_to(path: &Path, base: &Path) -> String {
+    #[cfg(windows)]
+    {
+        let text = path.to_string_lossy();
+        let familiar = familiar_windows_path(&text, false);
+        if familiar.starts_with(r"\\?\") || familiar.starts_with(r"\\.\") {
+            return crate::safe(&familiar);
+        }
+    }
+    display_path(path.strip_prefix(base).unwrap_or(path))
+}
+
 /// Format already lossless clipboard text while retaining namespace-dependent semantics.
 /// Callers must reject non-Unicode paths rather than pass a lossy conversion.
 /// On Windows, keep verbatim prefixes when the destination might require long-path opt-in.
