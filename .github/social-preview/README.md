@@ -8,7 +8,8 @@ Settings → General → Social preview.
 | --- | --- |
 | `template.html` | The card. Colours match the site (`#101113`, `#4264db`, `#98b0f3`). |
 | `Inter-subset.woff2` | Inter, Latin subset (SIL OFL 1.1). Keeps the letters identical everywhere. |
-| `terminal-ancestry.png` | Process tree, cut from frame 20 of `images/demo.gif`. |
+| `terminal-ancestry.png` | Process details panel from frame 64 of the [asciinema recording](https://asciinema.org/a/1266562). |
+| `terminal-frame.py` | Re-creates `terminal-ancestry.png` from the `.cast` with [agg](https://github.com/asciinema/agg). |
 | `render.cjs` | Playwright script. Writes `../social-preview.png`. |
 
 The desktop shot and app icon come from `images/desktop.png` and
@@ -25,6 +26,14 @@ node .github/social-preview/render.cjs
 
 Renders at exactly 1280 × 640 (`deviceScaleFactor: 1`). Keep text inside a 40 px
 margin; GitHub crops and scales the card.
+
+To refresh the terminal panel from the recording (needs agg, Pillow, and
+JetBrains Mono):
+
+```sh
+curl -sL -o oflh.cast https://asciinema.org/a/1266562.cast
+python3 .github/social-preview/terminal-frame.py oflh.cast
+```
 
 CI ([`social-preview.yml`](../workflows/social-preview.yml)) re-renders the card
 when any of these files change and fails if an image or the font doesn't load or
