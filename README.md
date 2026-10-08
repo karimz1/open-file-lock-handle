@@ -6,6 +6,10 @@
 
 <p align="center"><b>Find which process is using a file, folder, or port on Windows, Linux, and macOS.</b></p>
 
+<p align="center">
+  <img src=".github/social-preview.png" alt="oflh: find what's using your file or port. OFLH Desktop lists the processes using a folder; the oflh terminal app shows the selected process and its parent process tree. Runs on Windows, Linux, and macOS." width="100%">
+</p>
+
 <p align="center"><a href="https://oflh.karimzouine.com/">oflh.karimzouine.com</a></p>
 
 <p align="center">
@@ -26,12 +30,6 @@ Reach for it when:
 - `rm`, `umount`, or a build fails with *"Device or resource busy"* or *"Text file busy"*.
 - A dev server won't start because of *"address already in use"* (`EADDRINUSE`).
 - A folder can't be renamed or deleted and you don't know which file inside it is held.
-
-```sh
-oflh ./build            # who is using anything under ./build
-oflh ./build/app.dll    # who is using this one file
-oflh --port 3000        # who is listening on port 3000
-```
 
 ![OFLH Desktop listing the processes that use a folder, with details for the selected process](images/desktop.png)
 

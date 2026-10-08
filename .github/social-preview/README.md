@@ -8,7 +8,7 @@ Settings → General → Social preview.
 | --- | --- |
 | `template.html` | The card. Colours match the site (`#101113`, `#4264db`, `#98b0f3`). |
 | `Inter-subset.woff2` | Inter, Latin subset (SIL OFL 1.1). Keeps the letters identical everywhere. |
-| `terminal-ancestry.png` | Process tree, cut from frame 20 of `images/demo.gif`. |
+| `terminal-ancestry.png` | Process details panel from the [asciinema recording](https://asciinema.org/a/1266562). |
 | `render.cjs` | Playwright script. Writes `../social-preview.png`. |
 
 The desktop shot and app icon come from `images/desktop.png` and
