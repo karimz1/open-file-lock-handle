@@ -24,6 +24,9 @@ Open a target in any of these ways:
 - Choose **Open file** (`Ctrl+O`) or **Open folder** (`Ctrl+Shift+O`).
 - Type a path into the target box and choose **Inspect**.
 - Pick one of your last twelve targets under **Recent targets** (`Ctrl+4`).
+- On Windows, right-click a file and choose **Inspect file**, or right-click a
+  folder, a drive, or the empty area of a folder window and choose
+  **Inspect folder**. See [Explorer context menu](#explorer-context-menu).
 
 A folder target includes everything below it, so you can open `C:\` or `/` to
 search the whole system. The sidebar switches between two views of the result:
@@ -45,6 +48,26 @@ On Windows, ordinary drive and network paths are shown as `C:\…` or
 `\\server\share\…`. Paths that need the extended namespace keep their `\\?\`
 prefix, including in copied text, so they mean the same thing wherever you
 paste them.
+
+### Explorer context menu
+
+The Windows installer adds **Inspect file** and **Inspect folder** to the
+File Explorer context menu. The option is on the installer's welcome page and
+is checked by default. Each entry opens a new OFLH Desktop window that starts
+inspecting the item. Entries appear for one selected item at a time.
+
+- On Windows 11, the entries are under **Show more options** (or
+  `Shift+F10`), not in the shortened first menu.
+- The labels use the Windows display language at install time: English,
+  German, or Simplified Chinese, with English for other languages. Updates
+  rewrite them, so they follow a changed display language after the next
+  update.
+- The entries are registered for the account that installed OFLH Desktop and
+  are removed by the uninstaller. Updates and passive or silent installs keep
+  your previous choice. Pass `/NOCONTEXTMENU` to the installer to leave them
+  out.
+- To start an inspection from a script or shortcut, run
+  `oflh-desktop.exe --inspect "<path>"`.
 
 ## Follow the parent process tree
 

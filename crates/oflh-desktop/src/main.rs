@@ -23,5 +23,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     oflh_desktop::startup::configure_renderer()?;
-    oflh_desktop::shell::run()
+    let target = oflh_desktop::launch::inspect_target(std::env::args_os());
+    oflh_desktop::shell::run(target)
 }

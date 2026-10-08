@@ -381,7 +381,11 @@ fn single_drop_target(paths: &[PathBuf]) -> Result<&Path, Failure> {
 }
 
 /// Launch the desktop shell. No terminal UI code is linked into this binary.
-pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+///
+/// `initial_target` comes from `--inspect <path>` (the Windows Explorer context
+/// menu). Its inspection starts before the WebView loads; the page picks it up
+/// through `status` like any other running inspection.
+pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -400,6 +404,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 app_data.join("oflh.sqlite3"),
             )?;
+            if let Some(target) = initial_target {
+                // Only an empty path (excluded by the parser) or an exhausted scan
+                // generation counter, impossible in a fresh service, can fail here.
+                service.inspect(target)?;
+            }
             app.manage(Arc::new(service));
             Ok(())
         })

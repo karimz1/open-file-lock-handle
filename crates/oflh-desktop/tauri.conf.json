@@ -42,7 +42,17 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/installer-hooks.nsh",
+        "languages": [
+          "English",
+          "German",
+          "SimpChinese"
+        ]
+      }
+    }
   },
   "plugins": {
     "updater": {
