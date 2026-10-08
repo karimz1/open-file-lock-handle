@@ -217,6 +217,10 @@ keys. **Fit all columns** fits every visible column.
 
 ## Appearance
 
+The window opens maximized. The title bar's restore button (or a double-click
+on the title bar) returns it to a 1280 × 800 window centered on the screen,
+which you can resize down to 860 × 560.
+
 The gear menu at the bottom left opens **Settings** and **Themes**. Themes are
 Light, System, Rider Dark, VS Code Dark, and OFLH Purple; **System** switches
 between Light and VS Code Dark with your OS. Settings also controls font size
