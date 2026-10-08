@@ -3,6 +3,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 mod desktop;
 mod inspection;
+mod installer;
 mod release;
 mod signing;
 use semver::{BuildMetadata, Prerelease, Version};
@@ -225,12 +226,15 @@ fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let action = args
         .next()
-        .ok_or("usage: cargo xtask check|validate|package|assemble --version TAG [options]")?;
+        .ok_or("usage: cargo xtask check|build-installer|validate|package|assemble --version TAG [options]")?;
     if action == "check" {
         if args.next().is_some() {
             return Err("check takes no options".into());
         }
         return check();
+    }
+    if action == "build-installer" {
+        return installer::build(installer::parse(args)?);
     }
     let mut options = BTreeMap::new();
     while let Some(key) = args.next() {
@@ -367,7 +371,7 @@ fn main() -> std::process::ExitCode {
     match run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("release: {error}");
+            eprintln!("xtask: {error}");
             std::process::ExitCode::FAILURE
         }
     }

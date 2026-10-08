@@ -58,6 +58,37 @@ behind the `oflh-desktop` crate's `desktop` feature, so plain
 Updater signing is only needed for release builds; see
 [Set up the updater keys](releasing.md#set-up-the-updater-keys).
 
+### Build an installer locally
+
+```sh
+cargo xtask build-installer
+```
+
+This runs `npm ci` in `crates/oflh-desktop/ui` when `node_modules` is missing,
+then builds the installer for your OS with the same bundles as CI: NSIS
+(`.exe`) on Windows, `.deb` and `.rpm` on Linux, and `.app` and `.dmg` on
+macOS. It prints the paths of the new packages under
+`target/release/bundle/`.
+
+| Option | Effect |
+| --- | --- |
+| `--bundles LIST` | Build other Tauri bundles, for example `--bundles msi` or `--bundles deb` |
+| `--clean` | Run `npm ci` even if `node_modules` exists |
+| `--signed` | Also build signed updater artifacts; needs `TAURI_SIGNING_PRIVATE_KEY` |
+
+Without a signing key, updater artifacts (`.sig`, `.app.tar.gz`) are turned
+off for the build, so local installers work without the release keys. When
+`TAURI_SIGNING_PRIVATE_KEY` is set, they are built as in CI.
+
+On Windows, Smart App Control or another application control policy (App
+Control for Business, AppLocker) can block the unsigned programs a build runs:
+Cargo build scripts and native binaries in `node_modules`. The build then fails
+with `os error 4551` ("An Application Control policy has blocked this file").
+If you cannot turn the policy off, run the **Desktop** workflow on GitHub
+Actions with `upload_artifacts` set to `true` (Actions → Desktop → Run
+workflow) and download the installer from the run's artifacts, which are
+kept for one day.
+
 ## Validate changes
 
 One command runs the gates CI enforces for Rust code:

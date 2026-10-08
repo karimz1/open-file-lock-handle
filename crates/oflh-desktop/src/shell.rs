@@ -380,9 +380,49 @@ fn single_drop_target(paths: &[PathBuf]) -> Result<&Path, Failure> {
     }
 }
 
+/// Start an inspection that another launch of the app forwarded to this window.
+///
+/// The window is brought to the front either way. A target replaces any running
+/// inspection, matching what the user just chose in Explorer, and the page reacts
+/// as it does to a dropped target.
+#[cfg(windows)]
+fn take_over_launch(app: &tauri::AppHandle, arguments: Vec<String>, working_directory: String) {
+    if let Some(window) = app.get_webview_window("main") {
+        // Focus can fail while Windows withholds foreground rights; the scan still starts.
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    let Some(target) = crate::launch::forwarded_target(arguments, &working_directory) else {
+        return;
+    };
+    let Some(service) = app.try_state::<Arc<Service>>() else {
+        return;
+    };
+    match service.take_over(target) {
+        Ok(status) => {
+            let _ = app.emit("target-dropped", ());
+            let _ = app.emit("scan-status", status);
+        }
+        Err(error) => {
+            let _ = app.emit("desktop-error", error);
+        }
+    }
+}
+
 /// Launch the desktop shell. No terminal UI code is linked into this binary.
-pub fn run() -> Result<(), Box<dyn std::error::Error>> {
-    tauri::Builder::default()
+///
+/// `initial_target` comes from `--inspect <path>` (the Windows Explorer context
+/// menu). Its inspection starts before the WebView loads; the page picks it up
+/// through `status` like any other running inspection. On Windows, a launch while
+/// a window is open exits after handing its arguments to that window
+/// ([`take_over_launch`]).
+pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+    let builder = tauri::Builder::default();
+    // The single-instance plugin must be registered first.
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(take_over_launch));
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -400,6 +440,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 app_data.join("oflh.sqlite3"),
             )?;
+            if let Some(target) = initial_target {
+                // Only an empty path (excluded by the parser) or an exhausted scan
+                // generation counter, impossible in a fresh service, can fail here.
+                service.inspect(target)?;
+            }
             app.manage(Arc::new(service));
             Ok(())
         })

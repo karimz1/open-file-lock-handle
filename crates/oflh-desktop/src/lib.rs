@@ -5,6 +5,7 @@
 
 pub mod contract;
 pub mod dataset;
+pub mod launch;
 mod path_text;
 mod recent;
 pub mod service;

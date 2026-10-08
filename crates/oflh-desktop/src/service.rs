@@ -207,12 +207,35 @@ impl Service {
             .ok_or_else(|| Failure::invalid("No folder is available for this owner"))?;
         self.enqueue(Some(path.to_owned()), Some(process.identity))
     }
+    /// Start an inspection requested by another launch of the app, such as the
+    /// Windows Explorer context menu while this window is open. Unlike [`Self::inspect`],
+    /// a running or queued scan is cancelled and replaced: the user explicitly chose a
+    /// new target outside this window. Both steps share one lock, so no other request
+    /// can slip in between.
+    pub fn take_over(&self, path: PathBuf) -> Result<Status, Failure> {
+        if path.as_os_str().is_empty() {
+            return Err(Failure::invalid("Choose a file or folder first"));
+        }
+        let mut state = self.shared.lock();
+        if state.scanning {
+            cancel_scan(&mut state);
+        }
+        self.enqueue_locked(&mut state, Some(path), None)
+    }
     fn enqueue(&self, path: Option<PathBuf>, owner: Option<Identity>) -> Result<Status, Failure> {
         let mut state = self.shared.lock();
+        self.enqueue_locked(&mut state, path, owner)
+    }
+    fn enqueue_locked(
+        &self,
+        state: &mut State,
+        path: Option<PathBuf>,
+        owner: Option<Identity>,
+    ) -> Result<Status, Failure> {
         // Coalesce all entry points atomically: timer, keyboard, dialogs and drops
         // cannot cancel an inspection merely because its acknowledgment is delayed.
         if state.scanning {
-            return Ok(status(&state));
+            return Ok(status(state));
         }
         state.generation = state
             .generation
@@ -231,7 +254,7 @@ impl Service {
         state.scanning = true;
         state.error = None;
         self.shared.ready.notify_one();
-        Ok(status(&state))
+        Ok(status(state))
     }
     /// Rescan the last successful native target without a display-string round trip.
     pub fn refresh(&self) -> Result<Status, Failure> {
@@ -252,13 +275,7 @@ impl Service {
     /// Cancel running and queued scans while preserving accepted results.
     pub fn cancel(&self) -> Status {
         let mut state = self.shared.lock();
-        state.cancellation.cancel();
-        state.elapsed_ms = elapsed_ms(&state);
-        state.pending = None;
-        // Advance the generation so even a native backend that returns after cancellation
-        // cannot publish over the last accepted snapshot.
-        state.generation = state.generation.saturating_add(1);
-        state.scanning = false;
+        cancel_scan(&mut state);
         status(&state)
     }
     /// List at most twelve persisted native targets as opaque IDs and display text.
@@ -659,6 +676,16 @@ fn scan(backend: &mut dyn Backend, job: &ScanJob) -> Result<(Option<PathBuf>, Da
     let dataset = Dataset::new(job.generation, snapshot);
     job.cancel.check().map_err(Failure::from)?;
     Ok((path, dataset))
+}
+
+fn cancel_scan(state: &mut State) {
+    state.cancellation.cancel();
+    state.elapsed_ms = elapsed_ms(state);
+    state.pending = None;
+    // Advance the generation so even a native backend that returns after cancellation
+    // cannot publish over the last accepted snapshot.
+    state.generation = state.generation.saturating_add(1);
+    state.scanning = false;
 }
 
 fn elapsed_ms(state: &State) -> u64 {
@@ -1257,5 +1284,54 @@ mod tests {
                 .kind,
             "protected"
         );
+    }
+
+    #[test]
+    fn another_launch_replaces_a_running_inspection() {
+        let (started_sender, started) = channel();
+        let (release, release_receiver) = channel();
+        let (notifications, received) = channel();
+        let service = Service::new(
+            Box::new(Gated {
+                started: started_sender,
+                release: release_receiver,
+            }),
+            move |status| {
+                notifications.send(status).unwrap();
+            },
+        )
+        .unwrap();
+        let base = std::env::temp_dir();
+        let running = service.inspect(base.join("oflh-desktop-running")).unwrap();
+        assert!(
+            started
+                .recv_timeout(TIMEOUT)
+                .unwrap()
+                .ends_with("oflh-desktop-running")
+        );
+        let running_cancellation = service.shared.lock().cancellation.clone();
+
+        let replaced = service
+            .take_over(base.join("oflh-desktop-explorer"))
+            .unwrap();
+        assert!(replaced.scanning);
+        assert!(replaced.generation > running.generation + 1);
+        assert!(running_cancellation.check().is_err());
+
+        // The cancelled scan returns late and must not publish.
+        release.send(()).unwrap();
+        assert!(
+            started
+                .recv_timeout(TIMEOUT)
+                .unwrap()
+                .ends_with("oflh-desktop-explorer")
+        );
+        release.send(()).unwrap();
+        let published = received.recv_timeout(TIMEOUT).unwrap();
+        assert!(!published.scanning);
+        assert_eq!(published.generation, replaced.generation);
+        assert!(published.target.ends_with("oflh-desktop-explorer"));
+        assert_eq!(service.recent().len(), 1);
+        assert!(service.take_over(PathBuf::new()).is_err());
     }
 }
