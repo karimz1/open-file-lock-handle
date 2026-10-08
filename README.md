@@ -6,6 +6,8 @@
 
 <p align="center"><b>Find which process is using a file, folder, or port on Windows, Linux, and macOS.</b></p>
 
+![OFLH Desktop listing the processes that use a folder, with details for the selected process](images/desktop.png)
+
 <p align="center"><a href="https://oflh.karimzouine.com/">oflh.karimzouine.com</a></p>
 
 <p align="center">
@@ -27,13 +29,8 @@ Reach for it when:
 - A dev server won't start because of *"address already in use"* (`EADDRINUSE`).
 - A folder can't be renamed or deleted and you don't know which file inside it is held.
 
-```sh
-oflh ./build            # who is using anything under ./build
-oflh ./build/app.dll    # who is using this one file
-oflh --port 3000        # who is listening on port 3000
-```
-
-![OFLH Desktop listing the processes that use a folder, with details for the selected process](images/desktop.png)
+The terminal app does the same in a TUI. Commands are in the
+[quick start](#getting-started).
 
 [![Terminal demo: the oflh terminal app listing processes with their open files and process ancestry. Click to play the asciinema recording.](images/terminal-demo-thumbnail.png)](https://asciinema.org/a/1266562)
 
