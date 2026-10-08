@@ -1,32 +1,32 @@
 # Social preview
 
-Source for `.github/social-preview.png`, the 1280×640 card GitHub shows when the
-repository is linked on social sites and chat apps.
+Builds [`.github/social-preview.png`](../social-preview.png) (1280 × 640). GitHub
+uses that image for release cards and link previews once it's uploaded under
+Settings → General → Social preview.
 
-- `template.html` – the card layout. Colors follow the website's dark theme
-  (`--bg #101113`, `--accent #4264db`, `--accent-light #98b0f3`); the wordmark
-  matches the site's `oflh.` in Inter 750.
-- `Inter-subset.woff2` – Inter (SIL Open Font License 1.1), subset to Latin so
-  the card renders the same on every machine without installing fonts.
-- `terminal-ancestry.png` – the process-tree panel, cropped from frame 20 of
-  `images/demo.gif`.
-- The desktop screenshot and app icon are read straight from `images/desktop.png`
-  and `crates/oflh-desktop/app-icon.svg`, so the card follows them when they change.
+| File | What it is |
+| --- | --- |
+| `template.html` | The card. Colours match the site (`#101113`, `#4264db`, `#98b0f3`). |
+| `Inter-subset.woff2` | Inter, Latin subset (SIL OFL 1.1). Keeps the letters identical everywhere. |
+| `terminal-ancestry.png` | Process tree, cut from frame 20 of `images/demo.gif`. |
+| `render.cjs` | Playwright script. Writes `../social-preview.png`. |
 
-## Regenerate
+The desktop shot and app icon come from `images/desktop.png` and
+`crates/oflh-desktop/app-icon.svg`, so the card updates when those change.
 
-Needs Node and the `playwright` package with its Chromium build.
+## Build
+
+Needs Node and Playwright's Chromium:
 
 ```sh
-npm i -D playwright && npx playwright install chromium   # once, anywhere
-node .github/social-preview/render.cjs                   # writes .github/social-preview.png
+npm i -D playwright && npx playwright install chromium
+node .github/social-preview/render.cjs
 ```
 
-The script renders at exactly 1280×640 with `deviceScaleFactor: 1`. Keep text
-inside a 40px margin; GitHub and link previews crop and scale the card.
+Renders at exactly 1280 × 640 (`deviceScaleFactor: 1`). Keep text inside a 40 px
+margin; GitHub crops and scales the card.
 
 ## Upload
 
-GitHub does not read this file automatically. Upload it once under
-**Settings → General → Social preview → Edit → Upload an image**, and again
-after regenerating it.
+GitHub does not pick this file up from the repo. After regenerating, upload it
+again under Settings → General → Social preview → Edit.
