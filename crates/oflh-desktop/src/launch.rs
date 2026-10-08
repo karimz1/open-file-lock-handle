@@ -1,6 +1,9 @@
 //! Launch requests from the command line, such as the Windows Explorer
 //! **Inspect file** and **Inspect folder** context menu entries.
-use std::{ffi::OsString, path::PathBuf};
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+};
 
 /// Flag that precedes the target path. The NSIS installer registers
 /// `"<exe>" --inspect "%1"` (and `"%V"` for a folder background) with Explorer.
@@ -13,6 +16,28 @@ pub const INSPECT_FLAG: &str = "--inspect";
 /// path stays an [`OsString`] so non-Unicode names survive.
 pub fn inspect_target(arguments: impl IntoIterator<Item = OsString>) -> Option<PathBuf> {
     inspect_target_for(arguments, cfg!(windows))
+}
+
+/// Return the target another launch forwarded to this running window.
+///
+/// On Windows the single-instance plugin hands over the second launch's arguments
+/// (program name first) and working directory as text. A relative path is resolved
+/// against that directory, because this process may run elsewhere.
+pub fn forwarded_target(arguments: Vec<String>, working_directory: &str) -> Option<PathBuf> {
+    forwarded_target_for(arguments, working_directory, cfg!(windows))
+}
+
+fn forwarded_target_for(
+    arguments: Vec<String>,
+    working_directory: &str,
+    windows: bool,
+) -> Option<PathBuf> {
+    let path = inspect_target_for(arguments.into_iter().map(OsString::from), windows)?;
+    if path.is_relative() && !working_directory.is_empty() {
+        Some(Path::new(working_directory).join(path))
+    } else {
+        Some(path)
+    }
 }
 
 fn inspect_target_for(
@@ -111,6 +136,56 @@ mod tests {
                 false
             ),
             Some(PathBuf::from("/build/odd\""))
+        );
+    }
+
+    fn strings(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    #[test]
+    fn forwarded_launch_resolves_relative_paths_against_its_own_directory() {
+        assert_eq!(
+            forwarded_target_for(
+                strings(&["oflh-desktop", "--inspect", "out/app.log"]),
+                "/build",
+                false
+            ),
+            Some(PathBuf::from("/build/out/app.log"))
+        );
+        assert_eq!(
+            forwarded_target_for(
+                strings(&["oflh-desktop", "--inspect", "/build/out"]),
+                "/elsewhere",
+                false
+            ),
+            Some(PathBuf::from("/build/out"))
+        );
+        assert_eq!(
+            forwarded_target_for(
+                strings(&["oflh-desktop", "--inspect", "relative"]),
+                "",
+                false
+            ),
+            Some(PathBuf::from("relative"))
+        );
+    }
+
+    #[test]
+    fn forwarded_launch_without_a_target_only_focuses_and_drive_roots_are_repaired() {
+        assert_eq!(
+            forwarded_target_for(strings(&["oflh-desktop.exe"]), r"C:\Users", true),
+            None
+        );
+        assert_eq!(
+            forwarded_target_for(
+                strings(&["oflh-desktop.exe", "--inspect", "D:\""]),
+                // Host path rules decide relativity; an empty directory skips joining.
+                "",
+                true
+            )
+            .map(|path| path.into_os_string()),
+            Some(OsString::from(r"D:\"))
         );
     }
 }

@@ -53,8 +53,14 @@ paste them.
 
 The Windows installer adds **Inspect file** and **Inspect folder** to the
 File Explorer context menu. The option is on the installer's welcome page and
-is checked by default. Each entry opens a new OFLH Desktop window that starts
-inspecting the item. Entries appear for one selected item at a time.
+is checked by default. Entries appear for one selected item at a time.
+
+Choosing an entry starts OFLH Desktop and inspects the item. If OFLH Desktop is
+already open, that window comes to the front and inspects the item instead; an
+inspection that is still running there is cancelled. Starting OFLH Desktop again
+from the Start menu also brings the open window to the front. An open window
+running as administrator cannot receive targets from Explorer, so a second
+window opens in that case.
 
 - On Windows 11, the entries are under **Show more options** (or
   `Shift+F10`), not in the shortened first menu.
@@ -67,7 +73,8 @@ inspecting the item. Entries appear for one selected item at a time.
   your previous choice. Pass `/NOCONTEXTMENU` to the installer to leave them
   out.
 - To start an inspection from a script or shortcut, run
-  `oflh-desktop.exe --inspect "<path>"`.
+  `oflh-desktop.exe --inspect "<path>"`. A relative path is resolved against
+  the directory you run it from.
 
 ## Follow the parent process tree
 
