@@ -17,6 +17,7 @@
   <a href="https://github.com/karimz1/open-file-lock-handle/releases/latest"><img src="https://img.shields.io/github/v/release/karimz1/open-file-lock-handle?label=release" alt="Latest release"></a>
   <a href="https://github.com/karimz1/open-file-lock-handle/releases"><img src="https://img.shields.io/github/downloads/karimz1/open-file-lock-handle/total?label=downloads" alt="Downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="#languages"><img src="https://img.shields.io/badge/languages-English%20%7C%20Deutsch%20%7C%20%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-blue" alt="Languages: English, Deutsch, 简体中文"></a>
 </p>
 
 `oflh` shows which processes have a file or folder open and which process owns
@@ -352,8 +353,12 @@ re-verify the process identity before sending anything.
 | [Architecture](docs/architecture.md) | Crates, threading, process-safety design |
 | [Contributing](CONTRIBUTING.md) | Bug reports and pull requests |
 
+<a id="languages"></a>
 The terminal app and CLI help are available in English, German, and Simplified
 Chinese (`--language en|de|zh`); so is the desktop app (Settings → Language).
+To correct a translation, see the
+[desktop translation guide](crates/oflh-desktop/ui/src/locales/README.md) or the
+[terminal notes](docs/development.md#terminal-snapshots-and-translations).
 
 Found a bug? [Open an issue](https://github.com/karimz1/open-file-lock-handle/issues).
 oflh is an independent project released under the [MIT License](LICENSE). If it
