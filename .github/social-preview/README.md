@@ -26,6 +26,11 @@ node .github/social-preview/render.cjs
 Renders at exactly 1280 × 640 (`deviceScaleFactor: 1`). Keep text inside a 40 px
 margin; GitHub crops and scales the card.
 
+CI ([`social-preview.yml`](../workflows/social-preview.yml)) re-renders the card
+when any of these files change and fails if an image or the font doesn't load or
+the PNG isn't 1280 × 640. It doesn't diff against the committed PNG; the render is
+attached as the `social-preview` artifact.
+
 ## Upload
 
 GitHub does not pick this file up from the repo. After regenerating, upload it
