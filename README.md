@@ -6,6 +6,8 @@
 
 <p align="center"><b>Find which process is using a file, folder, or port on Windows, Linux, and macOS.</b></p>
 
+<p align="center"><a href="https://oflh.karimzouine.com/">oflh.karimzouine.com</a></p>
+
 <p align="center">
   <a href="https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml"><img src="https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/karimz1/open-file-lock-handle/releases/latest"><img src="https://img.shields.io/github/v/release/karimz1/open-file-lock-handle?label=release" alt="Latest release"></a>
@@ -33,7 +35,9 @@ oflh --port 3000        # who is listening on port 3000
 
 ![OFLH Desktop listing the processes that use a folder, with details for the selected process](images/desktop.png)
 
-[Terminal demo (GIF)](images/demo.gif) · [asciinema recording](https://asciinema.org/a/1266562) · [Website](https://oflh.karimzouine.com/)
+[![Terminal demo: the oflh terminal app listing processes with their open files and process ancestry. Click to play the asciinema recording.](images/terminal-demo-thumbnail.png)](https://asciinema.org/a/1266562)
+
+[Terminal demo (GIF)](images/demo.gif) · [asciinema recording](https://asciinema.org/a/1266562)
 
 ## Contents
 
