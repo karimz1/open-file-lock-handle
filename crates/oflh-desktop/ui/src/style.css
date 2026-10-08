@@ -434,8 +434,16 @@ main {
   font-size: 0.9231rem;
   color: var(--muted);
 }
+.heading-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+.target-area {
+  margin: 0 26px 12px;
+  flex: none;
+}
 .target-bar {
-  margin: 0 26px 20px;
   border: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -445,8 +453,33 @@ main {
   background: var(--panel);
   flex: none;
 }
-.target-bar > svg {
+.target-pickers {
+  display: flex;
+  gap: 2px;
+  margin-left: -6px;
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
+}
+.target-bar .target-pickers button {
   color: var(--muted);
+  background: transparent;
+}
+.target-bar .target-pickers button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.target-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  padding-left: 2px;
+  color: var(--muted);
+  font-size: 0.8462rem;
+  line-height: 1.3;
+}
+.target-hint svg {
+  flex: none;
 }
 .target-bar input {
   flex: 1;
@@ -1495,7 +1528,7 @@ main {
   .workspace-heading {
     padding: 20px;
   }
-  .target-bar {
+  .target-area {
     margin-left: 20px;
     margin-right: 20px;
   }

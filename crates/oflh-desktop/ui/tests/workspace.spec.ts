@@ -2127,6 +2127,121 @@ test("documentation screenshots use only synthetic inspection data", async ({
   });
 });
 
+test("target bar picks files or folders, accepts typed paths and explains drag and drop", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const pickers = page.getByRole("group", { name: "Choose a scan target" });
+  const chooseFile = pickers.getByRole("button", { name: "Choose file" });
+  const chooseFolder = pickers.getByRole("button", { name: "Choose folder" });
+  await expect(chooseFile).toHaveAttribute(
+    "title",
+    "Choose a file to scan (Ctrl+O)",
+  );
+  await expect(chooseFolder).toHaveAttribute(
+    "title",
+    "Choose a folder to scan (Ctrl+Shift+O)",
+  );
+  const field = page.getByRole("textbox", {
+    name: "Target file or folder path",
+  });
+  await expect(field).toHaveValue("/workspace/project");
+  await expect(field).toHaveAccessibleDescription(
+    "Tip: Drag a file or folder onto this window to change the scan target, or type a path and press Enter.",
+  );
+  const chooseCalls = async () =>
+    (await page.evaluate(() => (window as any).__testCalls))
+      .filter((call: any) => call.command === "choose")
+      .map((call: any) => call.args.folder);
+
+  // The picker buttons must not submit the path form.
+  await chooseFile.click();
+  await expect.poll(chooseCalls).toEqual([false]);
+  await chooseFolder.click();
+  await expect.poll(chooseCalls).toEqual([false, true]);
+  const heading = page.locator(".workspace-heading");
+  await heading.getByRole("button", { name: "Open file", exact: true }).click();
+  await heading
+    .getByRole("button", { name: "Open folder", exact: true })
+    .click();
+  await expect.poll(chooseCalls).toEqual([false, true, false, true]);
+
+  // A typed path stays editable and Enter inspects it. Quotes added by
+  // "Copy as path" are removed before the path reaches Rust.
+  await field.fill('  "/workspace/project/report.txt"  ');
+  await field.press("Enter");
+  await expect(field).toHaveValue("/workspace/project/report.txt");
+  const inspected = await page.evaluate(() =>
+    (window as any).__testCalls
+      .filter((call: any) => call.command === "inspect")
+      .map((call: any) => call.args.path),
+  );
+  expect(inspected).toEqual(["/workspace/project/report.txt"]);
+  await field.fill("   ");
+  await expect(page.getByRole("button", { name: "Inspect" })).toBeDisabled();
+
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("drag-active", true),
+  );
+  await expect(
+    page.getByRole("heading", { name: "Drop file or folder to inspect" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Release to change the scan target and start scanning."),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("drag-active", false),
+  );
+  await expect(
+    page.getByRole("heading", { name: "Drop file or folder to inspect" }),
+  ).not.toBeVisible();
+
+  // Short windows keep the grid space; the hint moves into the field tooltip.
+  const hint =
+    "Tip: Drag a file or folder onto this window to change the scan target, or type a path and press Enter.";
+  await page.setViewportSize({ width: 860, height: 560 });
+  await expect(page.getByText(hint)).not.toBeVisible();
+  await expect(field).toHaveAttribute("title", hint);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.getByText(hint)).toBeVisible();
+});
+
+test("German target bar explains how to change the scan target", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "language", {
+      configurable: true,
+      value: "de-DE",
+    });
+  });
+  await page.goto("/");
+  const pickers = page.getByRole("group", { name: "Scan-Ziel auswählen" });
+  await expect(
+    pickers.getByRole("button", { name: "Datei auswählen" }),
+  ).toBeVisible();
+  await expect(
+    pickers.getByRole("button", { name: "Ordner auswählen" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Tipp: Ziehe eine Datei oder einen Ordner in dieses Fenster, um das Scan-Ziel zu ändern – oder gib einen Pfad ein und drücke Enter.",
+    ),
+  ).toBeVisible();
+  await page
+    .getByRole("textbox", { name: "Pfad zur Zieldatei oder zum Zielordner" })
+    .fill("");
+  await expect(
+    page.getByPlaceholder(
+      "Datei- oder Ordnerpfad eingeben, einfügen oder hierher ziehen …",
+    ),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/desktop-target-bar-de.png",
+    clip: { x: 0, y: 0, width: 1280, height: 260 },
+  });
+});
+
 test("gear stays last in the sidebar and support actions fit the minimum window footer", async ({
   page,
 }) => {

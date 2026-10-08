@@ -210,6 +210,16 @@ const en = {
       "Choose a file or folder to start an inspection.",
     k_choose_file: "Choose file",
     k_choose_folder: "Choose folder",
+    k_choose_a_file_to_scan_shortcut: "Choose a file to scan ({{shortcut}})",
+    k_choose_a_folder_to_scan_shortcut:
+      "Choose a folder to scan ({{shortcut}})",
+    k_choose_a_scan_target: "Choose a scan target",
+    k_drag_a_file_or_folder_onto_this_window_hint:
+      "Tip: Drag a file or folder onto this window to change the scan target, or type a path and press Enter.",
+    k_release_to_change_the_scan_target:
+      "Release to change the scan target and start scanning.",
+    k_type_paste_or_drop_a_file_or_folder_path:
+      "Type, paste, or drop a file or folder path…",
     k_drop_a_file_or_folder_anywhere_in_this_window:
       "Drop a file or folder anywhere in this window.",
     k_drop_file_or_folder_to_inspect: "Drop file or folder to inspect",
@@ -232,7 +242,6 @@ const en = {
     k_open_files_do_not_necessarily_mean_locked_files:
       "Open files do not necessarily mean locked files.",
     k_open_folder: "Open folder",
-    k_paste_a_file_or_folder_path: "Paste a file or folder path…",
     k_process_inspection_views: "Process inspection views",
     k_processes_referencing_your_target_and_i_9e70e943:
       "Processes referencing your target and its contents.",

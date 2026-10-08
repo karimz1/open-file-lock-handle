@@ -16,28 +16,18 @@ impl Drop for ChildGuard {
         let _ = self.0.wait();
     }
 }
-#[test]
-fn desktop_fixture_child() {
-    if std::env::var_os("OFLH_DESKTOP_TEST_CHILD").is_none() {
-        return;
+/// Start this test binary as a fixture child and wait until it is ready.
+fn spawn_fixture_child(hold: Option<&std::path::Path>) -> ChildGuard {
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command
+        .args(["--exact", "desktop_fixture_child", "--nocapture"])
+        .env("OFLH_DESKTOP_TEST_CHILD", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped());
+    if let Some(path) = hold {
+        command.env("OFLH_DESKTOP_TEST_HOLD", path);
     }
-    println!("DESKTOP FIXTURE READY");
-    std::io::stdout().flush().unwrap();
-    let mut line = String::new();
-    std::io::stdin().read_line(&mut line).unwrap();
-}
-#[test]
-fn native_scan_and_confirmed_force_action_use_captured_child_lifetime() {
-    let executable = std::env::current_exe().unwrap();
-    let mut child = ChildGuard(
-        Command::new(&executable)
-            .args(["--exact", "desktop_fixture_child", "--nocapture"])
-            .env("OFLH_DESKTOP_TEST_CHILD", "1")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap(),
-    );
+    let mut child = ChildGuard(command.spawn().unwrap());
     let stdout = child.0.stdout.take().unwrap();
     let (ready_sender, ready) = mpsc::channel();
     std::thread::spawn(move || {
@@ -49,6 +39,25 @@ fn native_scan_and_confirmed_force_action_use_captured_child_lifetime() {
         }
     });
     ready.recv_timeout(Duration::from_secs(10)).unwrap();
+    child
+}
+#[test]
+fn desktop_fixture_child() {
+    if std::env::var_os("OFLH_DESKTOP_TEST_CHILD").is_none() {
+        return;
+    }
+    // Hold a regular file open for the single-file target test.
+    let _held =
+        std::env::var_os("OFLH_DESKTOP_TEST_HOLD").map(|path| std::fs::File::open(path).unwrap());
+    println!("DESKTOP FIXTURE READY");
+    std::io::stdout().flush().unwrap();
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line).unwrap();
+}
+#[test]
+fn native_scan_and_confirmed_force_action_use_captured_child_lifetime() {
+    let executable = std::env::current_exe().unwrap();
+    let mut child = spawn_fixture_child(None);
     let (sender, received) = mpsc::channel();
     let service = Service::new(oflh_platform::native().unwrap(), move |status| {
         let _ = sender.send(status);
@@ -148,4 +157,63 @@ fn native_port_inspection_finds_owned_tcp_and_udp_without_a_file_target() {
                 .any(|row| row.pid == std::process::id() && !row.actionable)
         );
     }
+}
+
+#[test]
+fn native_single_file_target_finds_the_process_holding_it_open() {
+    let folder = tempfile::tempdir().unwrap();
+    let path = folder.path().join("held-report.txt");
+    std::fs::write(&path, b"synthetic report").unwrap();
+    // The scanners skip their own process, so a child holds the file open.
+    let child = spawn_fixture_child(Some(&path));
+    let (sender, received) = mpsc::channel();
+    let service = Service::new(oflh_platform::native().unwrap(), move |status| {
+        let _ = sender.send(status);
+    })
+    .unwrap();
+    service.inspect(path.clone()).unwrap();
+    let status = received.recv_timeout(Duration::from_secs(30)).unwrap();
+    assert!(status.error.is_none(), "{:?}", status.error);
+    assert!(!status.target.is_empty());
+    let dataset = service.dataset(status.revision).unwrap();
+    let page = dataset
+        .page(&TableQuery {
+            handles: true,
+            limit: 200,
+            ..TableQuery::default()
+        })
+        .unwrap();
+    let canonical = std::fs::canonicalize(&path).unwrap();
+    assert!(
+        page.rows.iter().any(|row| {
+            row.pid == child.0.id()
+                && dataset.path(&row.path_ref).is_ok_and(|observed| {
+                    std::fs::canonicalize(observed).ok() == Some(canonical.clone())
+                })
+        }),
+        "a single file target must list the child process that holds it open"
+    );
+}
+
+#[test]
+fn native_missing_file_target_reports_a_warning_instead_of_failing() {
+    let folder = tempfile::tempdir().unwrap();
+    let (sender, received) = mpsc::channel();
+    let service = Service::new(oflh_platform::native().unwrap(), move |status| {
+        let _ = sender.send(status);
+    })
+    .unwrap();
+    service
+        .inspect(folder.path().join("missing-report.txt"))
+        .unwrap();
+    let status = received.recv_timeout(Duration::from_secs(30)).unwrap();
+    assert!(status.error.is_none(), "{:?}", status.error);
+    assert!(
+        status
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("no longer exists")),
+        "{:?}",
+        status.warnings
+    );
 }

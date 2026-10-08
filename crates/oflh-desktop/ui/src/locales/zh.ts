@@ -209,6 +209,14 @@ const zh: TranslationSchema<typeof en> = {
       "选择文件或文件夹以开始检查。",
     k_choose_file: "选择文件",
     k_choose_folder: "选择文件夹",
+    k_choose_a_file_to_scan_shortcut: "选择要扫描的文件（{{shortcut}}）",
+    k_choose_a_folder_to_scan_shortcut: "选择要扫描的文件夹（{{shortcut}}）",
+    k_choose_a_scan_target: "选择扫描目标",
+    k_drag_a_file_or_folder_onto_this_window_hint:
+      "提示：将文件或文件夹拖到此窗口即可更改扫描目标，也可以输入路径后按 Enter。",
+    k_release_to_change_the_scan_target: "松开即可更改扫描目标并开始扫描。",
+    k_type_paste_or_drop_a_file_or_folder_path:
+      "输入、粘贴或拖入文件或文件夹路径…",
     k_drop_a_file_or_folder_anywhere_in_this_window:
       "将文件或文件夹拖入此窗口任意位置。",
     k_drop_file_or_folder_to_inspect: "拖入文件或文件夹以检查",
@@ -230,7 +238,6 @@ const zh: TranslationSchema<typeof en> = {
     k_open_files_do_not_necessarily_mean_locked_files:
       "打开的文件不一定被锁定。",
     k_open_folder: "打开文件夹",
-    k_paste_a_file_or_folder_path: "粘贴文件或文件夹路径…",
     k_process_inspection_views: "进程检查视图",
     k_processes_referencing_your_target_and_i_9e70e943:
       "引用目标及其内容的进程。",

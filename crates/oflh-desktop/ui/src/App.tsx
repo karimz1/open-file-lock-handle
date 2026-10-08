@@ -20,6 +20,7 @@ import {
   Files,
   FolderOpen,
   History,
+  Info,
   Keyboard,
   Maximize2,
   Minimize2,
@@ -50,6 +51,7 @@ import {
 import { acceptStatus, initialStatus, selectKey } from "./state";
 import { InspectionOverlay } from "./InspectionOverlay";
 import { scanDuration } from "./scanDuration";
+import { normalizeTypedPath, showsTargetHint } from "./targetPath";
 import { Inspector } from "./Inspector";
 import { Modal } from "./Modal";
 import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
@@ -134,6 +136,12 @@ export function App() {
   const [showAbout, setShowAbout] = useState(false);
 
   const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
+  const chooseFileTitle = t("inspection.k_choose_a_file_to_scan_shortcut", {
+    shortcut: `${modifier}+O`,
+  });
+  const chooseFolderTitle = t("inspection.k_choose_a_folder_to_scan_shortcut", {
+    shortcut: `${modifier}+Shift+O`,
+  });
   const shortcut = (keys: string) => (
     <kbd className="shortcut" aria-hidden="true">
       {modifier}
@@ -161,6 +169,13 @@ export function App() {
   // Font size already scales the whole interface (see the "Scalable controls"
   // rules in style.css), so zoom in/out just steps the same value.
   const zoomPercent = Math.round((fontSize / 14) * 100);
+  const [windowHeight, setWindowHeight] = useState(() => window.innerHeight);
+  useEffect(() => {
+    const resize = () => setWindowHeight(window.innerHeight);
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+  const targetHint = showsTargetHint(windowHeight, fontSize);
   const adjustZoom = (steps: number) =>
     setFontSize((current) => Math.min(24, Math.max(12, current + steps * 2)));
   useEffect(() => {
@@ -1009,43 +1024,100 @@ export function App() {
                             )}
                     </p>
                   </div>
-                  <button
-                    className="primary"
-                    onClick={() => runScan(() => api.choose(true))}
-                  >
-                    <FolderOpen size={15} />
-                    {t("inspection.k_open_folder")}
-                  </button>
+                  <div className="heading-actions">
+                    <button
+                      className="primary"
+                      title={chooseFileTitle}
+                      onClick={() => runScan(() => api.choose(false))}
+                    >
+                      <File size={15} />
+                      {t("inspection.k_open_file")}
+                    </button>
+                    <button
+                      title={chooseFolderTitle}
+                      onClick={() => runScan(() => api.choose(true))}
+                    >
+                      <FolderOpen size={15} />
+                      {t("inspection.k_open_folder")}
+                    </button>
+                  </div>
                 </div>
               )}
               {!maximized && view !== "ports" && (
-                <form
-                  className="target-bar"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    runScan(() =>
-                      !pathEdited && status.target
-                        ? api.refresh()
-                        : api.inspect(path),
-                    );
-                  }}
-                >
-                  <FolderOpen size={17} />
-                  <input
-                    aria-label={t("inspection.k_target_file_or_folder_path")}
-                    placeholder={t("inspection.k_paste_a_file_or_folder_path")}
-                    value={path}
-                    onChange={(event) => {
-                      setPath(event.target.value);
-                      setPathEdited(true);
+                <div className="target-area">
+                  <form
+                    className="target-bar"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const typed = normalizeTypedPath(path);
+                      if (typed !== path) setPath(typed);
+                      runScan(() =>
+                        !pathEdited && status.target
+                          ? api.refresh()
+                          : api.inspect(typed),
+                      );
                     }}
-                    spellCheck={false}
-                  />
-                  <button type="submit" disabled={!path.trim()}>
-                    {t("inspection.k_inspect")}
-                    <ArrowRight size={14} />
-                  </button>
-                </form>
+                  >
+                    <div
+                      className="target-pickers"
+                      role="group"
+                      aria-label={t("inspection.k_choose_a_scan_target")}
+                    >
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={t("inspection.k_choose_file")}
+                        title={chooseFileTitle}
+                        onClick={() => runScan(() => api.choose(false))}
+                      >
+                        <File size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={t("inspection.k_choose_folder")}
+                        title={chooseFolderTitle}
+                        onClick={() => runScan(() => api.choose(true))}
+                      >
+                        <FolderOpen size={17} />
+                      </button>
+                    </div>
+                    <input
+                      aria-label={t("inspection.k_target_file_or_folder_path")}
+                      aria-describedby={
+                        targetHint ? "target-drop-hint" : undefined
+                      }
+                      title={
+                        targetHint
+                          ? undefined
+                          : t(
+                              "inspection.k_drag_a_file_or_folder_onto_this_window_hint",
+                            )
+                      }
+                      placeholder={t(
+                        "inspection.k_type_paste_or_drop_a_file_or_folder_path",
+                      )}
+                      value={path}
+                      onChange={(event) => {
+                        setPath(event.target.value);
+                        setPathEdited(true);
+                      }}
+                      spellCheck={false}
+                    />
+                    <button type="submit" disabled={!normalizeTypedPath(path)}>
+                      {t("inspection.k_inspect")}
+                      <ArrowRight size={14} />
+                    </button>
+                  </form>
+                  {targetHint && (
+                    <p className="target-hint" id="target-drop-hint">
+                      <Info size={13} aria-hidden="true" />
+                      {t(
+                        "inspection.k_drag_a_file_or_folder_onto_this_window_hint",
+                      )}
+                    </p>
+                  )}
+                </div>
               )}
               {view !== "ports" && !status.target && !status.scanning ? (
                 <div className="welcome">
@@ -1890,6 +1962,7 @@ export function App() {
           <div>
             <FolderOpen size={42} />
             <h2>{t("inspection.k_drop_file_or_folder_to_inspect")}</h2>
+            <p>{t("inspection.k_release_to_change_the_scan_target")}</p>
             <p>{t("inspection.k_one_target_at_a_time")}</p>
           </div>
         </div>

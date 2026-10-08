@@ -21,8 +21,12 @@ downloads, see the [README](../README.md#desktop-install).
 Open a target in any of these ways:
 
 - Drop a file or folder onto the window.
-- Choose **Open file** (`Ctrl+O`) or **Open folder** (`Ctrl+Shift+O`).
-- Type a path into the target box and choose **Inspect**.
+- Choose **Open file** (`Ctrl+O`) or **Open folder** (`Ctrl+Shift+O`), either
+  at the top of the page or with the file and folder buttons at the left of the
+  target box.
+- Type or paste a path into the target box and press `Enter` or choose
+  **Inspect**. Surrounding quotes, such as those added by Windows
+  **Copy as path**, are removed.
 - Pick one of your last twelve targets under **Recent targets** (`Ctrl+4`).
 - On Windows, right-click a file and choose **Inspect file**, or right-click a
   folder, a drive, or the empty area of a folder window and choose

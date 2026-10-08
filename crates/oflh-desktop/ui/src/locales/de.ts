@@ -219,6 +219,17 @@ const de: TranslationSchema<typeof en> = {
       "Wähle eine Datei oder einen Ordner aus, um die Untersuchung zu starten.",
     k_choose_file: "Datei auswählen",
     k_choose_folder: "Ordner auswählen",
+    k_choose_a_file_to_scan_shortcut:
+      "Datei zum Untersuchen auswählen ({{shortcut}})",
+    k_choose_a_folder_to_scan_shortcut:
+      "Ordner zum Untersuchen auswählen ({{shortcut}})",
+    k_choose_a_scan_target: "Scan-Ziel auswählen",
+    k_drag_a_file_or_folder_onto_this_window_hint:
+      "Tipp: Ziehe eine Datei oder einen Ordner in dieses Fenster, um das Scan-Ziel zu ändern – oder gib einen Pfad ein und drücke Enter.",
+    k_release_to_change_the_scan_target:
+      "Loslassen, um das Scan-Ziel zu ändern und die Untersuchung zu starten.",
+    k_type_paste_or_drop_a_file_or_folder_path:
+      "Datei- oder Ordnerpfad eingeben, einfügen oder hierher ziehen …",
     k_drop_a_file_or_folder_anywhere_in_this_window:
       "Ziehe eine Datei oder einen Ordner an eine beliebige Stelle in diesem Fenster.",
     k_drop_file_or_folder_to_inspect:
@@ -242,7 +253,6 @@ const de: TranslationSchema<typeof en> = {
     k_open_files_do_not_necessarily_mean_locked_files:
       "Geöffnete Dateien sind nicht unbedingt gesperrt.",
     k_open_folder: "Ordner öffnen",
-    k_paste_a_file_or_folder_path: "Datei- oder Ordnerpfad einfügen …",
     k_process_inspection_views: "Prozessansichten",
     k_processes_referencing_your_target_and_i_9e70e943:
       "Prozesse, die auf dein Ziel oder dessen Inhalte zugreifen.",
