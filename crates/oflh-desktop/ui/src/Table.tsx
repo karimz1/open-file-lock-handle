@@ -182,12 +182,12 @@ export function Table(props: Props) {
     pendingNavigation.current = null;
   }, [props.target, queryKey]);
   useLayoutEffect(() => {
-    if (cachedPage) {
+    if (cachedPage && offset === cachedPage.offset) {
       setPage(cachedPage);
       props.onPage(cachedPage);
       props.onTotal(cachedPage.total);
     }
-  }, [props.target, props.revision, queryKey]);
+  }, [props.target, props.revision, queryKey, offset]);
   const [loadingKey, setLoadingKey] = useState("");
   const requestKey = `${props.revision}:${props.target}:${queryKey}`;
   useEffect(() => {
