@@ -135,6 +135,8 @@ export const api = {
   openReleaseNotes: () => invoke<void>("open_release_notes"),
   status: () => invoke<Status>("status"),
   inspect: (path: string) => invoke<Status>("inspect", { path }),
+  inspectDropped: (request: number) =>
+    invoke<Status>("inspect_dropped", { request }),
   ports: () => invoke<Status>("inspect_ports"),
   followProcess: (revision: number, key: string) =>
     invoke<Status>("follow_process", { revision, key }),

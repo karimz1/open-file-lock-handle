@@ -213,6 +213,22 @@ test.beforeEach(async ({ page }) => {
                 "Primary action failed: FileManager1 is unavailable\nFallback action failed: xdg-open failed\nRust backtrace: fixture stack",
             };
           }
+          if (command === "inspect_ports")
+            return (status = {
+              ...status,
+              generation: status.generation + 1,
+              revision: status.revision + 1,
+              ports: portRows.length,
+            });
+          if (command === "inspect_dropped")
+            return (status = {
+              ...status,
+              generation: status.generation + 1,
+              revision: Math.max(1, status.revision),
+              target: "/workspace/project",
+              processes: processRows.length,
+              usages: 18000,
+            });
           if (["refresh", "inspect", "revisit", "choose"].includes(command))
             return (status = {
               ...status,
@@ -1048,6 +1064,158 @@ test("hidden selection confirmation defaults to cancel and preserves force mode"
       .filter((call) => call.command === "prepare")
       .map((call) => call.args.force),
   ).toEqual([true, false]);
+});
+
+for (const initialTarget of ["/", "/?empty-target"]) {
+  test(`Ports hides file and folder controls and restores them in other views (${initialTarget})`, async ({
+    page,
+  }) => {
+    await page.goto(initialTarget);
+    const sidebar = page.locator(".sidebar");
+    const heading = page.locator(".workspace-heading");
+    const field = page.getByRole("textbox", {
+      name: "Target file or folder path",
+    });
+    await expect(field).toBeVisible();
+    await expect(
+      sidebar.getByText("INSPECT TARGET", { exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: /^Ports/ }).click();
+    await expect(
+      page.getByRole("grid", {
+        name: "Local TCP listeners and UDP bindings",
+      }),
+    ).toBeVisible();
+    for (const label of [
+      "Open file",
+      "Open folder",
+      "Choose file",
+      "Choose folder",
+    ]) {
+      await expect(
+        page.getByRole("button", { name: label, exact: true }),
+      ).toHaveCount(0);
+    }
+    await expect(
+      sidebar.getByText("INSPECT TARGET", { exact: true }),
+    ).toHaveCount(0);
+    await expect(field).toHaveCount(0);
+    await page.screenshot({
+      path: `test-results/ports-controls${initialTarget === "/" ? "" : "-empty-target"}.png`,
+    });
+
+    for (const view of ["Processes", "File usages"]) {
+      await sidebar
+        .getByRole("button", { name: new RegExp(`^${view}`) })
+        .click();
+      for (const label of ["Open file", "Open folder"]) {
+        await expect(
+          sidebar.getByRole("button", { name: label, exact: true }),
+        ).toBeVisible();
+        await expect(
+          heading.getByRole("button", { name: label, exact: true }),
+        ).toBeVisible();
+      }
+      await expect(field).toBeVisible();
+      if (initialTarget === "/")
+        await expect(field).toHaveValue("/workspace/project");
+    }
+    for (const view of ["Recent targets", "Settings"]) {
+      if (view === "Settings") await page.keyboard.press("Control+,");
+      else
+        await sidebar.getByRole("button", { name: /^Recent targets/ }).click();
+      for (const label of ["Open file", "Open folder"]) {
+        await expect(
+          sidebar.getByRole("button", { name: label, exact: true }),
+        ).toBeVisible();
+      }
+    }
+  });
+}
+
+test("Explorer handoffs show the accepted file inspection from Ports", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.keyboard.press("Control+3");
+  await expect(
+    page.getByRole("heading", { name: "Local ports" }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__emitTestEvent("target-dropped", null);
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 2,
+      revision: 2,
+      target: "/workspace/from-explorer.txt",
+    });
+  });
+  await expect(
+    page.getByRole("heading", { name: "Processes", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: "Target file or folder path" }),
+  ).toHaveValue("/workspace/from-explorer.txt");
+  expect(
+    await page.evaluate(() =>
+      (window as any).__testCalls.filter(
+        (call: any) => call.command === "inspect_dropped",
+      ),
+    ),
+  ).toEqual([]);
+});
+
+test("Ports rejects native drops without scanning or switching views", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const overlay = page.getByRole("heading", {
+    name: "Drop file or folder to inspect",
+  });
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("drag-active", true),
+  );
+  await expect(overlay).toBeVisible();
+  await page.keyboard.press("Control+3");
+  await expect(overlay).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).__emitTestEvent("drag-active", true);
+    (window as any).__emitTestEvent("target-drop-requested", 1);
+  });
+  await expect(overlay).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Local ports" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      (window as any).__testCalls.filter(
+        (call: any) => call.command === "inspect_dropped",
+      ),
+    ),
+  ).toEqual([]);
+
+  await page.getByRole("button", { name: /^File usages/ }).click();
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("drag-active", true),
+  );
+  await expect(overlay).toBeVisible();
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("target-drop-requested", 2),
+  );
+  await expect(
+    page.getByRole("heading", { name: "Processes", exact: true }),
+  ).toBeVisible();
+  await expect(overlay).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).__testCalls
+          .filter((call: any) => call.command === "inspect_dropped")
+          .map((call: any) => call.args.request),
+      ),
+    )
+    .toEqual([2]);
 });
 
 test("port searches stay in Rust IPC and expose binding actions safely", async ({
@@ -2059,7 +2227,7 @@ test("documentation screenshots use only synthetic inspection data", async ({
     (window as any).__emitTestEvent("drag-active", false),
   );
   await page.evaluate(() =>
-    (window as any).__emitTestEvent("target-dropped", null),
+    (window as any).__emitTestEvent("target-drop-requested", 1),
   );
   await page.evaluate(() =>
     (window as any).__emitTestEvent("scan-status", {

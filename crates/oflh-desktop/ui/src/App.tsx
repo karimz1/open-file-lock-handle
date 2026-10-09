@@ -193,6 +193,7 @@ export function App() {
   const [backgroundScan, setBackgroundScan] = useState(false);
   const backgroundRevision = useRef(0);
   const [view, setView] = useState<View>("processes");
+  const dropTarget = useRef<(request: number) => void>(() => {});
   const [gridRevision, setGridRevision] = useState(0);
   // A failed page ends presentation work without making stale rows actionable.
   // Permit a fresh scan to recover instead of leaving the reload barrier stuck.
@@ -389,7 +390,11 @@ export function App() {
       listen<Status>("scan-status", (event) => {
         if (active) apply(event.payload);
       }),
+      listen<number>("target-drop-requested", (event) => {
+        if (active) dropTarget.current(event.payload);
+      }),
       listen("target-dropped", () => {
+        // Explorer launches have already been accepted by the native service.
         if (active) {
           setView("processes");
           setScope(null);
@@ -521,6 +526,10 @@ export function App() {
       });
   };
   const refresh = () => runScan(() => api.refresh(), view, false);
+  dropTarget.current = (request) => {
+    setDragging(false);
+    if (view !== "ports") runScan(() => api.inspectDropped(request));
+  };
   const openIssueReport = () => {
     const body = [
       t("app.k_what_happened"),
@@ -908,22 +917,30 @@ export function App() {
             <span className="nav-label">{t("history.k_recent_targets")}</span>
             {shortcut("4")}
           </button>
-          <div className="sidebar-rule" />
-          <div className="nav-section">{t("inspection.k_inspect_target")}</div>
-          <button
-            title={t("inspection.k_open_file")}
-            onClick={() => runScan(() => api.choose(false))}
-          >
-            <File size={16} />
-            <span className="nav-label">{t("inspection.k_open_file")}</span>
-          </button>
-          <button
-            title={t("inspection.k_open_folder")}
-            onClick={() => runScan(() => api.choose(true))}
-          >
-            <FolderOpen size={17} />
-            <span className="nav-label">{t("inspection.k_open_folder")}</span>
-          </button>
+          {view !== "ports" && (
+            <>
+              <div className="sidebar-rule" />
+              <div className="nav-section">
+                {t("inspection.k_inspect_target")}
+              </div>
+              <button
+                title={t("inspection.k_open_file")}
+                onClick={() => runScan(() => api.choose(false))}
+              >
+                <File size={16} />
+                <span className="nav-label">{t("inspection.k_open_file")}</span>
+              </button>
+              <button
+                title={t("inspection.k_open_folder")}
+                onClick={() => runScan(() => api.choose(true))}
+              >
+                <FolderOpen size={17} />
+                <span className="nav-label">
+                  {t("inspection.k_open_folder")}
+                </span>
+              </button>
+            </>
+          )}
           <div className="sidebar-bottom">
             <p>
               {t("app.k_know_what_s_using")}
@@ -1024,23 +1041,25 @@ export function App() {
                             )}
                     </p>
                   </div>
-                  <div className="heading-actions">
-                    <button
-                      className="primary"
-                      title={chooseFileTitle}
-                      onClick={() => runScan(() => api.choose(false))}
-                    >
-                      <File size={15} />
-                      {t("inspection.k_open_file")}
-                    </button>
-                    <button
-                      title={chooseFolderTitle}
-                      onClick={() => runScan(() => api.choose(true))}
-                    >
-                      <FolderOpen size={15} />
-                      {t("inspection.k_open_folder")}
-                    </button>
-                  </div>
+                  {view !== "ports" && (
+                    <div className="heading-actions">
+                      <button
+                        className="primary"
+                        title={chooseFileTitle}
+                        onClick={() => runScan(() => api.choose(false))}
+                      >
+                        <File size={15} />
+                        {t("inspection.k_open_file")}
+                      </button>
+                      <button
+                        title={chooseFolderTitle}
+                        onClick={() => runScan(() => api.choose(true))}
+                      >
+                        <FolderOpen size={15} />
+                        {t("inspection.k_open_folder")}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               {!maximized && view !== "ports" && (
@@ -1957,7 +1976,7 @@ export function App() {
           </button>
         </span>
       </footer>
-      {!scanBusy && dragging && (
+      {view !== "ports" && !scanBusy && dragging && (
         <div className="drop-overlay">
           <div>
             <FolderOpen size={42} />

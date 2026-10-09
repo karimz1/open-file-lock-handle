@@ -20,7 +20,7 @@ downloads, see the [README](../README.md#desktop-install).
 
 Open a target in any of these ways:
 
-- Drop a file or folder onto the window.
+- Drop a file or folder onto the window while outside the **Ports** view.
 - Choose **Open file** (`Ctrl+O`) or **Open folder** (`Ctrl+Shift+O`), either
   at the top of the page or with the file and folder buttons at the left of the
   target box.
@@ -114,6 +114,9 @@ Search, filters, column widths, and the details panel all survive a refresh.
 **Ports** (`Ctrl+3`) lists local TCP listeners and bound UDP sockets with their
 owning process. It does not show established connections or tell you whether a
 port is reachable from another machine.
+
+File and folder picker controls are hidden in **Ports**. File and folder drops
+are ignored there; switch to **Processes** or **File usages** to inspect a path.
 
 Search `port:3000` for an exact port, `30` for any port containing 30, or
 combine terms: `port:3000 tcp`, `udp`, `ipv6`, `pid:1234`. **Target processes

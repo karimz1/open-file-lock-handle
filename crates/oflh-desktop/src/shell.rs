@@ -1,5 +1,5 @@
 //! Tauri transport and native desktop integrations. Inspection remains in the service.
-use crate::{contract::*, service::Service};
+use crate::{contract::*, dropped_target::DroppedTarget, service::Service};
 use serde::Serialize;
 use std::{
     path::{Path, PathBuf},
@@ -79,6 +79,14 @@ fn status(service: Desktop<'_>) -> Status {
 #[tauri::command]
 fn inspect(service: Desktop<'_>, path: String) -> Result<Status, Failure> {
     service.inspect(PathBuf::from(path))
+}
+#[tauri::command]
+fn inspect_dropped(
+    service: Desktop<'_>,
+    dropped: State<'_, DroppedTarget>,
+    request: u32,
+) -> Result<Status, Failure> {
+    service.inspect(dropped.take(request)?)
 }
 #[tauri::command]
 fn refresh(service: Desktop<'_>) -> Result<Status, Failure> {
@@ -373,13 +381,6 @@ fn open_issue(app: tauri::AppHandle, title: String, body: String) -> Result<(), 
         .map_err(integration)
 }
 
-fn single_drop_target(paths: &[PathBuf]) -> Result<&Path, Failure> {
-    match paths {
-        [path] => Ok(path.as_path()),
-        _ => Err(Failure::invalid("Drop one file or folder at a time")),
-    }
-}
-
 /// Start an inspection that another launch of the app forwarded to this window.
 ///
 /// The window is brought to the front either way. A target replaces any running
@@ -446,6 +447,7 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
                 service.inspect(target)?;
             }
             app.manage(Arc::new(service));
+            app.manage(DroppedTarget::default());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -462,18 +464,11 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
                     }
                     tauri::DragDropEvent::Drop { paths, .. } => {
                         let _ = window.emit("drag-active", false);
+                        // The UI must accept this request from a view allowing file drops.
                         // Keep the OS PathBuf in Rust, including non-Unicode filenames.
-                        match single_drop_target(paths) {
-                            Ok(path) => {
-                                match window.state::<Arc<Service>>().inspect(path.to_path_buf()) {
-                                    Ok(status) => {
-                                        let _ = window.emit("target-dropped", ());
-                                        let _ = window.emit("scan-status", status);
-                                    }
-                                    Err(error) => {
-                                        let _ = window.emit("desktop-error", error);
-                                    }
-                                }
+                        match window.state::<DroppedTarget>().capture(paths) {
+                            Ok(request) => {
+                                let _ = window.emit("target-drop-requested", request);
                             }
                             Err(error) => {
                                 let _ = window.emit("desktop-error", error);
@@ -499,6 +494,7 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
             open_release_notes,
             open_issue,
             inspect,
+            inspect_dropped,
             refresh,
             inspect_ports,
             follow_process,
@@ -599,31 +595,5 @@ mod reveal_tests {
         assert!(details.contains("D-Bus unavailable"));
         assert!(details.contains("xdg-open failed"));
         assert!(details.contains("Rust backtrace"));
-    }
-}
-
-#[cfg(test)]
-mod drop_tests {
-    use super::*;
-
-    #[test]
-    fn accepts_a_single_folder_drop_target() {
-        let folder = PathBuf::from("/workspace/project");
-
-        assert_eq!(
-            single_drop_target(std::slice::from_ref(&folder)).unwrap(),
-            folder.as_path()
-        );
-    }
-
-    #[test]
-    fn rejects_empty_or_multiple_drop_targets() {
-        let folders = [
-            PathBuf::from("/workspace/project"),
-            PathBuf::from("/tmp/other"),
-        ];
-
-        assert!(single_drop_target(&[]).is_err());
-        assert!(single_drop_target(&folders).is_err());
     }
 }

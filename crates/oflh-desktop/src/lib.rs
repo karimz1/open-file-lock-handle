@@ -5,6 +5,8 @@
 
 pub mod contract;
 pub mod dataset;
+#[cfg(any(feature = "desktop", test))]
+mod dropped_target;
 pub mod launch;
 mod path_text;
 mod recent;
