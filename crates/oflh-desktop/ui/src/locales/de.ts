@@ -198,6 +198,9 @@ const de: TranslationSchema<typeof en> = {
     k_search_recent_targets: "Zuletzt verwendete Ziele durchsuchen",
   },
   inspection: {
+    k_drag_target_here: "Datei oder Ordner hierher ziehen",
+    k_drop_another_target:
+      "Ziehen Sie eine Datei oder einen Ordner hierher, um ein anderes Ziel zu untersuchen.",
     k_close_inspection: "Untersuchung schließen",
     k_close_inspection_hint:
       "Aktuelles Ziel, Ergebnisse und Zeilenauswahl entfernen. Letzte Ziele bleiben erhalten.",
@@ -448,6 +451,8 @@ const de: TranslationSchema<typeof en> = {
     k_trade_off: "Zu beachten:",
   },
   table: {
+    k_no_local_bindings:
+      "Keine lokalen TCP-Listener oder gebundenen UDP-Sockets gefunden. Berechtigungen können die Erkennung einschränken.",
     k_auto_fit_hint: "Doppelklicken, um die Spalte an den Inhalt anzupassen",
     k_fit_all_columns: "Alle Spalten anpassen",
     k_fit_all_columns_hint:

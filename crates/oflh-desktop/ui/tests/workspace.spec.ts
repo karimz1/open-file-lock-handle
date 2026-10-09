@@ -2227,7 +2227,7 @@ test("documentation screenshots use only synthetic inspection data", async ({
 
   await page.goto("/?empty-target");
   await expect(
-    page.getByRole("heading", { name: "A clear view of files in use." }),
+    page.getByRole("heading", { name: "Drag a file or folder here" }),
   ).toBeVisible();
   await page.evaluate(() =>
     (window as any).__emitTestEvent("drag-active", true),
@@ -4161,4 +4161,58 @@ test("Close inspection removes the target, results and selection while keeping r
   expect(
     calls.filter((call: any) => call.command === "inspect_ports"),
   ).toHaveLength(1);
+});
+
+test("empty file views distinguish no target from an inspection with no matches", async ({
+  page,
+}) => {
+  await page.goto("/?empty-target");
+  await expect(
+    page.getByRole("heading", {
+      name: "Drag a file or folder here",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "No matching processes", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: /^File usages/ }).click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Drag a file or folder here",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__mutateRowsForTest("empty");
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 2,
+      revision: 2,
+      processes: 0,
+      usages: 0,
+      ports: 0,
+    });
+  });
+  await expect(
+    page.getByRole("heading", { name: "No matching processes", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("To inspect another target, drop a file or folder here.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Permission limits may hide some usage/),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /^Ports/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "No matching local ports", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("To inspect another target, drop a file or folder here.", {
+      exact: true,
+    }),
+  ).toHaveCount(0);
 });

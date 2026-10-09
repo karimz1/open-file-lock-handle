@@ -1183,12 +1183,12 @@ export function App() {
                   )}
                 </div>
               )}
-              {view !== "ports" && !status.target && !status.scanning ? (
+              {view !== "ports" && !status.target ? (
                 <div className="welcome">
                   <div className="welcome-icon">
                     <FileSearch size={36} />
                   </div>
-                  <h2>{t("inspection.k_a_clear_view_of_files_in_use")}</h2>
+                  <h2>{t("inspection.k_drag_target_here")}</h2>
                   <p>
                     {t(
                       "inspection.k_drop_a_file_or_folder_anywhere_in_this_window",

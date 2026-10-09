@@ -190,6 +190,8 @@ const zh: TranslationSchema<typeof en> = {
     k_search_recent_targets: "搜索最近目标",
   },
   inspection: {
+    k_drag_target_here: "将文件或文件夹拖到这里",
+    k_drop_another_target: "要检查其他目标，请将文件或文件夹拖到这里。",
     k_close_inspection: "关闭检查",
     k_close_inspection_hint: "移除当前目标、结果和行选择。保留最近的目标。",
     k_checking_process_references: "正在检查进程引用",
@@ -421,6 +423,8 @@ const zh: TranslationSchema<typeof en> = {
     k_trade_off: "注意事项：",
   },
   table: {
+    k_no_local_bindings:
+      "未找到本地 TCP 监听器或绑定的 UDP 套接字。权限可能限制发现范围。",
     k_auto_fit_hint: "双击以按内容调整列宽",
     k_fit_all_columns: "调整所有列宽",
     k_fit_all_columns_hint: "根据所有匹配行调整所有可见列宽",

@@ -190,6 +190,9 @@ const en = {
     k_search_recent_targets: "Search recent targets",
   },
   inspection: {
+    k_drag_target_here: "Drag a file or folder here",
+    k_drop_another_target:
+      "To inspect another target, drop a file or folder here.",
     k_close_inspection: "Close inspection",
     k_close_inspection_hint:
       "Remove the current target, results, and row selection. Recent targets are kept.",
@@ -434,6 +437,8 @@ const en = {
     k_trade_off: "Trade-off:",
   },
   table: {
+    k_no_local_bindings:
+      "No local TCP listeners or bound UDP sockets were found. Permissions can limit discovery.",
     k_auto_fit_hint: "Double-click to fit column to contents",
     k_fit_all_columns: "Fit all columns",
     k_fit_all_columns_hint: "Fit all visible columns to every matching row",

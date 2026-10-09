@@ -502,8 +502,11 @@ export function Table(props: Props) {
             ) ||
             props.query.process_key
               ? t("filters.k_no_rows_match_the_current_filters_clear_0d9d0c2e")
-              : t("table.k_no_visible_process_references_this_targ_b434e8b6")}
+              : props.query.ports
+                ? t("table.k_no_local_bindings")
+                : t("table.k_no_visible_process_references_this_targ_b434e8b6")}
           </p>
+          {!props.query.ports && <p>{t("inspection.k_drop_another_target")}</p>}
         </div>
       ) : (
         <div

@@ -20,6 +20,10 @@ downloads, see the [README](../README.md#desktop-install).
 
 Open a target in any of these ways:
 
+When no target is open, the workspace prompts you to drag a file or folder
+onto it. If an inspection finds no matching processes, the empty result keeps
+the permission notice and explains how to inspect another target.
+
 - Drop a file or folder onto the window while outside the **Ports** view.
 - Choose **Open file** (`Ctrl+O`) or **Open folder** (`Ctrl+Shift+O`), either
   at the top of the page or with the file and folder buttons at the left of the
