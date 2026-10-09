@@ -18,11 +18,11 @@ downloads, see the [README](../README.md#desktop-install).
 
 ## Inspect files and processes
 
-Open a target in any of these ways:
-
 When no target is open, the workspace prompts you to drag a file or folder
 onto it. If an inspection finds no matching processes, the empty result keeps
 the permission notice and explains how to inspect another target.
+
+Open a target in any of these ways:
 
 - Drop a file or folder onto the window while outside the **Ports** view.
 - Choose **Open file** (`Ctrl+O`) or **Open folder** (`Ctrl+Shift+O`), either
@@ -35,6 +35,13 @@ the permission notice and explains how to inspect another target.
 - On Windows, right-click a file and choose **Inspect file**, or right-click a
   folder, a drive, or the empty area of a folder window and choose
   **Inspect folder**. See [Explorer context menu](#explorer-context-menu).
+
+Choose **New window** (`Ctrl+Shift+N`) to open a separate OFLH instance with its
+own inspection. Dropping a target while another inspection is open asks where
+to open it: **This window** replaces the current inspection, **New window**
+keeps it open, and **Cancel** leaves it unchanged. Cancel is focused by default.
+The first drop into an empty window starts inspecting immediately. The **Ports**
+view ignores file and folder drops.
 
 A folder target includes everything below it, so you can open `C:\` or `/` to
 search the whole system. The sidebar switches between two views of the result:
@@ -68,12 +75,16 @@ The Windows installer adds **Inspect file** and **Inspect folder** to the
 File Explorer context menu. The option is on the installer's welcome page and
 is checked by default. Entries appear for one selected item at a time.
 
-Choosing an entry starts OFLH Desktop and inspects the item. If OFLH Desktop is
-already open, that window comes to the front and inspects the item instead; an
-inspection that is still running there is cancelled. Starting OFLH Desktop again
-from the Start menu also brings the open window to the front. An open window
+Choosing an entry starts OFLH Desktop and inspects the item. Repeated Explorer
+or Start menu launches use the same window and bring it to the front. An Explorer
+target replaces that window's inspection, cancelling any scan still running
+there. An open window
 running as administrator cannot receive targets from Explorer, so a second
 window opens in that case.
+
+**New window** and the drop dialog's **New window** choice open independently
+on Windows too, keeping the existing inspection and selection. These independent
+windows do not receive Explorer launches.
 
 - On Windows 11, the entries are under **Show more options** (or
   `Shift+F10`), not in the shortened first menu.
@@ -218,6 +229,7 @@ error.
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl+O` / `Ctrl+Shift+O` | Open file / open folder |
+| `Ctrl+Shift+N` | Open a new OFLH window |
 | `Ctrl+1` … `Ctrl+4` | Processes / File usages / Ports / Recent targets |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous view |
 | `Ctrl+F` or `/` | Focus search |

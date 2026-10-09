@@ -89,6 +89,14 @@ fn inspect_dropped(
     service.inspect(dropped.take(request)?)
 }
 #[tauri::command]
+async fn new_window(
+    dropped: State<'_, DroppedTarget>,
+    request: Option<u32>,
+) -> Result<(), Failure> {
+    let target = request.map(|request| dropped.take(request)).transpose()?;
+    blocking(move || crate::instance::launch(target)).await
+}
+#[tauri::command]
 fn refresh(service: Desktop<'_>) -> Result<Status, Failure> {
     service.refresh()
 }
@@ -421,19 +429,29 @@ fn take_over_launch(app: &tauri::AppHandle, arguments: Vec<String>, working_dire
 /// menu). Its inspection starts before the WebView loads; the page picks it up
 /// through `status` like any other running inspection. On Windows, a launch while
 /// a window is open exits after handing its arguments to that window
-/// ([`take_over_launch`]).
+/// ([`take_over_launch`]), unless `--new-window` requests an independent process.
 pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+    let independent_window = crate::launch::new_window_requested(std::env::args_os());
+    let startup_target = if independent_window {
+        crate::instance::startup_target(std::env::args_os().skip(2))?
+    } else {
+        initial_target
+    };
     let builder = tauri::Builder::default();
     // The single-instance plugin must be registered first.
     #[cfg(windows)]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(take_over_launch));
+    let builder = if independent_window {
+        builder
+    } else {
+        builder.plugin(tauri_plugin_single_instance::init(take_over_launch))
+    };
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .setup(|app| {
+        .setup(move |app| {
             let handle = app.handle().clone();
             let app_data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data)?;
@@ -445,7 +463,7 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
                 },
                 app_data.join("oflh.sqlite3"),
             )?;
-            if let Some(target) = initial_target {
+            if let Some(target) = startup_target {
                 // Only an empty path (excluded by the parser) or an exhausted scan
                 // generation counter, impossible in a fresh service, can fail here.
                 service.inspect(target)?;
@@ -499,6 +517,7 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
             open_issue,
             inspect,
             inspect_dropped,
+            new_window,
             refresh,
             inspect_ports,
             follow_process,

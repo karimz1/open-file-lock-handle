@@ -190,6 +190,14 @@ const en = {
     k_search_recent_targets: "Search recent targets",
   },
   inspection: {
+    k_new_window: "New window",
+    k_new_window_hint: "Open a separate OFLH window ({{shortcut}})",
+    k_this_window: "This window",
+    k_open_dropped_target: "Open dropped target",
+    k_choose_drop_window:
+      "Where would you like to inspect the dropped file or folder?",
+    k_drop_window_hint:
+      "This window replaces the current inspection. New window keeps it open.",
     k_progress: "Inspection progress",
     k_show_progress: "Show inspection progress",
     k_cancel_inspection: "Cancel inspection",
@@ -225,8 +233,7 @@ const en = {
     k_choose_a_scan_target: "Choose a scan target",
     k_drag_a_file_or_folder_onto_this_window_hint:
       "Tip: Drag a file or folder onto this window to change the scan target, or type a path and press Enter.",
-    k_release_to_change_the_scan_target:
-      "Release to change the scan target and start scanning.",
+    k_release_to_change_the_scan_target: "Release to open the dropped target.",
     k_type_paste_or_drop_a_file_or_folder_path:
       "Type, paste, or drop a file or folder path…",
     k_drop_a_file_or_folder_anywhere_in_this_window:

@@ -191,6 +191,19 @@ test.beforeEach(async ({ page }) => {
             recentTargets = [];
             return;
           }
+          if (command === "new_window") {
+            if ((window as any).__failNewWindowForTest)
+              throw {
+                kind: "io",
+                message: "Synthetic window launch failure",
+                os_code: 5,
+              };
+            if ((window as any).__holdNewWindowForTest)
+              return new Promise<void>((resolve) => {
+                (window as any).__finishNewWindow = resolve;
+              });
+            return;
+          }
           if (command === "refresh" && (window as any).__holdRefreshForTest) {
             const acknowledgement = (status = {
               ...status,
@@ -237,7 +250,8 @@ test.beforeEach(async ({ page }) => {
               ...status,
               generation: status.generation + 1,
               revision: Math.max(1, status.revision),
-              target: "/workspace/project",
+              target:
+                (window as any).__droppedPathForTest ?? "/workspace/project",
               processes: processRows.length,
               usages: 18000,
             });
@@ -1206,6 +1220,7 @@ test("Ports rejects native drops without scanning or switching views", async ({
     (window as any).__emitTestEvent("target-drop-requested", 1);
   });
   await expect(overlay).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "Local ports" }),
   ).toBeVisible();
@@ -1225,6 +1240,7 @@ test("Ports rejects native drops without scanning or switching views", async ({
   await page.evaluate(() =>
     (window as any).__emitTestEvent("target-drop-requested", 2),
   );
+  await page.getByRole("button", { name: "This window", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Processes", exact: true }),
   ).toBeVisible();
@@ -2380,7 +2396,7 @@ test("target bar picks files or folders, accepts typed paths and explains drag a
     page.getByRole("heading", { name: "Drop file or folder to inspect" }),
   ).toBeVisible();
   await expect(
-    page.getByText("Release to change the scan target and start scanning."),
+    page.getByText("Release to open the dropped target."),
   ).toBeVisible();
   await page.evaluate(() =>
     (window as any).__emitTestEvent("drag-active", false),
@@ -4359,3 +4375,216 @@ test("fast manual refreshes lock controls immediately without a spinner or modal
   ).toBeVisible();
   expect(await page.evaluate(() => (window as any).__scanFlashes)).toEqual([]);
 });
+
+test("New window opens a blank instance from the toolbar and keyboard without duplicate requests", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const button = page.getByRole("button", { name: "New window", exact: true });
+  await expect(button).toHaveAttribute(
+    "title",
+    "Open a separate OFLH window (Ctrl+Shift+N)",
+  );
+  await page.evaluate(() => {
+    (window as any).__holdNewWindowForTest = true;
+  });
+  await button.click();
+  await expect(button).toBeDisabled();
+  await page.keyboard.press("Control+Shift+n");
+  await page.keyboard.press("Meta+Shift+n");
+  const launches = () =>
+    page.evaluate(() =>
+      (window as any).__testCalls
+        .filter((call: any) => call.command === "new_window")
+        .map((call: any) => call.args.request),
+    );
+  expect(await launches()).toEqual([null]);
+  await page.evaluate(() => {
+    (window as any).__holdNewWindowForTest = false;
+    (window as any).__finishNewWindow();
+  });
+  await expect(button).toBeEnabled();
+  await page.keyboard.press("Control+Shift+n");
+  await expect.poll(launches).toEqual([null, null]);
+  await expect(
+    page.getByRole("textbox", { name: "Target file or folder path" }),
+  ).toHaveValue("/workspace/project");
+});
+
+test("dropping onto an open inspection defaults to Cancel and This window replaces the target", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.evaluate(() => {
+    (window as any).__droppedPathForTest = "/workspace/report.txt";
+    (window as any).__emitTestEvent("target-drop-requested", 7);
+  });
+  const dialog = page.getByRole("dialog", { name: "Open dropped target" });
+  await expect(dialog).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      (window as any).__testCalls.filter((call: any) =>
+        ["inspect_dropped", "new_window"].includes(call.command),
+      ),
+    ),
+  ).toEqual([]);
+  await expect(
+    page.getByText("1 process selected", { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("target-drop-requested", 8),
+  );
+  await dialog
+    .getByRole("button", { name: "This window", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("textbox", { name: "Target file or folder path" }),
+  ).toHaveValue("/workspace/report.txt");
+  await expect(
+    page.getByText("1 process selected", { exact: true }),
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      (window as any).__testCalls
+        .filter((call: any) => call.command === "inspect_dropped")
+        .map((call: any) => call.args.request),
+    ),
+  ).toEqual([8]);
+});
+
+test("opening a dropped target in New window keeps the current results, selection and details", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  const details = page.getByRole("complementary", { name: "Process details" });
+  await expect(details).toBeVisible();
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("target-drop-requested", 9),
+  );
+  const dialog = page.getByRole("dialog", { name: "Open dropped target" });
+  await dialog.getByRole("button", { name: "New window", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("textbox", { name: "Target file or folder path" }),
+  ).toHaveValue("/workspace/project");
+  await expect(
+    page.getByText("1 process selected", { exact: true }),
+  ).toBeVisible();
+  await expect(details).toBeVisible();
+  await expect(
+    page.getByRole("grid").getByText("4000", { exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      (window as any).__testCalls
+        .filter((call: any) =>
+          ["inspect_dropped", "new_window"].includes(call.command),
+        )
+        .map((call: any) => ({
+          command: call.command,
+          request: call.args.request,
+        })),
+    ),
+  ).toEqual([{ command: "new_window", request: 9 }]);
+});
+
+test("the first drop into an empty window starts without a window prompt", async ({
+  page,
+}) => {
+  await page.goto("/?empty-target");
+  await expect(
+    page.getByRole("heading", { name: "Drag a file or folder here" }),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("target-drop-requested", 10),
+  );
+  await expect(
+    page.getByRole("grid").getByText("4000", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      (window as any).__testCalls
+        .filter((call: any) => call.command === "inspect_dropped")
+        .map((call: any) => call.args.request),
+    ),
+  ).toEqual([10]);
+});
+
+test("a failed new-window launch reports the error and preserves the current inspection", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    (window as any).__failNewWindowForTest = true;
+    (window as any).__emitTestEvent("target-drop-requested", 11);
+  });
+  await page
+    .getByRole("dialog", { name: "Open dropped target" })
+    .getByRole("button", { name: "New window", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    page.getByText("New window: Synthetic window launch failure", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: "Target file or folder path" }),
+  ).toHaveValue("/workspace/project");
+  await expect(
+    page.getByRole("button", { name: "New window", exact: true }),
+  ).toBeEnabled();
+});
+
+for (const locale of ["en", "de", "zh"]) {
+  test(`drop-window choices fit the minimum window in ${locale} at 24px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 860, height: 560 });
+    await page.addInitScript((language) => {
+      localStorage.setItem("oflh-language", language);
+      localStorage.setItem("oflh-font-size", "24");
+    }, locale);
+    await page.goto("/");
+    const title =
+      locale === "de"
+        ? "Abgelegtes Ziel öffnen"
+        : locale === "zh"
+          ? "打开拖入的目标"
+          : "Open dropped target";
+    for (const button of await page.locator(".header-actions button").all()) {
+      const bounds = await button.boundingBox();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(860);
+    }
+    await page.evaluate(() =>
+      (window as any).__emitTestEvent("target-drop-requested", 12),
+    );
+    const dialog = page.getByRole("dialog", { name: title });
+    await expect(dialog).toBeVisible();
+    const box = await dialog.boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(860);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(560);
+    for (const button of await dialog.locator(".modal-actions button").all()) {
+      await expect(button).toBeVisible();
+      const bounds = await button.boundingBox();
+      expect(bounds!.x).toBeGreaterThanOrEqual(box!.x);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(
+        box!.x + box!.width,
+      );
+    }
+    if (locale === "de")
+      await page.screenshot({ path: "test-results/drop-window-de.png" });
+  });
+}

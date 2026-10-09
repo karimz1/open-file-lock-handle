@@ -198,6 +198,14 @@ const de: TranslationSchema<typeof en> = {
     k_search_recent_targets: "Zuletzt verwendete Ziele durchsuchen",
   },
   inspection: {
+    k_new_window: "Neues Fenster",
+    k_new_window_hint: "Separates OFLH-Fenster öffnen ({{shortcut}})",
+    k_this_window: "Dieses Fenster",
+    k_open_dropped_target: "Abgelegtes Ziel öffnen",
+    k_choose_drop_window:
+      "Wo möchten Sie die abgelegte Datei oder den Ordner untersuchen?",
+    k_drop_window_hint:
+      "Dieses Fenster ersetzt die aktuelle Untersuchung. Neues Fenster lässt sie geöffnet.",
     k_progress: "Fortschritt der Untersuchung",
     k_show_progress: "Untersuchungsfortschritt anzeigen",
     k_cancel_inspection: "Untersuchung abbrechen",
@@ -236,7 +244,7 @@ const de: TranslationSchema<typeof en> = {
     k_drag_a_file_or_folder_onto_this_window_hint:
       "Tipp: Ziehe eine Datei oder einen Ordner in dieses Fenster, um das Scan-Ziel zu ändern – oder gib einen Pfad ein und drücke Enter.",
     k_release_to_change_the_scan_target:
-      "Loslassen, um das Scan-Ziel zu ändern und die Untersuchung zu starten.",
+      "Loslassen, um das abgelegte Ziel zu öffnen.",
     k_type_paste_or_drop_a_file_or_folder_path:
       "Datei- oder Ordnerpfad eingeben, einfügen oder hierher ziehen …",
     k_drop_a_file_or_folder_anywhere_in_this_window:

@@ -10,6 +10,7 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import {
   Activity,
+  AppWindow,
   ChevronDown,
   Columns3,
   MoveHorizontal,
@@ -309,6 +310,9 @@ export function App() {
   const [results, setResults] = useState<ActionResult[] | null>(null);
   const [acting, setActing] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [pendingDrop, setPendingDrop] = useState<number | null>(null);
+  const [openingWindow, setOpeningWindow] = useState(false);
+  const windowRequestPending = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
@@ -580,10 +584,44 @@ export function App() {
         setClosingInspection(false);
       });
   };
+  const openNewWindow = (request?: number) => {
+    if (
+      inspectionLocked ||
+      statusRef.current.scanning ||
+      scanRequestPending.current ||
+      windowRequestPending.current ||
+      acting
+    )
+      return;
+    windowRequestPending.current = true;
+    setOpeningWindow(true);
+    void api
+      .newWindow(request)
+      .then(() => setPendingDrop(null))
+      .catch((failure) => {
+        setPendingDrop(null);
+        report(failure, t("inspection.k_new_window"));
+      })
+      .finally(() => {
+        windowRequestPending.current = false;
+        setOpeningWindow(false);
+      });
+  };
+  const dismissDrop = () => {
+    if (!windowRequestPending.current) setPendingDrop(null);
+  };
   dropTarget.current = (request) => {
     setDragging(false);
-    if (view !== "ports" && !inspectionLocked)
-      runScan(() => api.inspectDropped(request));
+    if (
+      view === "ports" ||
+      inspectionLocked ||
+      scanRequestPending.current ||
+      windowRequestPending.current ||
+      document.querySelector("dialog[open]")
+    )
+      return;
+    if (statusRef.current.target) setPendingDrop(request);
+    else runScan(() => api.inspectDropped(request));
   };
   const openIssueReport = () => {
     const body = [
@@ -765,7 +803,7 @@ export function App() {
         (event.key === "F5" ||
           (command &&
             (/^[1-4]$/.test(event.key) ||
-              ["r", "o", ",", "tab"].includes(event.key.toLowerCase()) ||
+              ["r", "o", "n", ",", "tab"].includes(event.key.toLowerCase()) ||
               event.key === "Tab")) ||
           (!backgroundScan &&
             (event.key === "Escape" ||
@@ -774,7 +812,10 @@ export function App() {
         event.preventDefault();
         return;
       }
-      if (command && event.key === ",") {
+      if (command && event.shiftKey && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        openNewWindow();
+      } else if (command && event.key === ",") {
         event.preventDefault();
         changeView("settings");
       } else if (
@@ -903,6 +944,18 @@ export function App() {
           <span className="rc-badge">RC</span>
         </div>
         <div className="header-actions">
+          <button
+            className="new-window-button"
+            aria-label={t("inspection.k_new_window")}
+            disabled={inspectionLocked || openingWindow || acting}
+            onClick={() => openNewWindow()}
+            title={t("inspection.k_new_window_hint", {
+              shortcut: `${modifier}+Shift+N`,
+            })}
+          >
+            <AppWindow size={14} />
+            <span>{t("inspection.k_new_window")}</span>
+          </button>
           {status.revision > 0 && (
             <AutoRefresh
               value={autoReloadSeconds}
@@ -1935,6 +1988,8 @@ export function App() {
                   <dd>{modifier}+,</dd>
                   <dt>{t("inspection.k_open_file_folder")}</dt>
                   <dd>Ctrl / ⌘ O · {t("app.k_shift_for_folder")}</dd>
+                  <dt>{t("inspection.k_new_window")}</dt>
+                  <dd>{modifier}+Shift+N</dd>
                   <dt>{t("search.k_search_results")}</dt>
                   <dd>
                     {modifier}+F {t("common.k_or")} / ·{" "}
@@ -2087,6 +2142,41 @@ export function App() {
         </Suspense>
       )}
       <UpdateFeedback updates={updates} report={report} />
+      {pendingDrop !== null && (
+        <Modal
+          className="drop-window-modal"
+          title={t("inspection.k_open_dropped_target")}
+          close={dismissDrop}
+        >
+          <p>{t("inspection.k_choose_drop_window")}</p>
+          <p className="muted">{t("inspection.k_drop_window_hint")}</p>
+          <div className="modal-actions">
+            <button
+              data-default-focus
+              disabled={openingWindow}
+              onClick={dismissDrop}
+            >
+              {t("common.k_cancel")}
+            </button>
+            <button
+              disabled={openingWindow}
+              onClick={() => {
+                const request = pendingDrop;
+                setPendingDrop(null);
+                runScan(() => api.inspectDropped(request));
+              }}
+            >
+              {t("inspection.k_this_window")}
+            </button>
+            <button
+              disabled={openingWindow}
+              onClick={() => openNewWindow(pendingDrop)}
+            >
+              <AppWindow size={14} /> {t("inspection.k_new_window")}
+            </button>
+          </div>
+        </Modal>
+      )}
       {toast && (
         <div className="toast" role="status">
           <Check size={15} />

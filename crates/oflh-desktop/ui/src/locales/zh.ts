@@ -190,6 +190,12 @@ const zh: TranslationSchema<typeof en> = {
     k_search_recent_targets: "搜索最近目标",
   },
   inspection: {
+    k_new_window: "新窗口",
+    k_new_window_hint: "打开独立的 OFLH 窗口（{{shortcut}}）",
+    k_this_window: "当前窗口",
+    k_open_dropped_target: "打开拖入的目标",
+    k_choose_drop_window: "您想在哪里检查拖入的文件或文件夹？",
+    k_drop_window_hint: "当前窗口会替换现有检查。新窗口会保留现有检查。",
     k_progress: "检查进度",
     k_show_progress: "显示检查进度",
     k_cancel_inspection: "取消检查",
@@ -221,7 +227,7 @@ const zh: TranslationSchema<typeof en> = {
     k_choose_a_scan_target: "选择扫描目标",
     k_drag_a_file_or_folder_onto_this_window_hint:
       "提示：将文件或文件夹拖到此窗口即可更改扫描目标，也可以输入路径后按 Enter。",
-    k_release_to_change_the_scan_target: "松开即可更改扫描目标并开始扫描。",
+    k_release_to_change_the_scan_target: "松开即可打开拖入的目标。",
     k_type_paste_or_drop_a_file_or_folder_path:
       "输入、粘贴或拖入文件或文件夹路径…",
     k_drop_a_file_or_folder_anywhere_in_this_window:

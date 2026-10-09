@@ -137,6 +137,8 @@ export const api = {
   inspect: (path: string) => invoke<Status>("inspect", { path }),
   inspectDropped: (request: number) =>
     invoke<Status>("inspect_dropped", { request }),
+  newWindow: (request?: number) =>
+    invoke<void>("new_window", { request: request ?? null }),
   ports: () => invoke<Status>("inspect_ports"),
   followProcess: (revision: number, key: string) =>
     invoke<Status>("follow_process", { revision, key }),
