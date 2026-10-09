@@ -198,6 +198,9 @@ const de: TranslationSchema<typeof en> = {
     k_search_recent_targets: "Zuletzt verwendete Ziele durchsuchen",
   },
   inspection: {
+    k_progress: "Fortschritt der Untersuchung",
+    k_show_progress: "Untersuchungsfortschritt anzeigen",
+    k_cancel_inspection: "Untersuchung abbrechen",
     k_drag_target_here: "Datei oder Ordner hierher ziehen",
     k_drop_another_target:
       "Ziehen Sie eine Datei oder einen Ordner hierher, um ein anderes Ziel zu untersuchen.",

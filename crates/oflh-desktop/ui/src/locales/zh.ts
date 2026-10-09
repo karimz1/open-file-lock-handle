@@ -190,6 +190,9 @@ const zh: TranslationSchema<typeof en> = {
     k_search_recent_targets: "搜索最近目标",
   },
   inspection: {
+    k_progress: "检查进度",
+    k_show_progress: "显示检查进度",
+    k_cancel_inspection: "取消检查",
     k_drag_target_here: "将文件或文件夹拖到这里",
     k_drop_another_target: "要检查其他目标，请将文件或文件夹拖到这里。",
     k_close_inspection: "关闭检查",

@@ -241,7 +241,16 @@ test.beforeEach(async ({ page }) => {
               processes: processRows.length,
               usages: 18000,
             });
-          if (["refresh", "inspect", "revisit", "choose"].includes(command))
+          if (command === "inspect")
+            return (status = {
+              ...status,
+              generation: status.generation + 1,
+              revision: status.revision + 1,
+              target: args.path,
+              processes: processRows.length,
+              usages: 18000,
+            });
+          if (["refresh", "revisit", "choose"].includes(command))
             return (status = {
               ...status,
               generation: status.generation + 1,
@@ -532,7 +541,10 @@ test("completed duration survives active, cancelled, failed and stale scans", as
     (window as any).__holdRefreshForTest = true;
   });
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Scanning", exact: true });
+  const dialog = page.getByRole("region", {
+    name: "Inspection progress",
+    exact: true,
+  });
   await expect(dialog).toBeVisible();
   await expect(duration).toHaveText("Last scan: 1.5 sec");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -1020,9 +1032,7 @@ test("scan progress does not move the results grid", async ({ page }) => {
   });
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(
-    page
-      .getByRole("dialog")
-      .getByRole("heading", { name: "Scanning", exact: true }),
+    page.getByRole("region", { name: "Inspection progress", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Cancel", exact: true }),
@@ -2357,6 +2367,7 @@ test("target bar picks files or folders, accepts typed paths and explains drag a
       .map((call: any) => call.args.path),
   );
   expect(inspected).toEqual(["/workspace/project/report.txt"]);
+  await expect(page.getByRole("main")).toHaveAttribute("aria-busy", "false");
   await field.fill("   ");
   await expect(
     page.getByRole("button", { name: "Inspect", exact: true }),
@@ -3323,8 +3334,13 @@ test("inspection barrier blocks manual and automatic reloads, shows work, and re
     (window as any).__holdRefreshForTest = true;
   });
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Scanning", exact: true });
+  const dialog = page.getByRole("region", {
+    name: "Inspection progress",
+    exact: true,
+  });
   await expect(dialog).toBeVisible();
+  await page.clock.runFor(300);
+  await dialog.getByLabel("Show inspection progress").click();
   await expect(dialog.getByRole("progressbar")).not.toHaveAttribute(
     "aria-valuenow",
   );
@@ -3365,7 +3381,7 @@ test("inspection barrier blocks manual and automatic reloads, shows work, and re
     ),
   ).toBe(1);
   await page.clock.runFor(200);
-  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Cancel automatic refresh" }),
   ).toBeVisible();
@@ -3388,7 +3404,10 @@ test("delayed scan acknowledgment cannot allow a second reload or resurrect comp
     (window as any).__delayRefreshAck = true;
   });
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Scanning", exact: true });
+  const dialog = page.getByRole("region", {
+    name: "Inspection progress",
+    exact: true,
+  });
   await expect(dialog).toBeVisible();
   await page.keyboard.press("F5");
   await page.keyboard.press("Control+r");
@@ -3710,7 +3729,10 @@ test("a failed replacement page keeps old rows safe and permits a new manual ref
   await page.clock.runFor(4800);
   expect(await refreshCount(page)).toBe(1);
   await page.keyboard.press("F5");
-  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await expect(
+    page.getByRole("region", { name: "Inspection progress" }),
+  ).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(await refreshCount(page)).toBe(2);
   await page.evaluate(() => {
     (window as any).__emitTestEvent("scan-status", {
@@ -3975,7 +3997,7 @@ test("quiet refresh rejects retained matches after a new query and publishes the
   await expect(grid.getByText("Code", { exact: true })).toHaveCount(0);
 });
 
-test("a native target scan after quiet refresh restores the manual interaction barrier", async ({
+test("a native target scan after quiet refresh locks inspection controls without a modal", async ({
   page,
 }) => {
   await page.clock.install();
@@ -3991,7 +4013,7 @@ test("a native target scan after quiet refresh restores the manual interaction b
     });
   });
   await expect(
-    page.getByRole("dialog", { name: "Scanning", exact: true }),
+    page.getByRole("region", { name: "Inspection progress", exact: true }),
   ).toBeVisible();
   await page.keyboard.press("F5");
   expect(await refreshCount(page)).toBe(1);
@@ -4278,4 +4300,62 @@ test("returning to a loaded tab reuses only matching rows without a loading flas
   await expect(
     page.getByRole("grid").getByText("4000", { exact: true }),
   ).toHaveCount(0);
+});
+
+test("fast manual refreshes lock controls immediately without a spinner or modal flash", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__scanFlashes = [];
+    new MutationObserver(() => {
+      if (
+        document.querySelector(
+          "dialog.inspection-dialog, .app-header .spin, .background-inspection .spin",
+        )
+      )
+        (window as any).__scanFlashes.push("spinner or modal");
+    }).observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+    });
+    (window as any).__holdRefreshForTest = true;
+  });
+  const refresh = page.getByRole("button", { name: "Refresh", exact: true });
+  await refresh.click();
+  await expect(refresh).toBeDisabled();
+  expect(
+    await page
+      .locator(".sidebar")
+      .evaluate((node) => (node as HTMLElement).inert),
+  ).toBe(true);
+  await page.keyboard.press("Control+3");
+  await page.keyboard.press("Control+o");
+  await page.keyboard.press("F5");
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("target-drop-requested", 42),
+  );
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(calls.filter((call: any) => call.command === "refresh")).toHaveLength(
+    1,
+  );
+  expect(
+    calls.filter((call: any) =>
+      ["choose", "inspect_dropped", "close_inspection"].includes(call.command),
+    ),
+  ).toHaveLength(0);
+  await page.evaluate(() =>
+    (window as any).__emitTestEvent("scan-status", {
+      generation: 2,
+      revision: 2,
+      scanning: false,
+    }),
+  );
+  await expect(refresh).toBeEnabled();
+  await expect(
+    page.getByRole("heading", { name: "Processes", exact: true }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__scanFlashes)).toEqual([]);
 });

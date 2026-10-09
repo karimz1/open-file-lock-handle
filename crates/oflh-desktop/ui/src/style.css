@@ -2370,3 +2370,41 @@ kbd.shortcut {
 .detail-refresh-note {
   padding: 8px 0;
 }
+
+/* Work stays visible while inspection controls are unavailable. */
+[inert] button,
+[inert] input,
+[inert] select {
+  opacity: 0.55;
+}
+.inspection-details {
+  position: relative;
+}
+.inspection-details summary {
+  display: flex;
+  cursor: pointer;
+  list-style: none;
+}
+.inspection-details summary::-webkit-details-marker {
+  display: none;
+}
+.inspection-details-panel {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 0;
+  width: min(340px, calc(100vw - 32px));
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px #0002;
+  color: var(--text);
+  z-index: 10;
+  white-space: normal;
+}
+.inspection-details-panel .inspection-progress {
+  margin-top: 10px;
+}
+.inspection-details-panel p {
+  margin: 10px 0 0;
+}

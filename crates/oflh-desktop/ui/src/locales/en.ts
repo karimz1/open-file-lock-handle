@@ -190,6 +190,9 @@ const en = {
     k_search_recent_targets: "Search recent targets",
   },
   inspection: {
+    k_progress: "Inspection progress",
+    k_show_progress: "Show inspection progress",
+    k_cancel_inspection: "Cancel inspection",
     k_drag_target_here: "Drag a file or folder here",
     k_drop_another_target:
       "To inspect another target, drop a file or folder here.",

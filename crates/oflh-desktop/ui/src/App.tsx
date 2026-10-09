@@ -56,7 +56,6 @@ import {
   type ColumnFilters,
 } from "./api";
 import { acceptStatus, initialStatus, selectKey } from "./state";
-import { InspectionOverlay } from "./InspectionOverlay";
 import { scanDuration } from "./scanDuration";
 import { normalizeTypedPath, showsTargetHint } from "./targetPath";
 import { Inspector } from "./Inspector";
@@ -200,6 +199,7 @@ export function App() {
   const scanRequestPending = useRef(false);
   const [startingScan, setStartingScan] = useState(false);
   const [closingInspection, setClosingInspection] = useState(false);
+  const [awaitingResults, setAwaitingResults] = useState(false);
   const scanBusy = status.scanning || startingScan;
   const [backgroundScan, setBackgroundScan] = useState(false);
   const backgroundRevision = useRef(0);
@@ -217,7 +217,11 @@ export function App() {
     !["processes", "handles", "ports"].includes(view) ||
     gridRevision === status.revision ||
     gridFailed;
-  const preparingRefresh = backgroundScan && !status.scanning && !gridReady;
+  const preparingRefresh = awaitingResults && !status.scanning && !gridReady;
+  const inspectionLocked = scanBusy || closingInspection || preparingRefresh;
+  useEffect(() => {
+    if (!scanBusy && gridReady) setAwaitingResults(false);
+  }, [scanBusy, gridReady]);
   const [path, setPath] = useState("");
   const [pathEdited, setPathEdited] = useState(false);
   const previousTarget = useRef("");
@@ -335,6 +339,7 @@ export function App() {
     )
       setBackgroundScan(false);
     const accepted = acceptStatus(statusRef.current, incoming);
+    if (accepted.scanning) setAwaitingResults(true);
     statusRef.current = accepted;
     setStatus(accepted);
   }, []);
@@ -519,6 +524,7 @@ export function App() {
     )
       return;
     scanRequestPending.current = true;
+    setAwaitingResults(true);
     setBackgroundScan(background);
     if (background) backgroundRevision.current = statusRef.current.revision;
     setStartingScan(true);
@@ -539,7 +545,7 @@ export function App() {
   };
   const refresh = () => runScan(() => api.refresh(), view, false);
   const closeInspection = () => {
-    if (scanBusy || scanRequestPending.current || acting) return;
+    if (inspectionLocked || scanRequestPending.current || acting) return;
     scanRequestPending.current = true;
     setClosingInspection(true);
     void api
@@ -564,6 +570,7 @@ export function App() {
         setGridRevision(0);
         setAutoReloadSeconds(0);
         setBackgroundScan(false);
+        setAwaitingResults(false);
         setTotal(0);
         setError(null);
       })
@@ -575,7 +582,8 @@ export function App() {
   };
   dropTarget.current = (request) => {
     setDragging(false);
-    if (view !== "ports") runScan(() => api.inspectDropped(request));
+    if (view !== "ports" && !inspectionLocked)
+      runScan(() => api.inspectDropped(request));
   };
   const openIssueReport = () => {
     const body = [
@@ -752,6 +760,20 @@ export function App() {
         event.target instanceof HTMLTextAreaElement ||
         (event.target instanceof HTMLElement && event.target.isContentEditable);
       const command = event.metaKey || event.ctrlKey;
+      if (
+        inspectionLocked &&
+        (event.key === "F5" ||
+          (command &&
+            (/^[1-4]$/.test(event.key) ||
+              ["r", "o", ",", "tab"].includes(event.key.toLowerCase()) ||
+              event.key === "Tab")) ||
+          (!backgroundScan &&
+            (event.key === "Escape" ||
+              (command && ["a", "d", "f"].includes(event.key.toLowerCase())))))
+      ) {
+        event.preventDefault();
+        return;
+      }
       if (command && event.key === ",") {
         event.preventDefault();
         changeView("settings");
@@ -849,6 +871,12 @@ export function App() {
     }
   };
   const changeView = (next: View) => {
+    if (
+      inspectionLocked ||
+      statusRef.current.scanning ||
+      scanRequestPending.current
+    )
+      return;
     setView(next);
     setScope(null);
     setSort("relevance");
@@ -879,14 +907,15 @@ export function App() {
             <AutoRefresh
               value={autoReloadSeconds}
               onChange={setAutoReloadSeconds}
+              disabled={inspectionLocked}
             />
           )}
           <button
-            disabled={!status.revision}
+            disabled={!status.revision || inspectionLocked}
             onClick={refresh}
             title={`${t("status.k_refresh")} (${modifier}+R ${t("common.k_or")} F5)`}
           >
-            <RefreshCw size={14} className={status.scanning ? "spin" : ""} />
+            <RefreshCw size={14} />
             {t("status.k_refresh")}
             <kbd className="shortcut" aria-hidden="true">
               F5
@@ -896,6 +925,8 @@ export function App() {
       </header>
       <div className={`app-body${maximized ? " grid-maximized" : ""}`}>
         <nav
+          inert={inspectionLocked}
+          aria-disabled={inspectionLocked}
           className={`sidebar${sidebarIsCollapsed ? " collapsed" : ""}`}
           aria-label={t("navigation.k_workspace")}
         >
@@ -1005,7 +1036,10 @@ export function App() {
             />
           </div>
         </nav>
-        <main>
+        <main
+          inert={inspectionLocked && !backgroundScan}
+          aria-busy={inspectionLocked}
+        >
           {maximized && (
             <div className="maximize-banner" role="status">
               <Maximize2 size={14} />
@@ -1089,7 +1123,7 @@ export function App() {
                     </p>
                   </div>
                   {view !== "ports" && (
-                    <div className="heading-actions">
+                    <div className="heading-actions" inert={inspectionLocked}>
                       <button
                         className="primary"
                         title={chooseFileTitle}
@@ -1110,7 +1144,7 @@ export function App() {
                 </div>
               )}
               {!maximized && view !== "ports" && (
-                <div className="target-area">
+                <div className="target-area" inert={inspectionLocked}>
                   <form
                     className="target-bar"
                     onSubmit={(event) => {
@@ -1178,7 +1212,7 @@ export function App() {
                       <button
                         type="button"
                         title={t("inspection.k_close_inspection_hint")}
-                        disabled={scanBusy || closingInspection || acting}
+                        disabled={inspectionLocked || acting}
                         onClick={closeInspection}
                       >
                         <X size={14} /> {t("inspection.k_close_inspection")}
@@ -1442,17 +1476,23 @@ export function App() {
                         <Copy size={13} />
                         {t("selection.k_copy")}
                       </button>
-                      <button disabled={acting} onClick={() => prepare(false)}>
+                      <button
+                        disabled={acting || inspectionLocked}
+                        onClick={() => prepare(false)}
+                      >
                         {t("termination.k_terminate")}
                       </button>
                       <button
                         className="danger-text"
-                        disabled={acting}
+                        disabled={acting || inspectionLocked}
                         onClick={() => prepare(true)}
                       >
                         {t("termination.k_force_terminate")}
                       </button>
-                      <button onClick={() => setSelected(new Set())}>
+                      <button
+                        disabled={inspectionLocked}
+                        onClick={() => setSelected(new Set())}
+                      >
                         <X size={14} />
                         {t("selection.k_deselect_all")}
                       </button>
@@ -1580,6 +1620,7 @@ export function App() {
                         }
                         reveal={reveal}
                         ports={() => {
+                          if (inspectionLocked) return;
                           setView("ports");
                           setScope({
                             key: details.process.process_key,
@@ -1596,6 +1637,7 @@ export function App() {
                           )
                         }
                         handles={() => {
+                          if (inspectionLocked) return;
                           setView("handles");
                           setScope({
                             key: details.process.process_key,
@@ -1948,21 +1990,16 @@ export function App() {
         </main>
       </div>
       <footer className="statusbar">
-        <span
-          className="status-current"
-          role={backgroundScan && scanBusy ? undefined : "status"}
-        >
-          {backgroundScan && scanBusy ? (
+        <span className="status-current" role={scanBusy ? undefined : "status"}>
+          {scanBusy ? (
             <BackgroundInspection
               status={status}
               starting={startingScan}
               complete={apply}
+              automatic={backgroundScan}
             />
           ) : (
             <>
-              {(status.scanning || preparingRefresh) && (
-                <LoaderCircle size={13} className="spin" />
-              )}
               <span className="status-current-label">
                 {gridFailed
                   ? t("inspection.k_result_update_failed")
@@ -2447,13 +2484,6 @@ export function App() {
             </button>
           </div>
         </Modal>
-      )}
-      {scanBusy && !backgroundScan && (
-        <InspectionOverlay
-          status={status}
-          starting={startingScan}
-          complete={apply}
-        />
       )}
     </div>
   );

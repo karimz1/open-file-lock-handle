@@ -7,9 +7,11 @@ const intervals = [0, 5, 10, 15, 30, 60];
 export function AutoRefresh({
   value,
   onChange,
+  disabled = false,
 }: {
   value: number;
   onChange: (value: number) => void;
+  disabled?: boolean;
 }) {
   const selector = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -17,6 +19,9 @@ export function AutoRefresh({
   const help = useRef<HTMLDetailsElement>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(intervals.indexOf(value));
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
   const label = (seconds: number) =>
     seconds === 0 ? t("common.k_off") : `${seconds}s`;
   const close = (restoreFocus = false) => {
@@ -68,6 +73,7 @@ export function AutoRefresh({
             className="refresh-selector-trigger"
             aria-label={t("status.k_automatic_refresh_interval")}
             aria-haspopup="listbox"
+            disabled={disabled}
             aria-expanded={open}
             aria-controls={open ? "refresh-intervals" : undefined}
             onClick={() => {

@@ -195,8 +195,10 @@ Refresh with `F5` or `Ctrl+R`. The **Auto** control next to **Refresh** repeats
 the scan at an interval you choose; it is off at every launch and pauses during
 scans and confirmations.
 
-Opening a target or refreshing manually shows a progress panel with elapsed
-time, current stage, work done so far, and **Cancel**. There is no percentage,
+Opening a target or refreshing manually keeps the workspace visible and locks
+inspection controls and tab switching immediately. The footer reports the work
+and elapsed time. For scans lasting more than a quarter second, **Cancel** and
+**Show inspection progress** appear; the latter opens stage and work counters. There is no percentage,
 because the total amount of work is not known in advance. **Cancel** keeps the
 previous results; an OS call already in progress may take a moment to return.
 
