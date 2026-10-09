@@ -105,6 +105,10 @@ fn cancel(service: Desktop<'_>) -> Status {
     service.cancel()
 }
 #[tauri::command]
+fn close_inspection(service: Desktop<'_>) -> Result<Status, Failure> {
+    service.close_inspection()
+}
+#[tauri::command]
 async fn choose(
     app: tauri::AppHandle,
     service: Desktop<'_>,
@@ -499,6 +503,7 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
             inspect_ports,
             follow_process,
             cancel,
+            close_inspection,
             choose,
             page,
             details,

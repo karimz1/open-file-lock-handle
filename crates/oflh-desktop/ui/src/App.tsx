@@ -189,6 +189,7 @@ export function App() {
   const statusRef = useRef(initialStatus);
   const scanRequestPending = useRef(false);
   const [startingScan, setStartingScan] = useState(false);
+  const [closingInspection, setClosingInspection] = useState(false);
   const scanBusy = status.scanning || startingScan;
   const [backgroundScan, setBackgroundScan] = useState(false);
   const backgroundRevision = useRef(0);
@@ -526,6 +527,40 @@ export function App() {
       });
   };
   const refresh = () => runScan(() => api.refresh(), view, false);
+  const closeInspection = () => {
+    if (scanBusy || scanRequestPending.current || acting) return;
+    scanRequestPending.current = true;
+    setClosingInspection(true);
+    void api
+      .closeInspection()
+      .then((value) => {
+        apply(value);
+        setView("processes");
+        setPath("");
+        setPathEdited(false);
+        setSelected(new Set());
+        setFocused(null);
+        setActiveRow(null);
+        setDetails(null);
+        setScope(null);
+        setFileQuery("");
+        setPortQuery("");
+        setFileColumns({});
+        setPortColumns({});
+        setPortsPathOnly(false);
+        setLocks(false);
+        setGridRevision(0);
+        setAutoReloadSeconds(0);
+        setBackgroundScan(false);
+        setTotal(0);
+        setError(null);
+      })
+      .catch(report)
+      .finally(() => {
+        scanRequestPending.current = false;
+        setClosingInspection(false);
+      });
+  };
   dropTarget.current = (request) => {
     setDragging(false);
     if (view !== "ports") runScan(() => api.inspectDropped(request));
@@ -1127,6 +1162,16 @@ export function App() {
                       {t("inspection.k_inspect")}
                       <ArrowRight size={14} />
                     </button>
+                    {status.target && (
+                      <button
+                        type="button"
+                        title={t("inspection.k_close_inspection_hint")}
+                        disabled={scanBusy || closingInspection || acting}
+                        onClick={closeInspection}
+                      >
+                        <X size={14} /> {t("inspection.k_close_inspection")}
+                      </button>
+                    )}
                   </form>
                   {targetHint && (
                     <p className="target-hint" id="target-drop-hint">
@@ -1395,12 +1440,9 @@ export function App() {
                       >
                         {t("termination.k_force_terminate")}
                       </button>
-                      <button
-                        className="icon-button"
-                        aria-label={t("selection.k_clear_selection")}
-                        onClick={() => setSelected(new Set())}
-                      >
+                      <button onClick={() => setSelected(new Set())}>
                         <X size={14} />
+                        {t("selection.k_deselect_all")}
                       </button>
                     </div>
                   ) : (

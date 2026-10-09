@@ -190,6 +190,8 @@ const zh: TranslationSchema<typeof en> = {
     k_search_recent_targets: "搜索最近目标",
   },
   inspection: {
+    k_close_inspection: "关闭检查",
+    k_close_inspection_hint: "移除当前目标、结果和行选择。保留最近的目标。",
     k_checking_process_references: "正在检查进程引用",
     k_checking_files: "正在检查文件",
     k_checking_ports: "正在检查本地端口",
@@ -336,6 +338,7 @@ const zh: TranslationSchema<typeof en> = {
       "搜索（{{shortcut}}+F 或 /）；按 Escape 返回工作区",
   },
   selection: {
+    k_deselect_all: "取消全部选择",
     k_clear_selection: "清除选择",
     k_clear_selection_and_details: "清除选择和详情",
     k_click_a_row_to_inspect_use_the_panel_bu_1ffc65e8:

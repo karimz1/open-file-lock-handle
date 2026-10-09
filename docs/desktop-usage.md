@@ -53,6 +53,11 @@ On Windows, ordinary drive and network paths are shown as `C:\…` or
 prefix, including in copied text, so they mean the same thing wherever you
 paste them.
 
+Choose **Close inspection** beside the target field to remove the target,
+results, and row selection. Recent targets are kept. This action does not
+terminate processes or change files. **Deselect all** in the selection bar
+removes only the row selection.
+
 ### Explorer context menu
 
 The Windows installer adds **Inspect file** and **Inspect folder** to the

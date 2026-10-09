@@ -142,6 +142,7 @@ export const api = {
     invoke<Status>("follow_process", { revision, key }),
   refresh: () => invoke<Status>("refresh"),
   cancel: () => invoke<Status>("cancel"),
+  closeInspection: () => invoke<Status>("close_inspection"),
   choose: (folder: boolean) => invoke<Status | null>("choose", { folder }),
   page: (revision: number, query: TableQuery) =>
     invoke<Page>("page", { revision, query }),

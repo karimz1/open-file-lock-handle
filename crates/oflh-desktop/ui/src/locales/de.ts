@@ -198,6 +198,9 @@ const de: TranslationSchema<typeof en> = {
     k_search_recent_targets: "Zuletzt verwendete Ziele durchsuchen",
   },
   inspection: {
+    k_close_inspection: "Untersuchung schließen",
+    k_close_inspection_hint:
+      "Aktuelles Ziel, Ergebnisse und Zeilenauswahl entfernen. Letzte Ziele bleiben erhalten.",
     k_checking_process_references: "Prozessreferenzen werden geprüft",
     k_checking_files: "Dateien werden geprüft",
     k_checking_ports: "Lokale Ports werden geprüft",
@@ -356,6 +359,7 @@ const de: TranslationSchema<typeof en> = {
       "Suchen ({{shortcut}}+F oder /); Escape kehrt zum Arbeitsbereich zurück",
   },
   selection: {
+    k_deselect_all: "Auswahl aufheben",
     k_clear_selection: "Auswahl aufheben",
     k_clear_selection_and_details: "Auswahl und Details schließen",
     k_click_a_row_to_inspect_use_the_panel_bu_1ffc65e8:

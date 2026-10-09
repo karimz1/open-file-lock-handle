@@ -278,6 +278,29 @@ impl Service {
         cancel_scan(&mut state);
         status(&state)
     }
+    /// Close the inspection, rejecting late publications and captured actions.
+    /// Recent targets remain available; no process or file is changed.
+    pub fn close_inspection(&self) -> Result<Status, Failure> {
+        let mut state = self.shared.lock();
+        state.generation = state
+            .generation
+            .checked_add(1)
+            .ok_or_else(|| Failure::invalid("Restart the application to close this inspection"))?;
+        state.cancellation.cancel();
+        state.cancellation = Cancellation::default();
+        state.pending = None;
+        state.scanning = false;
+        state.started = None;
+        state.elapsed_ms = 0;
+        state.last_scan_elapsed_ms = None;
+        state.dataset = Arc::new(Dataset::new(0, Snapshot::default()));
+        state.target = None;
+        state.error = None;
+        state.action = None;
+        state.admin_recovery = None;
+        state.ancestry = None;
+        Ok(status(&state))
+    }
     /// List at most twelve persisted native targets as opaque IDs and display text.
     pub fn recent(&self) -> Vec<(u32, String)> {
         self.shared
@@ -949,6 +972,31 @@ mod tests {
             },
         ));
         (service, identity)
+    }
+    #[test]
+    fn closing_an_inspection_invalidates_results_actions_and_retains_recent_targets() {
+        let (service, identity) = action_service();
+        let revision = service.status().revision;
+        let confirmation = service
+            .prepare(revision, &[identity_key(identity)], false)
+            .unwrap();
+        service
+            .shared
+            .lock()
+            .recent
+            .push((1, PathBuf::from("/workspace/project")));
+        let old_cancel = service.shared.lock().cancellation.clone();
+        let closed = service.close_inspection().unwrap();
+        assert_eq!(closed.revision, 0);
+        assert!(closed.target.is_empty());
+        assert_eq!((closed.processes, closed.usages, closed.ports), (0, 0, 0));
+        assert!(closed.last_scan_elapsed_ms.is_none());
+        assert!(!closed.scanning);
+        assert!(service.dataset(revision).is_err());
+        assert!(service.consume_action(&confirmation.ticket).is_err());
+        assert!(old_cancel.check().is_err());
+        assert_eq!(service.recent().len(), 1);
+        assert!(service.refresh().is_err());
     }
     #[test]
     fn administrator_recovery_preserves_receipt_identity_mode_and_cancel() {

@@ -190,6 +190,9 @@ const en = {
     k_search_recent_targets: "Search recent targets",
   },
   inspection: {
+    k_close_inspection: "Close inspection",
+    k_close_inspection_hint:
+      "Remove the current target, results, and row selection. Recent targets are kept.",
     k_checking_process_references: "Checking process references",
     k_checking_files: "Checking files",
     k_checking_ports: "Checking local ports",
@@ -343,6 +346,7 @@ const en = {
       "Search ({{shortcut}}+F or /); Escape returns to the workspace",
   },
   selection: {
+    k_deselect_all: "Deselect all",
     k_clear_selection: "Clear selection",
     k_clear_selection_and_details: "Clear selection and details",
     k_click_a_row_to_inspect_use_the_panel_bu_1ffc65e8:

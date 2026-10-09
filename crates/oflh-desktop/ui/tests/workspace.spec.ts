@@ -220,6 +220,18 @@ test.beforeEach(async ({ page }) => {
               revision: status.revision + 1,
               ports: portRows.length,
             });
+          if (command === "close_inspection")
+            return (status = {
+              ...status,
+              generation: status.generation + 1,
+              revision: 0,
+              scanning: false,
+              target: "",
+              processes: 0,
+              usages: 0,
+              ports: 0,
+              last_scan_elapsed_ms: null,
+            });
           if (command === "inspect_dropped")
             return (status = {
               ...status,
@@ -2346,7 +2358,9 @@ test("target bar picks files or folders, accepts typed paths and explains drag a
   );
   expect(inspected).toEqual(["/workspace/project/report.txt"]);
   await field.fill("   ");
-  await expect(page.getByRole("button", { name: "Inspect" })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Inspect", exact: true }),
+  ).toBeDisabled();
 
   await page.evaluate(() =>
     (window as any).__emitTestEvent("drag-active", true),
@@ -4100,4 +4114,51 @@ test("quiet refresh publishes a legitimately empty snapshot and retains captured
   await expect(page.locator(".status-current")).toContainText(
     "Results refreshed",
   );
+});
+
+test("Close inspection removes the target, results and selection while keeping recent targets", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await expect(
+    page.getByText("1 process selected", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Deselect all", exact: true }).click();
+  await expect(
+    page.getByText("1 process selected", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("textbox", { name: "Target file or folder path" }),
+  ).toHaveValue("/workspace/project");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page
+    .getByRole("button", { name: "Close inspection", exact: true })
+    .click();
+  await expect(
+    page.getByRole("textbox", { name: "Target file or folder path" }),
+  ).toHaveValue("");
+  await expect(page.getByRole("grid")).toHaveCount(0);
+  await expect(
+    page.getByRole("complementary", { name: "Process details" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Refresh", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: /^Recent targets/ }).click();
+  await expect(
+    page.getByRole("button", { name: "/workspace/project", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /^Processes/ }).click();
+  await page.getByRole("button", { name: /^Ports/ }).click();
+  await expect(
+    page.getByRole("grid", { name: "Local TCP listeners and UDP bindings" }),
+  ).toBeVisible();
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls.filter((call: any) => call.command === "close_inspection"),
+  ).toHaveLength(1);
+  expect(
+    calls.filter((call: any) => call.command === "inspect_ports"),
+  ).toHaveLength(1);
 });
