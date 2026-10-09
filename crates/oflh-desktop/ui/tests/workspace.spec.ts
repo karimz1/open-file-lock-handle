@@ -4216,3 +4216,66 @@ test("empty file views distinguish no target from an inspection with no matches"
     }),
   ).toHaveCount(0);
 });
+
+test("returning to a loaded tab reuses only matching rows without a loading flash", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(
+    page.getByRole("grid").getByText("4000", { exact: true }),
+  ).toBeVisible();
+  for (const view of ["Ports", "File usages", "Processes"]) {
+    await page.getByRole("button", { name: new RegExp(`^${view}`) }).click();
+    await expect(
+      page
+        .getByRole("grid")
+        .getByText(view === "Ports" ? "8080" : "4000", { exact: true }),
+    ).toBeVisible();
+  }
+  const pageCalls = () =>
+    page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "page",
+        ).length,
+    );
+  const before = await pageCalls();
+  await page.evaluate(() => {
+    (window as any).__loadingFlashes = [];
+    new MutationObserver(() => {
+      const loading = document.querySelector(".empty h3");
+      if (loading) (window as any).__loadingFlashes.push(loading.textContent);
+    }).observe(document.querySelector("main")!, {
+      subtree: true,
+      childList: true,
+    });
+  });
+  for (const view of [
+    "Ports",
+    "File usages",
+    "Processes",
+    "Recent targets",
+    "Processes",
+  ]) {
+    await page.getByRole("button", { name: new RegExp(`^${view}`) }).click();
+    if (view !== "Recent targets")
+      await expect(
+        page
+          .getByRole("grid")
+          .getByText(view === "Ports" ? "8080" : "4000", { exact: true }),
+      ).toBeVisible();
+  }
+  expect(await pageCalls()).toBe(before);
+  expect(await page.evaluate(() => (window as any).__loadingFlashes)).toEqual(
+    [],
+  );
+  await page
+    .getByRole("textbox", { name: "Search loaded results" })
+    .fill("nothing-matches");
+  await expect(
+    page.getByRole("heading", { name: "No matching processes", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("grid").getByText("4000", { exact: true }),
+  ).toHaveCount(0);
+});

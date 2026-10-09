@@ -1,5 +1,12 @@
 import { forceRecoveryTargets } from "./termination";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   Activity,
@@ -61,9 +68,9 @@ import {
   fileColumns as fileColumnDefinitions,
   portColumns as portColumnDefinitions,
   type ColumnKey,
+  type CachedPage,
 } from "./Table";
 import { ColumnFilterPanel } from "./ColumnFilters";
-import { AboutDialog } from "./AboutDialog";
 import { SettingsMenu } from "./SettingsMenu";
 import { useUpdates } from "./useUpdates";
 import { UpdateBanner } from "./UpdateBanner";
@@ -78,6 +85,9 @@ import {
 } from "./i18n";
 
 type View = "ports" | "processes" | "handles" | "history" | "settings";
+const AboutDialog = lazy(() =>
+  import("./AboutDialog").then((module) => ({ default: module.AboutDialog })),
+);
 const columnKeys = new Set<ColumnKey>([
   "process",
   "pid",
@@ -212,6 +222,7 @@ export function App() {
   const [pathEdited, setPathEdited] = useState(false);
   const previousTarget = useRef("");
   const [fileQuery, setFileQuery] = useState("");
+  const pageCache = useRef(new Map<string, CachedPage>());
   const [portQuery, setPortQuery] = useState("");
   const [portsPathOnly, setPortsPathOnly] = useState(false);
   const query = view === "ports" ? portQuery : fileQuery;
@@ -536,6 +547,7 @@ export function App() {
       .then((value) => {
         apply(value);
         setView("processes");
+        pageCache.current.clear();
         setPath("");
         setPathEdited(false);
         setSelected(new Set());
@@ -1454,6 +1466,7 @@ export function App() {
                   )}
                   <div className="results-workspace">
                     <Table
+                      pageCache={pageCache.current}
                       fitAllRequest={fitAllRequest}
                       onFittingChange={setColumnsFitting}
                       fontSize={fontSize}
@@ -1470,7 +1483,6 @@ export function App() {
                         setActiveRow({ row, revision });
                         setFocused(closing ? null : row.process_key);
                       }}
-                      key={view === "ports" ? "ports" : "files"}
                       revision={status.revision}
                       query={tableQuery}
                       hiddenColumns={hiddenColumns}
@@ -2029,11 +2041,13 @@ export function App() {
         </div>
       )}
       {showAbout && (
-        <AboutDialog
-          status={status}
-          close={() => setShowAbout(false)}
-          report={report}
-        />
+        <Suspense fallback={null}>
+          <AboutDialog
+            status={status}
+            close={() => setShowAbout(false)}
+            report={report}
+          />
+        </Suspense>
       )}
       <UpdateFeedback updates={updates} report={report} />
       {toast && (
