@@ -1,8 +1,9 @@
 # Development
 
-How to build, run, and test oflh from a clone. Run every command from the
-repository root.
+How to build, run, and test oflh from source. Clone the repository first, then
+run the build and test commands from the repository root.
 
+- [Clone the repository](#clone-the-repository)
 - [Prerequisites](#prerequisites)
 - [Build the CLI](#cli)
 - [Build the desktop app](#desktop-development)
@@ -12,12 +13,21 @@ repository root.
 - [Profiling](#native-inspection-profiles)
 - [Manual checks](#testing-the-development-inspection-changes)
 
+## Clone the repository
+
+With Git installed:
+
+```sh
+git clone https://github.com/karimz1/open-file-lock-handle.git
+cd open-file-lock-handle
+```
+
 ## Prerequisites
 
 | For | You need |
 | --- | --- |
-| CLI and all Rust tests | [rustup](https://rustup.rs). The pinned toolchain (`rust-toolchain.toml`, currently 1.98.1 with `rustfmt` and `clippy`) installs automatically on first use. |
-| Desktop app | Node.js (CI uses 24) and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS |
+| CLI, desktop app, and all Rust tests | [rustup](https://rustup.rs). The pinned toolchain (`rust-toolchain.toml`, currently 1.98.1 with `rustfmt` and `clippy`) installs automatically on first use. |
+| Desktop app (additional requirements) | Node.js (CI uses 24) and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS |
 | Native tests | A C compiler (`cc`/`clang`, or MSVC on Windows) for the lock fixture, and permission to create processes, pseudo-terminals, and loopback sockets |
 
 On Debian or Ubuntu, the desktop build needs:

@@ -155,17 +155,8 @@ xattr -cr "/Applications/OFLH Desktop.app"
 
 ### Build from source
 
-With [rustup](https://rustup.rs) installed (the pinned toolchain is fetched automatically):
-
-```sh
-git clone https://github.com/karimz1/open-file-lock-handle.git
-cd open-file-lock-handle
-cargo build --release --locked --bin oflh
-./target/release/oflh .
-```
-
-The desktop app also needs Node.js and the Tauri system libraries; see
-[Development](docs/development.md).
+See [Development](docs/development.md) for cloning the repository,
+prerequisites, and build commands for the CLI and desktop app.
 
 <a id="getting-started"></a>
 
