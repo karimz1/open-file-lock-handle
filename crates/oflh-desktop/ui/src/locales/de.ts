@@ -241,12 +241,13 @@ const de: TranslationSchema<typeof en> = {
     k_choose_a_folder_to_scan_shortcut:
       "Ordner zum Untersuchen auswählen ({{shortcut}})",
     k_choose_a_scan_target: "Scan-Ziel auswählen",
+    k_target_selection_help: "Hilfe zur Zielauswahl",
     k_drag_a_file_or_folder_onto_this_window_hint:
-      "Tipp: Ziehe eine Datei oder einen Ordner in dieses Fenster, um das Scan-Ziel zu ändern – oder gib einen Pfad ein und drücke Enter.",
+      "Datei oder Ordner ins Fenster ziehen, oder einen Pfad eingeben und Enter drücken.",
     k_release_to_change_the_scan_target:
       "Loslassen, um das abgelegte Ziel zu öffnen.",
     k_type_paste_or_drop_a_file_or_folder_path:
-      "Datei- oder Ordnerpfad eingeben, einfügen oder hierher ziehen …",
+      "Datei- oder Ordnerpfad eingeben oder einfügen …",
     k_drop_a_file_or_folder_anywhere_in_this_window:
       "Ziehe eine Datei oder einen Ordner an eine beliebige Stelle in diesem Fenster.",
     k_drop_file_or_folder_to_inspect:

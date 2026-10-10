@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeTypedPath, showsTargetHint } from "./targetPath";
+import { normalizeTypedPath } from "./targetPath";
 
 describe("typed target paths", () => {
   it("removes surrounding whitespace", () => {
@@ -31,17 +31,5 @@ describe("typed target paths", () => {
   it("returns an empty string for blank or empty quoted input", () => {
     expect(normalizeTypedPath("   ")).toBe("");
     expect(normalizeTypedPath('""')).toBe("");
-  });
-});
-
-describe("drag-and-drop hint visibility", () => {
-  it("shows the hint in the default window at the default font size", () => {
-    expect(showsTargetHint(800, 14)).toBe(true);
-  });
-
-  it("hides the hint in short windows or with large fonts", () => {
-    expect(showsTargetHint(560, 14)).toBe(false);
-    expect(showsTargetHint(800, 24)).toBe(false);
-    expect(showsTargetHint(1200, 24)).toBe(true);
   });
 });

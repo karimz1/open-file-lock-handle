@@ -28,7 +28,6 @@ import {
   Files,
   FolderOpen,
   History,
-  Info,
   Keyboard,
   Maximize2,
   Minimize2,
@@ -58,7 +57,8 @@ import {
 } from "./api";
 import { acceptStatus, initialStatus, selectKey } from "./state";
 import { scanDuration } from "./scanDuration";
-import { normalizeTypedPath, showsTargetHint } from "./targetPath";
+import { normalizeTypedPath } from "./targetPath";
+import { TargetHelp } from "./TargetHelp";
 import { Inspector } from "./Inspector";
 import { Modal } from "./Modal";
 import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
@@ -179,13 +179,6 @@ export function App() {
   // Font size already scales the whole interface (see the "Scalable controls"
   // rules in style.css), so zoom in/out just steps the same value.
   const zoomPercent = Math.round((fontSize / 14) * 100);
-  const [windowHeight, setWindowHeight] = useState(() => window.innerHeight);
-  useEffect(() => {
-    const resize = () => setWindowHeight(window.innerHeight);
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
-  }, []);
-  const targetHint = showsTargetHint(windowHeight, fontSize);
   const adjustZoom = (steps: number) =>
     setFontSize((current) => Math.min(24, Math.max(12, current + steps * 2)));
   useEffect(() => {
@@ -1175,25 +1168,6 @@ export function App() {
                             )}
                     </p>
                   </div>
-                  {view !== "ports" && (
-                    <div className="heading-actions" inert={inspectionLocked}>
-                      <button
-                        className="primary"
-                        title={chooseFileTitle}
-                        onClick={() => runScan(() => api.choose(false))}
-                      >
-                        <File size={15} />
-                        {t("inspection.k_open_file")}
-                      </button>
-                      <button
-                        title={chooseFolderTitle}
-                        onClick={() => runScan(() => api.choose(true))}
-                      >
-                        <FolderOpen size={15} />
-                        {t("inspection.k_open_folder")}
-                      </button>
-                    </div>
-                  )}
                 </div>
               )}
               {!maximized && view !== "ports" && (
@@ -1211,42 +1185,35 @@ export function App() {
                       );
                     }}
                   >
-                    <div
-                      className="target-pickers"
-                      role="group"
-                      aria-label={t("inspection.k_choose_a_scan_target")}
-                    >
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label={t("inspection.k_choose_file")}
-                        title={chooseFileTitle}
-                        onClick={() => runScan(() => api.choose(false))}
+                    {status.target && (
+                      <div
+                        className="target-pickers"
+                        role="group"
+                        aria-label={t("inspection.k_choose_a_scan_target")}
                       >
-                        <File size={16} />
-                      </button>
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label={t("inspection.k_choose_folder")}
-                        title={chooseFolderTitle}
-                        onClick={() => runScan(() => api.choose(true))}
-                      >
-                        <FolderOpen size={17} />
-                      </button>
-                    </div>
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={t("inspection.k_choose_file")}
+                          title={chooseFileTitle}
+                          onClick={() => runScan(() => api.choose(false))}
+                        >
+                          <File size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={t("inspection.k_choose_folder")}
+                          title={chooseFolderTitle}
+                          onClick={() => runScan(() => api.choose(true))}
+                        >
+                          <FolderOpen size={17} />
+                        </button>
+                      </div>
+                    )}
                     <input
                       aria-label={t("inspection.k_target_file_or_folder_path")}
-                      aria-describedby={
-                        targetHint ? "target-drop-hint" : undefined
-                      }
-                      title={
-                        targetHint
-                          ? undefined
-                          : t(
-                              "inspection.k_drag_a_file_or_folder_onto_this_window_hint",
-                            )
-                      }
+                      aria-describedby="target-path-description"
                       placeholder={t(
                         "inspection.k_type_paste_or_drop_a_file_or_folder_path",
                       )}
@@ -1257,6 +1224,7 @@ export function App() {
                       }}
                       spellCheck={false}
                     />
+                    <TargetHelp />
                     <button type="submit" disabled={!normalizeTypedPath(path)}>
                       {t("inspection.k_inspect")}
                       <ArrowRight size={14} />
@@ -1272,14 +1240,6 @@ export function App() {
                       </button>
                     )}
                   </form>
-                  {targetHint && (
-                    <p className="target-hint" id="target-drop-hint">
-                      <Info size={13} aria-hidden="true" />
-                      {t(
-                        "inspection.k_drag_a_file_or_folder_onto_this_window_hint",
-                      )}
-                    </p>
-                  )}
                 </div>
               )}
               {view !== "ports" && !status.target ? (
@@ -1300,12 +1260,16 @@ export function App() {
                   <div className="welcome-actions">
                     <button
                       className="primary"
+                      title={chooseFileTitle}
                       onClick={() => runScan(() => api.choose(false))}
                     >
                       <File size={15} />
                       {t("inspection.k_choose_file")}
                     </button>
-                    <button onClick={() => runScan(() => api.choose(true))}>
+                    <button
+                      title={chooseFolderTitle}
+                      onClick={() => runScan(() => api.choose(true))}
+                    >
                       <FolderOpen size={15} />
                       {t("inspection.k_choose_folder")}
                     </button>

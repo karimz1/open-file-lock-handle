@@ -17,15 +17,3 @@ export function normalizeTypedPath(text: string): string {
     return trimmed.slice(1, -1).trim();
   return trimmed;
 }
-
-/** Minimum window height, in root font sizes, that keeps the drag-and-drop hint. */
-export const TARGET_HINT_MIN_HEIGHT_EM = 48;
-
-/**
- * Whether the window is tall enough for the one-line drag-and-drop hint below
- * the target field. Large font sizes and short windows hide it so the results
- * grid keeps its space; the placeholder and drop overlay still explain dropping.
- */
-export function showsTargetHint(windowHeight: number, fontSize: number) {
-  return windowHeight >= fontSize * TARGET_HINT_MIN_HEIGHT_EM;
-}

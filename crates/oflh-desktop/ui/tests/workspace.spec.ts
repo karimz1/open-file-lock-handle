@@ -1150,7 +1150,7 @@ for (const initialTarget of ["/", "/?empty-target"]) {
         ).toBeVisible();
         await expect(
           heading.getByRole("button", { name: label, exact: true }),
-        ).toBeVisible();
+        ).toHaveCount(0);
       }
       await expect(field).toBeVisible();
       if (initialTarget === "/")
@@ -2353,7 +2353,7 @@ test("target bar picks files or folders, accepts typed paths and explains drag a
   });
   await expect(field).toHaveValue("/workspace/project");
   await expect(field).toHaveAccessibleDescription(
-    "Tip: Drag a file or folder onto this window to change the scan target, or type a path and press Enter.",
+    "Drag a file or folder anywhere in this window, or type a path and press Enter.",
   );
   const chooseCalls = async () =>
     (await page.evaluate(() => (window as any).__testCalls))
@@ -2366,11 +2366,7 @@ test("target bar picks files or folders, accepts typed paths and explains drag a
   await chooseFolder.click();
   await expect.poll(chooseCalls).toEqual([false, true]);
   const heading = page.locator(".workspace-heading");
-  await heading.getByRole("button", { name: "Open file", exact: true }).click();
-  await heading
-    .getByRole("button", { name: "Open folder", exact: true })
-    .click();
-  await expect.poll(chooseCalls).toEqual([false, true, false, true]);
+  await expect(heading.getByRole("button")).toHaveCount(0);
 
   // A typed path stays editable and Enter inspects it. Quotes added by
   // "Copy as path" are removed before the path reaches Rust.
@@ -2405,15 +2401,111 @@ test("target bar picks files or folders, accepts typed paths and explains drag a
     page.getByRole("heading", { name: "Drop file or folder to inspect" }),
   ).not.toBeVisible();
 
-  // Short windows keep the grid space; the hint moves into the field tooltip.
+  // Guidance never takes a separate row and remains available in short windows.
   const hint =
-    "Tip: Drag a file or folder onto this window to change the scan target, or type a path and press Enter.";
+    "Drag a file or folder anywhere in this window, or type a path and press Enter.";
+  const help = page.locator('summary[aria-label="Target selection help"]');
+  const note = page.locator('.target-help [role="note"]');
+  await expect(note).not.toBeVisible();
+  await expect(help).toHaveAttribute("title", hint);
   await page.setViewportSize({ width: 860, height: 560 });
-  await expect(page.getByText(hint)).not.toBeVisible();
-  await expect(field).toHaveAttribute("title", hint);
+  await expect(field).toHaveAccessibleDescription(hint);
+  await help.click();
+  await expect(note).toHaveText(hint);
+  await expect(note).toBeVisible();
+  await field.click();
+  await expect(note).not.toBeVisible();
   await page.setViewportSize({ width: 1280, height: 800 });
-  await expect(page.getByText(hint)).toBeVisible();
+  await expect(note).not.toBeVisible();
 });
+
+test("empty workspace has one file and folder picker and keeps path entry and shortcuts", async ({
+  page,
+}) => {
+  await page.goto("/?empty-target");
+  const main = page.getByRole("main");
+  await expect(
+    main.getByRole("button", { name: "Choose file", exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    main.getByRole("button", { name: "Choose folder", exact: true }),
+  ).toHaveCount(1);
+  await expect(page.locator(".workspace-heading button")).toHaveCount(0);
+  await expect(page.locator(".target-pickers")).toHaveCount(0);
+  await expect(page.locator('.target-help [role="note"]')).not.toBeVisible();
+  await main.getByRole("button", { name: "Choose file", exact: true }).click();
+  await main
+    .getByRole("button", { name: "Choose folder", exact: true })
+    .click();
+  await page.keyboard.press("Control+o");
+  await page.keyboard.press("Control+Shift+o");
+  await expect
+    .poll(async () =>
+      page.evaluate(() =>
+        (window as any).__testCalls
+          .filter((call: any) => call.command === "choose")
+          .map((call: any) => call.args.folder),
+      ),
+    )
+    .toEqual([false, true, false, true]);
+  await page.screenshot({ path: "test-results/desktop-empty-clean.png" });
+
+  const field = page.getByRole("textbox", {
+    name: "Target file or folder path",
+  });
+  await field.fill("/workspace/report.txt");
+  await field.press("Enter");
+  await expect(field).toHaveValue("/workspace/report.txt");
+  await expect(page.locator(".welcome")).toHaveCount(0);
+  await expect(
+    page.getByRole("group", { name: "Choose a scan target" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Close inspection", exact: true })
+    .click();
+  await expect(
+    main.getByRole("button", { name: "Choose file", exact: true }),
+  ).toHaveCount(1);
+  await expect(page.locator(".target-pickers")).toHaveCount(0);
+});
+
+for (const locale of ["en", "de", "zh"] as const) {
+  test(`target help fits short windows and preserves selection on Escape in ${locale}`, async ({
+    page,
+  }) => {
+    await page.addInitScript((locale) => {
+      localStorage.setItem("oflh-language", locale);
+      localStorage.setItem("oflh-font-size", "24");
+    }, locale);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/");
+    await page.getByRole("grid").getByRole("row").nth(1).click();
+    await page.setViewportSize({ width: 860, height: 560 });
+    const selection = page.locator(".selection-toolbar");
+    await expect(selection).toBeVisible();
+    const selectedText = await selection.innerText();
+    const help = page.locator(".target-help summary");
+    const note = page.locator('.target-help [role="note"]');
+    const grid = page.locator("#results-grid");
+    const before = await grid.boundingBox();
+    await help.focus();
+    await page.keyboard.press("Enter");
+    await expect(note).toBeVisible();
+    expect(await grid.boundingBox()).toEqual(before);
+    const bounds = await note.boundingBox();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(860);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(560);
+    await page.keyboard.press("Escape");
+    await expect(note).not.toBeVisible();
+    await expect(help).toBeFocused();
+    await expect(selection).toHaveText(selectedText, { useInnerText: true });
+    await page.keyboard.press("Enter");
+    await expect(note).toBeVisible();
+    await page.keyboard.press("Tab");
+    await expect(note).not.toBeVisible();
+  });
+}
 
 test("German target bar explains how to change the scan target", async ({
   page,
@@ -2432,23 +2524,36 @@ test("German target bar explains how to change the scan target", async ({
   await expect(
     pickers.getByRole("button", { name: "Ordner auswählen" }),
   ).toBeVisible();
+  const hint =
+    "Datei oder Ordner ins Fenster ziehen, oder einen Pfad eingeben und Enter drücken.";
+  await expect(page.locator('.target-help [role="note"]')).not.toBeVisible();
   await expect(
-    page.getByText(
-      "Tipp: Ziehe eine Datei oder einen Ordner in dieses Fenster, um das Scan-Ziel zu ändern – oder gib einen Pfad ein und drücke Enter.",
-    ),
-  ).toBeVisible();
+    page.getByRole("textbox", {
+      name: "Pfad zur Zieldatei oder zum Zielordner",
+    }),
+  ).toHaveAccessibleDescription(hint);
   await page
     .getByRole("textbox", { name: "Pfad zur Zieldatei oder zum Zielordner" })
     .fill("");
   await expect(
-    page.getByPlaceholder(
-      "Datei- oder Ordnerpfad eingeben, einfügen oder hierher ziehen …",
-    ),
+    page.getByPlaceholder("Datei- oder Ordnerpfad eingeben oder einfügen …"),
   ).toBeVisible();
   await page.screenshot({
     path: "test-results/desktop-target-bar-de.png",
     clip: { x: 0, y: 0, width: 1280, height: 260 },
   });
+  await page.goto("/?empty-target");
+  await page.evaluate(() => {
+    localStorage.setItem("oflh-theme", "vscode");
+  });
+  await page.reload();
+  await expect(
+    page.getByRole("heading", {
+      name: "Datei oder Ordner hierher ziehen",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.screenshot({ path: "test-results/desktop-empty-clean-de.png" });
 });
 
 test("gear stays last in the sidebar and support actions fit the minimum window footer", async ({

@@ -25,9 +25,9 @@ the permission notice and explains how to inspect another target.
 Open a target in any of these ways:
 
 - Drop a file or folder onto the window while outside the **Ports** view.
-- Choose **Open file** (`Ctrl+O`) or **Open folder** (`Ctrl+Shift+O`), either
-  at the top of the page or with the file and folder buttons at the left of the
-  target box.
+- Choose **Choose file** or **Choose folder** in the empty workspace, or use
+  **Open file** (`Ctrl+O`) or **Open folder** (`Ctrl+Shift+O`) in the sidebar.
+  Once a target is open, file and folder buttons also appear in the target box.
 - Type or paste a path into the target box and press `Enter` or choose
   **Inspect**. Surrounding quotes, such as those added by Windows
   **Copy as path**, are removed.
@@ -35,6 +35,9 @@ Open a target in any of these ways:
 - On Windows, right-click a file and choose **Inspect file**, or right-click a
   folder, a drive, or the empty area of a folder window and choose
   **Inspect folder**. See [Explorer context menu](#explorer-context-menu).
+
+The information icon beside the target path explains drag-and-drop and path
+entry. Click it or focus it and press `Enter` to show the help; `Escape` closes it.
 
 Choose **New window** (`Ctrl+Shift+N`) to open a separate OFLH instance with its
 own inspection. Dropping a target while another inspection is open asks where

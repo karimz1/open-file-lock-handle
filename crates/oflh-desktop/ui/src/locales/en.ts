@@ -231,11 +231,12 @@ const en = {
     k_choose_a_folder_to_scan_shortcut:
       "Choose a folder to scan ({{shortcut}})",
     k_choose_a_scan_target: "Choose a scan target",
+    k_target_selection_help: "Target selection help",
     k_drag_a_file_or_folder_onto_this_window_hint:
-      "Tip: Drag a file or folder onto this window to change the scan target, or type a path and press Enter.",
+      "Drag a file or folder anywhere in this window, or type a path and press Enter.",
     k_release_to_change_the_scan_target: "Release to open the dropped target.",
     k_type_paste_or_drop_a_file_or_folder_path:
-      "Type, paste, or drop a file or folder path…",
+      "Enter or paste a file or folder path…",
     k_drop_a_file_or_folder_anywhere_in_this_window:
       "Drop a file or folder anywhere in this window.",
     k_drop_file_or_folder_to_inspect: "Drop file or folder to inspect",
