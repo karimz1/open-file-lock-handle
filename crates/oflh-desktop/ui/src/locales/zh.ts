@@ -190,6 +190,19 @@ const zh: TranslationSchema<typeof en> = {
     k_search_recent_targets: "搜索最近目标",
   },
   inspection: {
+    k_new_window: "新窗口",
+    k_new_window_hint: "打开独立的 OFLH 窗口（{{shortcut}}）",
+    k_this_window: "当前窗口",
+    k_open_dropped_target: "打开拖入的目标",
+    k_choose_drop_window: "您想在哪里检查拖入的文件或文件夹？",
+    k_drop_window_hint: "当前窗口会替换现有检查。新窗口会保留现有检查。",
+    k_progress: "检查进度",
+    k_show_progress: "显示检查进度",
+    k_cancel_inspection: "取消检查",
+    k_drag_target_here: "将文件或文件夹拖到这里",
+    k_drop_another_target: "要检查其他目标，请将文件或文件夹拖到这里。",
+    k_close_inspection: "关闭检查",
+    k_close_inspection_hint: "移除当前目标、结果和行选择。保留最近的目标。",
     k_checking_process_references: "正在检查进程引用",
     k_checking_files: "正在检查文件",
     k_checking_ports: "正在检查本地端口",
@@ -209,6 +222,14 @@ const zh: TranslationSchema<typeof en> = {
       "选择文件或文件夹以开始检查。",
     k_choose_file: "选择文件",
     k_choose_folder: "选择文件夹",
+    k_choose_a_file_to_scan_shortcut: "选择要扫描的文件（{{shortcut}}）",
+    k_choose_a_folder_to_scan_shortcut: "选择要扫描的文件夹（{{shortcut}}）",
+    k_choose_a_scan_target: "选择扫描目标",
+    k_drag_a_file_or_folder_onto_this_window_hint:
+      "提示：将文件或文件夹拖到此窗口即可更改扫描目标，也可以输入路径后按 Enter。",
+    k_release_to_change_the_scan_target: "松开即可打开拖入的目标。",
+    k_type_paste_or_drop_a_file_or_folder_path:
+      "输入、粘贴或拖入文件或文件夹路径…",
     k_drop_a_file_or_folder_anywhere_in_this_window:
       "将文件或文件夹拖入此窗口任意位置。",
     k_drop_file_or_folder_to_inspect: "拖入文件或文件夹以检查",
@@ -230,7 +251,6 @@ const zh: TranslationSchema<typeof en> = {
     k_open_files_do_not_necessarily_mean_locked_files:
       "打开的文件不一定被锁定。",
     k_open_folder: "打开文件夹",
-    k_paste_a_file_or_folder_path: "粘贴文件或文件夹路径…",
     k_process_inspection_views: "进程检查视图",
     k_processes_referencing_your_target_and_i_9e70e943:
       "引用目标及其内容的进程。",
@@ -329,6 +349,7 @@ const zh: TranslationSchema<typeof en> = {
       "搜索（{{shortcut}}+F 或 /）；按 Escape 返回工作区",
   },
   selection: {
+    k_deselect_all: "取消全部选择",
     k_clear_selection: "清除选择",
     k_clear_selection_and_details: "清除选择和详情",
     k_click_a_row_to_inspect_use_the_panel_bu_1ffc65e8:
@@ -411,6 +432,8 @@ const zh: TranslationSchema<typeof en> = {
     k_trade_off: "注意事项：",
   },
   table: {
+    k_no_local_bindings:
+      "未找到本地 TCP 监听器或绑定的 UDP 套接字。权限可能限制发现范围。",
     k_auto_fit_hint: "双击以按内容调整列宽",
     k_fit_all_columns: "调整所有列宽",
     k_fit_all_columns_hint: "根据所有匹配行调整所有可见列宽",

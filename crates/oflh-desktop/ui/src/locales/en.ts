@@ -190,6 +190,23 @@ const en = {
     k_search_recent_targets: "Search recent targets",
   },
   inspection: {
+    k_new_window: "New window",
+    k_new_window_hint: "Open a separate OFLH window ({{shortcut}})",
+    k_this_window: "This window",
+    k_open_dropped_target: "Open dropped target",
+    k_choose_drop_window:
+      "Where would you like to inspect the dropped file or folder?",
+    k_drop_window_hint:
+      "This window replaces the current inspection. New window keeps it open.",
+    k_progress: "Inspection progress",
+    k_show_progress: "Show inspection progress",
+    k_cancel_inspection: "Cancel inspection",
+    k_drag_target_here: "Drag a file or folder here",
+    k_drop_another_target:
+      "To inspect another target, drop a file or folder here.",
+    k_close_inspection: "Close inspection",
+    k_close_inspection_hint:
+      "Remove the current target, results, and row selection. Recent targets are kept.",
     k_checking_process_references: "Checking process references",
     k_checking_files: "Checking files",
     k_checking_ports: "Checking local ports",
@@ -210,6 +227,15 @@ const en = {
       "Choose a file or folder to start an inspection.",
     k_choose_file: "Choose file",
     k_choose_folder: "Choose folder",
+    k_choose_a_file_to_scan_shortcut: "Choose a file to scan ({{shortcut}})",
+    k_choose_a_folder_to_scan_shortcut:
+      "Choose a folder to scan ({{shortcut}})",
+    k_choose_a_scan_target: "Choose a scan target",
+    k_drag_a_file_or_folder_onto_this_window_hint:
+      "Tip: Drag a file or folder onto this window to change the scan target, or type a path and press Enter.",
+    k_release_to_change_the_scan_target: "Release to open the dropped target.",
+    k_type_paste_or_drop_a_file_or_folder_path:
+      "Type, paste, or drop a file or folder path…",
     k_drop_a_file_or_folder_anywhere_in_this_window:
       "Drop a file or folder anywhere in this window.",
     k_drop_file_or_folder_to_inspect: "Drop file or folder to inspect",
@@ -232,7 +258,6 @@ const en = {
     k_open_files_do_not_necessarily_mean_locked_files:
       "Open files do not necessarily mean locked files.",
     k_open_folder: "Open folder",
-    k_paste_a_file_or_folder_path: "Paste a file or folder path…",
     k_process_inspection_views: "Process inspection views",
     k_processes_referencing_your_target_and_i_9e70e943:
       "Processes referencing your target and its contents.",
@@ -334,6 +359,7 @@ const en = {
       "Search ({{shortcut}}+F or /); Escape returns to the workspace",
   },
   selection: {
+    k_deselect_all: "Deselect all",
     k_clear_selection: "Clear selection",
     k_clear_selection_and_details: "Clear selection and details",
     k_click_a_row_to_inspect_use_the_panel_bu_1ffc65e8:
@@ -421,6 +447,8 @@ const en = {
     k_trade_off: "Trade-off:",
   },
   table: {
+    k_no_local_bindings:
+      "No local TCP listeners or bound UDP sockets were found. Permissions can limit discovery.",
     k_auto_fit_hint: "Double-click to fit column to contents",
     k_fit_all_columns: "Fit all columns",
     k_fit_all_columns_hint: "Fit all visible columns to every matching row",

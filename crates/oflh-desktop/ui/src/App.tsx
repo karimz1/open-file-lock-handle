@@ -1,8 +1,16 @@
 import { forceRecoveryTargets } from "./termination";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   Activity,
+  AppWindow,
   ChevronDown,
   Columns3,
   MoveHorizontal,
@@ -20,6 +28,7 @@ import {
   Files,
   FolderOpen,
   History,
+  Info,
   Keyboard,
   Maximize2,
   Minimize2,
@@ -48,8 +57,8 @@ import {
   type ColumnFilters,
 } from "./api";
 import { acceptStatus, initialStatus, selectKey } from "./state";
-import { InspectionOverlay } from "./InspectionOverlay";
 import { scanDuration } from "./scanDuration";
+import { normalizeTypedPath, showsTargetHint } from "./targetPath";
 import { Inspector } from "./Inspector";
 import { Modal } from "./Modal";
 import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
@@ -59,9 +68,9 @@ import {
   fileColumns as fileColumnDefinitions,
   portColumns as portColumnDefinitions,
   type ColumnKey,
+  type CachedPage,
 } from "./Table";
 import { ColumnFilterPanel } from "./ColumnFilters";
-import { AboutDialog } from "./AboutDialog";
 import { SettingsMenu } from "./SettingsMenu";
 import { useUpdates } from "./useUpdates";
 import { UpdateBanner } from "./UpdateBanner";
@@ -76,6 +85,9 @@ import {
 } from "./i18n";
 
 type View = "ports" | "processes" | "handles" | "history" | "settings";
+const AboutDialog = lazy(() =>
+  import("./AboutDialog").then((module) => ({ default: module.AboutDialog })),
+);
 const columnKeys = new Set<ColumnKey>([
   "process",
   "pid",
@@ -134,6 +146,12 @@ export function App() {
   const [showAbout, setShowAbout] = useState(false);
 
   const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
+  const chooseFileTitle = t("inspection.k_choose_a_file_to_scan_shortcut", {
+    shortcut: `${modifier}+O`,
+  });
+  const chooseFolderTitle = t("inspection.k_choose_a_folder_to_scan_shortcut", {
+    shortcut: `${modifier}+Shift+O`,
+  });
   const shortcut = (keys: string) => (
     <kbd className="shortcut" aria-hidden="true">
       {modifier}
@@ -161,6 +179,13 @@ export function App() {
   // Font size already scales the whole interface (see the "Scalable controls"
   // rules in style.css), so zoom in/out just steps the same value.
   const zoomPercent = Math.round((fontSize / 14) * 100);
+  const [windowHeight, setWindowHeight] = useState(() => window.innerHeight);
+  useEffect(() => {
+    const resize = () => setWindowHeight(window.innerHeight);
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+  const targetHint = showsTargetHint(windowHeight, fontSize);
   const adjustZoom = (steps: number) =>
     setFontSize((current) => Math.min(24, Math.max(12, current + steps * 2)));
   useEffect(() => {
@@ -174,10 +199,13 @@ export function App() {
   const statusRef = useRef(initialStatus);
   const scanRequestPending = useRef(false);
   const [startingScan, setStartingScan] = useState(false);
+  const [closingInspection, setClosingInspection] = useState(false);
+  const [awaitingResults, setAwaitingResults] = useState(false);
   const scanBusy = status.scanning || startingScan;
   const [backgroundScan, setBackgroundScan] = useState(false);
   const backgroundRevision = useRef(0);
   const [view, setView] = useState<View>("processes");
+  const dropTarget = useRef<(request: number) => void>(() => {});
   const [gridRevision, setGridRevision] = useState(0);
   // A failed page ends presentation work without making stale rows actionable.
   // Permit a fresh scan to recover instead of leaving the reload barrier stuck.
@@ -190,11 +218,16 @@ export function App() {
     !["processes", "handles", "ports"].includes(view) ||
     gridRevision === status.revision ||
     gridFailed;
-  const preparingRefresh = backgroundScan && !status.scanning && !gridReady;
+  const preparingRefresh = awaitingResults && !status.scanning && !gridReady;
+  const inspectionLocked = scanBusy || closingInspection || preparingRefresh;
+  useEffect(() => {
+    if (!scanBusy && gridReady) setAwaitingResults(false);
+  }, [scanBusy, gridReady]);
   const [path, setPath] = useState("");
   const [pathEdited, setPathEdited] = useState(false);
   const previousTarget = useRef("");
   const [fileQuery, setFileQuery] = useState("");
+  const pageCache = useRef(new Map<string, CachedPage>());
   const [portQuery, setPortQuery] = useState("");
   const [portsPathOnly, setPortsPathOnly] = useState(false);
   const query = view === "ports" ? portQuery : fileQuery;
@@ -277,6 +310,9 @@ export function App() {
   const [results, setResults] = useState<ActionResult[] | null>(null);
   const [acting, setActing] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [pendingDrop, setPendingDrop] = useState<number | null>(null);
+  const [openingWindow, setOpeningWindow] = useState(false);
+  const windowRequestPending = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
@@ -307,6 +343,7 @@ export function App() {
     )
       setBackgroundScan(false);
     const accepted = acceptStatus(statusRef.current, incoming);
+    if (accepted.scanning) setAwaitingResults(true);
     statusRef.current = accepted;
     setStatus(accepted);
   }, []);
@@ -374,7 +411,11 @@ export function App() {
       listen<Status>("scan-status", (event) => {
         if (active) apply(event.payload);
       }),
+      listen<number>("target-drop-requested", (event) => {
+        if (active) dropTarget.current(event.payload);
+      }),
       listen("target-dropped", () => {
+        // Explorer launches have already been accepted by the native service.
         if (active) {
           setView("processes");
           setScope(null);
@@ -487,6 +528,7 @@ export function App() {
     )
       return;
     scanRequestPending.current = true;
+    setAwaitingResults(true);
     setBackgroundScan(background);
     if (background) backgroundRevision.current = statusRef.current.revision;
     setStartingScan(true);
@@ -506,6 +548,81 @@ export function App() {
       });
   };
   const refresh = () => runScan(() => api.refresh(), view, false);
+  const closeInspection = () => {
+    if (inspectionLocked || scanRequestPending.current || acting) return;
+    scanRequestPending.current = true;
+    setClosingInspection(true);
+    void api
+      .closeInspection()
+      .then((value) => {
+        apply(value);
+        setView("processes");
+        pageCache.current.clear();
+        setPath("");
+        setPathEdited(false);
+        setSelected(new Set());
+        setFocused(null);
+        setActiveRow(null);
+        setDetails(null);
+        setScope(null);
+        setFileQuery("");
+        setPortQuery("");
+        setFileColumns({});
+        setPortColumns({});
+        setPortsPathOnly(false);
+        setLocks(false);
+        setGridRevision(0);
+        setAutoReloadSeconds(0);
+        setBackgroundScan(false);
+        setAwaitingResults(false);
+        setTotal(0);
+        setError(null);
+      })
+      .catch(report)
+      .finally(() => {
+        scanRequestPending.current = false;
+        setClosingInspection(false);
+      });
+  };
+  const openNewWindow = (request?: number) => {
+    if (
+      inspectionLocked ||
+      statusRef.current.scanning ||
+      scanRequestPending.current ||
+      windowRequestPending.current ||
+      acting
+    )
+      return;
+    windowRequestPending.current = true;
+    setOpeningWindow(true);
+    void api
+      .newWindow(request)
+      .then(() => setPendingDrop(null))
+      .catch((failure) => {
+        setPendingDrop(null);
+        report(failure, t("inspection.k_new_window"));
+      })
+      .finally(() => {
+        windowRequestPending.current = false;
+        setOpeningWindow(false);
+      });
+  };
+  const dismissDrop = () => {
+    if (!windowRequestPending.current) setPendingDrop(null);
+  };
+  dropTarget.current = (request) => {
+    setDragging(false);
+    if (
+      view === "ports" ||
+      inspectionLocked ||
+      scanRequestPending.current ||
+      windowRequestPending.current ||
+      document.querySelector("dialog[open]")
+    )
+      return;
+    if (statusRef.current.target) setPendingDrop(request);
+    else runScan(() => api.inspectDropped(request));
+  };
   const openIssueReport = () => {
     const body = [
       t("app.k_what_happened"),
@@ -681,7 +798,24 @@ export function App() {
         event.target instanceof HTMLTextAreaElement ||
         (event.target instanceof HTMLElement && event.target.isContentEditable);
       const command = event.metaKey || event.ctrlKey;
-      if (command && event.key === ",") {
+      if (
+        inspectionLocked &&
+        (event.key === "F5" ||
+          (command &&
+            (/^[1-4]$/.test(event.key) ||
+              ["r", "o", "n", ",", "tab"].includes(event.key.toLowerCase()) ||
+              event.key === "Tab")) ||
+          (!backgroundScan &&
+            (event.key === "Escape" ||
+              (command && ["a", "d", "f"].includes(event.key.toLowerCase())))))
+      ) {
+        event.preventDefault();
+        return;
+      }
+      if (command && event.shiftKey && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        openNewWindow();
+      } else if (command && event.key === ",") {
         event.preventDefault();
         changeView("settings");
       } else if (
@@ -778,6 +912,12 @@ export function App() {
     }
   };
   const changeView = (next: View) => {
+    if (
+      inspectionLocked ||
+      statusRef.current.scanning ||
+      scanRequestPending.current
+    )
+      return;
     setView(next);
     setScope(null);
     setSort("relevance");
@@ -804,18 +944,31 @@ export function App() {
           <span className="rc-badge">RC</span>
         </div>
         <div className="header-actions">
+          <button
+            className="new-window-button"
+            aria-label={t("inspection.k_new_window")}
+            disabled={inspectionLocked || openingWindow || acting}
+            onClick={() => openNewWindow()}
+            title={t("inspection.k_new_window_hint", {
+              shortcut: `${modifier}+Shift+N`,
+            })}
+          >
+            <AppWindow size={14} />
+            <span>{t("inspection.k_new_window")}</span>
+          </button>
           {status.revision > 0 && (
             <AutoRefresh
               value={autoReloadSeconds}
               onChange={setAutoReloadSeconds}
+              disabled={inspectionLocked}
             />
           )}
           <button
-            disabled={!status.revision}
+            disabled={!status.revision || inspectionLocked}
             onClick={refresh}
             title={`${t("status.k_refresh")} (${modifier}+R ${t("common.k_or")} F5)`}
           >
-            <RefreshCw size={14} className={status.scanning ? "spin" : ""} />
+            <RefreshCw size={14} />
             {t("status.k_refresh")}
             <kbd className="shortcut" aria-hidden="true">
               F5
@@ -825,6 +978,8 @@ export function App() {
       </header>
       <div className={`app-body${maximized ? " grid-maximized" : ""}`}>
         <nav
+          inert={inspectionLocked}
+          aria-disabled={inspectionLocked}
           className={`sidebar${sidebarIsCollapsed ? " collapsed" : ""}`}
           aria-label={t("navigation.k_workspace")}
         >
@@ -893,22 +1048,30 @@ export function App() {
             <span className="nav-label">{t("history.k_recent_targets")}</span>
             {shortcut("4")}
           </button>
-          <div className="sidebar-rule" />
-          <div className="nav-section">{t("inspection.k_inspect_target")}</div>
-          <button
-            title={t("inspection.k_open_file")}
-            onClick={() => runScan(() => api.choose(false))}
-          >
-            <File size={16} />
-            <span className="nav-label">{t("inspection.k_open_file")}</span>
-          </button>
-          <button
-            title={t("inspection.k_open_folder")}
-            onClick={() => runScan(() => api.choose(true))}
-          >
-            <FolderOpen size={17} />
-            <span className="nav-label">{t("inspection.k_open_folder")}</span>
-          </button>
+          {view !== "ports" && (
+            <>
+              <div className="sidebar-rule" />
+              <div className="nav-section">
+                {t("inspection.k_inspect_target")}
+              </div>
+              <button
+                title={t("inspection.k_open_file")}
+                onClick={() => runScan(() => api.choose(false))}
+              >
+                <File size={16} />
+                <span className="nav-label">{t("inspection.k_open_file")}</span>
+              </button>
+              <button
+                title={t("inspection.k_open_folder")}
+                onClick={() => runScan(() => api.choose(true))}
+              >
+                <FolderOpen size={17} />
+                <span className="nav-label">
+                  {t("inspection.k_open_folder")}
+                </span>
+              </button>
+            </>
+          )}
           <div className="sidebar-bottom">
             <p>
               {t("app.k_know_what_s_using")}
@@ -926,7 +1089,10 @@ export function App() {
             />
           </div>
         </nav>
-        <main>
+        <main
+          inert={inspectionLocked && !backgroundScan}
+          aria-busy={inspectionLocked}
+        >
           {maximized && (
             <div className="maximize-banner" role="status">
               <Maximize2 size={14} />
@@ -1009,50 +1175,119 @@ export function App() {
                             )}
                     </p>
                   </div>
-                  <button
-                    className="primary"
-                    onClick={() => runScan(() => api.choose(true))}
-                  >
-                    <FolderOpen size={15} />
-                    {t("inspection.k_open_folder")}
-                  </button>
+                  {view !== "ports" && (
+                    <div className="heading-actions" inert={inspectionLocked}>
+                      <button
+                        className="primary"
+                        title={chooseFileTitle}
+                        onClick={() => runScan(() => api.choose(false))}
+                      >
+                        <File size={15} />
+                        {t("inspection.k_open_file")}
+                      </button>
+                      <button
+                        title={chooseFolderTitle}
+                        onClick={() => runScan(() => api.choose(true))}
+                      >
+                        <FolderOpen size={15} />
+                        {t("inspection.k_open_folder")}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               {!maximized && view !== "ports" && (
-                <form
-                  className="target-bar"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    runScan(() =>
-                      !pathEdited && status.target
-                        ? api.refresh()
-                        : api.inspect(path),
-                    );
-                  }}
-                >
-                  <FolderOpen size={17} />
-                  <input
-                    aria-label={t("inspection.k_target_file_or_folder_path")}
-                    placeholder={t("inspection.k_paste_a_file_or_folder_path")}
-                    value={path}
-                    onChange={(event) => {
-                      setPath(event.target.value);
-                      setPathEdited(true);
+                <div className="target-area" inert={inspectionLocked}>
+                  <form
+                    className="target-bar"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const typed = normalizeTypedPath(path);
+                      if (typed !== path) setPath(typed);
+                      runScan(() =>
+                        !pathEdited && status.target
+                          ? api.refresh()
+                          : api.inspect(typed),
+                      );
                     }}
-                    spellCheck={false}
-                  />
-                  <button type="submit" disabled={!path.trim()}>
-                    {t("inspection.k_inspect")}
-                    <ArrowRight size={14} />
-                  </button>
-                </form>
+                  >
+                    <div
+                      className="target-pickers"
+                      role="group"
+                      aria-label={t("inspection.k_choose_a_scan_target")}
+                    >
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={t("inspection.k_choose_file")}
+                        title={chooseFileTitle}
+                        onClick={() => runScan(() => api.choose(false))}
+                      >
+                        <File size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={t("inspection.k_choose_folder")}
+                        title={chooseFolderTitle}
+                        onClick={() => runScan(() => api.choose(true))}
+                      >
+                        <FolderOpen size={17} />
+                      </button>
+                    </div>
+                    <input
+                      aria-label={t("inspection.k_target_file_or_folder_path")}
+                      aria-describedby={
+                        targetHint ? "target-drop-hint" : undefined
+                      }
+                      title={
+                        targetHint
+                          ? undefined
+                          : t(
+                              "inspection.k_drag_a_file_or_folder_onto_this_window_hint",
+                            )
+                      }
+                      placeholder={t(
+                        "inspection.k_type_paste_or_drop_a_file_or_folder_path",
+                      )}
+                      value={path}
+                      onChange={(event) => {
+                        setPath(event.target.value);
+                        setPathEdited(true);
+                      }}
+                      spellCheck={false}
+                    />
+                    <button type="submit" disabled={!normalizeTypedPath(path)}>
+                      {t("inspection.k_inspect")}
+                      <ArrowRight size={14} />
+                    </button>
+                    {status.target && (
+                      <button
+                        type="button"
+                        title={t("inspection.k_close_inspection_hint")}
+                        disabled={inspectionLocked || acting}
+                        onClick={closeInspection}
+                      >
+                        <X size={14} /> {t("inspection.k_close_inspection")}
+                      </button>
+                    )}
+                  </form>
+                  {targetHint && (
+                    <p className="target-hint" id="target-drop-hint">
+                      <Info size={13} aria-hidden="true" />
+                      {t(
+                        "inspection.k_drag_a_file_or_folder_onto_this_window_hint",
+                      )}
+                    </p>
+                  )}
+                </div>
               )}
-              {view !== "ports" && !status.target && !status.scanning ? (
+              {view !== "ports" && !status.target ? (
                 <div className="welcome">
                   <div className="welcome-icon">
                     <FileSearch size={36} />
                   </div>
-                  <h2>{t("inspection.k_a_clear_view_of_files_in_use")}</h2>
+                  <h2>{t("inspection.k_drag_target_here")}</h2>
                   <p>
                     {t(
                       "inspection.k_drop_a_file_or_folder_anywhere_in_this_window",
@@ -1294,22 +1529,25 @@ export function App() {
                         <Copy size={13} />
                         {t("selection.k_copy")}
                       </button>
-                      <button disabled={acting} onClick={() => prepare(false)}>
+                      <button
+                        disabled={acting || inspectionLocked}
+                        onClick={() => prepare(false)}
+                      >
                         {t("termination.k_terminate")}
                       </button>
                       <button
                         className="danger-text"
-                        disabled={acting}
+                        disabled={acting || inspectionLocked}
                         onClick={() => prepare(true)}
                       >
                         {t("termination.k_force_terminate")}
                       </button>
                       <button
-                        className="icon-button"
-                        aria-label={t("selection.k_clear_selection")}
+                        disabled={inspectionLocked}
                         onClick={() => setSelected(new Set())}
                       >
                         <X size={14} />
+                        {t("selection.k_deselect_all")}
                       </button>
                     </div>
                   ) : (
@@ -1321,6 +1559,7 @@ export function App() {
                   )}
                   <div className="results-workspace">
                     <Table
+                      pageCache={pageCache.current}
                       fitAllRequest={fitAllRequest}
                       onFittingChange={setColumnsFitting}
                       fontSize={fontSize}
@@ -1337,7 +1576,6 @@ export function App() {
                         setActiveRow({ row, revision });
                         setFocused(closing ? null : row.process_key);
                       }}
-                      key={view === "ports" ? "ports" : "files"}
                       revision={status.revision}
                       query={tableQuery}
                       hiddenColumns={hiddenColumns}
@@ -1435,6 +1673,7 @@ export function App() {
                         }
                         reveal={reveal}
                         ports={() => {
+                          if (inspectionLocked) return;
                           setView("ports");
                           setScope({
                             key: details.process.process_key,
@@ -1451,6 +1690,7 @@ export function App() {
                           )
                         }
                         handles={() => {
+                          if (inspectionLocked) return;
                           setView("handles");
                           setScope({
                             key: details.process.process_key,
@@ -1748,6 +1988,8 @@ export function App() {
                   <dd>{modifier}+,</dd>
                   <dt>{t("inspection.k_open_file_folder")}</dt>
                   <dd>Ctrl / ⌘ O · {t("app.k_shift_for_folder")}</dd>
+                  <dt>{t("inspection.k_new_window")}</dt>
+                  <dd>{modifier}+Shift+N</dd>
                   <dt>{t("search.k_search_results")}</dt>
                   <dd>
                     {modifier}+F {t("common.k_or")} / ·{" "}
@@ -1803,21 +2045,16 @@ export function App() {
         </main>
       </div>
       <footer className="statusbar">
-        <span
-          className="status-current"
-          role={backgroundScan && scanBusy ? undefined : "status"}
-        >
-          {backgroundScan && scanBusy ? (
+        <span className="status-current" role={scanBusy ? undefined : "status"}>
+          {scanBusy ? (
             <BackgroundInspection
               status={status}
               starting={startingScan}
               complete={apply}
+              automatic={backgroundScan}
             />
           ) : (
             <>
-              {(status.scanning || preparingRefresh) && (
-                <LoaderCircle size={13} className="spin" />
-              )}
               <span className="status-current-label">
                 {gridFailed
                   ? t("inspection.k_result_update_failed")
@@ -1885,23 +2122,61 @@ export function App() {
           </button>
         </span>
       </footer>
-      {!scanBusy && dragging && (
+      {view !== "ports" && !scanBusy && dragging && (
         <div className="drop-overlay">
           <div>
             <FolderOpen size={42} />
             <h2>{t("inspection.k_drop_file_or_folder_to_inspect")}</h2>
+            <p>{t("inspection.k_release_to_change_the_scan_target")}</p>
             <p>{t("inspection.k_one_target_at_a_time")}</p>
           </div>
         </div>
       )}
       {showAbout && (
-        <AboutDialog
-          status={status}
-          close={() => setShowAbout(false)}
-          report={report}
-        />
+        <Suspense fallback={null}>
+          <AboutDialog
+            status={status}
+            close={() => setShowAbout(false)}
+            report={report}
+          />
+        </Suspense>
       )}
       <UpdateFeedback updates={updates} report={report} />
+      {pendingDrop !== null && (
+        <Modal
+          className="drop-window-modal"
+          title={t("inspection.k_open_dropped_target")}
+          close={dismissDrop}
+        >
+          <p>{t("inspection.k_choose_drop_window")}</p>
+          <p className="muted">{t("inspection.k_drop_window_hint")}</p>
+          <div className="modal-actions">
+            <button
+              data-default-focus
+              disabled={openingWindow}
+              onClick={dismissDrop}
+            >
+              {t("common.k_cancel")}
+            </button>
+            <button
+              disabled={openingWindow}
+              onClick={() => {
+                const request = pendingDrop;
+                setPendingDrop(null);
+                runScan(() => api.inspectDropped(request));
+              }}
+            >
+              {t("inspection.k_this_window")}
+            </button>
+            <button
+              disabled={openingWindow}
+              onClick={() => openNewWindow(pendingDrop)}
+            >
+              <AppWindow size={14} /> {t("inspection.k_new_window")}
+            </button>
+          </div>
+        </Modal>
+      )}
       {toast && (
         <div className="toast" role="status">
           <Check size={15} />
@@ -2299,13 +2574,6 @@ export function App() {
             </button>
           </div>
         </Modal>
-      )}
-      {scanBusy && !backgroundScan && (
-        <InspectionOverlay
-          status={status}
-          starting={startingScan}
-          complete={apply}
-        />
       )}
     </div>
   );

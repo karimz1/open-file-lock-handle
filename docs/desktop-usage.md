@@ -18,15 +18,30 @@ downloads, see the [README](../README.md#desktop-install).
 
 ## Inspect files and processes
 
+When no target is open, the workspace prompts you to drag a file or folder
+onto it. If an inspection finds no matching processes, the empty result keeps
+the permission notice and explains how to inspect another target.
+
 Open a target in any of these ways:
 
-- Drop a file or folder onto the window.
-- Choose **Open file** (`Ctrl+O`) or **Open folder** (`Ctrl+Shift+O`).
-- Type a path into the target box and choose **Inspect**.
+- Drop a file or folder onto the window while outside the **Ports** view.
+- Choose **Open file** (`Ctrl+O`) or **Open folder** (`Ctrl+Shift+O`), either
+  at the top of the page or with the file and folder buttons at the left of the
+  target box.
+- Type or paste a path into the target box and press `Enter` or choose
+  **Inspect**. Surrounding quotes, such as those added by Windows
+  **Copy as path**, are removed.
 - Pick one of your last twelve targets under **Recent targets** (`Ctrl+4`).
 - On Windows, right-click a file and choose **Inspect file**, or right-click a
   folder, a drive, or the empty area of a folder window and choose
   **Inspect folder**. See [Explorer context menu](#explorer-context-menu).
+
+Choose **New window** (`Ctrl+Shift+N`) to open a separate OFLH instance with its
+own inspection. Dropping a target while another inspection is open asks where
+to open it: **This window** replaces the current inspection, **New window**
+keeps it open, and **Cancel** leaves it unchanged. Cancel is focused by default.
+The first drop into an empty window starts inspecting immediately. The **Ports**
+view ignores file and folder drops.
 
 A folder target includes everything below it, so you can open `C:\` or `/` to
 search the whole system. The sidebar switches between two views of the result:
@@ -49,18 +64,27 @@ On Windows, ordinary drive and network paths are shown as `C:\…` or
 prefix, including in copied text, so they mean the same thing wherever you
 paste them.
 
+Choose **Close inspection** beside the target field to remove the target,
+results, and row selection. Recent targets are kept. This action does not
+terminate processes or change files. **Deselect all** in the selection bar
+removes only the row selection.
+
 ### Explorer context menu
 
 The Windows installer adds **Inspect file** and **Inspect folder** to the
 File Explorer context menu. The option is on the installer's welcome page and
 is checked by default. Entries appear for one selected item at a time.
 
-Choosing an entry starts OFLH Desktop and inspects the item. If OFLH Desktop is
-already open, that window comes to the front and inspects the item instead; an
-inspection that is still running there is cancelled. Starting OFLH Desktop again
-from the Start menu also brings the open window to the front. An open window
+Choosing an entry starts OFLH Desktop and inspects the item. Repeated Explorer
+or Start menu launches use the same window and bring it to the front. An Explorer
+target replaces that window's inspection, cancelling any scan still running
+there. An open window
 running as administrator cannot receive targets from Explorer, so a second
 window opens in that case.
+
+**New window** and the drop dialog's **New window** choice open independently
+on Windows too, keeping the existing inspection and selection. These independent
+windows do not receive Explorer launches.
 
 - On Windows 11, the entries are under **Show more options** (or
   `Shift+F10`), not in the shortened first menu.
@@ -110,6 +134,9 @@ Search, filters, column widths, and the details panel all survive a refresh.
 **Ports** (`Ctrl+3`) lists local TCP listeners and bound UDP sockets with their
 owning process. It does not show established connections or tell you whether a
 port is reachable from another machine.
+
+File and folder picker controls are hidden in **Ports**. File and folder drops
+are ignored there; switch to **Processes** or **File usages** to inspect a path.
 
 Search `port:3000` for an exact port, `30` for any port containing 30, or
 combine terms: `port:3000 tcp`, `udp`, `ipv6`, `pid:1234`. **Target processes
@@ -179,8 +206,10 @@ Refresh with `F5` or `Ctrl+R`. The **Auto** control next to **Refresh** repeats
 the scan at an interval you choose; it is off at every launch and pauses during
 scans and confirmations.
 
-Opening a target or refreshing manually shows a progress panel with elapsed
-time, current stage, work done so far, and **Cancel**. There is no percentage,
+Opening a target or refreshing manually keeps the workspace visible and locks
+inspection controls and tab switching immediately. The footer reports the work
+and elapsed time. For scans lasting more than a quarter second, **Cancel** and
+**Show inspection progress** appear; the latter opens stage and work counters. There is no percentage,
 because the total amount of work is not known in advance. **Cancel** keeps the
 previous results; an OS call already in progress may take a moment to return.
 
@@ -200,6 +229,7 @@ error.
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl+O` / `Ctrl+Shift+O` | Open file / open folder |
+| `Ctrl+Shift+N` | Open a new OFLH window |
 | `Ctrl+1` … `Ctrl+4` | Processes / File usages / Ports / Recent targets |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous view |
 | `Ctrl+F` or `/` | Focus search |

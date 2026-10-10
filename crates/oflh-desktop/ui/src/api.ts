@@ -135,11 +135,16 @@ export const api = {
   openReleaseNotes: () => invoke<void>("open_release_notes"),
   status: () => invoke<Status>("status"),
   inspect: (path: string) => invoke<Status>("inspect", { path }),
+  inspectDropped: (request: number) =>
+    invoke<Status>("inspect_dropped", { request }),
+  newWindow: (request?: number) =>
+    invoke<void>("new_window", { request: request ?? null }),
   ports: () => invoke<Status>("inspect_ports"),
   followProcess: (revision: number, key: string) =>
     invoke<Status>("follow_process", { revision, key }),
   refresh: () => invoke<Status>("refresh"),
   cancel: () => invoke<Status>("cancel"),
+  closeInspection: () => invoke<Status>("close_inspection"),
   choose: (folder: boolean) => invoke<Status | null>("choose", { folder }),
   page: (revision: number, query: TableQuery) =>
     invoke<Page>("page", { revision, query }),

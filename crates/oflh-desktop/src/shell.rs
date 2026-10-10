@@ -1,5 +1,5 @@
 //! Tauri transport and native desktop integrations. Inspection remains in the service.
-use crate::{contract::*, service::Service};
+use crate::{contract::*, dropped_target::DroppedTarget, service::Service};
 use serde::Serialize;
 use std::{
     path::{Path, PathBuf},
@@ -81,6 +81,22 @@ fn inspect(service: Desktop<'_>, path: String) -> Result<Status, Failure> {
     service.inspect(PathBuf::from(path))
 }
 #[tauri::command]
+fn inspect_dropped(
+    service: Desktop<'_>,
+    dropped: State<'_, DroppedTarget>,
+    request: u32,
+) -> Result<Status, Failure> {
+    service.inspect(dropped.take(request)?)
+}
+#[tauri::command]
+async fn new_window(
+    dropped: State<'_, DroppedTarget>,
+    request: Option<u32>,
+) -> Result<(), Failure> {
+    let target = request.map(|request| dropped.take(request)).transpose()?;
+    blocking(move || crate::instance::launch(target)).await
+}
+#[tauri::command]
 fn refresh(service: Desktop<'_>) -> Result<Status, Failure> {
     service.refresh()
 }
@@ -95,6 +111,10 @@ fn follow_process(service: Desktop<'_>, revision: u32, key: String) -> Result<St
 #[tauri::command]
 fn cancel(service: Desktop<'_>) -> Status {
     service.cancel()
+}
+#[tauri::command]
+fn close_inspection(service: Desktop<'_>) -> Result<Status, Failure> {
+    service.close_inspection()
 }
 #[tauri::command]
 async fn choose(
@@ -373,13 +393,6 @@ fn open_issue(app: tauri::AppHandle, title: String, body: String) -> Result<(), 
         .map_err(integration)
 }
 
-fn single_drop_target(paths: &[PathBuf]) -> Result<&Path, Failure> {
-    match paths {
-        [path] => Ok(path.as_path()),
-        _ => Err(Failure::invalid("Drop one file or folder at a time")),
-    }
-}
-
 /// Start an inspection that another launch of the app forwarded to this window.
 ///
 /// The window is brought to the front either way. A target replaces any running
@@ -416,19 +429,29 @@ fn take_over_launch(app: &tauri::AppHandle, arguments: Vec<String>, working_dire
 /// menu). Its inspection starts before the WebView loads; the page picks it up
 /// through `status` like any other running inspection. On Windows, a launch while
 /// a window is open exits after handing its arguments to that window
-/// ([`take_over_launch`]).
+/// ([`take_over_launch`]), unless `--new-window` requests an independent process.
 pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+    let independent_window = crate::launch::new_window_requested(std::env::args_os());
+    let startup_target = if independent_window {
+        crate::instance::startup_target(std::env::args_os().skip(2))?
+    } else {
+        initial_target
+    };
     let builder = tauri::Builder::default();
     // The single-instance plugin must be registered first.
     #[cfg(windows)]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(take_over_launch));
+    let builder = if independent_window {
+        builder
+    } else {
+        builder.plugin(tauri_plugin_single_instance::init(take_over_launch))
+    };
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .setup(|app| {
+        .setup(move |app| {
             let handle = app.handle().clone();
             let app_data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data)?;
@@ -440,12 +463,13 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
                 },
                 app_data.join("oflh.sqlite3"),
             )?;
-            if let Some(target) = initial_target {
+            if let Some(target) = startup_target {
                 // Only an empty path (excluded by the parser) or an exhausted scan
                 // generation counter, impossible in a fresh service, can fail here.
                 service.inspect(target)?;
             }
             app.manage(Arc::new(service));
+            app.manage(DroppedTarget::default());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -462,18 +486,11 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
                     }
                     tauri::DragDropEvent::Drop { paths, .. } => {
                         let _ = window.emit("drag-active", false);
+                        // The UI must accept this request from a view allowing file drops.
                         // Keep the OS PathBuf in Rust, including non-Unicode filenames.
-                        match single_drop_target(paths) {
-                            Ok(path) => {
-                                match window.state::<Arc<Service>>().inspect(path.to_path_buf()) {
-                                    Ok(status) => {
-                                        let _ = window.emit("target-dropped", ());
-                                        let _ = window.emit("scan-status", status);
-                                    }
-                                    Err(error) => {
-                                        let _ = window.emit("desktop-error", error);
-                                    }
-                                }
+                        match window.state::<DroppedTarget>().capture(paths) {
+                            Ok(request) => {
+                                let _ = window.emit("target-drop-requested", request);
                             }
                             Err(error) => {
                                 let _ = window.emit("desktop-error", error);
@@ -499,10 +516,13 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
             open_release_notes,
             open_issue,
             inspect,
+            inspect_dropped,
+            new_window,
             refresh,
             inspect_ports,
             follow_process,
             cancel,
+            close_inspection,
             choose,
             page,
             details,
@@ -599,31 +619,5 @@ mod reveal_tests {
         assert!(details.contains("D-Bus unavailable"));
         assert!(details.contains("xdg-open failed"));
         assert!(details.contains("Rust backtrace"));
-    }
-}
-
-#[cfg(test)]
-mod drop_tests {
-    use super::*;
-
-    #[test]
-    fn accepts_a_single_folder_drop_target() {
-        let folder = PathBuf::from("/workspace/project");
-
-        assert_eq!(
-            single_drop_target(std::slice::from_ref(&folder)).unwrap(),
-            folder.as_path()
-        );
-    }
-
-    #[test]
-    fn rejects_empty_or_multiple_drop_targets() {
-        let folders = [
-            PathBuf::from("/workspace/project"),
-            PathBuf::from("/tmp/other"),
-        ];
-
-        assert!(single_drop_target(&[]).is_err());
-        assert!(single_drop_target(&folders).is_err());
     }
 }

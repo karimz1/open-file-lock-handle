@@ -9,6 +9,17 @@ use std::{
 /// `"<exe>" --inspect "%1"` (and `"%V"` for a folder background) with Explorer.
 pub const INSPECT_FLAG: &str = "--inspect";
 
+/// Internal flag for an independent window that bypasses Windows launch forwarding.
+pub const NEW_WINDOW_FLAG: &str = "--new-window";
+
+/// Whether the first startup argument explicitly requests an independent window.
+///
+/// `arguments` includes the program name. Only the first option is considered so
+/// an Explorer target named `--new-window` cannot bypass launch forwarding.
+pub fn new_window_requested(arguments: impl IntoIterator<Item = OsString>) -> bool {
+    arguments.into_iter().nth(1).as_deref() == Some(std::ffi::OsStr::new(NEW_WINDOW_FLAG))
+}
+
 /// Return the target that `--inspect <path>` asks to open at startup.
 ///
 /// `arguments` includes the program name, as from [`std::env::args_os`]. Without
@@ -76,6 +87,27 @@ mod tests {
 
     fn arguments(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn only_explicit_new_windows_bypass_launch_forwarding() {
+        assert!(new_window_requested(arguments(&[
+            "oflh-desktop",
+            NEW_WINDOW_FLAG
+        ])));
+        assert!(new_window_requested(arguments(&[
+            "oflh-desktop",
+            NEW_WINDOW_FLAG,
+            "--inspect-target",
+            "/build/out"
+        ])));
+        for values in [
+            &["oflh-desktop"][..],
+            &["oflh-desktop", INSPECT_FLAG, "/build/out"],
+            &["oflh-desktop", INSPECT_FLAG, NEW_WINDOW_FLAG],
+        ] {
+            assert!(!new_window_requested(arguments(values)));
+        }
     }
 
     #[test]

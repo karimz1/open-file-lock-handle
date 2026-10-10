@@ -198,6 +198,23 @@ const de: TranslationSchema<typeof en> = {
     k_search_recent_targets: "Zuletzt verwendete Ziele durchsuchen",
   },
   inspection: {
+    k_new_window: "Neues Fenster",
+    k_new_window_hint: "Separates OFLH-Fenster öffnen ({{shortcut}})",
+    k_this_window: "Dieses Fenster",
+    k_open_dropped_target: "Abgelegtes Ziel öffnen",
+    k_choose_drop_window:
+      "Wo möchten Sie die abgelegte Datei oder den Ordner untersuchen?",
+    k_drop_window_hint:
+      "Dieses Fenster ersetzt die aktuelle Untersuchung. Neues Fenster lässt sie geöffnet.",
+    k_progress: "Fortschritt der Untersuchung",
+    k_show_progress: "Untersuchungsfortschritt anzeigen",
+    k_cancel_inspection: "Untersuchung abbrechen",
+    k_drag_target_here: "Datei oder Ordner hierher ziehen",
+    k_drop_another_target:
+      "Ziehen Sie eine Datei oder einen Ordner hierher, um ein anderes Ziel zu untersuchen.",
+    k_close_inspection: "Untersuchung schließen",
+    k_close_inspection_hint:
+      "Aktuelles Ziel, Ergebnisse und Zeilenauswahl entfernen. Letzte Ziele bleiben erhalten.",
     k_checking_process_references: "Prozessreferenzen werden geprüft",
     k_checking_files: "Dateien werden geprüft",
     k_checking_ports: "Lokale Ports werden geprüft",
@@ -219,6 +236,17 @@ const de: TranslationSchema<typeof en> = {
       "Wähle eine Datei oder einen Ordner aus, um die Untersuchung zu starten.",
     k_choose_file: "Datei auswählen",
     k_choose_folder: "Ordner auswählen",
+    k_choose_a_file_to_scan_shortcut:
+      "Datei zum Untersuchen auswählen ({{shortcut}})",
+    k_choose_a_folder_to_scan_shortcut:
+      "Ordner zum Untersuchen auswählen ({{shortcut}})",
+    k_choose_a_scan_target: "Scan-Ziel auswählen",
+    k_drag_a_file_or_folder_onto_this_window_hint:
+      "Tipp: Ziehe eine Datei oder einen Ordner in dieses Fenster, um das Scan-Ziel zu ändern – oder gib einen Pfad ein und drücke Enter.",
+    k_release_to_change_the_scan_target:
+      "Loslassen, um das abgelegte Ziel zu öffnen.",
+    k_type_paste_or_drop_a_file_or_folder_path:
+      "Datei- oder Ordnerpfad eingeben, einfügen oder hierher ziehen …",
     k_drop_a_file_or_folder_anywhere_in_this_window:
       "Ziehe eine Datei oder einen Ordner an eine beliebige Stelle in diesem Fenster.",
     k_drop_file_or_folder_to_inspect:
@@ -242,7 +270,6 @@ const de: TranslationSchema<typeof en> = {
     k_open_files_do_not_necessarily_mean_locked_files:
       "Geöffnete Dateien sind nicht unbedingt gesperrt.",
     k_open_folder: "Ordner öffnen",
-    k_paste_a_file_or_folder_path: "Datei- oder Ordnerpfad einfügen …",
     k_process_inspection_views: "Prozessansichten",
     k_processes_referencing_your_target_and_i_9e70e943:
       "Prozesse, die auf dein Ziel oder dessen Inhalte zugreifen.",
@@ -346,6 +373,7 @@ const de: TranslationSchema<typeof en> = {
       "Suchen ({{shortcut}}+F oder /); Escape kehrt zum Arbeitsbereich zurück",
   },
   selection: {
+    k_deselect_all: "Auswahl aufheben",
     k_clear_selection: "Auswahl aufheben",
     k_clear_selection_and_details: "Auswahl und Details schließen",
     k_click_a_row_to_inspect_use_the_panel_bu_1ffc65e8:
@@ -434,6 +462,8 @@ const de: TranslationSchema<typeof en> = {
     k_trade_off: "Zu beachten:",
   },
   table: {
+    k_no_local_bindings:
+      "Keine lokalen TCP-Listener oder gebundenen UDP-Sockets gefunden. Berechtigungen können die Erkennung einschränken.",
     k_auto_fit_hint: "Doppelklicken, um die Spalte an den Inhalt anzupassen",
     k_fit_all_columns: "Alle Spalten anpassen",
     k_fit_all_columns_hint:

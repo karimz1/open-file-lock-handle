@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowDown,
@@ -30,7 +36,13 @@ export interface ColumnDefinition {
   sort?: Sort;
   width: number;
 }
+export type CachedPage = Page & {
+  offset: number;
+  queryKey: string;
+  target: string;
+};
 interface Props {
+  pageCache: Map<string, CachedPage>;
   fitAllRequest: number;
   onFittingChange: (fitting: boolean) => void;
   fontSize: number;
@@ -94,9 +106,7 @@ export function Table(props: Props) {
     startX: number;
     startWidth: number;
   } | null>(null);
-  const [page, setPage] = useState<
-    (Page & { offset: number; queryKey: string; target: string }) | null
-  >(null);
+  const [page, setPage] = useState<CachedPage | null>(null);
   const [failedPage, setFailedPage] = useState<{
     revision: number;
     target: string;
@@ -104,10 +114,17 @@ export function Table(props: Props) {
     offset: number;
   } | null>(null);
   const queryKey = JSON.stringify({ ...props.query, offset: 0 });
+  const cached = props.pageCache.get(queryKey);
+  const cachedPage =
+    cached?.target === props.target && cached.revision === props.revision
+      ? cached
+      : null;
   // Keep the accepted viewport during a same-target refresh. A different query
   // or target must never inherit stale matches. Actions retain the page revision.
   const displayPage =
-    page?.queryKey === queryKey && page.target === props.target ? page : null;
+    page?.queryKey === queryKey && page.target === props.target
+      ? page
+      : cachedPage;
   const currentPage =
     displayPage?.revision === props.revision ? displayPage : null;
   const [cursor, setCursor] = useState(0);
@@ -159,12 +176,27 @@ export function Table(props: Props) {
     failedPage.target === props.target &&
     failedPage.queryKey === queryKey &&
     failedPage.offset === offset;
-  useEffect(() => {
+  useLayoutEffect(() => {
     scroll.current?.scrollTo({ top: 0 });
     setCursor(0);
     pendingNavigation.current = null;
   }, [props.target, queryKey]);
+  useLayoutEffect(() => {
+    if (cachedPage && offset === cachedPage.offset) {
+      setPage(cachedPage);
+      props.onPage(cachedPage);
+      props.onTotal(cachedPage.total);
+    }
+  }, [props.target, props.revision, queryKey, offset]);
+  const [loadingKey, setLoadingKey] = useState("");
+  const requestKey = `${props.revision}:${props.target}:${queryKey}`;
   useEffect(() => {
+    if (displayPage || pageFailed) return;
+    const timer = setTimeout(() => setLoadingKey(requestKey), 180);
+    return () => clearTimeout(timer);
+  }, [requestKey, !!displayPage, pageFailed]);
+  useEffect(() => {
+    if (cachedPage && offset === cachedPage.offset) return;
     let active = true;
     const timer = setTimeout(() => {
       loader.current.request(
@@ -181,7 +213,21 @@ export function Table(props: Props) {
               );
               if (nextCursor >= 0) setCursor(offset + nextCursor);
             }
-            setPage({ ...result, offset, queryKey, target: props.target });
+            const accepted = {
+              ...result,
+              offset,
+              queryKey,
+              target: props.target,
+            };
+            if (offset === 0) {
+              props.pageCache.delete(queryKey);
+              props.pageCache.set(queryKey, accepted);
+              if (props.pageCache.size > 8) {
+                const oldest = props.pageCache.keys().next().value;
+                if (oldest !== undefined) props.pageCache.delete(oldest);
+              }
+            }
+            setPage(accepted);
             setFailedPage(null);
             props.onPage(result);
             props.onTotal(result.total);
@@ -483,8 +529,12 @@ export function Table(props: Props) {
       </div>
       {!displayPage ? (
         <div className="empty">
-          <Search size={28} />
-          <h3>{t("table.k_loading_results")}</h3>
+          {loadingKey === requestKey && (
+            <>
+              <Search size={28} />
+              <h3>{t("table.k_loading_results")}</h3>
+            </>
+          )}
         </div>
       ) : displayPage.total === 0 ? (
         <div className="empty">
@@ -502,8 +552,11 @@ export function Table(props: Props) {
             ) ||
             props.query.process_key
               ? t("filters.k_no_rows_match_the_current_filters_clear_0d9d0c2e")
-              : t("table.k_no_visible_process_references_this_targ_b434e8b6")}
+              : props.query.ports
+                ? t("table.k_no_local_bindings")
+                : t("table.k_no_visible_process_references_this_targ_b434e8b6")}
           </p>
+          {!props.query.ports && <p>{t("inspection.k_drop_another_target")}</p>}
         </div>
       ) : (
         <div
