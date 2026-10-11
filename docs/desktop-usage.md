@@ -18,6 +18,11 @@ downloads, see the [README](../README.md#desktop-install).
 
 ## Inspect files and processes
 
+![OFLH Desktop on Windows inspecting the C: drive with a Firefox search, matching file handles, local ports, and the selected process's parent tree](../images/oflh-desktop-windows-find-process-locking-file.webp)
+
+**Desktop example (Windows):** inspect a file, folder, or whole drive, then
+select a process to see its matching files and parent tree.
+
 When no target is open, the workspace prompts you to drag a file or folder
 onto it. If an inspection finds no matching processes, the empty result keeps
 the permission notice and explains how to inspect another target.
@@ -132,7 +137,10 @@ Search, filters, column widths, and the details panel all survive a refresh.
 
 ## Ports
 
-![The Ports view listing a TCP listener and a bound UDP socket](../images/desktop-ports.png)
+![OFLH Desktop Local ports view on Windows filtered to steam, showing TCP listeners, bound UDP sockets, addresses, process IDs, and the selected process's parent tree](../images/oflh-desktop-windows-local-ports-tcp-udp-owner.webp)
+
+**Desktop example (Windows):** the local TCP and UDP bindings owned by Steam
+processes, with the selected process's details beside the list.
 
 **Ports** (`Ctrl+3`) lists local TCP listeners and bound UDP sockets with their
 owning process. It does not show established connections or tell you whether a
@@ -163,6 +171,10 @@ the native path.
 
 ## Process actions
 
+![OFLH Desktop process actions menu for firefox.exe on Windows, including copying a path or PID, revealing a file, matching handles, Terminate, and Force terminate](../images/oflh-desktop-windows-process-actions-menu.webp)
+
+**Desktop example (Windows):** right-click a process for its actions.
+
 The safest way to free a file or port is to close the application normally.
 When that is not possible:
 
@@ -173,6 +185,11 @@ When that is not possible:
 Both open a confirmation listing every target by name and PID, with **Cancel**
 as the default. Save your work first. Before acting, oflh checks that each PID
 still belongs to the process you selected; results refresh afterwards.
+
+![OFLH Desktop Terminate processes confirmation on Windows for firefox.exe, with its PID, unsaved-work warning, and Cancel and Terminate buttons](../images/oflh-desktop-windows-terminate-process-confirmation.webp)
+
+**Desktop example (Windows):** review the named processes before confirming;
+**Cancel** is the default.
 
 If a normal termination fails or the process is still running, the results
 dialog offers **Force terminate** for just those processes, again behind a

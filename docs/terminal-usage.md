@@ -66,6 +66,17 @@ counts as evidence on each OS.
 
 **3 Ports** lists local port bindings; see [Ports](#ports).
 
+For example, a folder scan in **Processes** looks like this (abridged from
+the terminal snapshot tests):
+
+```text
+  oflh   1 Processes  2 Locked files  3 Ports
+  /build  ·  MANUAL · r refresh
+  1 of 1 processes · sort: pid
+     PID     PROCESS   USER    CPU%   RAM        ACCESS      PORTS  MATCHED PATH
+     424242  dotnet    alice   2.4%   31.0 MiB   read/write  0      FileLockExampleCli.dll +2
+```
+
 Press `Enter` on a process to open its details: every matching file with its
 relation and access mode, plus executable, working directory, parent, CPU,
 memory, and ports. In details, `l` limits the list to lock evidence and `←`/`→`
