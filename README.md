@@ -10,7 +10,9 @@
   <img src=".github/social-preview.png" alt="oflh: find what's using your file or port. OFLH Desktop lists the processes using a folder; the oflh terminal app shows the selected process and its parent process tree. Runs on Windows, Linux, and macOS." width="100%">
 </p>
 
-<p align="center"><a href="https://oflh.karimzouine.com/">oflh.karimzouine.com</a> · <a href="https://winfuture.de/download/product/4227/">Featured on WinFuture</a></p>
+<p align="center">
+  <a href="https://oflh.karimzouine.com/">oflh.karimzouine.com</a>
+</p>
 
 <p align="center">
   <a href="https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml"><img src="https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
