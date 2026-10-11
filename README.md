@@ -143,6 +143,34 @@ has builds for Windows, Linux, and macOS on x86-64 (`amd64`) and ARM64 (`arm64`,
 including Apple Silicon), plus a `checksums.txt` with SHA-256 hashes. The
 [website](https://oflh.karimzouine.com/) picks the right download for you.
 
+<a id="desktop-install"></a>
+
+### Desktop app
+
+| Platform | Package |
+| --- | --- |
+| Windows | `oflh-desktop.windows.<arch>-installer.exe` |
+| macOS | `oflh-desktop.darwin.<arch>.dmg` |
+| Linux | `.deb`, `.rpm`, or a `.tar.gz` archive for other glibc distributions ([details](docs/desktop-usage.md#linux-archive-installation)) |
+
+On Windows and macOS the app can download and install updates itself after
+you confirm; on Linux, install new packages manually. ARM32 is not supported.
+
+**Desktop app:** available since [v0.2.0](https://github.com/karimz1/open-file-lock-handle/releases/tag/v0.2.0).
+
+<a id="unsigned-installers"></a>
+
+### Unsigned installers
+
+Releases are not code-signed or notarized, so Windows may show "unknown
+publisher" and macOS Gatekeeper may block the app. Verify the download against
+`checksums.txt` before bypassing the warning. If macOS reports the app as
+damaged, clear the quarantine flag:
+
+```sh
+xattr -cr "/Applications/OFLH Desktop.app"
+```
+
 <a id="cli-tui-install"></a>
 
 ### Terminal app
@@ -175,92 +203,16 @@ chmod +x ./oflh-cli.darwin.arm64
 Rename the file to `oflh` (`oflh.exe` on Windows) and put it on your `PATH` to
 run it from anywhere.
 
-<a id="desktop-install"></a>
-
-### Desktop app
-
-| Platform | Package |
-| --- | --- |
-| Windows | `oflh-desktop.windows.<arch>-installer.exe` |
-| macOS | `oflh-desktop.darwin.<arch>.dmg` |
-| Linux | `.deb`, `.rpm`, or a `.tar.gz` archive for other glibc distributions ([details](docs/desktop-usage.md#linux-archive-installation)) |
-
-On Windows and macOS the app can download and install updates itself after
-you confirm; on Linux, install new packages manually. ARM32 is not supported.
-
-**Desktop app:** available since [v0.2.0](https://github.com/karimz1/open-file-lock-handle/releases/tag/v0.2.0).
-
-<a id="unsigned-installers"></a>
-
-### Unsigned installers
-
-Releases are not code-signed or notarized, so Windows may show "unknown
-publisher" and macOS Gatekeeper may block the app. Verify the download against
-`checksums.txt` before bypassing the warning. If macOS reports the app as
-damaged, clear the quarantine flag:
-
-```sh
-xattr -cr "/Applications/OFLH Desktop.app"
-```
-
 <a id="build-from-source"></a>
 
 ### Build from source
 
 See [Development](docs/development.md) for cloning the repository,
-prerequisites, and build commands for the CLI and desktop app.
+prerequisites, and build commands for the desktop and terminal apps.
 
 <a id="getting-started"></a>
 
 ## Quick start
-
-### Terminal
-
-```sh
-oflh                       # current directory, including subfolders
-oflh ./build               # a folder
-oflh ./build/plugin.dll    # a single file
-oflh --port 3000           # TCP listener or bound UDP socket on port 3000
-oflh --ports               # all local listening/bound ports
-```
-
-Inspect a whole drive or filesystem the same way:
-
-```powershell
-oflh 'C:\'      # PowerShell
-```
-
-```sh
-oflh /
-```
-
-oflh opens an interactive view. A folder scan of a build directory looks like
-this (abridged from the terminal snapshot tests):
-
-```text
-  oflh   1 Processes  2 Locked files  3 Ports
-  /build  ·  MANUAL · r refresh
-  1 of 1 processes · sort: pid
-     PID     PROCESS   USER    CPU%   RAM        ACCESS      PORTS  MATCHED PATH
-     424242  dotnet    alice   2.4%   31.0 MiB   read/write  0      FileLockExampleCli.dll +2
-```
-
-Press `Enter` to see every file the process uses, `Tab` to walk up its parent
-tree, and `k` to ask it to close.
-
-| Key | Action |
-| --- | --- |
-| `1` `2` `3` | Processes, Locked files, Ports |
-| `↑` `↓` `Enter` | Move and open process details |
-| `/` | Search; supports `*` wildcards and word initials |
-| `Tab` | Focus the parent process tree |
-| `k` / `x` | Close / force-kill, after confirmation |
-| `r` | Refresh |
-| `?` | All shortcuts and scan warnings |
-| `q` | Quit |
-
-The [terminal guide](docs/terminal-usage.md) covers search syntax, port scoping,
-and process actions.
 
 ### Desktop
 
@@ -275,6 +227,19 @@ and process actions.
 
 The [desktop guide](docs/desktop-usage.md) covers filters, selection, ports,
 and administrator retry.
+
+### Terminal
+
+Run these commands in a terminal:
+
+```sh
+oflh ./build               # a folder
+oflh ./build/plugin.dll    # a single file
+oflh --port 3000           # TCP listener or bound UDP socket on port 3000
+```
+
+The [terminal guide](docs/terminal-usage.md) covers whole-drive scans,
+reading results, search, ports, process actions, and keyboard shortcuts.
 
 <a id="fast-whole-drive-file-usage-scans"></a>
 
@@ -333,17 +298,17 @@ terminal app with `--no-update-check`.
 
 ### How do I find which process is locking a file on Windows?
 
-Run `oflh path\to\file` in a terminal, or open the file in OFLH Desktop. You get
+Open the file in OFLH Desktop, or run `oflh path\to\file` in a terminal. You get
 every process Windows reports as using that file, including programs that
-loaded it as a module, and the **Locked files** view shows whether the file
-currently has a read, write, or delete sharing conflict. To
-check a folder or a whole drive, pass the folder or `C:\` instead.
+loaded it as a module. **Lock evidence only** in the desktop app and
+**Locked files** in the terminal app filter for lock or sharing-conflict evidence. To
+check a folder or a whole drive, open the folder or `C:\` instead.
 
 ### How do I find which process is using a port?
 
-`oflh --port 8080` lists the TCP listener or bound UDP socket on that port with
-its PID, process name, and address. `oflh --ports` lists all of them. In the
-desktop app, open the **Ports** view and search `port:8080`.
+In the desktop app, open **Ports** and search `port:8080` to see its TCP listener
+or bound UDP socket with the owning process. In a terminal, run
+`oflh --port 8080` for one port or `oflh --ports` for all local bindings.
 
 ### Why can't I delete a folder even though no file in it is open in an editor?
 
@@ -390,8 +355,8 @@ re-verify the process identity before sending anything.
 
 | Guide | What's in it |
 | --- | --- |
-| [Terminal guide](docs/terminal-usage.md) | Search syntax, ports, process actions, keys, languages |
 | [Desktop guide](docs/desktop-usage.md) | Inspecting, filtering, ports, actions, updates |
+| [Terminal guide](docs/terminal-usage.md) | Search syntax, ports, process actions, keys, languages |
 | [Platform support](docs/platform-support.md) | How each OS backend works and what it can miss |
 | [Inspection performance](docs/inspection-performance.md) | Benchmarks and how to reproduce them |
 | [Development](docs/development.md) | Building, testing, and project layout |
@@ -399,8 +364,8 @@ re-verify the process identity before sending anything.
 | [Contributing](CONTRIBUTING.md) | Bug reports and pull requests |
 
 <a id="languages"></a>
-The terminal app and CLI help are available in English, German, and Simplified
-Chinese (`--language en|de|zh`); so is the desktop app (Settings → Language).
+The desktop app (Settings → Language), terminal app, and CLI help
+(`--language en|de|zh`) are available in English, German, and Simplified Chinese.
 To correct a translation, see the
 [desktop translation guide](crates/oflh-desktop/ui/src/locales/README.md) or the
 [terminal notes](docs/development.md#terminal-snapshots-and-translations).
