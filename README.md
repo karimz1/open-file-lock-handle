@@ -15,8 +15,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml"><img src="https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/karimz1/open-file-lock-handle/releases/latest"><img src="https://img.shields.io/github/v/release/karimz1/open-file-lock-handle?label=release" alt="Latest release"></a>
   <a href="https://github.com/karimz1/open-file-lock-handle/releases"><img src="https://img.shields.io/github/downloads/karimz1/open-file-lock-handle/total?label=downloads" alt="Downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <a href="#languages"><img src="https://img.shields.io/badge/languages-English%20%7C%20Deutsch%20%7C%20%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-blue" alt="Languages: English, Deutsch, 简体中文"></a>
