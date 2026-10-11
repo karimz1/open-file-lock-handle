@@ -55,7 +55,11 @@ Never move a published tag.
    are attached.
 2. Edit the notes. New drafts start with a
    [download introduction](../.github/release-notes/downloads.md) above GitHub's
-   generated changelog. Retrying a draft keeps your edits.
+   generated changelog. The workflow renders links for the selected tag, with
+   Windows desktop first, followed by the other desktop downloads and terminal
+   downloads. The introduction includes the website link and macOS installation
+   warning. Retrying a draft keeps your edits. GitHub sorts the Assets list by
+   filename; the download links above it provide the recommended order.
 3. Test anything native the release changes. Browser tests use sample data and
    do not exercise native dialogs or installers.
 4. Publish. Publish release candidates as prereleases.

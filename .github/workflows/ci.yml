@@ -32,6 +32,8 @@ jobs:
           node-version: '24'
       - name: Check publishing script syntax
         run: bash -n .github/scripts/sync-updater.sh
+      - name: Test release download links and installation guidance
+        run: node --test .github/scripts/render-release-notes.test.mjs
       - name: Test automatic website commits and stable promotion
         run: node --test .github/scripts/sync-updater.test.cjs
   lockfile:

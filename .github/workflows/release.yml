@@ -90,6 +90,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
       - uses: actions/download-artifact@v8
         with:
           pattern: oflh-cli.*
@@ -132,7 +135,8 @@ jobs:
               gh release edit "$TAG" "${PRERELEASE[@]}"
             fi
           else
-            gh release create "$TAG" --verify-tag --draft "${PRERELEASE[@]}" --title "OFLH $TAG" --notes-file .github/release-notes/downloads.md --generate-notes
+            node .github/scripts/render-release-notes.mjs "$TAG" > "$RUNNER_TEMP/release-notes.md"
+            gh release create "$TAG" --verify-tag --draft "${PRERELEASE[@]}" --title "OFLH $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --generate-notes
           fi
           mkdir -p updater-dist
           # Keep the legacy endpoint working for installed apps and the CLI.
