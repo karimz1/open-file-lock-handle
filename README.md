@@ -351,6 +351,13 @@ To correct a translation, see the
 [desktop translation guide](crates/oflh-desktop/ui/src/locales/README.md) or the
 [terminal notes](docs/development.md#terminal-snapshots-and-translations).
 
+
+## Acknowledgments
+
+Thanks to the [WinFuture](https://winfuture.de/download/product/4227/) editorial team for featuring OFLH for German-speaking users.
+
+---
+
 Found a bug? [Open an issue](https://github.com/karimz1/open-file-lock-handle/issues).
 oflh is an independent project released under the [MIT License](LICENSE). If it
 saves you time, you can support it through
