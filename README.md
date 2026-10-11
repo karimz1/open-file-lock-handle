@@ -188,12 +188,7 @@ run it from anywhere.
 On Windows and macOS the app can download and install updates itself after
 you confirm; on Linux, install new packages manually. ARM32 is not supported.
 
-**Desktop availability:** the graphical app first shipped in stable
-[v0.2.0](https://github.com/karimz1/open-file-lock-handle/releases/tag/v0.2.0)
-on 29 September 2026, after the
-[v0.2.0-rc.1 preview](https://github.com/karimz1/open-file-lock-handle/releases/tag/v0.2.0-rc.1).
-Releases through v0.1.1 contain only the terminal app. Choose `oflh-desktop.*`
-for the graphical app and `oflh-cli.*` for the terminal app.
+**Desktop app:** available since [v0.2.0](https://github.com/karimz1/open-file-lock-handle/releases/tag/v0.2.0).
 
 <a id="unsigned-installers"></a>
 
