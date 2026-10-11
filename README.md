@@ -10,7 +10,9 @@
   <img src=".github/social-preview.png" alt="oflh: find what's using your file or port. OFLH Desktop lists the processes using a folder; the oflh terminal app shows the selected process and its parent process tree. Runs on Windows, Linux, and macOS." width="100%">
 </p>
 
-<p align="center"><a href="https://oflh.karimzouine.com/">oflh.karimzouine.com</a></p>
+<p align="center">
+  <a href="https://oflh.karimzouine.com/">oflh.karimzouine.com</a>
+</p>
 
 <p align="center">
   <a href="https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml"><img src="https://github.com/karimz1/open-file-lock-handle/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -20,9 +22,9 @@
   <a href="#languages"><img src="https://img.shields.io/badge/languages-English%20%7C%20Deutsch%20%7C%20%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-blue" alt="Languages: English, Deutsch, 简体中文"></a>
 </p>
 
-`oflh` shows which processes have a file or folder open and which process owns
-a local port, then lets you close the right one. It comes as an interactive
-terminal app and a desktop app, both built on the same Rust scanner.
+You want to rename, move, or delete a file, and the system refuses because "another program" has it open, without saying which one. oflh (Open File Lock Handle) answers that question. Point it at a file, a folder, or a whole drive and it lists every process using it, along with the parent processes that started each one. Point it at a port and it shows which process is bound to it. Then you close that program, or terminate it from oflh after a confirmation.
+
+It is free and open source, and runs on Windows, macOS, and Linux (x86-64 and ARM64). There is a desktop app for clicking through results and an interactive terminal app for the command line; both use the same Rust scanner. It is for anyone who has hit a locked file in Explorer or Finder, and for developers and administrators chasing a busy build folder, mount point, or port.
 
 Reach for it when:
 
@@ -32,7 +34,7 @@ Reach for it when:
 - A dev server won't start because of *"address already in use"* (`EADDRINUSE`).
 - A folder can't be renamed or deleted and you don't know which file inside it is held.
 
-![OFLH Desktop listing the processes that use a folder, with details for the selected process](images/desktop.png)
+![OFLH Desktop on Windows finding which processes are using files on the C: drive: the Processes view filtered to firefox lists 12 firefox.exe processes, some marked "Sharing conflict, owner unverified", and the details panel shows the selected process's matching handles, local ports, and parent process tree](images/oflh-desktop-windows-find-process-locking-file.webp)
 
 [![Terminal demo: the oflh terminal app listing processes with their open files and process ancestry. Click to play the asciinema recording.](images/terminal-demo-thumbnail.png)](https://asciinema.org/a/1266562)
 
@@ -40,6 +42,7 @@ Reach for it when:
 
 ## Contents
 
+- [OFLH Desktop](#oflh-desktop)
 - [Why oflh](#why-oflh)
 - [Install](#install)
 - [Quick start](#getting-started)
@@ -48,6 +51,30 @@ Reach for it when:
 - [Privacy](#privacy)
 - [FAQ](#faq)
 - [Documentation](#project-references)
+
+## OFLH Desktop
+
+Open a file, a folder, or a whole drive: use **Open file** or **Open folder**, drop it onto the window, paste a path, or on Windows right-click it in File Explorer and choose **Inspect file** or **Inspect folder**. The **Processes** view then lists every process that uses the target, as in the screenshot above. Click a row to see its PID, memory and CPU use, the exact files it has open (**Matching handles**), its **Local ports**, and its **Process ancestry**. The search box matches process names, PIDs, and full paths, and **Auto** refresh keeps the list current while you work. The app is available in English, German, and Simplified Chinese, with light and dark themes.
+
+Using a file is not the same as locking it. Tick **Lock evidence only** to keep rows with lock or sharing-conflict evidence. Windows can show that a file is blocked but not always which process blocked it; those rows say *owner unverified*.
+
+### Close the right process
+
+![OFLH Desktop process actions menu on Windows for firefox.exe (PID 19196): copy path, file name, PID, or process name, reveal in file manager, open containing folder, view matching handles, inspect owner folder, Terminate, and Force terminate](images/oflh-desktop-windows-process-actions-menu.webp)
+
+Right-click a row for its actions: copy its path or PID, reveal the file in the file manager, jump to its matching handles, or end the process. **Terminate** asks the process to exit; **Force terminate** stops it immediately. Closing the application yourself is still the safest option.
+
+![OFLH Desktop "Terminate processes?" confirmation dialog on Windows listing firefox.exe with PID 19196, warning that unsaved work may be lost and that OFLH checks each process identity again before ending it, with Cancel and Terminate buttons](images/oflh-desktop-windows-terminate-process-confirmation.webp)
+
+Nothing is ended without this confirmation. It names every target, including selected processes hidden by a filter, and **Cancel** is the default. Right before acting, oflh checks that each PID still belongs to the process you picked, so a reused PID cannot redirect the action. Unsaved work in that program can still be lost.
+
+### Find what holds a port
+
+![OFLH Desktop Local ports view on Windows searched for steam, showing which process owns each TCP listener and bound UDP socket: steam.exe and steamwebhelper.exe with local address, port, protocol, memory, and parent process tree](images/oflh-desktop-windows-local-ports-tcp-udp-owner.webp)
+
+The **Ports** view lists local TCP listeners and bound UDP sockets with the process that owns each one. Search `port:3000` for one port, or combine terms such as `tcp`, `udp`, or `pid:1234`. It shows local bindings only, not established connections or whether a port is reachable from outside.
+
+The [desktop guide](docs/desktop-usage.md) covers every view, filter, and shortcut.
 
 ## Why oflh
 
@@ -65,8 +92,9 @@ lookup reads OS socket tables directly; oflh does not shell out to `lsof`,
 
 <a id="follow-the-parent-process-tree"></a>
 **It tells you which app to close, not just which PID.** Every result carries
-the process's parent chain, so a `node` or `dotnet` worker can be traced back
-to the editor, terminal, or service that started it.
+the process's parent chain, so a `node`, `dotnet`, or browser helper process
+can be traced back to the editor, terminal, browser, or service that started
+it.
 
 **It separates "open" from "locked".** A file being open does not mean it is
 locked. oflh reports lock evidence separately (POSIX/flock/OFD locks on Linux,
@@ -212,7 +240,9 @@ and process actions.
 
 ### Desktop
 
-1. Choose **Open file** or **Open folder**, or drop a path onto the window.
+1. Choose **Open file** or **Open folder**, drop a path onto the window, or
+   (on Windows) right-click it in File Explorer and choose **Inspect file** or
+   **Inspect folder**.
 2. Click a process to see its matching files, local ports, and parent tree.
 3. Narrow the list with search, **Column filters**, or **Lock evidence only**.
 4. Close the application normally, or use **Terminate** from oflh. Save your work
