@@ -26,6 +26,18 @@ You want to rename, move, or delete a file, and the system refuses because "anot
 
 It is free and open source, and runs on Windows, macOS, and Linux (x86-64 and ARM64). There is a desktop app for clicking through results and an interactive terminal app for the command line; both use the same Rust scanner. It is for anyone who has hit a locked file in Explorer or Finder, and for developers and administrators chasing a busy build folder, mount point, or port.
 
+### Featured & Listed on
+
+[![Featured on WinFuture](https://img.shields.io/badge/Featured_on-WinFuture-1769aa)](https://winfuture.de/download/product/4227/)
+[![Listed on AlternativeTo](https://img.shields.io/badge/Listed_on-AlternativeTo-087e8b)](https://alternativeto.net/software/oflh-open-file-lock-handle/about/)
+
+**Editorial coverage: OFLH on WinFuture (German).**
+Thank you to the WinFuture editorial team for featuring OFLH.
+[Read the article (German)](https://winfuture.de/download/product/4227/).
+
+You can also find OFLH's software listing on
+[AlternativeTo](https://alternativeto.net/software/oflh-open-file-lock-handle/about/).
+
 Reach for it when:
 
 - Windows says *"The action can't be completed because the file is open in another program"*
@@ -36,7 +48,13 @@ Reach for it when:
 
 ![OFLH Desktop on Windows finding which processes are using files on the C: drive: the Processes view filtered to firefox lists 12 firefox.exe processes, some marked "Sharing conflict, owner unverified", and the details panel shows the selected process's matching handles, local ports, and parent process tree](images/oflh-desktop-windows-find-process-locking-file.webp)
 
+**Desktop app example (Windows):** a graphical window with the process list,
+matching files, local ports, and parent process tree.
+
 [![Terminal demo: the oflh terminal app listing processes with their open files and process ancestry. Click to play the asciinema recording.](images/terminal-demo-thumbnail.png)](https://asciinema.org/a/1266562)
+
+**Terminal app example (CLI / TUI):** the interactive terminal interface.
+Click the image to watch the recording.
 
 [Terminal demo (GIF)](images/demo.gif) · [asciinema recording](https://asciinema.org/a/1266562)
 
@@ -165,6 +183,13 @@ run it from anywhere.
 
 On Windows and macOS the app can download and install updates itself after
 you confirm; on Linux, install new packages manually. ARM32 is not supported.
+
+**Desktop availability:** the graphical app first shipped in stable
+[v0.2.0](https://github.com/karimz1/open-file-lock-handle/releases/tag/v0.2.0)
+on 29 September 2026, after the
+[v0.2.0-rc.1 preview](https://github.com/karimz1/open-file-lock-handle/releases/tag/v0.2.0-rc.1).
+Releases through v0.1.1 contain only the terminal app. Choose `oflh-desktop.*`
+for the graphical app and `oflh-cli.*` for the terminal app.
 
 <a id="unsigned-installers"></a>
 
