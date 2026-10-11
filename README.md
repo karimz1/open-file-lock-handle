@@ -156,7 +156,7 @@ including Apple Silicon), plus a `checksums.txt` with SHA-256 hashes. The
 On Windows and macOS the app can download and install updates itself after
 you confirm; on Linux, install new packages manually. ARM32 is not supported.
 
-**Desktop app:** available since [v0.2.0](https://github.com/karimz1/open-file-lock-handle/releases/tag/v0.2.0).
+**Desktop app:** available since v0.2.0.
 
 <a id="unsigned-installers"></a>
 
