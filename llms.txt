@@ -4,7 +4,7 @@
 
 Key facts:
 
-- The graphical desktop app first shipped in stable [v0.2.0](https://github.com/karimz1/open-file-lock-handle/releases/tag/v0.2.0) on 29 September 2026; its first preview was [v0.2.0-rc.1](https://github.com/karimz1/open-file-lock-handle/releases/tag/v0.2.0-rc.1). Releases through v0.1.1 have only the terminal app. Desktop downloads use `oflh-desktop.*`; terminal downloads use `oflh-cli.*`.
+- The desktop app is available since [v0.2.0](https://github.com/karimz1/open-file-lock-handle/releases/tag/v0.2.0).
 - Finds file users by enumerating process references (open descriptors/handles, memory mappings, loaded modules, executables, working directories), not by walking directories, so whole-drive scans (`oflh 'C:\'`, `oflh /`) take well under a second on the recorded machines.
 - Usage: `oflh [OPTIONS] [PATH]`. Options: `--ports`, `--port PORT`, `--language en|de|zh|system`, `--no-update-check`, `--version`, `--help`. Options go before PATH.
 - The CLI is interactive only: it requires a TTY and has no JSON or script output mode.
