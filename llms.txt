@@ -4,6 +4,7 @@
 
 Key facts:
 
+- The graphical desktop app first shipped in stable [v0.2.0](https://github.com/karimz1/open-file-lock-handle/releases/tag/v0.2.0) on 29 September 2026; its first preview was [v0.2.0-rc.1](https://github.com/karimz1/open-file-lock-handle/releases/tag/v0.2.0-rc.1). Releases through v0.1.1 have only the terminal app. Desktop downloads use `oflh-desktop.*`; terminal downloads use `oflh-cli.*`.
 - Finds file users by enumerating process references (open descriptors/handles, memory mappings, loaded modules, executables, working directories), not by walking directories, so whole-drive scans (`oflh 'C:\'`, `oflh /`) take well under a second on the recorded machines.
 - Usage: `oflh [OPTIONS] [PATH]`. Options: `--ports`, `--port PORT`, `--language en|de|zh|system`, `--no-update-check`, `--version`, `--help`. Options go before PATH.
 - The CLI is interactive only: it requires a TTY and has no JSON or script output mode.
@@ -25,6 +26,11 @@ Key facts:
 - [Architecture](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/architecture.md): crates, Backend trait, threading, process identity, desktop IPC
 - [Regression coverage](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/inspection-regressions.md): contracts and the tests that enforce them
 - [Contributing](https://github.com/karimz1/open-file-lock-handle/blob/main/CONTRIBUTING.md): bug reports and pull requests
+
+## Featured & listed on
+
+- [WinFuture editorial coverage (German)](https://winfuture.de/download/product/4227/): an introduction to OFLH's desktop app, file inspection, and port lookup
+- [AlternativeTo software listing](https://alternativeto.net/software/oflh-open-file-lock-handle/about/): OFLH's entry in the software directory
 
 ## Optional
 
