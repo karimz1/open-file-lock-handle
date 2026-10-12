@@ -222,7 +222,7 @@ jobs:
             echo 'OFLH_UPDATER_PASSWORD'
           } >> "$GITHUB_ENV"
       - name: Bundle the built executable without rebuilding
-        run: npm run tauri -- bundle --config "$RUNNER_TEMP/desktop-version.json" --no-binary-patching --bundles '${{ matrix.bundles }}'
+        run: npm run tauri -- bundle ${{ matrix.os == 'darwin' && '--verbose' || '' }} --config "$RUNNER_TEMP/desktop-version.json" --no-binary-patching --bundles '${{ matrix.bundles }}'
         working-directory: crates/oflh-desktop/ui
       - name: Collect desktop packages separately from CLI artifacts
         env:
