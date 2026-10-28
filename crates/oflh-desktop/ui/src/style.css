@@ -1463,14 +1463,90 @@ main {
 .confirmation-modal > * {
   flex: none;
 }
-.confirmation-modal > .confirmation-list {
+.confirmation-modal > .confirmation-scroll {
   flex: 0 1 auto;
   min-height: 64px;
+}
+.confirmation-scroll {
+  --scroll-thumb: color-mix(in srgb, var(--muted) 55%, transparent);
+  --scroll-thumb-hover: var(--muted);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin: 16px 0;
+}
+.confirmation-scroll > .confirmation-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+}
+/* Chromium ignores ::-webkit-scrollbar once scrollbar-width is set, so the
+   standard properties are only for engines without the pseudo-elements. */
+@supports not selector(::-webkit-scrollbar) {
+  .confirmation-scroll > .confirmation-list {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scroll-thumb) transparent;
+  }
+  .confirmation-scroll > .confirmation-list:hover {
+    scrollbar-color: var(--scroll-thumb-hover) transparent;
+  }
+}
+/* WebView2 and WebKit: a slim rounded thumb that floats inside the border. */
+.confirmation-list::-webkit-scrollbar {
+  width: 8px;
+}
+.confirmation-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.confirmation-list::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background-clip: padding-box;
+}
+.confirmation-list:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 75%, transparent);
+  background-clip: padding-box;
+}
+.confirmation-list::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+  background-clip: padding-box;
+}
+/* Fades hint that the list continues; they never catch clicks. */
+.confirmation-scroll::before,
+.confirmation-scroll::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 10px;
+  height: 28px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 1;
+}
+.confirmation-scroll::before {
+  top: 1px;
+  border-radius: 5px 5px 0 0;
+  background: linear-gradient(var(--panel), transparent);
+}
+.confirmation-scroll::after {
+  bottom: 1px;
+  border-radius: 0 0 5px 5px;
+  background: linear-gradient(transparent, var(--panel));
+}
+.confirmation-scroll[data-fade-top]::before,
+.confirmation-scroll[data-fade-bottom]::after {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .confirmation-scroll::before,
+  .confirmation-scroll::after {
+    transition: none;
+  }
 }
 .confirmation-list:focus-visible {
   outline: 2px solid var(--accent);

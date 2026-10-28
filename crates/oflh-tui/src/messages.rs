@@ -239,6 +239,7 @@ labels! {
     "Background processes are not closed; some may exit with it.", "Hintergrundprozesse werden nicht beendet, manche enden eventuell mit.", "后台进程不会被结束，部分可能随之退出。";
     "Tab / ←→ choose · d details · ↑↓ PgUp/PgDn scroll · Enter confirm · Esc cancel", "Tab / ←→ wählen · d Details · ↑↓ Bild↑/Bild↓ blättern · Enter bestätigen · Esc abbrechen", "Tab / ←→ 选择 · d 详情 · ↑↓ PgUp/PgDn 滚动 · Enter 确认 · Esc 取消";
     "Checking windows and child processes…", "Fenster und Kindprozesse werden geprüft…", "正在检查窗口和子进程…";
+    "↑↓ / PgUp PgDn scroll · Home/End", "↑↓ / Bild↑ Bild↓ blättern · Pos1/Ende", "↑↓ / PgUp PgDn 滚动 · Home/End";
     "Files and ports come from the latest scan.", "Dateien und Ports stammen aus dem letzten Scan.", "文件和端口来自最近一次扫描。";
     "Window list not available on this platform", "Fensterliste auf dieser Plattform nicht verfügbar", "此平台无法列出窗口";
     "/ search · f files · r refresh · a auto · k stop · x force · ? help · Esc back · q quit", "/ suchen · f Dateien · r aktualisieren · a automatisch · k beenden · x erzwingen · ? Hilfe · Esc zurück · q beenden", "/ 搜索 · f 文件 · r 刷新 · a 自动 · k 终止 · x 强制终止 · ? 帮助 · Esc 返回 · q 退出";

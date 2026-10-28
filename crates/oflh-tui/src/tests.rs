@@ -1155,6 +1155,8 @@ fn translated_update_footer_has_stable_viewport_and_no_modal_overlay() {
 
 fn impact_app() -> App {
     let mut app = self::app();
+    // The fixture's windows are Blender's, so name the process to match.
+    app.snapshot.processes[0].name = "Blender".into();
     app.snapshot.processes[0].ports = vec![Port {
         protocol: Protocol::Tcp,
         address: "127.0.0.1".parse().unwrap(),
@@ -1295,7 +1297,7 @@ fn crowded_confirmation() -> App {
     for n in 1..8u32 {
         let mut process = template.clone();
         process.identity.pid = 500 + n;
-        process.name = format!("blender-{n}");
+        process.name = "Blender".into();
         app.snapshot.processes.push(process);
     }
     let mut snapshot = app.snapshot.clone();
@@ -1325,6 +1327,20 @@ fn small_terminals_scroll_the_confirmation_and_keep_the_buttons() {
         assert_eq!(rows.len(), height as usize);
         assert!(app.confirm_scrollable, "{top}");
         assert!(rows[0].contains("↕"), "{top}");
+        assert!(
+            rows[1].contains("↑↓ / PgUp PgDn scroll · Home/End"),
+            "{top}"
+        );
+        // A scrollbar in the last column of the body: thumb at the top, track below.
+        let column = |text: &str| -> String {
+            text.lines()
+                .skip(2)
+                .take(6)
+                .map(|row| row.trim_end().chars().last().unwrap_or(' '))
+                .collect()
+        };
+        assert_eq!(column(&top).chars().next(), Some('█'), "{top}");
+        assert!(column(&top).contains('│'), "{top}");
         assert!(top.contains("Cancel") && top.contains("Terminate"), "{top}");
         assert!(top.contains("scroll"), "{top}");
         key(&mut app, K::PageDown);
@@ -1345,6 +1361,14 @@ fn small_terminals_scroll_the_confirmation_and_keep_the_buttons() {
             height,
         );
         assert!(bottom.contains("latest scan"), "{bottom}");
+        let end_row = bottom
+            .lines()
+            .find(|row| row.contains("latest scan"))
+            .unwrap();
+        assert!(
+            end_row.trim_end().ends_with('█'),
+            "thumb reaches the end\n{bottom}"
+        );
         let indicator = bottom.lines().next().unwrap().trim().to_string();
         let (range, _) = indicator.split_once(" ↕").unwrap();
         let (span, total) = range.split_once(" of ").unwrap();
@@ -1373,4 +1397,5 @@ fn short_confirmation_does_not_show_a_scroll_hint() {
     let text = render_confirm_at(&mut app, "impact-short", 80, 24);
     assert!(!app.confirm_scrollable);
     assert!(!text.contains("↕") && !text.contains("PgUp"));
+    assert!(!text.contains('█') && !text.contains("Home/End"));
 }

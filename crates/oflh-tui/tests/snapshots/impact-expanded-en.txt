@@ -4,8 +4,9 @@
   Request a normal shutdown. Unsaved work may be lost.
 
   Affected processes (including selections hidden by filters):
-    424242    dotnet
-              dotnet closes completely, with all 7 open windows, such as “scene1.blend - Blender”.
+    424242    Blender
+              Blender closes completely, with all 7 open windows, such as “scene1.blend -
+              Blender”.
               1 background process keeps running.
               Windows (7)
                 scene1.blend - Blender
@@ -24,7 +25,6 @@
               Ports (1)
                 5432  TCP 127.0.0.1
   Files and ports come from the latest scan.
-
 
 
 

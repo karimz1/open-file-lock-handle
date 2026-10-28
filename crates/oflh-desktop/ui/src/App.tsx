@@ -1,5 +1,5 @@
 import { forceRecoveryTargets } from "./termination";
-import { TerminationTarget } from "./TerminationImpact";
+import { ImpactScrollArea, TerminationTarget } from "./TerminationImpact";
 import {
   lazy,
   Suspense,
@@ -2436,15 +2436,11 @@ export function App() {
               )}
             </p>
           )}
-          <ul
-            className="confirmation-list"
-            tabIndex={0}
-            aria-label={t("termination.k_impact_targets_label")}
-          >
+          <ImpactScrollArea label={t("termination.k_impact_targets_label")}>
             {confirmation.targets.map((target) => (
               <TerminationTarget key={target.key} target={target} />
             ))}
-          </ul>
+          </ImpactScrollArea>
           <p className="hint">
             {t(
               "termination.k_oflh_validates_each_captured_process_id_5e6d1cc4",

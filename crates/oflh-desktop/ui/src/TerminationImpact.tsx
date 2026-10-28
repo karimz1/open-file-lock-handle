@@ -7,7 +7,7 @@ import {
   Workflow,
   type LucideIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type CappedList, type ConfirmationTarget } from "./api";
 import { t, type MessageKey } from "./i18n";
 import {
@@ -15,6 +15,7 @@ import {
   impactRow,
   impactSummary,
   listTotal,
+  scrollFades,
 } from "./termination";
 
 type Kind = "windows" | "children" | "files" | "ports";
@@ -146,5 +147,57 @@ export function TerminationTarget({ target }: { target: ConfirmationTarget }) {
         </>
       )}
     </li>
+  );
+}
+
+/**
+ * The scrolling target list. Fades at the top and bottom show that more
+ * content continues; they disappear at either end and when it all fits.
+ */
+export function ImpactScrollArea({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  const list = useRef<HTMLUListElement>(null);
+  const [fades, setFades] = useState({ top: false, bottom: false });
+  useEffect(() => {
+    const node = list.current;
+    if (!node) return;
+    const update = () =>
+      setFades((old) => {
+        const next = scrollFades(node);
+        return old.top === next.top && old.bottom === next.bottom ? old : next;
+      });
+    update();
+    node.addEventListener("scroll", update, { passive: true });
+    // Expanding Details changes the rows, not the list box, so watch both.
+    const resize = new ResizeObserver(update);
+    resize.observe(node);
+    for (const row of node.children) resize.observe(row);
+    node.addEventListener("toggle", update, true);
+    return () => {
+      node.removeEventListener("scroll", update);
+      node.removeEventListener("toggle", update, true);
+      resize.disconnect();
+    };
+  }, []);
+  return (
+    <div
+      className="confirmation-scroll"
+      data-fade-top={fades.top || undefined}
+      data-fade-bottom={fades.bottom || undefined}
+    >
+      <ul
+        ref={list}
+        className="confirmation-list"
+        tabIndex={0}
+        aria-label={label}
+      >
+        {children}
+      </ul>
+    </div>
   );
 }

@@ -1497,12 +1497,19 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
     app.page = height.max(1) as usize;
     let logical = lines.len();
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let mut body = Rect::new(area.x, area.y + 2, area.width, height);
     if confirm {
-        let total = paragraph.line_count(area.width);
+        let mut total = paragraph.line_count(area.width);
+        if total > height as usize && area.width > 1 {
+            // Leave the right column for the scrollbar and re-measure.
+            body.width -= 1;
+            total = paragraph.line_count(body.width);
+        }
         let last = total.saturating_sub(height as usize);
         app.scroll = app.scroll.min(last);
         app.confirm_scrollable = last > 0;
         if last > 0 {
+            let dim = Style::default().add_modifier(Modifier::DIM);
             frame.render_widget(
                 Paragraph::new(localized!(
                     app.language,
@@ -1511,9 +1518,33 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
                     last = (app.scroll + height as usize).min(total),
                     total = total
                 ))
-                .style(Style::default().add_modifier(Modifier::DIM))
+                .style(dim)
                 .alignment(ratatui::layout::Alignment::Right),
                 line_area(area, 0),
+            );
+            let hint = app.language.text("↑↓ / PgUp PgDn scroll · Home/End");
+            if unicode_width::UnicodeWidthStr::width(hint) + 2 <= area.width as usize {
+                frame.render_widget(
+                    Paragraph::new(hint)
+                        .style(dim)
+                        .alignment(ratatui::layout::Alignment::Right),
+                    line_area(area, 1),
+                );
+            }
+            let mut state = ratatui::widgets::ScrollbarState::new(last + 1)
+                .position(app.scroll)
+                .viewport_content_length(height as usize);
+            frame.render_stateful_widget(
+                ratatui::widgets::Scrollbar::new(
+                    ratatui::widgets::ScrollbarOrientation::VerticalRight,
+                )
+                .begin_symbol(None)
+                .end_symbol(None)
+                .track_symbol(Some("│"))
+                .thumb_symbol("█")
+                .track_style(dim),
+                Rect::new(area.x, body.y, area.width, body.height),
+                &mut state,
             );
         }
     } else {
@@ -1521,7 +1552,7 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
     }
     frame.render_widget(
         paragraph.scroll((app.scroll.min(u16::MAX as usize) as u16, 0)),
-        Rect::new(area.x, area.y + 2, area.width, height),
+        body,
     );
     footer(
         frame,

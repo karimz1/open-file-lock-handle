@@ -3,6 +3,7 @@ import type { ActionResult, Confirmation, ConfirmationTarget } from "./api";
 import {
   forceRecoveryTargets,
   IMPACT_SENTENCES,
+  scrollFades,
   impactRow,
   impactSummary,
 } from "./termination";
@@ -145,5 +146,24 @@ describe("termination impact summary", () => {
       primary: "scene.blend - Blender",
       secondary: "",
     });
+  });
+});
+
+describe("scroll fades", () => {
+  it("shows the bottom fade while more content follows", () => {
+    expect(
+      scrollFades({ scrollTop: 0, scrollHeight: 900, clientHeight: 300 }),
+    ).toEqual({ top: false, bottom: true });
+    expect(
+      scrollFades({ scrollTop: 200, scrollHeight: 900, clientHeight: 300 }),
+    ).toEqual({ top: true, bottom: true });
+  });
+  it("hides the fades at the end and when everything fits", () => {
+    expect(
+      scrollFades({ scrollTop: 600, scrollHeight: 900, clientHeight: 300 }),
+    ).toEqual({ top: true, bottom: false });
+    expect(
+      scrollFades({ scrollTop: 0, scrollHeight: 300, clientHeight: 300 }),
+    ).toEqual({ top: false, bottom: false });
   });
 });

@@ -21,7 +21,7 @@ test.beforeEach(async ({ page }) => {
     const processRows = Array.from({ length: 1500 }, (_, index) => ({
       key: `${4000 + index}:18446744073709551615:0/exe`,
       process_key: `${4000 + index}:18446744073709551615:0`,
-      name: ["Code", "node", "rust-analyzer", "cargo", "FixtureWorker"][
+      name: ["Blender", "node", "rust-analyzer", "cargo", "FixtureWorker"][
         index % 5
       ],
       pid: 4000 + index,
@@ -419,7 +419,10 @@ test.beforeEach(async ({ page }) => {
                   name: row.name,
                   pid: row.pid,
                   role: "holder",
-                  impact: (window as any).__impact,
+                  impact:
+                    typeof (window as any).__impact === "function"
+                      ? (window as any).__impact(row.name)
+                      : (window as any).__impact,
                 };
               }),
             };
@@ -1147,10 +1150,10 @@ test("confirmation shows one impact line and reveals capped details on demand", 
   const dialog = page.getByRole("dialog");
   const summary = dialog.locator(".impact-summary");
   await expect(summary).toHaveText(
-    "Code closes completely, with all 3 open windows, such as “scene.blend - Blender”. 1 background process keeps running.",
+    "Blender closes completely, with all 3 open windows, such as “scene.blend - Blender”. 1 background process keeps running.",
   );
   await expect(summary.locator(".impact-warning")).toHaveText(
-    "Code closes completely, with all 3 open windows, such as “scene.blend - Blender”.",
+    "Blender closes completely, with all 3 open windows, such as “scene.blend - Blender”.",
   );
   await expect(dialog.getByText("render.blend - Blender")).toBeHidden();
   await expect(
@@ -1212,7 +1215,11 @@ for (const [width, height] of [
   }) => {
     await page.setViewportSize({ width, height });
     await page.addInitScript(
-      (impact) => ((window as any).__impact = impact),
+      (impact) =>
+        ((window as any).__impact = (name: string) =>
+          name === "Blender"
+            ? impact
+            : { ...impact, windows: { items: [`${name} – main`], more: 0 } }),
       blenderImpact,
     );
     await page.goto("/");
@@ -1245,8 +1252,30 @@ for (const [width, height] of [
         overflow: node.scrollHeight - node.clientHeight,
         bar: (node as HTMLElement).offsetWidth - node.clientWidth,
       }));
+    const area = dialog.locator(".confirmation-scroll");
+    const fade = (edge: "::before" | "::after") =>
+      area.evaluate(
+        (node, edge) => Number(getComputedStyle(node, edge).opacity),
+        edge,
+      );
+    await list.evaluate((node) => node.scrollTo({ top: 0 }));
+    await expect.poll(async () => (await metrics()).top).toBe(0);
     const before = await metrics();
     expect(before.overflow).toBeGreaterThan(0);
+    await expect(area).toHaveAttribute("data-fade-bottom", "true");
+    await expect(area).not.toHaveAttribute("data-fade-top");
+    await expect.poll(() => fade("::after")).toBe(1);
+    await expect.poll(() => fade("::before")).toBe(0);
+    // The slim thumb uses the theme's muted colour, not the faint border.
+    expect(
+      await list.evaluate(
+        (node) =>
+          getComputedStyle(node, "::-webkit-scrollbar-thumb").backgroundColor,
+      ),
+    ).not.toBe("rgba(0, 0, 0, 0)");
+    await page.screenshot({
+      path: `test-results/impact-small-${width}x${height}.png`,
+    });
     expect(before.bar).toBeGreaterThan(0);
     await list.focus();
     await page.keyboard.press("PageDown");
@@ -1258,16 +1287,29 @@ for (const [width, height] of [
         return now.overflow - now.top;
       })
       .toBeLessThan(2);
+    await expect(area).not.toHaveAttribute("data-fade-bottom");
+    await expect(area).toHaveAttribute("data-fade-top", "true");
+    await expect.poll(() => fade("::after")).toBe(0);
+    await page.screenshot({
+      path: `test-results/impact-small-scrolled-end-${width}x${height}.png`,
+    });
     await inViewport(
       dialog.getByRole("button", { name: "Terminate", exact: true }),
     );
-    await page.screenshot({
-      path: `test-results/impact-small-${width}x${height}.png`,
-    });
     await page.keyboard.press("Tab");
     await expect(dialog.locator(":focus")).toHaveCount(1);
   });
 }
+
+test("short confirmation list shows no scroll fades", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const area = page.getByRole("dialog").locator(".confirmation-scroll");
+  await expect(area).toBeVisible();
+  await expect(area).not.toHaveAttribute("data-fade-bottom");
+  await expect(area).not.toHaveAttribute("data-fade-top");
+});
 
 test("confirmation without impact adds nothing to the target row", async ({
   page,
@@ -1598,7 +1640,7 @@ test("theme presets persist and ancestry reads from parent to highlighted proces
   await expect(ancestry.getByRole("button").nth(0)).toHaveText(/fixture-init/);
   await expect(ancestry.getByRole("button").nth(1)).toHaveText(/fixture-shell/);
   const current = ancestry.getByRole("button", {
-    name: /Code Current process 4000/,
+    name: /Blender Current process 4000/,
   });
   await expect(current).toHaveAttribute("aria-pressed", "true");
   await ancestry.getByRole("button", { name: "fixture-shell 3000" }).click();
@@ -2934,7 +2976,7 @@ test("Chinese system language translates the workspace and process confirmation"
   await expect(filters.getByLabel("进程名称")).toBeVisible();
   await page.screenshot({ path: "test-results/chinese-filters.png" });
   await filters.getByRole("button", { name: "关闭", exact: true }).click();
-  await page.getByRole("row").filter({ hasText: "Code" }).first().click();
+  await page.getByRole("row").filter({ hasText: "Blender" }).first().click();
   await page.getByRole("button", { name: "终止…", exact: true }).click();
   const confirmation = page.getByRole("dialog");
   await expect(confirmation).toContainText("未保存的工作可能丢失");
@@ -4124,7 +4166,7 @@ for (const action of ["exit", "reuse"] as const)
     const details = page.getByRole("complementary", {
       name: "Process details",
     });
-    await expect(details).toContainText("Code");
+    await expect(details).toContainText("Blender");
     await enableQuietRefresh(page);
     await page.evaluate((action) => {
       (window as any).__mutateRowsForTest(action);
@@ -4138,7 +4180,7 @@ for (const action of ["exit", "reuse"] as const)
     await expect(details).toContainText("This captured process is absent");
     await expect(details).toContainText("PID 4000");
     await expect(
-      details.getByRole("heading", { name: "Code", exact: true }),
+      details.getByRole("heading", { name: "Blender", exact: true }),
     ).toBeVisible();
     await expect(
       details.getByRole("button", { name: "Terminate process…", exact: true }),
@@ -4309,7 +4351,7 @@ test("quiet refresh rejects retained matches after a new query and publishes the
   });
   await expect(page.getByText("300 results", { exact: true })).toBeVisible();
   await expect(grid.getByText("node", { exact: true }).first()).toBeVisible();
-  await expect(grid.getByText("Code", { exact: true })).toHaveCount(0);
+  await expect(grid.getByText("Blender", { exact: true })).toHaveCount(0);
 });
 
 test("a native target scan after quiet refresh locks inspection controls without a modal", async ({
