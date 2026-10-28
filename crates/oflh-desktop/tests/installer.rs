@@ -54,6 +54,8 @@ fn every_installer_string_is_translated_for_every_installer_language() {
         "oflhWelcomeText",
         "oflhFinishText",
         "oflhRunApp",
+        "oflhDirectoryText",
+        "oflhUninstallText",
         "oflhWebsiteLink",
         "oflhInspectFile",
         "oflhInspectFolder",
@@ -281,15 +283,54 @@ fn custom_installer_messages_cover_every_tauri_key_in_every_language() {
             );
             assert!(keys.insert(key), "{language}: {key} twice");
         }
-        assert_eq!(keys, BTreeSet::from(TAURI_MESSAGES), "{language}");
+        let tauri: BTreeSet<&str> = keys
+            .iter()
+            .copied()
+            .filter(|key| !key.starts_with("MUI_"))
+            .collect();
+        assert_eq!(tauri, BTreeSet::from(TAURI_MESSAGES), "{language}");
         // Custom files are not run through Tauri's template engine.
         assert!(!text.contains("{{"), "{language}");
         assert!(!text.contains(" kill"), "{language}");
     }
-    // German matches the app's informal tone.
+    // German matches the app's informal tone, in Tauri's messages, the MUI
+    // page texts replaced there, and the hook strings.
     let german = LANGUAGE_FILES[1].2;
-    for formal in [" Sie ", " Ihr", "Klicken Sie", "Wählen Sie"] {
-        assert!(!german.contains(formal), "{formal}");
+    let hook_german = HOOKS
+        .lines()
+        .filter(|line| line.starts_with("LangString ") && line.contains(" 1031 "));
+    for line in german
+        .lines()
+        .filter(|line| line.starts_with("LangString "))
+        .chain(hook_german)
+    {
+        let words: Vec<&str> = line
+            .split(|c: char| !c.is_alphabetic())
+            .filter(|word| !word.is_empty())
+            .collect();
+        for formal in ["Sie", "Ihr", "Ihre", "Ihrem", "Ihren", "Ihnen"] {
+            assert!(!words.contains(&formal), "{line}");
+        }
+    }
+    // Every visible MUI page text that is formal in NSIS's German file.
+    for key in [
+        "MUI_TEXT_DIRECTORY_SUBTITLE",
+        "MUI_TEXT_INSTALLING_SUBTITLE",
+        "MUI_UNTEXT_CONFIRM_SUBTITLE",
+        "MUI_UNTEXT_UNINSTALLING_SUBTITLE",
+        "MUI_TEXT_ABORTWARNING",
+        "MUI_UNTEXT_ABORTWARNING",
+    ] {
+        assert!(
+            german.contains(&format!("LangString {key} ${{LANG_GERMAN}} ")),
+            "{key}"
+        );
+    }
+    for define in ["MUI_DIRECTORYPAGE_TEXT_TOP", "MUI_UNCONFIRMPAGE_TEXT_TOP"] {
+        assert!(
+            HOOKS.contains(&format!("!define {define} \"$(")),
+            "{define}"
+        );
     }
     assert!(german.contains("\"Auch Einstellungen und App-Daten löschen\""));
     assert!(german.contains("\"${PRODUCTNAME} läuft noch. Schließe es und versuche es erneut.\""));

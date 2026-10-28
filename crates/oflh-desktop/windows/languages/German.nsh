@@ -28,3 +28,16 @@ LangString webview2Downloading ${LANG_GERMAN} "WebView2-Bootstrapper wird herunt
 LangString webview2InstallError ${LANG_GERMAN} "Fehler: WebView2-Installation mit Exit-Code $1 fehlgeschlagen"
 LangString webview2InstallSuccess ${LANG_GERMAN} "WebView2 installiert"
 LangString deleteAppData ${LANG_GERMAN} "Auch Einstellungen und App-Daten löschen"
+
+; Modern UI's German page texts use "Sie"; the app says "du". These replace
+; the MUI strings of the pages the installer and uninstaller show. Tauri
+; includes this file after MUI_LANGUAGE, so the later definitions win.
+LangString MUI_TEXT_DIRECTORY_SUBTITLE ${LANG_GERMAN} "Wähle den Ordner, in den $(^NameDA) installiert werden soll."
+LangString MUI_TEXT_INSTALLING_SUBTITLE ${LANG_GERMAN} "Bitte warte, während $(^NameDA) installiert wird."
+LangString MUI_TEXT_FINISH_INFO_REBOOT ${LANG_GERMAN} "Windows muss neu gestartet werden, um die Installation von $(^NameDA) abzuschließen. Möchtest du Windows jetzt neu starten?"
+LangString MUI_TEXT_ABORTWARNING ${LANG_GERMAN} "Möchtest du die Installation von $(^Name) wirklich abbrechen?"
+LangString MUI_UNTEXT_CONFIRM_SUBTITLE ${LANG_GERMAN} "$(^NameDA) wird von deinem Computer entfernt."
+LangString MUI_UNTEXT_UNINSTALLING_SUBTITLE ${LANG_GERMAN} "Bitte warte, während $(^NameDA) entfernt wird."
+LangString MUI_UNTEXT_FINISH_INFO_TEXT ${LANG_GERMAN} "$(^NameDA) wurde entfernt.$\r$\n$\r$\nKlicke auf Fertig stellen, um den Assistenten zu schließen."
+LangString MUI_UNTEXT_FINISH_INFO_REBOOT ${LANG_GERMAN} "Windows muss neu gestartet werden, um die Deinstallation von $(^NameDA) abzuschließen. Möchtest du Windows jetzt neu starten?"
+LangString MUI_UNTEXT_ABORTWARNING ${LANG_GERMAN} "Möchtest du die Deinstallation von $(^Name) wirklich abbrechen?"

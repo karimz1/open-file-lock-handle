@@ -46,6 +46,12 @@ LangString oflhWelcomeText 2052 "此向导将安装 OFLH Desktop。它可以告�
 LangString oflhFinishText 1033 "OFLH Desktop is installed.$\r$\n$\r$\nClick Finish to close the wizard."
 LangString oflhFinishText 1031 "OFLH Desktop ist installiert.$\r$\n$\r$\nKlicke auf Fertig stellen, um den Assistenten zu schließen."
 LangString oflhFinishText 2052 "OFLH Desktop 已安装。$\r$\n$\r$\n单击“完成”关闭向导。"
+LangString oflhDirectoryText 1033 "Setup installs OFLH Desktop in the folder below. To use a different folder, click Browse.$\r$\n$\r$\nClick Install to start."
+LangString oflhDirectoryText 1031 "OFLH Desktop wird in den unten angegebenen Ordner installiert. Für einen anderen Ordner klicke auf Durchsuchen.$\r$\n$\r$\nKlicke auf Installieren, um zu starten."
+LangString oflhDirectoryText 2052 "OFLH Desktop 将安装到下面的文件夹。如需使用其他文件夹，请单击“浏览”。$\r$\n$\r$\n单击“安装”开始安装。"
+LangString oflhUninstallText 1033 "OFLH Desktop will be removed from the folder below. Click Uninstall to start."
+LangString oflhUninstallText 1031 "OFLH Desktop wird aus dem unten angegebenen Ordner entfernt. Klicke auf Deinstallieren, um zu starten."
+LangString oflhUninstallText 2052 "OFLH Desktop 将从下面的文件夹中删除。单击“卸载”开始。"
 LangString oflhRunApp 1033 "Start OFLH Desktop"
 LangString oflhRunApp 1031 "OFLH Desktop starten"
 LangString oflhRunApp 2052 "启动 OFLH Desktop"
@@ -65,6 +71,10 @@ Var OflhContextMenuCheckbox
 
 !define MUI_WELCOMEPAGE_TEXT "$(oflhWelcomeText)"
 ; Consumed later by the template's finish page; it sets MUI_FINISHPAGE_RUN.
+; Consumed by the directory and uninstall confirm pages; replace NSIS's
+; built-in texts, which are formal in German.
+!define MUI_DIRECTORYPAGE_TEXT_TOP "$(oflhDirectoryText)"
+!define MUI_UNCONFIRMPAGE_TEXT_TOP "$(oflhUninstallText)"
 !define MUI_FINISHPAGE_TEXT "$(oflhFinishText)"
 !define MUI_FINISHPAGE_RUN_TEXT "$(oflhRunApp)"
 !define MUI_FINISHPAGE_LINK "$(oflhWebsiteLink)"
