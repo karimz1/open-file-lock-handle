@@ -106,11 +106,30 @@ export interface Details {
   cwd: PathValue;
   ancestors: { name: string; pid: number; key: string; actionable: boolean }[];
 }
+/** A list capped in Rust; `more` counts entries left out. */
+export interface CappedList {
+  items: string[];
+  more: number;
+}
+/** Best-effort side effects; `null` means the platform could not read them. */
+export interface TargetImpact {
+  windows: CappedList | null;
+  children: CappedList | null;
+  files: CappedList;
+  ports: CappedList;
+}
+export interface ConfirmationTarget {
+  key: string;
+  name: string;
+  pid: number;
+  role?: "holder" | "ancestor";
+  impact?: TargetImpact;
+}
 export interface Confirmation {
   ticket: string;
   force: boolean;
   elevated: boolean;
-  targets: { key: string; name: string; pid: number }[];
+  targets: ConfirmationTarget[];
 }
 export interface ActionResult {
   outcome: "exited" | "still_running" | "unverified" | "failed";

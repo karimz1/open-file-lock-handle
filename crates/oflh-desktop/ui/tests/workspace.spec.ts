@@ -414,7 +414,13 @@ test.beforeEach(async ({ page }) => {
               force: args.force,
               targets: args.keys.map((key: string) => {
                 const row = processRows.find((row) => row.process_key === key)!;
-                return { key, name: row.name, pid: row.pid };
+                return {
+                  key,
+                  name: row.name,
+                  pid: row.pid,
+                  role: "holder",
+                  impact: (window as any).__impact,
+                };
               }),
             };
           if (command === "prepare_elevated")
@@ -434,7 +440,14 @@ test.beforeEach(async ({ page }) => {
             return {
               ticket: "parent-ticket",
               force: args.force,
-              targets: [{ key: args.key, name: "fixture-shell", pid: 3000 }],
+              targets: [
+                {
+                  key: args.key,
+                  name: "fixture-shell",
+                  pid: 3000,
+                  role: "ancestor",
+                },
+              ],
             };
           if (command === "terminate" && (window as any).__terminationResults) {
             return (window as any).__terminationResults;
@@ -1102,6 +1115,88 @@ test("hidden selection confirmation defaults to cancel and preserves force mode"
   ).toEqual([true, false]);
 });
 
+const blenderImpact = {
+  windows: {
+    items: ["scene.blend - Blender", "render.blend - Blender", "Preferences"],
+    more: 0,
+  },
+  children: { items: ["python3 (PID 4100)"], more: 0 },
+  files: {
+    items: [
+      "/build/scene.blend",
+      "/build/textures/a.png",
+      "/build/textures/b.png",
+      "/build/textures/c.png",
+      "/build/textures/d.png",
+    ],
+    more: 4,
+  },
+  ports: { items: ["TCP 3000"], more: 0 },
+};
+
+test("confirmation shows one impact line and reveals capped details on demand", async ({
+  page,
+}) => {
+  await page.addInitScript(
+    (impact) => ((window as any).__impact = impact),
+    blenderImpact,
+  );
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  const summary = dialog.locator(".impact-summary");
+  await expect(summary).toHaveText(
+    "Closes 3 windows · 1 child process · Uses 9 scanned files · Holds 1 port",
+  );
+  await expect(summary.locator(".impact-warning")).toHaveText(
+    "Closes 3 windows",
+  );
+  await expect(dialog.getByText("render.blend - Blender")).toBeHidden();
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  const box = await dialog.boundingBox();
+  await page.screenshot({ path: "test-results/impact-collapsed.png" });
+  await dialog.locator(".impact-details summary").first().focus();
+  await page.keyboard.press("Enter");
+  await expect(dialog.getByText("render.blend - Blender")).toBeVisible();
+  await expect(dialog.getByText("python3 (PID 4100)")).toBeVisible();
+  await expect(dialog.getByText("+4 more")).toBeVisible();
+  await expect(dialog.getByText("TCP 3000")).toBeVisible();
+  await expect(
+    dialog.getByText("They are not terminated and usually keep running."),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText("Based on the latest scan", { exact: false }),
+  ).toBeVisible();
+  await page.screenshot({ path: "test-results/impact-expanded.png" });
+  expect((await dialog.boundingBox())!.width).toBe(box!.width);
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+});
+
+test("confirmation without impact adds nothing to the target row", async ({
+  page,
+}) => {
+  await page.addInitScript(
+    () =>
+      ((window as any).__impact = {
+        windows: { items: ["Only window"], more: 0 },
+        children: { items: [], more: 0 },
+        files: { items: ["/build/scene.blend"], more: 0 },
+        ports: { items: [], more: 0 },
+      }),
+  );
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/PID \d+/).first()).toBeVisible();
+  await expect(dialog.locator(".impact-summary")).toHaveCount(0);
+  await expect(dialog.locator(".impact-details")).toHaveCount(0);
+});
+
 for (const initialTarget of ["/", "/?empty-target"]) {
   test(`Ports hides file and folder controls and restores them in other views (${initialTarget})`, async ({
     page,
@@ -1318,6 +1413,12 @@ test("parent termination verifies exit, clears stale details and refreshes", asy
   await expect(
     dialog.getByRole("button", { name: "Cancel", exact: true }),
   ).toBeFocused();
+  await expect(dialog.locator(".role-badge")).toHaveText("Parent");
+  await expect(
+    dialog.getByText(
+      "Stopping a parent may close its children or your session.",
+    ),
+  ).toBeVisible();
   await dialog.getByRole("button", { name: "Terminate", exact: true }).click();
   await expect(page.getByText("Waiting for process exit…")).toBeVisible();
   await expect(page.getByText("Process exited", { exact: true })).toBeVisible();

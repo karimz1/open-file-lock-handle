@@ -472,6 +472,24 @@ const en = {
     k_visible_columns: "Visible columns",
   },
   termination: {
+    k_impact_closes_windows: "Closes {{count}} windows",
+    k_impact_child_one: "{{count}} child process",
+    k_impact_child_other: "{{count}} child processes",
+    k_impact_files: "Uses {{count}} scanned files",
+    k_impact_port_one: "Holds {{count}} port",
+    k_impact_port_other: "Holds {{count}} ports",
+    k_impact_details: "Details",
+    k_impact_windows_heading: "Windows that close",
+    k_impact_windows_unavailable: "This system does not expose window titles.",
+    k_impact_children_heading: "Child processes",
+    k_impact_children_note:
+      "They are not terminated and usually keep running. Some may exit together with this process.",
+    k_impact_files_heading: "Scanned files",
+    k_impact_ports_heading: "Ports",
+    k_impact_more: "+{{count}} more",
+    k_impact_latest_scan:
+      "Based on the latest scan and a process check when this dialog opened.",
+    k_role_parent: "Parent",
     k_retry_admin: "Retry with administrator privileges…",
     k_admin_recovery:
       "Permission denied. You can authorize a retry for these original targets. Administrator privileges do not guarantee success.",

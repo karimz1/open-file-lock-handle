@@ -1,4 +1,5 @@
 import { forceRecoveryTargets } from "./termination";
+import { TerminationTarget } from "./TerminationImpact";
 import {
   lazy,
   Suspense,
@@ -2425,12 +2426,18 @@ export function App() {
             </strong>{" "}
             — {t("filters.k_all_targets_are_listed_below_including_1515b80a")}
           </p>
+          {confirmation.targets.some(
+            (target) => target.role === "ancestor",
+          ) && (
+            <p className="impact-warning">
+              {t(
+                "termination.k_stopping_a_parent_may_close_its_childre_04c26acd",
+              )}
+            </p>
+          )}
           <ul className="confirmation-list">
             {confirmation.targets.map((target) => (
-              <li key={target.key}>
-                <strong>{target.name || t("app.k_unnamed")}</strong>
-                <code>PID {target.pid}</code>
-              </li>
+              <TerminationTarget key={target.key} target={target} />
             ))}
           </ul>
           <p className="hint">

@@ -456,6 +456,23 @@ const zh: TranslationSchema<typeof en> = {
     k_visible_columns: "可见列",
   },
   termination: {
+    k_impact_closes_windows: "将关闭 {{count}} 个窗口",
+    k_impact_child_one: "{{count}} 个子进程",
+    k_impact_child_other: "{{count}} 个子进程",
+    k_impact_files: "使用 {{count}} 个已扫描文件",
+    k_impact_port_one: "占用 {{count}} 个端口",
+    k_impact_port_other: "占用 {{count}} 个端口",
+    k_impact_details: "详情",
+    k_impact_windows_heading: "将关闭的窗口",
+    k_impact_windows_unavailable: "此系统不提供窗口标题。",
+    k_impact_children_heading: "子进程",
+    k_impact_children_note:
+      "子进程不会被终止，通常会继续运行，但部分可能随此进程一起退出。",
+    k_impact_files_heading: "已扫描文件",
+    k_impact_ports_heading: "端口",
+    k_impact_more: "另外 {{count}} 项",
+    k_impact_latest_scan: "依据最近一次扫描及打开此对话框时的进程检查。",
+    k_role_parent: "父进程",
     k_retry_admin: "以管理员权限重试…",
     k_admin_recovery:
       "权限不足。您可以授权对原始目标重试。管理员权限不保证成功。",

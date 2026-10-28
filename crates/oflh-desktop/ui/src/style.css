@@ -1452,22 +1452,73 @@ main {
   border: 1px solid var(--border);
   border-radius: 5px;
 }
-.confirmation-list li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.confirmation-list > li {
   padding: 10px 12px;
   font-size: 0.9231rem;
 }
-.confirmation-list li + li,
+.confirmation-target {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.role-badge {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.8462rem;
+  font-weight: 500;
+}
+.impact-summary {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.8462rem;
+}
+.impact-warning {
+  color: var(--danger);
+}
+.impact-details {
+  margin-top: 4px;
+  font-size: 0.8462rem;
+}
+.impact-details summary {
+  width: fit-content;
+  color: var(--muted);
+  cursor: pointer;
+}
+.impact-details summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.impact-details .hint {
+  margin: 6px 0 0;
+}
+.impact-group h4 {
+  margin: 8px 0 2px;
+  font-size: 0.8462rem;
+  font-weight: 600;
+}
+.impact-group ul {
+  margin: 0;
+  padding-left: 16px;
+}
+.impact-group li {
+  overflow-wrap: anywhere;
+}
+.impact-more {
+  color: var(--muted);
+  list-style: none;
+}
+.confirmation-list > li + li,
 .action-results li + li {
   border-top: 1px solid var(--border);
 }
-.confirmation-list code {
+.confirmation-target code {
   color: var(--muted);
   white-space: nowrap;
 }
-.confirmation-list strong {
+.confirmation-target strong {
   overflow-wrap: anywhere;
   margin-right: 12px;
 }

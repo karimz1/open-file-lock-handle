@@ -488,6 +488,25 @@ const de: TranslationSchema<typeof en> = {
     k_visible_columns: "Sichtbare Spalten",
   },
   termination: {
+    k_impact_closes_windows: "Schließt {{count}} Fenster",
+    k_impact_child_one: "{{count}} Kindprozess",
+    k_impact_child_other: "{{count}} Kindprozesse",
+    k_impact_files: "Nutzt {{count}} gescannte Dateien",
+    k_impact_port_one: "Belegt {{count}} Port",
+    k_impact_port_other: "Belegt {{count}} Ports",
+    k_impact_details: "Details",
+    k_impact_windows_heading: "Fenster, die geschlossen werden",
+    k_impact_windows_unavailable:
+      "Dieses System stellt keine Fenstertitel bereit.",
+    k_impact_children_heading: "Kindprozesse",
+    k_impact_children_note:
+      "Sie werden nicht beendet und laufen meist weiter. Einige können zusammen mit diesem Prozess enden.",
+    k_impact_files_heading: "Gescannte Dateien",
+    k_impact_ports_heading: "Ports",
+    k_impact_more: "+{{count}} weitere",
+    k_impact_latest_scan:
+      "Stand: letzter Scan und eine Prozessprüfung beim Öffnen dieses Dialogs.",
+    k_role_parent: "Elternprozess",
     k_retry_admin: "Mit Administratorrechten erneut versuchen …",
     k_admin_recovery:
       "Zugriff verweigert. Sie können einen erneuten Versuch für diese ursprünglichen Ziele autorisieren. Administratorrechte garantieren keinen Erfolg.",

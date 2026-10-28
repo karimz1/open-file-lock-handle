@@ -4,7 +4,7 @@ use crate::{
     dataset::{Dataset, display},
     recent::RecentTargets,
 };
-use oflh_core::{Ancestor, Cancellation, Identity, Snapshot, Target};
+use oflh_core::{Ancestor, Cancellation, Identity, Process, Snapshot, Target};
 use oflh_platform::Backend;
 use std::{
     collections::HashSet,
@@ -397,6 +397,7 @@ impl Service {
         owner: &str,
         key: &str,
         force: bool,
+        backend: &mut dyn Backend,
     ) -> Result<Confirmation, Failure> {
         let ancestor = self
             .shared
@@ -414,12 +415,19 @@ impl Service {
                 Failure::invalid("Ancestry selection expired; reopen process details")
             })?;
         ancestor.identity.validate().map_err(Failure::from)?;
+        // The ancestor may also appear in the scan; its files and ports count too.
+        let dataset = self.shared.lock().dataset.clone();
+        let scanned = dataset.process(key).ok().map(|(_, process)| process);
+        let [native] = <[_; 1]>::try_from(backend.impact(&[ancestor.identity]))
+            .unwrap_or_else(|_| [oflh_core::impact::Impact::default()]);
         self.confirm(
             vec![ancestor.identity],
             vec![ActionTarget {
                 key: key.into(),
                 name: oflh_core::safe(&ancestor.name),
                 pid: ancestor.identity.pid,
+                role: TargetRole::Ancestor,
+                impact: target_impact(native, scanned),
             }],
             force,
         )
@@ -430,6 +438,7 @@ impl Service {
         revision: u32,
         keys: &[String],
         force: bool,
+        backend: &mut dyn Backend,
     ) -> Result<Confirmation, Failure> {
         if keys.is_empty() || keys.len() > 10000 {
             return Err(Failure::invalid("Select between 1 and 10,000 processes"));
@@ -437,19 +446,26 @@ impl Service {
         let dataset = self.dataset(revision)?;
         let mut seen = HashSet::new();
         let mut identities = Vec::new();
-        let mut targets = Vec::new();
+        let mut processes = Vec::new();
         for key in keys {
             let (_, process) = dataset.process(key)?;
             process.identity.validate().map_err(Failure::from)?;
             if seen.insert(process.identity) {
                 identities.push(process.identity);
-                targets.push(ActionTarget {
-                    key: identity_key(process.identity),
-                    name: oflh_core::safe(&process.name),
-                    pid: process.identity.pid,
-                });
+                processes.push(process);
             }
         }
+        let mut native = backend.impact(&identities).into_iter();
+        let targets = processes
+            .into_iter()
+            .map(|process| ActionTarget {
+                key: identity_key(process.identity),
+                name: oflh_core::safe(&process.name),
+                pid: process.identity.pid,
+                role: TargetRole::Holder,
+                impact: target_impact(native.next().unwrap_or_default(), Some(process)),
+            })
+            .collect();
         self.confirm(identities, targets, force)
     }
     fn confirm(
@@ -747,6 +763,28 @@ fn status(state: &State) -> Status {
         pull_request_url: oflh_core::PULL_REQUEST_URL,
     }
 }
+/// Combine native observations with what the latest scan attributed to the process.
+fn target_impact(native: oflh_core::impact::Impact, scanned: Option<&Process>) -> TargetImpact {
+    use oflh_core::impact::{Capped, scanned_resources};
+    let (files, ports) = scanned.map(scanned_resources).unwrap_or_default();
+    TargetImpact {
+        windows: native
+            .windows
+            .map(|titles| Capped::new(titles.iter().map(|title| oflh_core::safe(title))).into()),
+        children: native.children.map(|children| {
+            Capped::new(children.iter().map(|child| {
+                format!(
+                    "{} (PID {})",
+                    oflh_core::safe(&child.name),
+                    child.identity.pid
+                )
+            }))
+            .into()
+        }),
+        files: files.into(),
+        ports: ports.into(),
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -923,6 +961,7 @@ mod tests {
     }
     #[derive(Default)]
     struct Recorder {
+        impact: Option<oflh_core::impact::Impact>,
         calls: Vec<(Identity, bool)>,
         changed: bool,
         running: bool,
@@ -943,6 +982,9 @@ mod tests {
             } else {
                 Ok(self.running)
             }
+        }
+        fn impact(&mut self, ids: &[Identity]) -> Vec<oflh_core::impact::Impact> {
+            vec![self.impact.clone().unwrap_or_default(); ids.len()]
         }
         fn terminate(&mut self, identity: Identity, force: bool, _: &Cancellation) -> Result<()> {
             self.calls.push((identity, force));
@@ -978,7 +1020,12 @@ mod tests {
         let (service, identity) = action_service();
         let revision = service.status().revision;
         let confirmation = service
-            .prepare(revision, &[identity_key(identity)], false)
+            .prepare(
+                revision,
+                &[identity_key(identity)],
+                false,
+                &mut Recorder::default(),
+            )
             .unwrap();
         service
             .shared
@@ -1003,7 +1050,12 @@ mod tests {
         for force in [false, true] {
             let (service, identity) = action_service();
             let confirmation = service
-                .prepare(1, &[identity_key(identity)], force)
+                .prepare(
+                    1,
+                    &[identity_key(identity)],
+                    force,
+                    &mut Recorder::default(),
+                )
                 .unwrap();
             let mut backend = Recorder::default();
             let results = service
@@ -1062,6 +1114,8 @@ mod tests {
                 key: identity_key(*identity),
                 pid: identity.pid,
                 name: "fixture".into(),
+                role: TargetRole::Holder,
+                impact: TargetImpact::default(),
             })
             .collect();
         let confirmation = service.confirm(identities.clone(), targets, true).unwrap();
@@ -1133,7 +1187,9 @@ mod tests {
             (false, Error::Cancelled),
         ] {
             let (service, identity) = action_service();
-            let confirmation = service.prepare(1, &[identity_key(identity)], true).unwrap();
+            let confirmation = service
+                .prepare(1, &[identity_key(identity)], true, &mut Recorder::default())
+                .unwrap();
             let mut error = Some(error);
             let results = service
                 .terminate_using(
@@ -1186,7 +1242,12 @@ mod tests {
         ] {
             let (service, identity) = action_service();
             let confirmation = service
-                .prepare(1, &[identity_key(identity)], false)
+                .prepare(
+                    1,
+                    &[identity_key(identity)],
+                    false,
+                    &mut Recorder::default(),
+                )
                 .unwrap();
             let mut backend = Recorder {
                 running,
@@ -1235,28 +1296,124 @@ mod tests {
         );
         assert!(
             service
-                .prepare_ancestor(&owner, "42000:13:0", true)
+                .prepare_ancestor(&owner, "42000:13:0", true, &mut Recorder::default())
                 .is_err()
         );
         assert!(
             service
-                .prepare_ancestor("forged", &identity_key(parent), true)
+                .prepare_ancestor(
+                    "forged",
+                    &identity_key(parent),
+                    true,
+                    &mut Recorder::default()
+                )
                 .is_err()
         );
         let confirmation = service
-            .prepare_ancestor(&owner, &identity_key(parent), true)
+            .prepare_ancestor(
+                &owner,
+                &identity_key(parent),
+                true,
+                &mut Recorder::default(),
+            )
             .unwrap();
         let mut backend = Recorder::default();
         service
             .terminate(&confirmation.ticket, &mut backend)
             .unwrap();
         assert_eq!(backend.calls, [(parent, true)]);
+        assert_eq!(confirmation.targets[0].role, TargetRole::Ancestor);
+    }
+    #[test]
+    fn confirmation_carries_capped_impact_without_changing_the_action() {
+        use oflh_core::{Port, Protocol, Usage, impact::Impact};
+        let (service, identity) = action_service();
+        service.shared.lock().dataset = Arc::new(Dataset::new(
+            1,
+            Snapshot {
+                processes: vec![Process {
+                    identity,
+                    name: "blender".into(),
+                    usages: vec![Usage {
+                        path: "/build/scene.blend".into(),
+                        ..Usage::default()
+                    }],
+                    ports: vec![Port {
+                        protocol: Protocol::Tcp,
+                        address: std::net::Ipv4Addr::UNSPECIFIED.into(),
+                        number: 3000,
+                    }],
+                    ..Process::default()
+                }],
+                warnings: vec![],
+            },
+        ));
+        let child = |pid| Ancestor {
+            identity: Identity {
+                pid,
+                started: 1,
+                started_sub: 0,
+            },
+            name: "worker".into(),
+        };
+        let mut backend = Recorder {
+            impact: Some(Impact {
+                windows: Some((0..7).map(|n| format!("scene {n}.blend")).collect()),
+                children: Some(vec![child(7), child(8)]),
+            }),
+            ..Recorder::default()
+        };
+        let confirmation = service
+            .prepare(1, &[identity_key(identity)], false, &mut backend)
+            .unwrap();
+        let target = &confirmation.targets[0];
+        assert_eq!(target.role, TargetRole::Holder);
+        let windows = target.impact.windows.as_ref().unwrap();
+        assert_eq!((windows.items.len(), windows.more), (5, 2));
+        assert_eq!(
+            target.impact.children.as_ref().unwrap().items,
+            ["worker (PID 7)", "worker (PID 8)"]
+        );
+        assert_eq!(target.impact.files.items, ["/build/scene.blend"]);
+        assert_eq!(target.impact.ports.items, ["TCP 3000"]);
+        let json = serde_json::to_value(&confirmation).unwrap();
+        assert_eq!(json["targets"][0]["role"], "holder");
+        assert_eq!(json["targets"][0]["impact"]["windows"]["more"], 2);
+        assert_eq!(
+            json["targets"][0]["impact"]["ports"]["items"][0],
+            "TCP 3000"
+        );
+        service
+            .terminate(&confirmation.ticket, &mut backend)
+            .unwrap();
+        assert_eq!(backend.calls, [(identity, false)]);
+    }
+    #[test]
+    fn unavailable_impact_serializes_as_null_not_empty() {
+        let (service, identity) = action_service();
+        let confirmation = service
+            .prepare(
+                1,
+                &[identity_key(identity)],
+                false,
+                &mut Recorder::default(),
+            )
+            .unwrap();
+        let json = serde_json::to_value(&confirmation).unwrap();
+        assert!(json["targets"][0]["impact"]["windows"].is_null());
+        assert!(json["targets"][0]["impact"]["children"].is_null());
+        assert_eq!(
+            json["targets"][0]["impact"]["files"]["items"],
+            serde_json::json!([])
+        );
     }
     #[test]
     fn tickets_capture_mode_deduplicate_and_cannot_be_replayed() {
         let (service, identity) = action_service();
         let key = identity_key(identity);
-        let confirmation = service.prepare(1, &[key.clone(), key], true).unwrap();
+        let confirmation = service
+            .prepare(1, &[key.clone(), key], true, &mut Recorder::default())
+            .unwrap();
         assert_eq!(confirmation.targets.len(), 1);
         let mut backend = Recorder::default();
         assert!(service.terminate("forged", &mut backend).is_err());
@@ -1276,7 +1433,12 @@ mod tests {
     fn changed_identity_reports_failure_without_escalation() {
         let (service, identity) = action_service();
         let confirmation = service
-            .prepare(1, &[identity_key(identity)], false)
+            .prepare(
+                1,
+                &[identity_key(identity)],
+                false,
+                &mut Recorder::default(),
+            )
             .unwrap();
         let mut backend = Recorder {
             changed: true,
@@ -1293,15 +1455,33 @@ mod tests {
     #[test]
     fn invalid_selections_and_dismissed_confirmations_cannot_act() {
         let (service, identity) = action_service();
-        assert!(service.prepare(1, &[], false).is_err());
         assert!(
             service
-                .prepare(0, &[identity_key(identity)], false)
+                .prepare(1, &[], false, &mut Recorder::default())
                 .is_err()
         );
-        assert!(service.prepare(1, &["1:1:0".into()], false).is_err());
+        assert!(
+            service
+                .prepare(
+                    0,
+                    &[identity_key(identity)],
+                    false,
+                    &mut Recorder::default()
+                )
+                .is_err()
+        );
+        assert!(
+            service
+                .prepare(1, &["1:1:0".into()], false, &mut Recorder::default())
+                .is_err()
+        );
         let confirmation = service
-            .prepare(1, &[identity_key(identity)], false)
+            .prepare(
+                1,
+                &[identity_key(identity)],
+                false,
+                &mut Recorder::default(),
+            )
             .unwrap();
         service.dismiss();
         let mut backend = Recorder::default();
@@ -1327,7 +1507,7 @@ mod tests {
         ));
         assert_eq!(
             service
-                .prepare(2, &["1:1:0".into()], false)
+                .prepare(2, &["1:1:0".into()], false, &mut Recorder::default())
                 .unwrap_err()
                 .kind,
             "protected"
