@@ -146,3 +146,54 @@ export function scrollFades(area: {
   const rest = area.scrollHeight - area.clientHeight - area.scrollTop;
   return { top: area.scrollTop > 1, bottom: rest > 1 };
 }
+
+/** Rows each Details group shows before "Show all". */
+export const IMPACT_PREVIEW = 5;
+/** Expanded groups longer than this get a filter field. */
+export const IMPACT_FILTER_FROM = 20;
+
+/**
+ * What one Details group shows. Collapsed groups preview a few rows and
+ * count the rest; expanded ones list every kept row, narrowed by `query`
+ * (case-insensitive, any order of words). `unlisted` counts rows Rust left
+ * out of the payload, which can never be shown.
+ */
+export function impactGroupView(
+  list: CappedList,
+  expanded: boolean,
+  query = "",
+): {
+  items: { item: string; index: number }[];
+  hidden: number;
+  expandable: boolean;
+  filterable: boolean;
+  unlisted: number;
+} {
+  const total = listTotal(list);
+  const expandable = total > IMPACT_PREVIEW;
+  const indexed = list.items.map((item, index) => ({ item, index }));
+  if (!expanded || !expandable) {
+    const items = indexed.slice(0, IMPACT_PREVIEW);
+    return {
+      items,
+      hidden: total - items.length,
+      expandable,
+      filterable: false,
+      unlisted: 0,
+    };
+  }
+  const words = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const items = words.length
+    ? indexed.filter(({ item }) => {
+        const text = item.toLocaleLowerCase();
+        return words.every((word) => text.includes(word));
+      })
+    : indexed;
+  return {
+    items,
+    hidden: 0,
+    expandable,
+    filterable: total > IMPACT_FILTER_FROM,
+    unlisted: list.more,
+  };
+}

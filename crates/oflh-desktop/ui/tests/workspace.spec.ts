@@ -1177,7 +1177,22 @@ test("confirmation shows one impact line and reveals capped details on demand", 
     dialog.locator(".impact-primary", { hasText: "python3" }),
   ).toBeVisible();
   await expect(dialog.getByText("PID 4100")).toBeVisible();
-  await expect(dialog.getByText("+4 more")).toBeVisible();
+  // Rust kept five of nine files; expanding says the rest were not listed.
+  const showFiles = dialog.getByRole("button", { name: "Show all 9" });
+  await expect(showFiles).toHaveAttribute("aria-expanded", "false");
+  await showFiles.focus();
+  await page.keyboard.press("Enter");
+  const lessFiles = dialog.getByRole("button", { name: "Show less" });
+  await expect(lessFiles).toBeFocused();
+  await expect(lessFiles).toHaveAttribute("aria-expanded", "true");
+  await expect(dialog.getByText("+4 more not listed")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(showFiles).toBeFocused();
+  await expect(dialog.getByText("+4 more not listed")).toBeHidden();
+  // Short groups never show the control.
+  await expect(
+    dialog.getByRole("button", { name: /^Show all 3$/ }),
+  ).toHaveCount(0);
   await expect(
     dialog.locator(".impact-secondary[title='/build/textures/a.png']"),
   ).toHaveText("/build/textures");
@@ -4927,5 +4942,88 @@ for (const locale of ["en", "de", "zh"]) {
     }
     if (locale === "de")
       await page.screenshot({ path: "test-results/drop-window-de.png" });
+  });
+}
+
+const manyWindows = {
+  ...blenderImpact,
+  windows: {
+    items: Array.from(
+      { length: 150 },
+      (_, index) => `scene${index + 1}.blend - Blender`,
+    ),
+    more: 0,
+  },
+};
+
+test("a group with 150 windows previews five, expands in place and filters", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 860, height: 560 });
+  await page.addInitScript(
+    (impact) => ((window as any).__impact = impact),
+    manyWindows,
+  );
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator(".impact-details summary").first().click();
+  const group = dialog.locator(".impact-group").first();
+  await expect(group.locator("li")).toHaveCount(5);
+  await expect(group.getByRole("searchbox")).toHaveCount(0);
+  await page.screenshot({ path: "test-results/impact-more-preview.png" });
+  const show = group.getByRole("button", { name: "Show all 150" });
+  await show.click();
+  await expect(group.locator("li")).toHaveCount(150);
+  const less = group.getByRole("button", { name: "Show less" });
+  await expect(less).toBeFocused();
+  // The list stays in the confirmation's scroll area; buttons stay reachable.
+  const scroll = dialog.locator(".confirmation-scroll");
+  await expect(scroll).toHaveAttribute("data-fade-bottom", "true");
+  const list = dialog.locator(".confirmation-list");
+  expect(
+    await list.evaluate((node) => node.scrollHeight > node.clientHeight),
+  ).toBe(true);
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeInViewport();
+  const filter = group.getByRole("searchbox", { name: "Filter list" });
+  await expect(filter).toBeVisible();
+  await page.screenshot({ path: "test-results/impact-more-expanded.png" });
+  await filter.fill("scene14");
+  await expect(group.locator("li")).toHaveCount(11);
+  await expect(group.getByText("11 of 150")).toBeVisible();
+  await page.screenshot({ path: "test-results/impact-more-filtered.png" });
+  await filter.fill("nothing here");
+  await expect(group.getByText("No matches")).toBeVisible();
+  // Escape clears the filter first and only then closes the dialog.
+  await page.keyboard.press("Escape");
+  await expect(filter).toHaveValue("");
+  await expect(dialog).toBeVisible();
+  await less.click();
+  await expect(group.locator("li")).toHaveCount(5);
+  await expect(show).toBeFocused();
+});
+
+for (const [locale, terminate, label, less] of [
+  ["de", "Beenden …", "Alle 150 anzeigen", "Weniger anzeigen"],
+  ["zh", "终止…", "显示全部 150 项", "收起"],
+]) {
+  test(`Show all is localized in ${locale}`, async ({ page }) => {
+    await page.addInitScript(
+      ([impact, language]) => {
+        (window as any).__impact = impact;
+        localStorage.setItem("oflh-language", language as string);
+      },
+      [manyWindows, locale] as const,
+    );
+    await page.goto("/");
+    await page.getByRole("grid").getByRole("row").nth(1).click();
+    await page.getByRole("button", { name: terminate, exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.locator(".impact-details summary").first().click();
+    await dialog.getByRole("button", { name: label }).click();
+    await expect(dialog.getByRole("button", { name: less })).toBeFocused();
   });
 }

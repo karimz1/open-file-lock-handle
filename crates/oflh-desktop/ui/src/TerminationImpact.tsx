@@ -1,17 +1,21 @@
 import {
   AppWindow,
   Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
   FileText,
   Network,
+  Search,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { api, type CappedList, type ConfirmationTarget } from "./api";
 import { t, type MessageKey } from "./i18n";
 import {
   IMPACT_SENTENCES,
+  impactGroupView,
   impactRow,
   impactSummary,
   listTotal,
@@ -51,42 +55,112 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
-function ImpactGroup({ kind, list }: { kind: Kind; list: CappedList }) {
+function ImpactRow({ kind, item }: { kind: Kind; item: string }) {
+  const row = impactRow(kind, item);
+  return (
+    <li>
+      <span className="impact-primary" title={row.primary}>
+        {row.primary}
+      </span>
+      {row.secondary && (
+        <span className="impact-secondary" title={row.copy ?? row.secondary}>
+          {row.secondary}
+        </span>
+      )}
+      {row.copy && <CopyButton value={row.copy} />}
+    </li>
+  );
+}
+
+/**
+ * One Details group: a short preview, then "Show all" expands the rest in
+ * place. Long groups get a filter so a hundred window titles stay usable.
+ */
+export function ImpactGroup({ kind, list }: { kind: Kind; list: CappedList }) {
+  const [expanded, setExpanded] = useState(false);
+  const [query, setQuery] = useState("");
+  const id = useId();
   const total = listTotal(list);
   if (!total) return null;
   const { icon: Icon, heading } = GROUPS[kind];
+  const view = impactGroupView(list, expanded, query);
+  const toggle = () => {
+    setExpanded(!expanded);
+    setQuery("");
+  };
   return (
-    <section className="impact-group">
+    <section className="impact-group" data-expanded={expanded || undefined}>
       <h4>
         <Icon size={13} aria-hidden="true" />
         {t(heading, { count: total })}
       </h4>
-      <ul>
-        {list.items.map((item, index) => {
-          const row = impactRow(kind, item);
-          return (
-            <li key={index}>
-              <span className="impact-primary" title={row.primary}>
-                {row.primary}
-              </span>
-              {row.secondary && (
-                <span
-                  className="impact-secondary"
-                  title={row.copy ?? row.secondary}
-                >
-                  {row.secondary}
-                </span>
-              )}
-              {row.copy && <CopyButton value={row.copy} />}
-            </li>
-          );
-        })}
-        {list.more > 0 && (
+      {view.filterable && (
+        <div className="impact-filter">
+          <Search size={12} aria-hidden="true" />
+          <input
+            type="search"
+            value={query}
+            aria-label={t("termination.k_impact_filter")}
+            placeholder={t("termination.k_impact_filter_placeholder")}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              // Show matches from the top of the group, not mid-list.
+              event.currentTarget
+                .closest(".impact-group")
+                ?.scrollIntoView({ block: "start" });
+            }}
+            onKeyDown={(event) => {
+              // Escape clears the filter instead of closing the dialog.
+              if (event.key === "Escape" && query) {
+                event.preventDefault();
+                event.stopPropagation();
+                setQuery("");
+              }
+            }}
+          />
+          <span className="impact-filter-count" aria-live="polite">
+            {query
+              ? t("termination.k_impact_filter_count", {
+                  shown: view.items.length,
+                  total: list.items.length,
+                })
+              : ""}
+          </span>
+        </div>
+      )}
+      <ul id={id}>
+        {view.items.map(({ item, index }) => (
+          <ImpactRow key={index} kind={kind} item={item} />
+        ))}
+        {view.filterable && query && view.items.length === 0 && (
           <li className="impact-more">
-            {t("termination.k_impact_more", { count: list.more })}
+            {t("termination.k_impact_filter_none")}
+          </li>
+        )}
+        {view.unlisted > 0 && (
+          <li className="impact-more">
+            {t("termination.k_impact_not_listed", { count: view.unlisted })}
           </li>
         )}
       </ul>
+      {view.expandable && (
+        <button
+          type="button"
+          className="impact-toggle"
+          aria-expanded={expanded}
+          aria-controls={id}
+          onClick={toggle}
+        >
+          {expanded ? (
+            <ChevronUp size={13} aria-hidden="true" />
+          ) : (
+            <ChevronDown size={13} aria-hidden="true" />
+          )}
+          {expanded
+            ? t("termination.k_impact_show_less")
+            : t("termination.k_impact_show_all", { count: total })}
+        </button>
+      )}
     </section>
   );
 }

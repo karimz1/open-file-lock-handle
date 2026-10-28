@@ -1657,6 +1657,62 @@ main {
   color: var(--muted);
   font-size: 0.8462rem;
 }
+/* "Show all" reads as a quiet link under the preview, not another action. */
+.impact-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 0 15px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.8462rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.impact-toggle:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.impact-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Stays at the top of the scroll area while a long group is browsed. */
+.impact-filter {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 4px 19px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--muted);
+}
+.impact-filter:focus-within {
+  border-color: var(--accent);
+}
+.impact-filter input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8462rem;
+}
+.impact-filter-count {
+  flex: none;
+  font-size: 0.7692rem;
+  font-variant-numeric: tabular-nums;
+}
 .confirmation-list > li + li,
 .action-results li + li {
   border-top: 1px solid var(--border);

@@ -1248,7 +1248,7 @@ fn confirmation_summarizes_impact_and_expands_details_with_d() {
     for text in [
         "Windows (7)",
         "scene5.blend - Blender",
-        "+2 more",
+        "▾ +2 more · Space show all 7",
         "Background processes (1)",
         "python3  PID 4100",
         "Files (3)",
@@ -1398,4 +1398,60 @@ fn short_confirmation_does_not_show_a_scroll_hint() {
     assert!(!app.confirm_scrollable);
     assert!(!text.contains("↕") && !text.contains("PgUp"));
     assert!(!text.contains('█') && !text.contains("Home/End"));
+}
+
+#[test]
+fn space_shows_every_item_in_a_group_and_collapses_again() {
+    let mut app = impact_app();
+    let id = app.snapshot.processes[0].identity;
+    key(&mut app, K::Char('k'));
+    let mut many = blender_impact();
+    many.windows = Some(
+        (1..=150)
+            .map(|n| format!("scene{n}.blend - Blender"))
+            .collect(),
+    );
+    app.accept_impact(&[id], vec![many]);
+    // Space opens Details already expanded, so one key reaches every window.
+    key(&mut app, K::Char(' '));
+    assert!(app.impact_details && app.impact_all);
+    let top = render_confirm_at(&mut app, "impact-more-all-80x24", 80, 24);
+    assert!(top.contains("of "), "{top}");
+    assert!(top.contains('█'), "scrollbar\n{top}");
+    key(&mut app, K::End);
+    let end = render_confirm_at(&mut app, "impact-more-all-end-80x24", 80, 24);
+    assert!(end.contains("scene150.blend"), "{end}");
+    assert!(end.contains("▴ Space show less"), "{end}");
+    assert!(!end.contains("Space show all"), "{end}");
+    // Space again collapses to the preview and keeps Details open.
+    key(&mut app, K::Char(' '));
+    assert!(app.impact_details && !app.impact_all);
+    key(&mut app, K::Home);
+    let preview = render_confirm_at(&mut app, "impact-more-preview-80x24", 80, 24);
+    key(&mut app, K::End);
+    let preview_end = render_confirm_at(&mut app, "impact-more-preview-end-80x24", 80, 24);
+    let both = format!("{preview}{preview_end}");
+    assert!(both.contains("▾ +145 more · Space show all 150"), "{both}");
+    assert!(
+        !both.contains("scene6.blend") && !both.contains("show less"),
+        "{both}"
+    );
+    // Small groups never offer an expander.
+    assert_eq!(
+        both.matches("Space show all").count(),
+        both.matches("Space show all 150").count(),
+        "{both}"
+    );
+    // German uses the du-form keyboard wording.
+    app.language = Language::German;
+    key(&mut app, K::Home);
+    let german = render_confirm_at(&mut app, "impact-more-preview-de", 100, 40);
+    assert!(
+        german.contains("▾ +145 weitere · Leertaste alle 150 zeigen"),
+        "{german}"
+    );
+    // A new confirmation starts with the preview again.
+    key(&mut app, K::Esc);
+    key(&mut app, K::Char('k'));
+    assert!(!app.impact_all && !app.impact_details);
 }

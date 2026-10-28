@@ -4,8 +4,12 @@
 //! describe what else that request may touch; they never widen the action.
 use crate::{Ancestor, Identity, Port, Process, safe};
 
-/// Entries shown per list before collapsing the rest into a count.
-pub const IMPACT_LIST_LIMIT: usize = 5;
+/// Entries shown per list before the user asks to see all of them.
+pub const IMPACT_PREVIEW: usize = 5;
+
+/// Entries kept per list so a process with thousands of windows or files
+/// cannot bloat the confirmation; the remainder is only counted.
+pub const IMPACT_LIST_LIMIT: usize = 500;
 
 /// One row of a native process table read just before confirmation.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -197,10 +201,11 @@ mod tests {
 
     #[test]
     fn capped_lists_count_what_they_hide() {
-        let capped = Capped::new((0..8).map(|n| n.to_string()));
-        assert_eq!(capped.items, ["0", "1", "2", "3", "4"]);
+        let capped = Capped::new((0..IMPACT_LIST_LIMIT + 3).map(|n| n.to_string()));
+        assert_eq!(capped.items.len(), IMPACT_LIST_LIMIT);
+        assert_eq!(capped.items[4], "4");
         assert_eq!(capped.more, 3);
-        assert_eq!(capped.total(), 8);
+        assert_eq!(capped.total(), IMPACT_LIST_LIMIT + 3);
         assert_eq!(Capped::new(Vec::new()), Capped::default());
     }
 

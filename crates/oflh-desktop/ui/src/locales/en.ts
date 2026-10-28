@@ -490,7 +490,13 @@ const en = {
     k_impact_windows_unavailable: "This system does not expose window titles.",
     k_impact_children_note:
       "They are not terminated and usually keep running. Some may exit together with this process.",
-    k_impact_more: "+{{count}} more",
+    k_impact_show_all: "Show all {{count}}",
+    k_impact_show_less: "Show less",
+    k_impact_not_listed: "+{{count}} more not listed",
+    k_impact_filter: "Filter list",
+    k_impact_filter_placeholder: "Filter…",
+    k_impact_filter_count: "{{shown}} of {{total}}",
+    k_impact_filter_none: "No matches",
     k_impact_latest_scan:
       "Based on the latest scan and a process check when this dialog opened.",
     k_role_parent: "Parent",

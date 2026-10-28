@@ -239,6 +239,7 @@ labels! {
     "Background processes are not closed; some may exit with it.", "Hintergrundprozesse werden nicht beendet, manche enden eventuell mit.", "后台进程不会被结束，部分可能随之退出。";
     "Tab / ←→ choose · d details · ↑↓ PgUp/PgDn scroll · Enter confirm · Esc cancel", "Tab / ←→ wählen · d Details · ↑↓ Bild↑/Bild↓ blättern · Enter bestätigen · Esc abbrechen", "Tab / ←→ 选择 · d 详情 · ↑↓ PgUp/PgDn 滚动 · Enter 确认 · Esc 取消";
     "Checking windows and child processes…", "Fenster und Kindprozesse werden geprüft…", "正在检查窗口和子进程…";
+    "▴ Space show less", "▴ Leertaste weniger zeigen", "▴ 空格 收起";
     "↑↓ / PgUp PgDn scroll · Home/End", "↑↓ / Bild↑ Bild↓ blättern · Pos1/Ende", "↑↓ / PgUp PgDn 滚动 · Home/End";
     "Files and ports come from the latest scan.", "Dateien und Ports stammen aus dem letzten Scan.", "文件和端口来自最近一次扫描。";
     "Window list not available on this platform", "Fensterliste auf dieser Plattform nicht verfügbar", "此平台无法列出窗口";
@@ -318,11 +319,18 @@ macro_rules! localized {
             $crate::view::messages::Language::Chinese => format!("{first}–{last} / {total} ↕" $(, $($arguments)*)?),
         }
     };
-    ($language:expr, "+{n} more" $(, $($arguments:tt)*)?) => {
+    ($language:expr, "▾ +{n} more · Space show all {total}" $(, $($arguments:tt)*)?) => {
         match $language {
-            $crate::view::messages::Language::English => format!("+{n} more" $(, $($arguments)*)?),
-            $crate::view::messages::Language::German => format!("+{n} weitere" $(, $($arguments)*)?),
-            $crate::view::messages::Language::Chinese => format!("另有 {n} 项" $(, $($arguments)*)?),
+            $crate::view::messages::Language::English => format!("▾ +{n} more · Space show all {total}" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("▾ +{n} weitere · Leertaste alle {total} zeigen" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("▾ 另有 {n} 项 · 空格 显示全部 {total} 项" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "+{n} more not listed" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("+{n} more not listed" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("+{n} weitere nicht aufgeführt" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("另有 {n} 项未列出" $(, $($arguments)*)?),
         }
     };
     ($language:expr, "↑ {version} · U releases · b hide" $(, $($arguments:tt)*)?) => {

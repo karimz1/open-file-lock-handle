@@ -14,7 +14,7 @@
                 scene3.blend - Blender                                       │
                 scene4.blend - Blender                                       │
                 scene5.blend - Blender                                       │
-                +2 more                                                      │
+                ▾ +2 more · Space show all 7                                 │
               Background processes (1)                                       │
                 python3  PID 4100                                            │
                 Background processes are not closed; some may exit with it.  │

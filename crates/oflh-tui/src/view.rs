@@ -1255,26 +1255,41 @@ fn impact_lines(lines: &mut Vec<Line<'static>>, app: &App, target: &ActionTarget
             lines.push(Line::from(row))
         }
     };
-    let capped = |items: Vec<(String, String)>| {
-        let total = items.len();
-        let mut rows: Vec<_> = items.into_iter().take(impact::IMPACT_LIST_LIMIT).collect();
-        if total > rows.len() {
-            rows.push((
-                localized!(language, "+{n} more", n = total - rows.len()),
-                String::new(),
-            ))
+    // Each group previews a few rows; Space shows every kept row in place.
+    let all = app.impact_all;
+    let shorten = |mut rows: Vec<(String, String)>, unlisted: usize| {
+        let total = rows.len() + unlisted;
+        if total <= impact::IMPACT_PREVIEW {
+            return rows;
         }
-        (total, rows)
-    };
-    let from = |list: &impact::Capped, split: fn(&str) -> (String, String)| {
-        let mut rows: Vec<_> = list.items.iter().map(|item| split(item)).collect();
-        if list.more > 0 {
+        if all {
+            if unlisted > 0 {
+                rows.push((
+                    localized!(language, "+{n} more not listed", n = unlisted),
+                    String::new(),
+                ))
+            }
+            rows.push((language.text("▴ Space show less").into(), String::new()))
+        } else {
+            rows.truncate(impact::IMPACT_PREVIEW);
             rows.push((
-                localized!(language, "+{n} more", n = list.more),
+                localized!(
+                    language,
+                    "▾ +{n} more · Space show all {total}",
+                    n = total - impact::IMPACT_PREVIEW,
+                    total = total
+                ),
                 String::new(),
             ))
         }
         rows
+    };
+    let capped = |items: Vec<(String, String)>| (items.len(), shorten(items, 0));
+    let from = |list: &impact::Capped, split: fn(&str) -> (String, String)| {
+        shorten(
+            list.items.iter().map(|item| split(item)).collect(),
+            list.more,
+        )
     };
     match windows {
         Some(windows) => {

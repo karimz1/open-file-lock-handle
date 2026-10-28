@@ -509,7 +509,13 @@ const de: TranslationSchema<typeof en> = {
       "Dieses System stellt keine Fenstertitel bereit.",
     k_impact_children_note:
       "Sie werden nicht beendet und laufen meist weiter. Einige können zusammen mit diesem Prozess enden.",
-    k_impact_more: "+{{count}} weitere",
+    k_impact_show_all: "Alle {{count}} anzeigen",
+    k_impact_show_less: "Weniger anzeigen",
+    k_impact_not_listed: "+{{count}} weitere nicht aufgeführt",
+    k_impact_filter: "Liste filtern",
+    k_impact_filter_placeholder: "Filtern…",
+    k_impact_filter_count: "{{shown}} von {{total}}",
+    k_impact_filter_none: "Keine Treffer",
     k_impact_latest_scan:
       "Stand: letzter Scan und eine Prozessprüfung beim Öffnen dieses Dialogs.",
     k_role_parent: "Elternprozess",

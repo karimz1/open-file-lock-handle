@@ -1369,7 +1369,7 @@ mod tests {
         let target = &confirmation.targets[0];
         assert_eq!(target.role, TargetRole::Holder);
         let windows = target.impact.windows.as_ref().unwrap();
-        assert_eq!((windows.items.len(), windows.more), (5, 2));
+        assert_eq!((windows.items.len(), windows.more), (7, 0));
         assert_eq!(
             target.impact.children.as_ref().unwrap().items,
             ["worker (PID 7)", "worker (PID 8)"]
@@ -1378,7 +1378,7 @@ mod tests {
         assert_eq!(target.impact.ports.items, ["TCP 3000"]);
         let json = serde_json::to_value(&confirmation).unwrap();
         assert_eq!(json["targets"][0]["role"], "holder");
-        assert_eq!(json["targets"][0]["impact"]["windows"]["more"], 2);
+        assert_eq!(json["targets"][0]["impact"]["windows"]["more"], 0);
         assert_eq!(
             json["targets"][0]["impact"]["ports"]["items"][0],
             "TCP 3000"

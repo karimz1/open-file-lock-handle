@@ -4,6 +4,7 @@ import {
   forceRecoveryTargets,
   IMPACT_SENTENCES,
   scrollFades,
+  impactGroupView,
   impactRow,
   impactSummary,
 } from "./termination";
@@ -165,5 +166,49 @@ describe("scroll fades", () => {
     expect(
       scrollFades({ scrollTop: 0, scrollHeight: 300, clientHeight: 300 }),
     ).toEqual({ top: false, bottom: false });
+  });
+});
+
+describe("impactGroupView", () => {
+  const list = (n: number, more = 0) => ({
+    items: Array.from({ length: n }, (_, i) => `scene${i + 1}.blend`),
+    more,
+  });
+  it("previews five rows and counts the rest", () => {
+    const view = impactGroupView(list(7), false);
+    expect(view.items.map((row) => row.item)).toEqual([
+      "scene1.blend",
+      "scene2.blend",
+      "scene3.blend",
+      "scene4.blend",
+      "scene5.blend",
+    ]);
+    expect(view).toMatchObject({
+      hidden: 2,
+      expandable: true,
+      filterable: false,
+    });
+  });
+  it("never offers to expand a short group", () => {
+    expect(impactGroupView(list(5), true)).toMatchObject({
+      hidden: 0,
+      expandable: false,
+      filterable: false,
+    });
+  });
+  it("lists every kept row when expanded and filters long groups", () => {
+    const view = impactGroupView(list(150, 3), true);
+    expect(view.items).toHaveLength(150);
+    expect(view).toMatchObject({ filterable: true, unlisted: 3, hidden: 0 });
+    expect(impactGroupView(list(21), true).filterable).toBe(true);
+    expect(impactGroupView(list(20), true).filterable).toBe(false);
+  });
+  it("matches every word, ignoring case, and keeps original indexes", () => {
+    const view = impactGroupView(list(150), true, "BLEND scene14");
+    expect(view.items.map((row) => row.index)).toEqual([
+      13,
+      ...Array.from({ length: 10 }, (_, i) => 139 + i),
+    ]);
+    expect(impactGroupView(list(150), true, "nothing").items).toEqual([]);
   });
 });

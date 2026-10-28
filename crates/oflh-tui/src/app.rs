@@ -209,6 +209,8 @@ pub struct App {
     pub impact: HashMap<Identity, oflh_core::impact::Impact>,
     /// Whether the confirmation lists the full impact (toggled with `d`).
     pub impact_details: bool,
+    /// Details list every kept row instead of the first few per group.
+    pub impact_all: bool,
     /// Set while drawing: the confirmation is taller than the terminal.
     pub confirm_scrollable: bool,
     pub scroll: usize,
@@ -272,6 +274,7 @@ impl App {
             parent_action: false,
             impact: HashMap::new(),
             impact_details: false,
+            impact_all: false,
             confirm_scrollable: false,
             scroll: 0,
             status: String::new(),
@@ -1002,6 +1005,7 @@ impl App {
         self.pending.clear();
         self.impact.clear();
         self.impact_details = false;
+        self.impact_all = false;
         self.confirm = false;
         self.scroll = 0;
         self.force = matches!(key, K::Char('x' | 'X'));
@@ -1090,6 +1094,15 @@ impl App {
             }
             K::Tab | K::Left | K::Right => self.confirm = !self.confirm,
             K::Char('d') => self.impact_details = !self.impact_details,
+            // Space expands every group (opening Details if needed) or collapses them.
+            K::Char(' ' | 'a') => {
+                if self.impact_details {
+                    self.impact_all = !self.impact_all
+                } else {
+                    self.impact_details = true;
+                    self.impact_all = true
+                }
+            }
             K::Up | K::Char('k') => self.scroll = self.scroll.saturating_sub(1),
             K::Down | K::Char('j') => self.scroll += 1,
             K::Home => self.scroll = 0,
