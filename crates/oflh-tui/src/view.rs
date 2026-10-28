@@ -149,9 +149,9 @@ fn confirmation_buttons(app: &App) -> Line<'static> {
         Span::raw("   "),
         button(
             if app.force {
-                app.language.text("Force kill")
+                app.language.text("Force quit")
             } else {
-                app.language.text("Terminate")
+                app.language.text("Close")
             },
             app.confirm,
             terminate_color,
@@ -1398,25 +1398,20 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
     let mut lines = Vec::new();
     if app.screen == Screen::Confirm {
         lines.push(Line::styled(
-            localized!(
-                app.language,
-                "{} {} processes?",
-                if app.force {
-                    app.language.text("FORCE KILL")
-                } else {
-                    app.language.text("Terminate")
-                },
-                app.pending.len()
-            ),
+            confirm_title(app),
             Style::default().fg(LOCK).add_modifier(Modifier::BOLD),
         ));
-        lines.push(Line::raw(if app.force {
-            app.language
-                .text("Immediate termination: no cleanup. Unsaved work may be lost.")
-        } else {
-            app.language
-                .text("Request a normal shutdown. Unsaved work may be lost.")
-        }));
+        let single = app.pending.len() == 1;
+        lines.push(Line::raw(app.language.text(match (app.force, single) {
+            (false, true) => "OFLH asks the program to close. Unsaved work may be lost.",
+            (false, false) => "OFLH asks each program to close. Unsaved work may be lost.",
+            (true, true) => {
+                "OFLH stops it immediately, without letting it save. Unsaved work will be lost."
+            }
+            (true, false) => {
+                "OFLH stops them immediately, without letting them save. Unsaved work will be lost."
+            }
+        })));
         if app.parent_action {
             lines.push(Line::styled(
                 app.language.text(
@@ -1426,9 +1421,9 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
             ))
         }
         lines.push(Line::raw(""));
-        lines.push(Line::raw(app.language.text(
-            "Affected processes (including selections hidden by filters):",
-        )));
+        lines.push(Line::raw(
+            app.language.text("Processes (filtered ones included):"),
+        ));
         let checking = app.impact.is_empty();
         for process in &app.pending {
             lines.push(Line::raw(format!(
@@ -1888,4 +1883,27 @@ fn port_details(frame: &mut Frame, area: Rect, app: &mut App) {
         ),
         app,
     );
+}
+
+/// "Close Blender?" for one target, "Close 3 processes?" for several; the
+/// force variant says "Force quit" so title and button use the same verb.
+fn confirm_title(app: &App) -> String {
+    let n = app.pending.len();
+    let name = app
+        .pending
+        .first()
+        .map(|process| safe(&process.name).chars().take(40).collect::<String>())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| {
+            app.pending
+                .first()
+                .map(|process| format!("PID {}", process.identity.pid))
+                .unwrap_or_default()
+        });
+    match (app.force, n == 1) {
+        (false, true) => localized!(app.language, "Close {name}?", name = name),
+        (false, false) => localized!(app.language, "Close {n} processes?", n = n),
+        (true, true) => localized!(app.language, "Force quit {name}?", name = name),
+        (true, false) => localized!(app.language, "Force quit {n} processes?", n = n),
+    }
 }

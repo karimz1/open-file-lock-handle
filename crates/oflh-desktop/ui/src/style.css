@@ -2667,3 +2667,36 @@ kbd.shortcut {
 .inspection-details-panel p {
   margin: 10px 0 0;
 }
+
+/* Safety details for power users; one quiet line for everyone else. */
+.safety-note {
+  margin: 0 0 2px;
+  color: var(--muted);
+  font-size: 0.8462rem;
+}
+.safety-note summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.safety-note summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.safety-note ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.confirmation-modal .confirmation-note {
+  gap: 9px;
+  align-items: flex-start;
+}
+.confirmation-modal .confirmation-note p {
+  margin: 0;
+}
+/* The target list takes the room the shorter text frees up. */
+.confirmation-scroll > .confirmation-list {
+  max-height: min(60vh, 520px);
+}

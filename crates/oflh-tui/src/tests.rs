@@ -286,7 +286,7 @@ fn confirmation_focus_has_distinct_backgrounds() {
     let cancel_background = label_background(terminal.backend().buffer(), "Cancel");
     assert_ne!(cancel_background, Color::Reset);
     assert_eq!(
-        label_background(terminal.backend().buffer(), "Terminate"),
+        label_background(terminal.backend().buffer(), "Close"),
         Color::Reset
     );
     export_visual("confirm-cancel", terminal.backend().buffer());
@@ -294,7 +294,7 @@ fn confirmation_focus_has_distinct_backgrounds() {
     terminal
         .draw(|frame| view::draw(frame, &mut application))
         .unwrap();
-    let terminate_background = label_background(terminal.backend().buffer(), "Terminate");
+    let terminate_background = label_background(terminal.backend().buffer(), "Close");
     assert_ne!(terminate_background, Color::Reset);
     assert_ne!(terminate_background, cancel_background);
     assert_eq!(
@@ -1341,7 +1341,7 @@ fn small_terminals_scroll_the_confirmation_and_keep_the_buttons() {
         };
         assert_eq!(column(&top).chars().next(), Some('█'), "{top}");
         assert!(column(&top).contains('│'), "{top}");
-        assert!(top.contains("Cancel") && top.contains("Terminate"), "{top}");
+        assert!(top.contains("Cancel") && top.contains("Close"), "{top}");
         assert!(top.contains("scroll"), "{top}");
         key(&mut app, K::PageDown);
         key(&mut app, K::Char('j'));
@@ -1352,7 +1352,7 @@ fn small_terminals_scroll_the_confirmation_and_keep_the_buttons() {
             height,
         );
         assert_ne!(top, scrolled);
-        assert!(scrolled.contains("Cancel") && scrolled.contains("Terminate"));
+        assert!(scrolled.contains("Cancel") && scrolled.contains("Close"));
         key(&mut app, K::End);
         let bottom = render_confirm_at(
             &mut app,
@@ -1373,7 +1373,7 @@ fn small_terminals_scroll_the_confirmation_and_keep_the_buttons() {
         let (range, _) = indicator.split_once(" ↕").unwrap();
         let (span, total) = range.split_once(" of ").unwrap();
         assert_eq!(span.split_once('–').unwrap().1, total, "{indicator}");
-        assert!(bottom.contains("Cancel") && bottom.contains("Terminate"));
+        assert!(bottom.contains("Cancel") && bottom.contains("Close"));
         key(&mut app, K::Home);
         key(&mut app, K::Char('k'));
         assert_eq!(

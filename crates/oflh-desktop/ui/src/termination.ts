@@ -197,3 +197,28 @@ export function impactGroupView(
     unlisted: list.more,
   };
 }
+
+/**
+ * Message key for the confirmation title, note or button. One target is
+ * named ("Close Blender?"); several are counted ("Close 3 processes?").
+ * Force uses "Force quit" throughout so the button matches the title.
+ */
+export function confirmationText(
+  confirmation: Pick<Confirmation, "force" | "targets">,
+  part: "title" | "note" | "button",
+) {
+  const mode = confirmation.force ? "force" : "confirm";
+  const count = confirmation.targets.length === 1 ? "one" : "many";
+  return `termination.k_${mode}_${part}_${count}` as const;
+}
+
+/** Values for {@link confirmationText}; long names are shortened for buttons. */
+export function confirmationValues(
+  confirmation: Pick<Confirmation, "targets">,
+  maxName = Infinity,
+) {
+  const first = confirmation.targets[0];
+  let name = first?.name || (first ? `PID ${first.pid}` : "");
+  if (name.length > maxName) name = `${name.slice(0, maxName - 1).trimEnd()}…`;
+  return { name, count: confirmation.targets.length };
+}

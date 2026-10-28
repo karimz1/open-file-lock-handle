@@ -1,4 +1,8 @@
-import { forceRecoveryTargets } from "./termination";
+import {
+  confirmationText,
+  confirmationValues,
+  forceRecoveryTargets,
+} from "./termination";
 import { ImpactScrollArea, TerminationTarget } from "./TerminationImpact";
 import {
   lazy,
@@ -38,6 +42,7 @@ import {
   RefreshCw,
   Search,
   ShieldAlert,
+  Info,
   Trash2,
   X,
   ZoomIn,
@@ -2394,39 +2399,21 @@ export function App() {
       )}
       {confirmation && (
         <Modal
-          title={
-            confirmation.force
-              ? t("termination.k_force_terminate_processes")
-              : t("termination.k_terminate_processes")
-          }
+          title={t(
+            confirmationText(confirmation, "title"),
+            confirmationValues(confirmation),
+          )}
           danger={confirmation.force}
           close={dismiss}
           className="confirmation-modal"
         >
           <div className="confirmation-note">
-            <ShieldAlert size={22} />
-            <p>
-              {confirmation.force
-                ? t(
-                    "termination.k_force_termination_stops_these_processes_9c247038",
-                  )
-                : t(
-                    "termination.k_request_these_processes_to_stop_unsaved_8b80fb41",
-                  )}
-            </p>
+            <ShieldAlert size={18} aria-hidden="true" />
+            <p>{t(confirmationText(confirmation, "note"))}</p>
           </div>
           {confirmation.elevated && (
             <p role="status">{t("termination.k_admin_confirmation")}</p>
           )}
-          <p>
-            <strong>
-              {confirmation.targets.length}{" "}
-              {confirmation.targets.length === 1
-                ? t("app.k_process_c2e2d662")
-                : t("navigation.k_processes_da2c4eba")}
-            </strong>{" "}
-            — {t("filters.k_all_targets_are_listed_below_including_1515b80a")}
-          </p>
           {confirmation.targets.some(
             (target) => target.role === "ancestor",
           ) && (
@@ -2441,11 +2428,19 @@ export function App() {
               <TerminationTarget key={target.key} target={target} />
             ))}
           </ImpactScrollArea>
-          <p className="hint">
-            {t(
-              "termination.k_oflh_validates_each_captured_process_id_5e6d1cc4",
-            )}
-          </p>
+          <details className="safety-note">
+            <summary>
+              <Info size={13} aria-hidden="true" />
+              {t("termination.k_safety_summary")}
+            </summary>
+            <ul>
+              <li>{t("termination.k_safety_listed")}</li>
+              <li>{t("termination.k_safety_identity")}</li>
+              {!confirmation.force && (
+                <li>{t("termination.k_safety_no_escalation")}</li>
+              )}
+            </ul>
+          </details>
           <div className="modal-actions">
             <button
               data-default-focus
@@ -2459,9 +2454,10 @@ export function App() {
               {acting && <LoaderCircle size={14} className="spin" />}
               {acting
                 ? t("app.k_waiting_for_process_exit")
-                : confirmation.force
-                  ? t("termination.k_force_terminate_7b6445b3")
-                  : t("termination.k_terminate_77517bd0")}
+                : t(
+                    confirmationText(confirmation, "button"),
+                    confirmationValues(confirmation, 28),
+                  )}
             </button>
           </div>
         </Modal>

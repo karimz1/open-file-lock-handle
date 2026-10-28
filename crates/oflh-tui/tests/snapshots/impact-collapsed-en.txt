@@ -1,9 +1,9 @@
   oflh  ·  Open File Lock Handle
 
-  Terminate 1 processes?
-  Request a normal shutdown. Unsaved work may be lost.
+  Close Blender?
+  OFLH asks the program to close. Unsaved work may be lost.
 
-  Affected processes (including selections hidden by filters):
+  Processes (filtered ones included):
     424242    Blender
               Blender closes completely, with all 7 open windows, such as “scene1.blend -
               Blender”.
@@ -36,5 +36,5 @@
 
 
   ────────────────────────────────────────────────────────────────────────────────────────────────
-  ▶ Cancel      Terminate
+  ▶ Cancel      Close
   Tab / ←→ choose · d details · Enter confirm · Esc cancel

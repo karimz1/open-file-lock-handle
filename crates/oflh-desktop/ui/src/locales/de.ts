@@ -148,8 +148,6 @@ const de: TranslationSchema<typeof en> = {
   },
   filters: {
     k_access_relation: "Zugriff / Beziehung",
-    k_all_targets_are_listed_below_including_1515b80a:
-      "Alle Ziele sind unten aufgeführt, auch die durch Filter ausgeblendeten.",
     k_any_evidence: "Beliebiger Nachweis",
     k_applied_column_filters: "Gesetzte Spaltenfilter",
     k_apply_filters: "Filter anwenden",
@@ -516,6 +514,29 @@ const de: TranslationSchema<typeof en> = {
     k_impact_filter_placeholder: "Filtern…",
     k_impact_filter_count: "{{shown}} von {{total}}",
     k_impact_filter_none: "Keine Treffer",
+    k_confirm_title_one: "{{name}} schließen?",
+    k_confirm_title_many: "{{count}} Prozesse schließen?",
+    k_force_title_one: "{{name}} sofort beenden?",
+    k_force_title_many: "{{count}} Prozesse sofort beenden?",
+    k_confirm_button_one: "{{name}} schließen",
+    k_confirm_button_many: "{{count}} Prozesse schließen",
+    k_force_button_one: "{{name}} sofort beenden",
+    k_force_button_many: "{{count}} Prozesse sofort beenden",
+    k_confirm_note_one:
+      "OFLH bittet das Programm, sich zu schließen. Ungespeicherte Arbeit kann verloren gehen.",
+    k_confirm_note_many:
+      "OFLH bittet jedes Programm, sich zu schließen. Ungespeicherte Arbeit kann verloren gehen.",
+    k_force_note_one:
+      "OFLH beendet es sofort, ohne dass es speichern kann. Ungespeicherte Arbeit geht verloren.",
+    k_force_note_many:
+      "OFLH beendet sie sofort, ohne dass sie speichern können. Ungespeicherte Arbeit geht verloren.",
+    k_safety_summary: "So schützt dich OFLH",
+    k_safety_listed:
+      "Alle ausgewählten Prozesse sind aufgeführt, auch durch Filter ausgeblendete.",
+    k_safety_identity:
+      "Direkt vor dem Senden prüft OFLH jeden Prozess erneut, damit nie eine wiederverwendete PID getroffen wird.",
+    k_safety_no_escalation:
+      "Schließt sich ein Programm nicht, erzwingt OFLH nichts. Dafür gibt es „Sofort beenden“.",
     k_impact_latest_scan:
       "Stand: letzter Scan und eine Prozessprüfung beim Öffnen dieses Dialogs.",
     k_role_parent: "Elternprozess",
@@ -528,16 +549,10 @@ const de: TranslationSchema<typeof en> = {
     k_normal_termination_recovery:
       "Einige Prozesse konnten nicht normal beendet werden. Mit „Beenden erzwingen“ können Sie sie ohne Aufräumen stoppen. Nicht gespeicherte Arbeit kann verloren gehen.",
     k_force_terminate: "Beenden erzwingen …",
-    k_force_terminate_7b6445b3: "Beenden erzwingen",
     k_force_terminate_parent: "Elternprozess zwangsweise beenden …",
     k_force_terminate_process: "Prozess zwangsweise beenden …",
-    k_force_terminate_processes: "Prozesse zwangsweise beenden?",
-    k_force_termination_stops_these_processes_9c247038:
-      "Beim erzwungenen Beenden können diese Prozesse keine reguläre Bereinigung durchführen. Ungespeicherte Daten können verloren gehen.",
     k_local_bindings_do_not_prove_external_re_a5cdb1ad:
       "Lokale Bindungen belegen keine Erreichbarkeit von außen. Prozesse mit unbekanntem Besitzer können nicht beendet werden.",
-    k_oflh_validates_each_captured_process_id_5e6d1cc4:
-      "OFLH überprüft die Identität jedes erfassten Prozesses erneut, bevor die Anfrage gesendet wird.",
     k_process_changed_or_already_exited_no_te_9b7e90d2:
       "Prozess geändert oder bereits beendet. Es wurde keine Beendigungsanfrage gesendet.",
     k_process_exited: "Prozess beendet",
@@ -547,15 +562,11 @@ const de: TranslationSchema<typeof en> = {
       "Anfrage gesendet · Beenden konnte nicht überprüft werden",
     k_request_sent_still_running_after_1_5_seconds:
       "Anfrage gesendet · nach 1,5 Sekunden noch aktiv",
-    k_request_these_processes_to_stop_unsaved_8b80fb41:
-      "Fordere diese Prozesse zum Beenden auf. Ungespeicherte Daten können verloren gehen. Das Beenden wird nicht erzwungen.",
     k_stopping_a_parent_may_close_its_childre_04c26acd:
       "Das Beenden eines Elternprozesses kann dessen untergeordnete Prozesse oder deine Sitzung schließen.",
     k_terminate: "Beenden …",
-    k_terminate_77517bd0: "Beenden",
     k_terminate_parent: "Elternprozess beenden …",
     k_terminate_process: "Prozess beenden …",
-    k_terminate_processes: "Prozesse beenden?",
     k_termination_request_failed: "Beendigungsanfrage fehlgeschlagen",
     k_termination_results: "Ergebnisse des Beendens",
     k_unknown_cpu_and_memory_stay_unavailable_1ca3b23b:

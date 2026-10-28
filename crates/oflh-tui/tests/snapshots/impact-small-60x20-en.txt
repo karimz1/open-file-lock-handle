@@ -1,10 +1,10 @@
   oflh  ·  Open File Lock Handle             1–14 of 174 ↕
                           ↑↓ / PgUp PgDn scroll · Home/End
-  Terminate 8 processes?                                 █
-  Request a normal shutdown. Unsaved work may be lost.   │
+  Close 8 processes?                                     █
+  OFLH asks each program to close. Unsaved work may be   │
+  lost.                                                  │
                                                          │
-  Affected processes (including selections hidden by     │
-  filters):                                              │
+  Processes (filtered ones included):                    │
     424242    Blender                                    │
               Blender closes completely, with all 7 open │
               windows, such as “scene1.blend - Blender”. │
@@ -15,6 +15,6 @@
                 scene3.blend - Blender                   │
                 scene4.blend - Blender                   │
   ────────────────────────────────────────────────────────
-  ▶ Cancel      Terminate
+  ▶ Cancel      Close
   Tab / ←→ choose · d details · ↑↓ PgUp/PgDn scroll
   Enter confirm · Esc cancel

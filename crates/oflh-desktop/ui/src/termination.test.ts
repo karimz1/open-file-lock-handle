@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ActionResult, Confirmation, ConfirmationTarget } from "./api";
 import {
+  confirmationText,
+  confirmationValues,
   forceRecoveryTargets,
   IMPACT_SENTENCES,
   scrollFades,
@@ -210,5 +212,44 @@ describe("impactGroupView", () => {
       ...Array.from({ length: 10 }, (_, i) => 139 + i),
     ]);
     expect(impactGroupView(list(150), true, "nothing").items).toEqual([]);
+  });
+});
+
+describe("confirmation wording", () => {
+  const target = (name: string, pid = 1) => ({
+    key: `${pid}:1:0`,
+    name,
+    pid,
+    role: "holder" as const,
+  });
+  it("names one target and counts several, with matching buttons", () => {
+    const one = { force: false, targets: [target("Blender")] };
+    expect(t(confirmationText(one, "title"), confirmationValues(one))).toBe(
+      "Close Blender?",
+    );
+    expect(t(confirmationText(one, "button"), confirmationValues(one))).toBe(
+      "Close Blender",
+    );
+    const many = {
+      force: true,
+      targets: [target("a", 1), target("b", 2), target("c", 3)],
+    };
+    expect(t(confirmationText(many, "title"), confirmationValues(many))).toBe(
+      "Force quit 3 processes?",
+    );
+    expect(t(confirmationText(many, "button"), confirmationValues(many))).toBe(
+      "Force quit 3 processes",
+    );
+    expect(t(confirmationText(many, "note"))).toContain("will be lost");
+  });
+  it("falls back to the PID and shortens long names for buttons", () => {
+    expect(confirmationValues({ targets: [target("", 42)] }).name).toBe(
+      "PID 42",
+    );
+    const long = confirmationValues(
+      { targets: [target("A very long application name.exe")] },
+      12,
+    ).name;
+    expect(long).toBe("A very long…");
   });
 });
