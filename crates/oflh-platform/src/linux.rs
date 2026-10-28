@@ -410,9 +410,16 @@ impl Backend for Native {
         // connection (X11 _NET_WM_PID is optional, Wayland has no equivalent).
         children_for(process_table(), ids)
             .into_iter()
-            .map(|children| impact::Impact {
+            .zip(ids)
+            .map(|(children, &id)| impact::Impact {
                 windows: None,
                 children,
+                service: stat(id.pid)
+                    .is_ok_and(|live| live.identity == id)
+                    .then(|| std::fs::read_to_string(format!("/proc/{}/cgroup", id.pid)).ok())
+                    .flatten()
+                    .and_then(|cgroup| impact::systemd_unit(&cgroup)),
+                critical: false,
             })
             .collect()
     }
@@ -659,5 +666,8 @@ mod tests {
         let children = impact[0].children.as_ref().unwrap();
         assert!(children.iter().any(|c| c.identity.pid == child.id()));
         assert_eq!(impact[0].windows, None);
+        let cgroup = std::fs::read_to_string("/proc/self/cgroup").unwrap_or_default();
+        assert_eq!(impact[0].service, impact::systemd_unit(&cgroup));
+        assert!(!impact[0].critical);
     }
 }
