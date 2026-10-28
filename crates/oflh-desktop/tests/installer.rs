@@ -337,3 +337,60 @@ fn custom_installer_messages_cover_every_tauri_key_in_every_language() {
     assert!(german.contains("\"Auch Einstellungen und App-Daten löschen\""));
     assert!(german.contains("\"${PRODUCTNAME} läuft noch. Schließe es und versuche es erneut.\""));
 }
+
+/// NSIS's `set_language` (Source/exehead/Ui.c) without a language selector:
+/// an exact match on the Windows display language, then the same primary
+/// language (low 10 bits), then the first language Tauri inserts, which is
+/// the first entry of `bundle.windows.nsis.languages`.
+fn installer_language(display_language: u16) -> &'static str {
+    let nsis = nsis_config();
+    let ids: Vec<(u16, &'static str)> = nsis["languages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|name| {
+            let id = language_id(name.as_str().unwrap());
+            (id.parse().unwrap(), id)
+        })
+        .collect();
+    for mask in [u16::MAX, 0x3ff, 0] {
+        if let Some((_, id)) = ids
+            .iter()
+            .find(|(id, _)| (display_language ^ id) & mask == 0)
+        {
+            return id;
+        }
+    }
+    unreachable!()
+}
+
+#[test]
+fn installer_language_follows_windows_with_english_as_the_fallback() {
+    let languages = nsis_config()["languages"].clone();
+    assert_eq!(
+        languages,
+        serde_json::json!(["English", "German", "SimpChinese"])
+    );
+    for (display_language, expected) in [
+        (0x0409, "1033"), // en-US
+        (0x0809, "1033"), // en-GB
+        (0x0407, "1031"), // de-DE
+        (0x0C07, "1031"), // de-AT
+        (0x0807, "1031"), // de-CH
+        (0x0804, "2052"), // zh-CN
+        (0x1004, "2052"), // zh-SG
+        // Traditional Chinese shares the primary language and gets the
+        // Simplified Chinese installer, as NSIS has no closer table here.
+        (0x0404, "2052"), // zh-TW
+        (0x0C04, "2052"), // zh-HK
+        (0x0401, "1033"), // ar-SA
+        (0x040C, "1033"), // fr-FR
+        (0x0411, "1033"), // ja-JP
+    ] {
+        assert_eq!(
+            installer_language(display_language),
+            expected,
+            "{display_language:#06x}"
+        );
+    }
+}

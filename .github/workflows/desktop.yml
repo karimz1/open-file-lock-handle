@@ -224,6 +224,30 @@ jobs:
       - name: Bundle the built executable without rebuilding
         run: npm run tauri -- bundle --config "$RUNNER_TEMP/desktop-version.json" --no-binary-patching --bundles '${{ matrix.bundles }}'
         working-directory: crates/oflh-desktop/ui
+      - name: Check the generated NSIS script
+        if: matrix.os == 'windows'
+        run: |
+          python - <<'PY'
+          import pathlib
+          import re
+
+          scripts = list(pathlib.Path("target/release/nsis").glob("*/installer.nsi"))
+          if len(scripts) != 1:
+              raise SystemExit(f"expected one generated installer.nsi, found {scripts}")
+          text = scripts[0].read_text(encoding="utf-8-sig")
+          # NSIS falls back to the first inserted language for display
+          # languages it has no table for, so English must come first.
+          languages = re.findall(r'^!insertmacro MUI_LANGUAGE "(\w+)"', text, re.M)
+          if languages != ["English", "German", "SimpChinese"]:
+              raise SystemExit(f"unexpected installer languages {languages}")
+          for name in ["installer-hooks.nsh", "English.nsh", "German.nsh", "SimpChinese.nsh"]:
+              if not re.search(r'^\s*!include "[^"]*' + re.escape(name) + '"', text, re.M):
+                  raise SystemExit(f"{name} is not included")
+          for define in ["SIDEBARIMAGE", "HEADERIMAGE", "INSTALLERICON"]:
+              if re.search(r'^!define ' + define + r' ""', text, re.M):
+                  raise SystemExit(f"{define} is empty")
+          print(f"{scripts[0]}: languages {languages}, hooks, language files and artwork present")
+          PY
       - name: Collect desktop packages separately from CLI artifacts
         env:
           RELEASE_TAG: ${{ inputs.version || 'dev' }}
