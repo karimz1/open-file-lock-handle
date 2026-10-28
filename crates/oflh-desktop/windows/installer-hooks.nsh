@@ -23,7 +23,6 @@
 !include nsDialogs.nsh
 !include FileFunc.nsh
 
-!define OFLH_WEBSITE "https://oflh.karimzouine.com/"
 !define OFLH_WEBSITE_LABEL "oflh.karimzouine.com"
 !define OFLH_CONTEXT_MENU_VERB "oflh-desktop.inspect"
 !define OFLH_CONTEXT_MENU_PREFERENCE "ExplorerContextMenu"
@@ -55,9 +54,6 @@ LangString oflhUninstallText 2052 "OFLH Desktop 将从下面的文件夹中删�
 LangString oflhRunApp 1033 "Start OFLH Desktop"
 LangString oflhRunApp 1031 "OFLH Desktop starten"
 LangString oflhRunApp 2052 "启动 OFLH Desktop"
-LangString oflhWebsiteLink 1033 "Visit oflh.karimzouine.com"
-LangString oflhWebsiteLink 1031 "oflh.karimzouine.com besuchen"
-LangString oflhWebsiteLink 2052 "访问 oflh.karimzouine.com"
 LangString oflhInspectFile 1033 "Inspect file"
 LangString oflhInspectFile 1031 "Datei untersuchen"
 LangString oflhInspectFile 2052 "检查文件"
@@ -77,8 +73,6 @@ Var OflhContextMenuCheckbox
 !define MUI_UNCONFIRMPAGE_TEXT_TOP "$(oflhUninstallText)"
 !define MUI_FINISHPAGE_TEXT "$(oflhFinishText)"
 !define MUI_FINISHPAGE_RUN_TEXT "$(oflhRunApp)"
-!define MUI_FINISHPAGE_LINK "$(oflhWebsiteLink)"
-!define MUI_FINISHPAGE_LINK_LOCATION "${OFLH_WEBSITE}"
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW OflhWelcomeShow
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE OflhWelcomeLeave
 

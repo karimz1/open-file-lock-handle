@@ -56,7 +56,6 @@ fn every_installer_string_is_translated_for_every_installer_language() {
         "oflhRunApp",
         "oflhDirectoryText",
         "oflhUninstallText",
-        "oflhWebsiteLink",
         "oflhInspectFile",
         "oflhInspectFolder",
     ] {
@@ -211,8 +210,11 @@ fn installer_metadata_names_the_publisher_website_and_cargo_version() {
             .unwrap()
             .contains("Karim Zouine")
     );
-    assert!(HOOKS.contains("!define OFLH_WEBSITE \"https://oflh.karimzouine.com/\""));
-    assert!(HOOKS.contains("!define MUI_FINISHPAGE_LINK_LOCATION \"${OFLH_WEBSITE}\""));
+    assert!(HOOKS.contains("!define OFLH_WEBSITE_LABEL \"oflh.karimzouine.com\""));
+    // The website is in the branding line on every page, not a finish page link.
+    assert!(!HOOKS.contains("MUI_FINISHPAGE_LINK"));
+    assert!(HOOKS.contains("${OFLH_WEBSITE_LABEL}\""));
+    assert!(HOOKS.contains("GetDlgItem $0 $HWNDPARENT 1028"));
     // The branding line reads the version from the setup exe, not a literal.
     assert!(HOOKS.contains("GetDLLVersion \"$EXEPATH\""));
     assert!(!HOOKS.contains(env!("CARGO_PKG_VERSION")));
