@@ -1455,3 +1455,122 @@ fn space_shows_every_item_in_a_group_and_collapses_again() {
     key(&mut app, K::Char('k'));
     assert!(!app.impact_all && !app.impact_details);
 }
+fn crowded(processes: usize, usages: usize) -> App {
+    let mut app = self::app();
+    let mut snapshot = app.snapshot.clone();
+    let template = snapshot.processes[0].clone();
+    snapshot.processes = (0..processes as u32)
+        .map(|n| {
+            let mut process = template.clone();
+            process.identity.pid = 1000 + n;
+            process.name = format!("worker-{n}");
+            process.usages = (0..usages)
+                .map(|u| Usage {
+                    path: format!("/build/file-{u}.dll").into(),
+                    ..Usage::default()
+                })
+                .collect();
+            process
+        })
+        .collect();
+    app.replace(snapshot);
+    app
+}
+
+fn screen_text(app: &mut App, name: &str, width: u16, height: u16) -> String {
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+    terminal.draw(|frame| view::draw(frame, app)).unwrap();
+    export_visual(name, terminal.backend().buffer());
+    readable_buffer(terminal.backend().buffer())
+}
+
+fn has_scrollbar(text: &str) -> bool {
+    text.lines()
+        .filter(|row| matches!(row.trim_end().chars().last(), Some('█' | '│')))
+        .count()
+        >= 3
+        && text.contains('█')
+}
+
+#[test]
+fn every_scrolling_region_shows_the_shared_affordance_in_small_terminals() {
+    for (width, height) in [(80u16, 24u16), (60, 20)] {
+        // Process list.
+        let mut app = crowded(60, 1);
+        let top = screen_text(
+            &mut app,
+            &format!("scroll-processes-{width}x{height}"),
+            width,
+            height,
+        );
+        assert!(top.contains("of 60 ↕"), "{top}");
+        assert!(has_scrollbar(&top), "{top}");
+        for _ in 0..59 {
+            key(&mut app, K::Down);
+        }
+        let end = screen_text(&mut app, "scroll-processes-end", width, height);
+        assert!(end.contains("of 60 ↕") && end.contains("60 of 60"), "{end}");
+        // Locked files and ports tabs share the table chrome.
+        let mut app = crowded(60, 1);
+        key(&mut app, K::Char('3'));
+        let ports = screen_text(&mut app, "scroll-ports", width, height);
+        assert!(!ports.contains('↕') || has_scrollbar(&ports), "{ports}");
+        // File usages in Details.
+        let mut app = crowded(1, 40);
+        key(&mut app, K::Enter);
+        assert_eq!(app.screen, Screen::Details);
+        let details = screen_text(
+            &mut app,
+            &format!("scroll-details-{width}x{height}"),
+            width,
+            height,
+        );
+        assert!(details.contains("of 40 ↕"), "{details}");
+        assert!(has_scrollbar(&details), "{details}");
+        // Help: indicator, the key hint on its own line and the scrollbar.
+        let mut app = self::app();
+        app.screen = Screen::Help;
+        let help = screen_text(
+            &mut app,
+            &format!("scroll-help-{width}x{height}"),
+            width,
+            height,
+        );
+        let rows: Vec<&str> = help.lines().collect();
+        assert!(rows[0].contains('↕'), "{help}");
+        assert!(
+            rows[1].contains("↑↓ / PgUp PgDn scroll · Home/End"),
+            "{help}"
+        );
+        assert!(has_scrollbar(&help), "{help}");
+        key(&mut app, K::End);
+        let help_end = screen_text(&mut app, "scroll-help-end", width, height);
+        assert_ne!(help, help_end);
+        for (name, text) in [("processes", &top), ("details", &details), ("help", &help)] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+                "tests/snapshots/scroll-{name}-{width}x{height}-en.txt"
+            ));
+            if std::env::var_os("OFLH_UPDATE_SNAPSHOTS").is_some() {
+                std::fs::write(&path, text).unwrap();
+            }
+            assert_eq!(&std::fs::read_to_string(path).unwrap(), text, "{name}");
+        }
+    }
+}
+
+#[test]
+fn fitting_regions_show_no_scroll_affordance() {
+    for (width, height) in [(80u16, 24u16), (60, 20)] {
+        let mut app = crowded(3, 2);
+        let main = screen_text(&mut app, "scroll-none-main", width, height);
+        assert!(!main.contains('↕') && !main.contains('█'), "{main}");
+        key(&mut app, K::Enter);
+        let details = screen_text(&mut app, "scroll-none-details", width, height);
+        assert!(
+            !details.contains('↕') && !details.contains('█'),
+            "{details}"
+        );
+        assert!(!details.contains("PgUp PgDn scroll"), "{details}");
+    }
+}

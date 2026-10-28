@@ -1,0 +1,24 @@
+  oflh  /  process details
+  worker-0   PID 1000 · alice
+  EXE
+  CWD
+  PARENT parent (424241)
+  CPU — machine · RAM — RSS
+  PORTS · p inspect · none detected
+  ╭──────────────────────────────────────────────────────────────────────────╮
+  │/ Search files, DLLs, paths… · * wildcard                                 │
+  ╰──────────────────────────────────────────────────────────────────────────╯
+  ALL USAGES · 40 of 40 usages · 0 locked files   1 / 40
+  FILE file-0.dll
+  ╭───────────────────────────────────────────────────────────────1–4 of 40 ↕╮
+  │FILE                       RELATION       ACCESS        DIRECTORY         │
+  │file-0.dll                 open           unknown       /build            █
+  │file-1.dll                 open           unknown       /build            │
+  │file-2.dll                 open           unknown       /build            │
+  ╰──────────────────────────────────────────────────────────────────────────╯
+  SELECTED PATH · open · unknown
+  /build/file-0.dll
+
+  ────────────────────────────────────────────────────────────────────────────
+  / search · p ports · l locks only · ↑↓ select · ←→ path · r refresh · a auto
+  k stop · x force · R GitHub · D Donate · Esc back · q quit

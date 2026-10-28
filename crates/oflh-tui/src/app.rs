@@ -680,10 +680,13 @@ impl App {
                 self.screen = Screen::Main;
                 self.scroll = 0
             }
-            K::Up => self.scroll = self.scroll.saturating_sub(1),
+            K::Up | K::Char('k') => self.scroll = self.scroll.saturating_sub(1),
             K::Down | K::Char('j') => self.scroll += 1,
             K::PageDown => self.scroll += self.page,
             K::PageUp => self.scroll = self.scroll.saturating_sub(self.page),
+            // Drawing clamps the offset to the last full page.
+            K::Home => self.scroll = 0,
+            K::End => self.scroll = usize::MAX / 2,
             K::Char('R') => {
                 return Effect::Link("https://github.com/karimz1/open-file-lock-handle");
             }
