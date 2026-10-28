@@ -392,6 +392,34 @@ fn collect_mappings(process: &mut Process, target: &Target, cancel: &Cancellatio
 pub struct Native {
     sampler: Sampler,
 }
+/// Every readable process. Unreadable entries are skipped: the table only
+/// feeds an informational child list.
+fn process_table() -> Result<Vec<impact::ProcessEntry>> {
+    let mut table = Vec::new();
+    for pid in process_ids(&Cancellation::default())? {
+        let Ok(pid) = u32::try_from(pid) else {
+            continue;
+        };
+        let Ok(bsd_info) = info::<libc::proc_bsdinfo>(pid, 0) else {
+            continue;
+        };
+        let name = bytes(if bsd_info.pbi_name[0] == 0 {
+            &bsd_info.pbi_comm
+        } else {
+            &bsd_info.pbi_name
+        });
+        table.push(impact::ProcessEntry {
+            identity: Identity {
+                pid,
+                started: bsd_info.pbi_start_tvsec,
+                started_sub: bsd_info.pbi_start_tvusec,
+            },
+            parent: bsd_info.pbi_ppid,
+            name: String::from_utf8_lossy(&name).into_owned(),
+        })
+    }
+    Ok(table)
+}
 impl Backend for Native {
     fn scan(&mut self, target: &Target, cancel: &Cancellation) -> Result<Snapshot> {
         cancel.set_phase(InspectionPhase::Processes);
@@ -482,6 +510,17 @@ impl Backend for Native {
             }
             Err(error) => Err(error),
         }
+    }
+    fn impact(&mut self, ids: &[Identity]) -> Vec<impact::Impact> {
+        // Window titles need the Screen Recording permission on macOS 10.15+;
+        // OFLH does not request it, so windows stay unavailable.
+        children_for(process_table(), ids)
+            .into_iter()
+            .map(|children| impact::Impact {
+                windows: None,
+                children,
+            })
+            .collect()
     }
     fn terminate(&mut self, identity: Identity, force: bool, cancel: &Cancellation) -> Result<()> {
         identity.validate()?;

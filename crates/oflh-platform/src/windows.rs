@@ -383,6 +383,66 @@ fn process_snapshot() -> Result<(Handle, PROCESSENTRY32W)> {
     };
     Ok((handle, entry))
 }
+/// Every process whose creation time is readable with limited query access.
+/// Others keep a zero birth token, which the child filter rejects.
+fn process_table() -> Result<Vec<impact::ProcessEntry>> {
+    let mut table = Vec::new();
+    let (handle, mut entry) = process_snapshot()?;
+    // SAFETY: initialized size field and live snapshot handle.
+    let mut ok = unsafe { Process32FirstW(handle.0, &mut entry) };
+    while ok != 0 {
+        let pid = entry.th32ProcessID;
+        let identity = read_identity(pid).unwrap_or(Identity {
+            pid,
+            ..Identity::default()
+        });
+        table.push(impact::ProcessEntry {
+            identity,
+            parent: entry.th32ParentProcessID,
+            name: path(&entry.szExeFile).to_string_lossy().into_owned(),
+        });
+        // SAFETY: same live snapshot handle and initialized entry.
+        ok = unsafe { Process32NextW(handle.0, &mut entry) };
+    }
+    Ok(table)
+}
+unsafe extern "system" fn collect_window_title(hwnd: HWND, param: isize) -> i32 {
+    // SAFETY: only called synchronously by our EnumWindows with the live map address.
+    let titles = unsafe { &mut *(param as *mut HashMap<u32, Vec<String>>) };
+    let mut pid = 0;
+    // SAFETY: OS supplies hwnd and a writable PID slot; the title buffer length matches.
+    unsafe {
+        if IsWindowVisible(hwnd) == 0 || !GetWindow(hwnd, GW_OWNER).is_null() {
+            return 1;
+        }
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        let mut title = [0u16; 512];
+        let length = GetWindowTextW(hwnd, title.as_mut_ptr(), title.len() as i32);
+        if pid != 0 && length > 0 {
+            titles
+                .entry(pid)
+                .or_default()
+                .push(String::from_utf16_lossy(&title[..length as usize]))
+        }
+    }
+    1
+}
+/// Titles of visible, unowned top-level windows by owner PID: the windows a
+/// user sees in the taskbar and that a graceful close request reaches.
+fn window_titles() -> Result<HashMap<u32, Vec<String>>> {
+    let mut titles = HashMap::new();
+    // SAFETY: callback receives a pointer to the map, valid for synchronous EnumWindows.
+    if unsafe {
+        EnumWindows(
+            Some(collect_window_title),
+            (&mut titles as *mut HashMap<u32, Vec<String>>) as isize,
+        )
+    } == 0
+    {
+        return Err(io("enumerate windows", std::io::Error::last_os_error()));
+    }
+    Ok(titles)
+}
 impl Backend for Native {
     fn scan(&mut self, target: &Target, cancel: &Cancellation) -> Result<Snapshot> {
         cancel.check()?;
@@ -602,6 +662,21 @@ impl Backend for Native {
             WAIT_TIMEOUT => Ok(true),
             _ => Err(io("verify process exit", std::io::Error::last_os_error())),
         }
+    }
+    fn impact(&mut self, ids: &[Identity]) -> Vec<impact::Impact> {
+        let mut titles = window_titles().ok();
+        children_for(process_table(), ids)
+            .into_iter()
+            .zip(ids)
+            .map(|(children, &id)| impact::Impact {
+                // A PID read before EnumWindows must still name the same lifetime.
+                windows: titles
+                    .as_mut()
+                    .filter(|_| read_identity(id.pid).is_ok_and(|live| live == id))
+                    .map(|titles| titles.remove(&id.pid).unwrap_or_default()),
+                children,
+            })
+            .collect()
     }
     fn terminate(&mut self, identity: Identity, force: bool, cancel: &Cancellation) -> Result<()> {
         identity.validate()?;
