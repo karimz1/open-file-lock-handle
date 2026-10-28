@@ -51,6 +51,10 @@ fn every_installer_string_is_translated_for_every_installer_language() {
         .collect();
     for name in [
         "oflhContextMenuOption",
+        "oflhWelcomeText",
+        "oflhFinishText",
+        "oflhRunApp",
+        "oflhWebsiteLink",
         "oflhInspectFile",
         "oflhInspectFolder",
     ] {
@@ -156,4 +160,137 @@ fn context_menu_checkbox_fits_the_welcome_page_and_starts_checked() {
         "${If} $OflhContextMenuChoice != \"0\"\n    ${NSD_Check} $OflhContextMenuCheckbox"
     ));
     assert!(HOOKS.contains("StrCpy $OflhContextMenuChoice \"1\"\n    ${Else}"));
+}
+
+#[test]
+fn welcome_page_uses_the_oflh_text_instead_of_the_close_other_apps_advice() {
+    assert!(HOOKS.contains("!define MUI_WELCOMEPAGE_TEXT \"$(oflhWelcomeText)\""));
+    assert!(!HOOKS.contains("TEXT_WELCOME_INFO_TEXT"));
+    let welcome: Vec<&str> = HOOKS
+        .lines()
+        .filter(|line| line.starts_with("LangString oflhWelcomeText "))
+        .collect();
+    assert_eq!(welcome.len(), 3);
+    for line in welcome {
+        assert!(line.contains("OFLH Desktop"), "{line}");
+        let lower = line.to_lowercase();
+        for stock in [
+            "close all other applications",
+            "anderen programme",
+            "reboot",
+            "neustart",
+        ] {
+            assert!(!lower.contains(stock), "{line}");
+        }
+    }
+}
+
+fn bundle_config() -> serde_json::Value {
+    let config: serde_json::Value =
+        serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+    config["bundle"].clone()
+}
+
+#[test]
+fn installer_metadata_names_the_publisher_website_and_cargo_version() {
+    let config: serde_json::Value =
+        serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+    // Without a version here Tauri uses the Cargo package version, which
+    // ends up in DisplayVersion and the setup exe's ProductVersion.
+    assert!(config.get("version").is_none());
+    assert!(!env!("CARGO_PKG_VERSION").is_empty());
+    let bundle = bundle_config();
+    // Publisher also names the registry keys of existing installs; keep it.
+    assert_eq!(bundle["publisher"], "Karim Zouine");
+    assert_eq!(bundle["homepage"], "https://oflh.karimzouine.com/");
+    assert!(
+        bundle["copyright"]
+            .as_str()
+            .unwrap()
+            .contains("Karim Zouine")
+    );
+    assert!(HOOKS.contains("!define OFLH_WEBSITE \"https://oflh.karimzouine.com/\""));
+    assert!(HOOKS.contains("!define MUI_FINISHPAGE_LINK_LOCATION \"${OFLH_WEBSITE}\""));
+    // The branding line reads the version from the setup exe, not a literal.
+    assert!(HOOKS.contains("GetDLLVersion \"$EXEPATH\""));
+    assert!(!HOOKS.contains(env!("CARGO_PKG_VERSION")));
+}
+
+const LANGUAGE_FILES: [(&str, &str, &str); 3] = [
+    (
+        "English",
+        "ENGLISH",
+        include_str!("../windows/languages/English.nsh"),
+    ),
+    (
+        "German",
+        "GERMAN",
+        include_str!("../windows/languages/German.nsh"),
+    ),
+    (
+        "SimpChinese",
+        "SIMPCHINESE",
+        include_str!("../windows/languages/SimpChinese.nsh"),
+    ),
+];
+
+/// Every message key of tauri-bundler's installer template.
+const TAURI_MESSAGES: [&str; 27] = [
+    "addOrReinstall",
+    "alreadyInstalled",
+    "alreadyInstalledLong",
+    "appRunning",
+    "appRunningOkKill",
+    "chooseMaintenanceOption",
+    "chooseHowToInstall",
+    "createDesktop",
+    "dontUninstall",
+    "dontUninstallDowngrade",
+    "failedToKillApp",
+    "installingWebview2",
+    "newerVersionInstalled",
+    "older",
+    "olderOrUnknownVersionInstalled",
+    "silentDowngrades",
+    "unableToUninstall",
+    "uninstallApp",
+    "uninstallBeforeInstalling",
+    "unknown",
+    "webview2AbortError",
+    "webview2DownloadError",
+    "webview2DownloadSuccess",
+    "webview2Downloading",
+    "webview2InstallError",
+    "webview2InstallSuccess",
+    "deleteAppData",
+];
+
+#[test]
+fn custom_installer_messages_cover_every_tauri_key_in_every_language() {
+    let files = &nsis_config()["customLanguageFiles"];
+    for (language, id, text) in LANGUAGE_FILES {
+        assert_eq!(files[language], format!("windows/languages/{language}.nsh"));
+        let mut keys = BTreeSet::new();
+        for line in text.lines().filter(|line| line.starts_with("LangString ")) {
+            let mut fields = line.split_whitespace().skip(1);
+            let key = fields.next().unwrap();
+            assert_eq!(
+                fields.next(),
+                Some(format!("${{LANG_{id}}}").as_str()),
+                "{line}"
+            );
+            assert!(keys.insert(key), "{language}: {key} twice");
+        }
+        assert_eq!(keys, BTreeSet::from(TAURI_MESSAGES), "{language}");
+        // Custom files are not run through Tauri's template engine.
+        assert!(!text.contains("{{"), "{language}");
+        assert!(!text.contains(" kill"), "{language}");
+    }
+    // German matches the app's informal tone.
+    let german = LANGUAGE_FILES[1].2;
+    for formal in [" Sie ", " Ihr", "Klicken Sie", "Wählen Sie"] {
+        assert!(!german.contains(formal), "{formal}");
+    }
+    assert!(german.contains("\"Auch Einstellungen und App-Daten löschen\""));
+    assert!(german.contains("\"${PRODUCTNAME} läuft noch. Schließe es und versuche es erneut.\""));
 }

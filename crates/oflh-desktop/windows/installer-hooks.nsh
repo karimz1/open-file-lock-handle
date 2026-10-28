@@ -23,6 +23,8 @@
 !include nsDialogs.nsh
 !include FileFunc.nsh
 
+!define OFLH_WEBSITE "https://oflh.karimzouine.com/"
+!define OFLH_WEBSITE_LABEL "oflh.karimzouine.com"
 !define OFLH_CONTEXT_MENU_VERB "oflh-desktop.inspect"
 !define OFLH_CONTEXT_MENU_PREFERENCE "ExplorerContextMenu"
 !define OFLH_SHCNE_ASSOCCHANGED 0x08000000
@@ -36,6 +38,20 @@
 LangString oflhContextMenuOption 1033 "Add $\"Inspect file$\" and $\"Inspect folder$\" to the Explorer context menu"
 LangString oflhContextMenuOption 1031 "$\"Datei untersuchen$\" und $\"Ordner untersuchen$\" zum Explorer-Kontextmenü hinzufügen"
 LangString oflhContextMenuOption 2052 "将“检查文件”和“检查文件夹”添加到资源管理器右键菜单"
+; Replaces the stock welcome text, whose advice to close other applications
+; to avoid a reboot does not apply: OFLH installs only into its own folder.
+LangString oflhWelcomeText 1033 "This wizard installs OFLH Desktop. It shows you which process is locking a file, folder or port.$\r$\n$\r$\nClick Next to continue."
+LangString oflhWelcomeText 1031 "Dieser Assistent installiert OFLH Desktop. Damit findest du heraus, welcher Prozess eine Datei, einen Ordner oder einen Port blockiert.$\r$\n$\r$\nKlicke auf Weiter, um fortzufahren."
+LangString oflhWelcomeText 2052 "此向导将安装 OFLH Desktop。它可以告诉你是哪个进程占用了文件、文件夹或端口。$\r$\n$\r$\n单击“下一步”继续。"
+LangString oflhFinishText 1033 "OFLH Desktop is installed.$\r$\n$\r$\nClick Finish to close the wizard."
+LangString oflhFinishText 1031 "OFLH Desktop ist installiert.$\r$\n$\r$\nKlicke auf Fertig stellen, um den Assistenten zu schließen."
+LangString oflhFinishText 2052 "OFLH Desktop 已安装。$\r$\n$\r$\n单击“完成”关闭向导。"
+LangString oflhRunApp 1033 "Start OFLH Desktop"
+LangString oflhRunApp 1031 "OFLH Desktop starten"
+LangString oflhRunApp 2052 "启动 OFLH Desktop"
+LangString oflhWebsiteLink 1033 "Visit oflh.karimzouine.com"
+LangString oflhWebsiteLink 1031 "oflh.karimzouine.com besuchen"
+LangString oflhWebsiteLink 2052 "访问 oflh.karimzouine.com"
 LangString oflhInspectFile 1033 "Inspect file"
 LangString oflhInspectFile 1031 "Datei untersuchen"
 LangString oflhInspectFile 2052 "检查文件"
@@ -47,19 +63,36 @@ LangString oflhInspectFolder 2052 "检查文件夹"
 Var OflhContextMenuChoice
 Var OflhContextMenuCheckbox
 
+!define MUI_WELCOMEPAGE_TEXT "$(oflhWelcomeText)"
+; Consumed later by the template's finish page; it sets MUI_FINISHPAGE_RUN.
+!define MUI_FINISHPAGE_TEXT "$(oflhFinishText)"
+!define MUI_FINISHPAGE_RUN_TEXT "$(oflhRunApp)"
+!define MUI_FINISHPAGE_LINK "$(oflhWebsiteLink)"
+!define MUI_FINISHPAGE_LINK_LOCATION "${OFLH_WEBSITE}"
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW OflhWelcomeShow
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE OflhWelcomeLeave
 
 ; MUI2 welcome page layout in dialog units: the page is 193u high, the text
-; (one 28u title above it) sits at 120u 45u 195u 130u and would reach the bottom edge. The text is
-; shortened to 95u (the longest default text, German, needs about 72u) and the
-; checkbox gets a 30u, three-line slot below it, ending 18u above the edge.
+; (one 28u title above it) sits at 120u 45u 195u 130u. The text is shortened
+; to 60u (the longest welcome text, German, needs about 40u) and the checkbox
+; gets a 30u, three-line slot below it, well above the bottom edge.
 ; Dialog units scale with the font and DPI, so nothing is clipped at 100-200%.
-!define OFLH_WELCOME_TEXT_HEIGHT 95
-!define OFLH_CHECKBOX_TOP 145
+!define OFLH_WELCOME_TEXT_HEIGHT 60
+!define OFLH_CHECKBOX_TOP 115
 !define OFLH_CHECKBOX_HEIGHT 30
 
 Function OflhWelcomeShow
+  ; Branding line at the bottom of every page: "OFLH Desktop <version> ·
+  ; oflh.karimzouine.com". The template's defines, VERSION included, do not
+  ; exist yet here, so read the version Tauri stamps on this setup exe.
+  GetDLLVersion "$EXEPATH" $1 $2
+  IntOp $3 $1 >> 16
+  IntOp $4 $1 & 0xFFFF
+  IntOp $5 $2 >> 16
+  ; 1028 is the branding text control of the outer installer window.
+  GetDlgItem $0 $HWNDPARENT 1028
+  SendMessage $0 ${WM_SETTEXT} 0 "STR:$(^Name) $3.$4.$5  ·  ${OFLH_WEBSITE_LABEL}"
+
   ; $mui.WelcomePage.* are declared after this file is included, so find the
   ; welcome text at runtime: the page's third static control, after the
   ; sidebar bitmap and the title.
