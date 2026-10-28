@@ -1,0 +1,40 @@
+  oflh  ·  Open File Lock Handle
+
+  Terminate 1 processes?
+  Request a normal shutdown. Unsaved work may be lost.
+
+  Affected processes (including selections hidden by filters):
+    424242    dotnet
+              Closes 7 windows · 1 child process · Uses 3 scanned files · Holds 1 port
+              Windows that close
+                scene1.blend - Blender
+                scene2.blend - Blender
+                scene3.blend - Blender
+                scene4.blend - Blender
+                scene5.blend - Blender
+                +2 more
+              Child processes (not terminated; some may exit with it)
+                python3 (PID 4100)
+              Scanned files
+                /build/FileLockExampleCli.deps.json
+                /build/FileLockExampleCli.dll
+                /build/other.dll
+              Ports
+                TCP 127.0.0.1:5432
+  Files and ports come from the latest scan.
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  ▶ Cancel      Terminate
+  Tab / ←→ choose · d details · Enter confirm · Esc cancel

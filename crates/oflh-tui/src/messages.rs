@@ -232,6 +232,16 @@ labels! {
     "m RAM / c CPU / n name / p PID", "m RAM / c CPU / n Name / p PID", "m RAM / c CPU / n 名称 / p PID";
     "l locks", "l Sperren", "l 锁定";
     "Tab / ←→ choose · Enter confirm · Esc cancel", "Tab / ←→ wählen · Enter bestätigen · Esc abbrechen", "Tab / ←→ 选择 · Enter 确认 · Esc 取消";
+    "Tab / ←→ choose · d details · Enter confirm · Esc cancel", "Tab / ←→ wählen · d Details · Enter bestätigen · Esc abbrechen", "Tab / ←→ 选择 · d 详情 · Enter 确认 · Esc 取消";
+    "Checking windows and child processes…", "Fenster und Kindprozesse werden geprüft…", "正在检查窗口和子进程…";
+    "Files and ports come from the latest scan.", "Dateien und Ports stammen aus dem letzten Scan.", "文件和端口来自最近一次扫描。";
+    "1 child process", "1 Kindprozess", "1 个子进程";
+    "Holds 1 port", "Belegt 1 Port", "占用 1 个端口";
+    "Windows that close", "Fenster, die geschlossen werden", "将关闭的窗口";
+    "Window list not available on this platform", "Fensterliste auf dieser Plattform nicht verfügbar", "此平台无法列出窗口";
+    "Child processes (not terminated; some may exit with it)", "Kindprozesse (werden nicht beendet, manche enden eventuell mit)", "子进程（不会被终止，部分可能随之退出）";
+    "Scanned files", "Gescannte Dateien", "已扫描的文件";
+    "Ports", "Ports", "端口";
     "/ search · f files · r refresh · a auto · k stop · x force · ? help · Esc back · q quit", "/ suchen · f Dateien · r aktualisieren · a automatisch · k beenden · x erzwingen · ? Hilfe · Esc zurück · q beenden", "/ 搜索 · f 文件 · r 刷新 · a 自动 · k 终止 · x 强制终止 · ? 帮助 · Esc 返回 · q 退出";
     "1/2/3 tabs · / search · s all/this path · Enter inspect · Space select · r refresh · a auto · k stop · x force · ? help · q quit", "1/2/3 Ansichten · / suchen · s alle/dieser Pfad · Enter untersuchen · Space auswählen · r aktualisieren · a automatisch · k beenden · x erzwingen · ? Hilfe · q beenden", "1/2/3 视图 · / 搜索 · s 所有/此路径 · Enter 检查 · Space 选择 · r 刷新 · a 自动 · k 终止 · x 强制终止 · ? 帮助 · q 退出";
     "/ search · p ports · l locks only · ↑↓ select · ←→ path · r refresh · a auto · k stop · x force · R GitHub · D Donate · Esc back · q quit", "/ suchen · p Ports · l nur Sperren · ↑↓ auswählen · ←→ Pfad · r aktualisieren · a automatisch · k beenden · x erzwingen · R GitHub · D Spenden · Esc zurück · q beenden", "/ 搜索 · p 端口 · l 仅锁定 · ↑↓ 选择 · ←→ 路径 · r 刷新 · a 自动 · k 终止 · x 强制终止 · R GitHub · D 捐赠 · Esc 返回 · q 退出";
@@ -245,6 +255,41 @@ labels! {
 }
 // Literal formats compile in all languages; arguments are evaluated in only one branch.
 macro_rules! localized {
+    ($language:expr, "Closes {n} windows" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Closes {n} windows" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Schließt {n} Fenster" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("将关闭 {n} 个窗口" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "{n} child processes" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("{n} child processes" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("{n} Kindprozesse" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("{n} 个子进程" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Uses {n} scanned files" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Uses {n} scanned files" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Nutzt {n} gescannte Dateien" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("使用 {n} 个已扫描文件" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Holds {n} ports" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Holds {n} ports" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Belegt {n} Ports" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("占用 {n} 个端口" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "+{n} more" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("+{n} more" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("+{n} weitere" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("另有 {n} 项" $(, $($arguments)*)?),
+        }
+    };
     ($language:expr, "↑ {version} · U releases · b hide" $(, $($arguments:tt)*)?) => {
         match $language {
             $crate::view::messages::Language::English => format!("↑ {version} · U releases · b hide" $(, $($arguments)*)?),

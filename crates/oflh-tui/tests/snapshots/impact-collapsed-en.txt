@@ -1,0 +1,40 @@
+  oflh  ·  Open File Lock Handle
+
+  Terminate 1 processes?
+  Request a normal shutdown. Unsaved work may be lost.
+
+  Affected processes (including selections hidden by filters):
+    424242    dotnet
+              Closes 7 windows · 1 child process · Uses 3 scanned files · Holds 1 port
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  ▶ Cancel      Terminate
+  Tab / ←→ choose · d details · Enter confirm · Esc cancel

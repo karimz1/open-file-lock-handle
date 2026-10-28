@@ -1152,3 +1152,123 @@ fn translated_update_footer_has_stable_viewport_and_no_modal_overlay() {
         }
     }
 }
+
+fn impact_app() -> App {
+    let mut app = self::app();
+    app.snapshot.processes[0].ports = vec![Port {
+        protocol: Protocol::Tcp,
+        address: "127.0.0.1".parse().unwrap(),
+        number: 5432,
+    }];
+    app
+}
+
+fn blender_impact() -> oflh_core::impact::Impact {
+    oflh_core::impact::Impact {
+        windows: Some(
+            (1..=7)
+                .map(|n| format!("scene{n}.blend - Blender"))
+                .collect(),
+        ),
+        children: Some(vec![Ancestor {
+            identity: Identity {
+                pid: 4100,
+                started: 11,
+                started_sub: 0,
+            },
+            name: "python3".into(),
+        }]),
+    }
+}
+
+fn render_confirm(app: &mut App, name: &str) -> String {
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 40)).unwrap();
+    terminal.draw(|frame| view::draw(frame, app)).unwrap();
+    export_visual(name, terminal.backend().buffer());
+    readable_buffer(terminal.backend().buffer())
+}
+
+#[test]
+fn confirmation_requests_impact_and_ignores_stale_results() {
+    let mut app = impact_app();
+    let id = app.snapshot.processes[0].identity;
+    assert!(matches!(key(&mut app, K::Char('k')), Effect::Impact(ids) if ids == vec![id]));
+    let other = Identity {
+        pid: 9,
+        started: 1,
+        started_sub: 0,
+    };
+    app.accept_impact(&[other], vec![blender_impact()]);
+    assert!(app.impact.is_empty());
+    app.accept_impact(&[id], vec![blender_impact()]);
+    assert_eq!(app.impact.len(), 1);
+    key(&mut app, K::Char('d'));
+    assert!(app.impact_details);
+    // Enter still terminates only the captured target.
+    key(&mut app, K::Tab);
+    assert!(matches!(key(&mut app, K::Enter), Effect::Kill(ids, false) if ids == vec![id]));
+    // A new confirmation starts collapsed with no carried-over impact.
+    app.stopping = false;
+    key(&mut app, K::Char('k'));
+    assert!(app.impact.is_empty() && !app.impact_details);
+}
+
+#[test]
+fn confirmation_summarizes_impact_and_expands_details_with_d() {
+    let mut app = impact_app();
+    let id = app.snapshot.processes[0].identity;
+    key(&mut app, K::Char('k'));
+    let loading = render_confirm(&mut app, "impact-loading-en");
+    assert!(loading.contains("Checking windows and child processes…"));
+    app.accept_impact(&[id], vec![blender_impact()]);
+    let collapsed = render_confirm(&mut app, "impact-collapsed-en");
+    assert!(
+        collapsed
+            .contains("Closes 7 windows · 1 child process · Uses 3 scanned files · Holds 1 port")
+    );
+    assert!(collapsed.contains("d details"));
+    assert!(!collapsed.contains("scene1.blend"));
+    key(&mut app, K::Char('d'));
+    let expanded = render_confirm(&mut app, "impact-expanded-en");
+    for text in [
+        "Windows that close",
+        "scene5.blend - Blender",
+        "+2 more",
+        "python3 (PID 4100)",
+        "/build/other.dll",
+        "TCP 127.0.0.1:5432",
+        "latest scan",
+    ] {
+        assert!(expanded.contains(text), "{text}\n{expanded}");
+    }
+    assert!(!expanded.contains("scene6.blend"));
+    for (name, text) in [
+        ("impact-collapsed", &collapsed),
+        ("impact-expanded", &expanded),
+    ] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("tests/snapshots/{name}-en.txt"));
+        if std::env::var_os("OFLH_UPDATE_SNAPSHOTS").is_some() {
+            std::fs::write(&path, text).unwrap();
+        }
+        assert_eq!(&std::fs::read_to_string(path).unwrap(), text, "{name}");
+    }
+}
+
+#[test]
+fn confirmation_adds_nothing_without_notable_impact() {
+    let mut app = self::app();
+    app.snapshot.processes[0].usages.truncate(1);
+    let id = app.snapshot.processes[0].identity;
+    key(&mut app, K::Char('k'));
+    app.accept_impact(
+        &[id],
+        vec![oflh_core::impact::Impact {
+            windows: Some(vec!["Only window".into()]),
+            children: Some(vec![]),
+        }],
+    );
+    key(&mut app, K::Char('d'));
+    let text = render_confirm(&mut app, "impact-none-en");
+    assert!(!text.contains("Only window") && !text.contains("child process"));
+}

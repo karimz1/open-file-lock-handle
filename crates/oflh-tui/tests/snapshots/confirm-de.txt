@@ -6,8 +6,8 @@
 
   Betroffene Prozesse (einschließlich ausgefilterter Auswahl):
     424242    dotnet
-
-
+              Nutzt 3 gescannte Dateien
+  Fenster und Kindprozesse werden geprüft…
 
 
 
@@ -21,4 +21,4 @@
 
   ────────────────────────────────────────────────────────────────────────────
   ▶ Abbrechen      Beenden erzwingen
-  Tab / ←→ wählen · Enter bestätigen · Esc abbrechen
+  Tab / ←→ wählen · d Details · Enter bestätigen · Esc abbrechen

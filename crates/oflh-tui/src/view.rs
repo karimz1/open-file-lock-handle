@@ -161,7 +161,7 @@ fn confirmation_buttons(app: &App) -> Line<'static> {
 
 fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
     let (keys, status) = match app.screen {
-        Screen::Confirm => (app.language.text("Tab / ←→ choose · Enter confirm · Esc cancel"), ""),
+        Screen::Confirm => (app.language.text("Tab / ←→ choose · d details · Enter confirm · Esc cancel"), ""),
         Screen::Details if app.detail_ports => (
             app.language.text("/ search · f files · r refresh · a auto · k stop · x force · ? help · Esc back · q quit"),
             "",
@@ -1144,6 +1144,111 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
         app,
     );
 }
+/// What terminating `target` may also touch: one summary line, plus the
+/// capped lists when details are expanded. Silent when nothing is notable.
+fn impact_lines(lines: &mut Vec<Line<'static>>, app: &App, target: &ActionTarget) {
+    let language = app.language;
+    let native = app.impact.get(&target.identity);
+    let (files, ports) = app
+        .snapshot
+        .processes
+        .iter()
+        .find(|process| process.identity == target.identity)
+        .map(impact::scanned_resources)
+        .unwrap_or_default();
+    let windows = native.and_then(|impact| impact.windows.as_ref());
+    let children = native.and_then(|impact| impact.children.as_ref());
+    let mut parts: Vec<Span<'static>> = Vec::new();
+    let mut part = |text: String, warn: bool| {
+        if !parts.is_empty() {
+            parts.push(Span::raw(" · "))
+        }
+        parts.push(if warn {
+            Span::styled(text, Style::default().fg(LOCK))
+        } else {
+            Span::raw(text)
+        })
+    };
+    if let Some(windows) = windows.filter(|windows| windows.len() > 1) {
+        part(
+            localized!(language, "Closes {n} windows", n = windows.len()),
+            true,
+        )
+    }
+    match children.map(Vec::len) {
+        Some(1) => part(language.text("1 child process").into(), false),
+        Some(n) if n > 1 => part(localized!(language, "{n} child processes", n = n), false),
+        _ => {}
+    }
+    if files.total() > 1 {
+        part(
+            localized!(language, "Uses {n} scanned files", n = files.total()),
+            false,
+        )
+    }
+    if ports.total() > 1 || (ports.total() == 1 && files.total() > 0) {
+        part(
+            if ports.total() == 1 {
+                language.text("Holds 1 port").into()
+            } else {
+                localized!(language, "Holds {n} ports", n = ports.total())
+            },
+            false,
+        )
+    }
+    if parts.is_empty() {
+        return;
+    }
+    let mut summary = vec![Span::raw("            ")];
+    summary.extend(parts);
+    lines.push(Line::from(summary));
+    if !app.impact_details {
+        return;
+    }
+    let group = |lines: &mut Vec<Line<'static>>, heading: &str, list: &impact::Capped| {
+        if list.items.is_empty() {
+            return;
+        }
+        lines.push(Line::styled(format!("            {heading}"), accent()));
+        for item in &list.items {
+            lines.push(Line::raw(format!("              {}", safe(item))))
+        }
+        if list.more > 0 {
+            lines.push(Line::raw(format!(
+                "              {}",
+                localized!(language, "+{n} more", n = list.more)
+            )))
+        }
+    };
+    match windows {
+        Some(windows) => group(
+            lines,
+            language.text("Windows that close"),
+            &impact::Capped::new(windows.iter().cloned()),
+        ),
+        None => lines.push(Line::styled(
+            format!(
+                "            {}",
+                language.text("Window list not available on this platform")
+            ),
+            Style::default().add_modifier(Modifier::DIM),
+        )),
+    }
+    if let Some(children) = children.filter(|children| !children.is_empty()) {
+        group(
+            lines,
+            language.text("Child processes (not terminated; some may exit with it)"),
+            &impact::Capped::new(
+                children
+                    .iter()
+                    .map(|child| format!("{} (PID {})", child.name, child.identity.pid)),
+            ),
+        )
+    }
+    group(lines, language.text("Scanned files"), &files);
+    group(lines, language.text("Ports"), &ports);
+}
+
 fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
     text(
         frame,
@@ -1185,12 +1290,26 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
         lines.push(Line::raw(app.language.text(
             "Affected processes (including selections hidden by filters):",
         )));
+        let checking = app.impact.is_empty();
         for process in &app.pending {
             lines.push(Line::raw(format!(
                 "  {:<9} {}",
                 process.identity.pid,
                 safe(&process.name)
-            )))
+            )));
+            impact_lines(&mut lines, app, process);
+        }
+        if checking {
+            lines.push(Line::styled(
+                app.language.text("Checking windows and child processes…"),
+                Style::default().add_modifier(Modifier::DIM),
+            ))
+        } else if app.impact_details {
+            lines.push(Line::styled(
+                app.language
+                    .text("Files and ports come from the latest scan."),
+                Style::default().add_modifier(Modifier::DIM),
+            ))
         }
     } else {
         lines.push(Line::styled(app.language.text("LINKS"), accent()));

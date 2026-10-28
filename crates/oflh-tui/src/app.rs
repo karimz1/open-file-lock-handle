@@ -48,6 +48,8 @@ pub enum Effect {
     CheckUpdate,
     FollowPort(Identity, std::path::PathBuf),
     Kill(Vec<Identity>, bool),
+    /// Read windows and children for the pending targets.
+    Impact(Vec<Identity>),
     Link(&'static str),
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -203,6 +205,10 @@ pub struct App {
     pub force: bool,
     pub confirm: bool,
     pub parent_action: bool,
+    /// Best-effort impact per pending target, read off the UI thread.
+    pub impact: HashMap<Identity, oflh_core::impact::Impact>,
+    /// Whether the confirmation lists the full impact (toggled with `d`).
+    pub impact_details: bool,
     pub scroll: usize,
     pub status: String,
     pub error: bool,
@@ -262,6 +268,8 @@ impl App {
             force: false,
             confirm: false,
             parent_action: false,
+            impact: HashMap::new(),
+            impact_details: false,
             scroll: 0,
             status: String::new(),
             error: false,
@@ -729,7 +737,7 @@ impl App {
                             .into();
                         self.error = true
                     } else {
-                        self.prepare_kill(key.code)
+                        return self.prepare_kill(key.code);
                     }
                 }
                 K::Char('1' | '2' | '3') => return self.switch_tab(key.code),
@@ -746,7 +754,7 @@ impl App {
                 }
             }
             K::Char('a') => self.auto = !self.auto,
-            K::Char('k' | 'K' | 'x' | 'X') => self.prepare_kill(key.code),
+            K::Char('k' | 'K' | 'x' | 'X') => return self.prepare_kill(key.code),
             K::Char('?') => {
                 self.screen = Screen::Help;
                 self.scroll = 0
@@ -984,11 +992,13 @@ impl App {
         self.screen = Screen::Details;
         self.filter_details()
     }
-    fn prepare_kill(&mut self, key: K) {
+    fn prepare_kill(&mut self, key: K) -> Effect {
         if self.stopping {
-            return;
+            return Effect::None;
         }
         self.pending.clear();
+        self.impact.clear();
+        self.impact_details = false;
         self.confirm = false;
         self.scroll = 0;
         self.force = matches!(key, K::Char('x' | 'X'));
@@ -1001,7 +1011,7 @@ impl App {
                     .text("This ancestor cannot be terminated: protected or identity unavailable.")
                     .into();
                 self.error = true;
-                return;
+                return Effect::None;
             }
             self.parent_action = tree.cursor + 1 < tree.nodes.len();
             self.pending.push(target)
@@ -1048,11 +1058,26 @@ impl App {
             self.pending.clear();
             self.status = self.language.text("Cannot terminate: selection includes a protected process or an unavailable identity.").into();
             self.error = true;
+            return Effect::None;
+        }
+        if self.pending.is_empty() {
+            return Effect::None;
+        }
+        self.screen = Screen::Confirm;
+        Effect::Impact(self.pending.iter().map(|target| target.identity).collect())
+    }
+    /// Attach impact read for `ids`, ignoring results for an older confirmation.
+    pub fn accept_impact(&mut self, ids: &[Identity], impact: Vec<oflh_core::impact::Impact>) {
+        if self.screen != Screen::Confirm
+            || ids.len() != self.pending.len()
+            || ids
+                .iter()
+                .zip(&self.pending)
+                .any(|(id, target)| *id != target.identity)
+        {
             return;
         }
-        if !self.pending.is_empty() {
-            self.screen = Screen::Confirm
-        }
+        self.impact = ids.iter().copied().zip(impact).collect()
     }
     fn confirm_key(&mut self, key: K) -> Effect {
         match key {
@@ -1061,6 +1086,7 @@ impl App {
                 self.screen = Screen::Main
             }
             K::Tab | K::Left | K::Right => self.confirm = !self.confirm,
+            K::Char('d') => self.impact_details = !self.impact_details,
             K::Up => self.scroll = self.scroll.saturating_sub(1),
             K::Down | K::Char('j') => self.scroll += 1,
             K::PageUp => self.scroll = self.scroll.saturating_sub(self.page),
