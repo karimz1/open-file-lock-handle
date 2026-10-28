@@ -46,6 +46,10 @@
     "windows": {
       "nsis": {
         "installerHooks": "windows/installer-hooks.nsh",
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "windows/branding/header.bmp",
+        "sidebarImage": "windows/branding/sidebar.bmp",
+        "uninstallerHeaderImage": "windows/branding/header.bmp",
         "languages": [
           "English",
           "German",

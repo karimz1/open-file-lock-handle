@@ -90,3 +90,70 @@ fn explorer_commands_use_the_app_flag_and_uninstall_removes_every_class() {
         "OFLH_WRITE_CONTEXT_MENU_VERB \"Directory\\Background\" \"$(oflhInspectFolder)\" \"%V\""
     ));
 }
+
+/// Width, height and bits per pixel of an uncompressed BMP.
+fn bmp_info(path: &str) -> (i32, i32, u16, u32) {
+    let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path))
+        .unwrap_or_else(|error| panic!("{path}: {error}"));
+    assert_eq!(&bytes[..2], b"BM", "{path} is not a BMP");
+    let i32_at = |at: usize| i32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
+    let bits = u16::from_le_bytes(bytes[28..30].try_into().unwrap());
+    let compression = u32::from_le_bytes(bytes[30..34].try_into().unwrap());
+    (i32_at(18), i32_at(22).abs(), bits, compression)
+}
+
+#[test]
+fn installer_uses_the_oflh_icon_and_branded_bitmaps_at_mui_sizes() {
+    let nsis = nsis_config();
+    let icon = nsis["installerIcon"].as_str().unwrap();
+    assert!(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(icon)
+            .is_file()
+    );
+    // MUI2 reserves 150x57 for the header and 164x314 for the sidebar; NSIS
+    // loads 24-bit uncompressed bitmaps reliably.
+    for (key, size) in [
+        ("headerImage", (150, 57)),
+        ("uninstallerHeaderImage", (150, 57)),
+        ("sidebarImage", (164, 314)),
+    ] {
+        let path = nsis[key]
+            .as_str()
+            .unwrap_or_else(|| panic!("{key} is not set"));
+        assert_eq!(bmp_info(path), (size.0, size.1, 24, 0), "{path}");
+    }
+}
+
+fn define(name: &str) -> u32 {
+    let prefix = format!("!define {name} ");
+    HOOKS
+        .lines()
+        .find_map(|line| line.strip_prefix(&prefix))
+        .unwrap_or_else(|| panic!("{name} is not defined"))
+        .trim()
+        .parse()
+        .unwrap()
+}
+
+#[test]
+fn context_menu_checkbox_fits_the_welcome_page_and_starts_checked() {
+    let text_bottom = 45 + define("OFLH_WELCOME_TEXT_HEIGHT");
+    let top = define("OFLH_CHECKBOX_TOP");
+    let height = define("OFLH_CHECKBOX_HEIGHT");
+    // Below the shortened welcome text, room for three wrapped lines (8u each),
+    // and clear of the 193u page bottom with a margin.
+    assert!(top >= text_bottom + 5, "overlaps the welcome text");
+    assert!(height >= 24, "too short for wrapped labels");
+    assert!(top + height <= 193 - 10, "too close to the page bottom");
+    // Positioned in dialog units, which scale with DPI, never in pixels.
+    assert!(HOOKS.contains(
+        "${NSD_CreateCheckbox} 120u ${OFLH_CHECKBOX_TOP}u 195u ${OFLH_CHECKBOX_HEIGHT}u"
+    ));
+    assert!(HOOKS.contains("user32::MapDialogRect"));
+    // Checked unless the user unchecked it earlier in this run.
+    assert!(HOOKS.contains(
+        "${If} $OflhContextMenuChoice != \"0\"\n    ${NSD_Check} $OflhContextMenuCheckbox"
+    ));
+    assert!(HOOKS.contains("StrCpy $OflhContextMenuChoice \"1\"\n    ${Else}"));
+}

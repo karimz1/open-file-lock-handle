@@ -50,9 +50,33 @@ Var OflhContextMenuCheckbox
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW OflhWelcomeShow
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE OflhWelcomeLeave
 
+; MUI2 welcome page layout in dialog units: the page is 193u high, the text
+; (one 28u title above it) sits at 120u 45u 195u 130u and would reach the bottom edge. The text is
+; shortened to 95u (the longest default text, German, needs about 72u) and the
+; checkbox gets a 30u, three-line slot below it, ending 18u above the edge.
+; Dialog units scale with the font and DPI, so nothing is clipped at 100-200%.
+!define OFLH_WELCOME_TEXT_HEIGHT 95
+!define OFLH_CHECKBOX_TOP 145
+!define OFLH_CHECKBOX_HEIGHT 30
+
 Function OflhWelcomeShow
-  ; Below the welcome text (120u 45u 195u 130u); the page background is white.
-  ${NSD_CreateCheckbox} 120u 175u 195u 18u "$(oflhContextMenuOption)"
+  ; $mui.WelcomePage.* are declared after this file is included, so find the
+  ; welcome text at runtime: the page's third static control, after the
+  ; sidebar bitmap and the title.
+  FindWindow $0 "#32770" "" $HWNDPARENT
+  FindWindow $6 "STATIC" "" $0
+  FindWindow $6 "STATIC" "" $0 $6
+  FindWindow $6 "STATIC" "" $0 $6
+  ; Shorten it: map dialog units to pixels for SetWindowPos.
+  System::Call "*(i 120, i 45, i 195, i ${OFLH_WELCOME_TEXT_HEIGHT}) p .r1"
+  System::Call "user32::MapDialogRect(p r0, p r1)"
+  System::Call "*$1(i .r2, i .r3, i .r4, i .r5)"
+  System::Free $1
+  ; SWP_NOZORDER | SWP_NOACTIVATE
+  System::Call "user32::SetWindowPos(p r6, p 0, i r2, i r3, i r4, i r5, i 0x14)"
+
+  ; nsDialogs checkboxes wrap (BS_MULTILINE); German takes two lines.
+  ${NSD_CreateCheckbox} 120u ${OFLH_CHECKBOX_TOP}u 195u ${OFLH_CHECKBOX_HEIGHT}u "$(oflhContextMenuOption)"
   Pop $OflhContextMenuCheckbox
   SetCtlColors $OflhContextMenuCheckbox "" "FFFFFF"
   ${If} $OflhContextMenuChoice != "0"
