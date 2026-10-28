@@ -242,6 +242,10 @@ labels! {
     "Checking windows and child processes…", "Fenster und Kindprozesse werden geprüft…", "正在检查窗口和子进程…";
     "▴ Space show less", "▴ Leertaste weniger zeigen", "▴ 空格 收起";
     "↑↓ / PgUp PgDn scroll · Home/End", "↑↓ / Bild↑ Bild↓ blättern · Pos1/Ende", "↑↓ / PgUp PgDn 滚动 · Home/End";
+    "Windows needs this process. Ending it can crash your PC.", "Windows braucht diesen Prozess. Wenn du ihn beendest, kann dein PC abstürzen.", "Windows 需要此进程。结束它可能导致电脑崩溃。";
+    "A service will probably restart it right away.", "Ein Dienst startet es wahrscheinlich sofort neu.", "某个服务很可能会立即重新启动它。";
+    "Service", "Dienst", "服务";
+    "may restart it", "startet es eventuell neu", "可能会重新启动它";
     "Files and ports come from the latest scan.", "Dateien und Ports stammen aus dem letzten Scan.", "文件和端口来自最近一次扫描。";
     "Window list not available on this platform", "Fensterliste auf dieser Plattform nicht verfügbar", "此平台无法列出窗口";
     "/ search · f files · r refresh · a auto · k stop · x force · ? help · Esc back · q quit", "/ suchen · f Dateien · r aktualisieren · a automatisch · k beenden · x erzwingen · ? Hilfe · Esc zurück · q beenden", "/ 搜索 · f 文件 · r 刷新 · a 自动 · k 终止 · x 强制终止 · ? 帮助 · Esc 返回 · q 退出";
