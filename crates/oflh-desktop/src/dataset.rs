@@ -448,6 +448,7 @@ impl Dataset {
             user: safe(&process.user),
             path: display(row_path(process, usage_index)),
             path_ref: self.path_ref(process_index, &path_index),
+            icon_ref: self.path_ref(process_index, "exe"),
             relation: usage
                 .map(|value| value.relation.label())
                 .unwrap_or("process")
@@ -574,6 +575,13 @@ impl Dataset {
             ));
         }
         Ok(text)
+    }
+    /// The executable behind a row's `icon_ref`; any other reference is rejected.
+    pub fn executable(&self, reference: &str) -> Result<PathBuf, Failure> {
+        if !reference.ends_with(":exe") {
+            return Err(Failure::invalid("Icons are only available for executables"));
+        }
+        self.path(reference)
     }
     /// Reject stale/forged references; preserve non-Unicode native paths without round trips.
     pub fn path(&self, reference: &str) -> Result<PathBuf, Failure> {
@@ -823,6 +831,19 @@ mod tests {
         for reference in ["6:0:0", "7:9:0", "7:0:999", "7:0:../../file", "7:0:cwd"] {
             assert!(dataset.path(reference).is_err(), "{reference}");
         }
+    }
+    #[test]
+    fn icon_references_resolve_only_to_the_row_executable() {
+        let dataset = fixture();
+        let page = dataset.page(&TableQuery::default()).unwrap();
+        let row = &page.rows[0];
+        assert!(row.icon_ref.ends_with(":exe"));
+        let executable = dataset.executable(&row.icon_ref).unwrap();
+        assert_eq!(executable, dataset.path(&row.icon_ref).unwrap());
+        // A file usage reference is never handed to the icon lookup.
+        assert!(dataset.executable(&row.path_ref).is_err() || row.path_ref == row.icon_ref);
+        assert!(dataset.executable("7:0:0").is_err());
+        assert!(dataset.executable("6:0:exe").is_err());
     }
     #[test]
     fn paging_is_bounded_and_select_all_deduplicates_processes() {

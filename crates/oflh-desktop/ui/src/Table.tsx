@@ -6,6 +6,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { RowIcon } from "./AppIcon";
 import {
   ArrowDown,
   ArrowUp,
@@ -631,6 +632,11 @@ export function Table(props: Props) {
                           <PanelRightOpen size={14} />
                         )}
                       </button>
+                      <RowIcon
+                        revision={displayPage?.revision}
+                        reference={row.icon_ref}
+                        processKey={row.process_key}
+                      />
                       <span title={row.name}>
                         {row.name || t("app.k_unnamed")}
                       </span>

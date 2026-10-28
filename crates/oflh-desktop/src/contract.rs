@@ -253,6 +253,8 @@ pub struct Row {
     pub path: String,
     /// Opaque snapshot path reference for native actions.
     pub path_ref: String,
+    /// Opaque reference to the executable, used only to look up its icon.
+    pub icon_ref: String,
     /// Observed association with the target file.
     pub relation: String,
     /// Observed access mode; unknown remains explicit.

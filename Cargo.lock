@@ -3140,6 +3140,7 @@ name = "oflh-desktop"
 version = "0.8.0"
 dependencies = [
  "oflh-core",
+ "oflh-icons",
  "oflh-platform",
  "rusqlite",
  "serde",
@@ -3155,6 +3156,17 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "url",
+]
+
+[[package]]
+name = "oflh-icons"
+version = "0.8.0"
+dependencies = [
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "tempfile",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

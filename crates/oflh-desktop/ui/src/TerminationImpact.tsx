@@ -1,3 +1,4 @@
+import { ProcessIcon } from "./AppIcon";
 import {
   AppWindow,
   Check,
@@ -175,7 +176,7 @@ export function TerminationTarget({ target }: { target: ConfirmationTarget }) {
   return (
     <li>
       <div className="confirmation-target">
-        <AppWindow size={16} aria-hidden="true" className="target-icon" />
+        <ProcessIcon processKey={target.key} className="target-icon" />
         <strong>
           {target.name || t("app.k_unnamed")}
           {target.role === "ancestor" && (
