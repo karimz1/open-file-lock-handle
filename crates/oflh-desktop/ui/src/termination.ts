@@ -29,25 +29,30 @@ export function forceRecoveryTargets(
   );
 }
 
-/** One phrase of the collapsed impact line; `warn` marks the surprising ones. */
+/** One plain-language consequence; `warn` marks the surprising ones. */
 export interface ImpactPart {
   key:
-    | "termination.k_impact_closes_windows"
-    | "termination.k_impact_child_one"
-    | "termination.k_impact_child_other"
-    | "termination.k_impact_files"
-    | "termination.k_impact_port_one"
-    | "termination.k_impact_port_other";
-  count: number;
+    | "termination.k_impact_windows"
+    | "termination.k_impact_children_one"
+    | "termination.k_impact_children_other"
+    | "termination.k_impact_files_one"
+    | "termination.k_impact_files_other"
+    | "termination.k_impact_ports_one"
+    | "termination.k_impact_ports_other";
+  values: Record<string, string | number>;
   warn: boolean;
 }
+
+/** Collapsed rows stay at about two lines; everything else is in Details. */
+export const IMPACT_SENTENCES = 2;
 
 export const listTotal = (list: CappedList | null | undefined) =>
   list ? list.items.length + list.more : 0;
 
 /**
- * Summarize only what goes beyond the selected row. One window, one scanned
- * file or the single port being inspected are expected and stay silent.
+ * Consequences beyond the selected row, most surprising first. One window,
+ * one scanned file or the single port being inspected are expected and stay
+ * silent.
  */
 export function impactSummary(target: ConfirmationTarget): ImpactPart[] {
   const impact = target.impact;
@@ -59,33 +64,75 @@ export function impactSummary(target: ConfirmationTarget): ImpactPart[] {
   const ports = listTotal(impact.ports);
   if (windows > 1)
     parts.push({
-      key: "termination.k_impact_closes_windows",
-      count: windows,
+      key: "termination.k_impact_windows",
+      values: {
+        name: target.name,
+        count: windows,
+        title: impact.windows!.items[0],
+      },
       warn: true,
     });
   if (children > 0)
     parts.push({
       key:
         children === 1
-          ? "termination.k_impact_child_one"
-          : "termination.k_impact_child_other",
-      count: children,
+          ? "termination.k_impact_children_one"
+          : "termination.k_impact_children_other",
+      values: { count: children },
       warn: false,
     });
   if (files > 1)
     parts.push({
-      key: "termination.k_impact_files",
-      count: files,
+      key:
+        files === 2
+          ? "termination.k_impact_files_one"
+          : "termination.k_impact_files_other",
+      values: { count: files - 1 },
       warn: false,
     });
   if (ports > 1 || (ports > 0 && files > 0))
     parts.push({
       key:
         ports === 1
-          ? "termination.k_impact_port_one"
-          : "termination.k_impact_port_other",
-      count: ports,
+          ? "termination.k_impact_ports_one"
+          : "termination.k_impact_ports_other",
+      values: { count: ports },
       warn: false,
     });
   return parts;
+}
+
+/** Split a scan label into what people recognize and the technical rest. */
+export function impactRow(
+  kind: "windows" | "children" | "files" | "ports",
+  item: string,
+): { primary: string; secondary: string; copy?: string } {
+  if (kind === "children") {
+    const match = /^(.*) \(PID (\d+)\)$/.exec(item);
+    if (match)
+      return {
+        primary: match[1],
+        secondary: `PID ${match[2]}`,
+        copy: match[2],
+      };
+  }
+  if (kind === "files") {
+    const cut = Math.max(item.lastIndexOf("/"), item.lastIndexOf("\\"));
+    if (cut > 0 && cut < item.length - 1)
+      return {
+        primary: item.slice(cut + 1),
+        secondary: item.slice(0, cut),
+        copy: item,
+      };
+    return { primary: item, secondary: "", copy: item };
+  }
+  if (kind === "ports") {
+    const match = /^(\S+) (?:(.*):)?(\d+)$/.exec(item);
+    if (match)
+      return {
+        primary: match[3],
+        secondary: match[2] ? `${match[1]} ${match[2]}` : match[1],
+      };
+  }
+  return { primary: item, secondary: "" };
 }

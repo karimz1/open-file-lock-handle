@@ -1,33 +1,106 @@
-import type { CappedList, ConfirmationTarget } from "./api";
-import { t } from "./i18n";
-import { impactSummary, listTotal } from "./termination";
+import {
+  AppWindow,
+  Check,
+  Copy,
+  FileText,
+  Network,
+  Workflow,
+  type LucideIcon,
+} from "lucide-react";
+import { useState } from "react";
+import { api, type CappedList, type ConfirmationTarget } from "./api";
+import { t, type MessageKey } from "./i18n";
+import {
+  IMPACT_SENTENCES,
+  impactRow,
+  impactSummary,
+  listTotal,
+} from "./termination";
 
-function ImpactList({ heading, list }: { heading: string; list: CappedList }) {
-  if (!listTotal(list)) return null;
+type Kind = "windows" | "children" | "files" | "ports";
+
+const GROUPS: Record<Kind, { icon: LucideIcon; heading: MessageKey }> = {
+  windows: { icon: AppWindow, heading: "termination.k_impact_group_windows" },
+  children: { icon: Workflow, heading: "termination.k_impact_group_children" },
+  files: { icon: FileText, heading: "termination.k_impact_group_files" },
+  ports: { icon: Network, heading: "termination.k_impact_group_ports" },
+};
+
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
   return (
-    <div className="impact-group">
-      <h4>{heading}</h4>
+    <button
+      type="button"
+      className="icon-button impact-copy"
+      aria-label={t("termination.k_impact_copy", { value })}
+      title={t("termination.k_impact_copy", { value })}
+      onClick={() =>
+        void api.copyDiagnostic(value).then(
+          () => setCopied(true),
+          () => setCopied(false),
+        )
+      }
+    >
+      {copied ? (
+        <Check size={12} aria-hidden="true" />
+      ) : (
+        <Copy size={12} aria-hidden="true" />
+      )}
+    </button>
+  );
+}
+
+function ImpactGroup({ kind, list }: { kind: Kind; list: CappedList }) {
+  const total = listTotal(list);
+  if (!total) return null;
+  const { icon: Icon, heading } = GROUPS[kind];
+  return (
+    <section className="impact-group">
+      <h4>
+        <Icon size={13} aria-hidden="true" />
+        {t(heading, { count: total })}
+      </h4>
       <ul>
-        {list.items.map((item, index) => (
-          <li key={index}>{item}</li>
-        ))}
+        {list.items.map((item, index) => {
+          const row = impactRow(kind, item);
+          return (
+            <li key={index}>
+              <span className="impact-primary" title={row.primary}>
+                {row.primary}
+              </span>
+              {row.secondary && (
+                <span
+                  className="impact-secondary"
+                  title={row.copy ?? row.secondary}
+                >
+                  {row.secondary}
+                </span>
+              )}
+              {row.copy && <CopyButton value={row.copy} />}
+            </li>
+          );
+        })}
         {list.more > 0 && (
           <li className="impact-more">
             {t("termination.k_impact_more", { count: list.more })}
           </li>
         )}
       </ul>
-    </div>
+    </section>
   );
 }
 
-/** One confirmation row: name and PID, then a single impact line and optional details. */
+/**
+ * One confirmation row: the app and up to two plain sentences about what
+ * else happens. Technical lists stay in the collapsed Details.
+ */
 export function TerminationTarget({ target }: { target: ConfirmationTarget }) {
   const parts = impactSummary(target);
   const impact = target.impact;
   return (
     <li>
       <div className="confirmation-target">
+        <AppWindow size={16} aria-hidden="true" className="target-icon" />
         <strong>
           {target.name || t("app.k_unnamed")}
           {target.role === "ancestor" && (
@@ -39,22 +112,20 @@ export function TerminationTarget({ target }: { target: ConfirmationTarget }) {
       {impact && parts.length > 0 && (
         <>
           <p className="impact-summary">
-            {parts.map((part, index) => (
-              <span key={part.key}>
-                {index > 0 && " · "}
-                <span className={part.warn ? "impact-warning" : undefined}>
-                  {t(part.key, { count: part.count })}
-                </span>
+            {parts.slice(0, IMPACT_SENTENCES).map((part, index) => (
+              <span
+                key={part.key}
+                className={part.warn ? "impact-warning" : undefined}
+              >
+                {index > 0 && " "}
+                {t(part.key, part.values)}
               </span>
             ))}
           </p>
           <details className="impact-details">
             <summary>{t("termination.k_impact_details")}</summary>
             {impact.windows ? (
-              <ImpactList
-                heading={t("termination.k_impact_windows_heading")}
-                list={impact.windows}
-              />
+              <ImpactGroup kind="windows" list={impact.windows} />
             ) : (
               <p className="hint">
                 {t("termination.k_impact_windows_unavailable")}
@@ -62,23 +133,14 @@ export function TerminationTarget({ target }: { target: ConfirmationTarget }) {
             )}
             {impact.children && listTotal(impact.children) > 0 && (
               <>
-                <ImpactList
-                  heading={t("termination.k_impact_children_heading")}
-                  list={impact.children}
-                />
+                <ImpactGroup kind="children" list={impact.children} />
                 <p className="hint">
                   {t("termination.k_impact_children_note")}
                 </p>
               </>
             )}
-            <ImpactList
-              heading={t("termination.k_impact_files_heading")}
-              list={impact.files}
-            />
-            <ImpactList
-              heading={t("termination.k_impact_ports_heading")}
-              list={impact.ports}
-            />
+            <ImpactGroup kind="files" list={impact.files} />
+            <ImpactGroup kind="ports" list={impact.ports} />
             <p className="hint">{t("termination.k_impact_latest_scan")}</p>
           </details>
         </>

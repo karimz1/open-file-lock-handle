@@ -233,15 +233,14 @@ labels! {
     "l locks", "l Sperren", "l 锁定";
     "Tab / ←→ choose · Enter confirm · Esc cancel", "Tab / ←→ wählen · Enter bestätigen · Esc abbrechen", "Tab / ←→ 选择 · Enter 确认 · Esc 取消";
     "Tab / ←→ choose · d details · Enter confirm · Esc cancel", "Tab / ←→ wählen · d Details · Enter bestätigen · Esc abbrechen", "Tab / ←→ 选择 · d 详情 · Enter 确认 · Esc 取消";
+    "1 background process keeps running.", "1 Hintergrundprozess läuft weiter.", "1 个后台进程会继续运行。";
+    "1 more file it has open is released too.", "Auch 1 weitere geöffnete Datei wird freigegeben.", "另外 1 个已打开的文件也会被释放。";
+    "A connection on 1 network port will drop.", "Eine Verbindung über 1 Netzwerkport wird getrennt.", "1 个网络端口上的连接将断开。";
+    "Background processes are not closed; some may exit with it.", "Hintergrundprozesse werden nicht beendet, manche enden eventuell mit.", "后台进程不会被结束，部分可能随之退出。";
+    "Tab / ←→ choose · d details · ↑↓ PgUp/PgDn scroll · Enter confirm · Esc cancel", "Tab / ←→ wählen · d Details · ↑↓ Bild↑/Bild↓ blättern · Enter bestätigen · Esc abbrechen", "Tab / ←→ 选择 · d 详情 · ↑↓ PgUp/PgDn 滚动 · Enter 确认 · Esc 取消";
     "Checking windows and child processes…", "Fenster und Kindprozesse werden geprüft…", "正在检查窗口和子进程…";
     "Files and ports come from the latest scan.", "Dateien und Ports stammen aus dem letzten Scan.", "文件和端口来自最近一次扫描。";
-    "1 child process", "1 Kindprozess", "1 个子进程";
-    "Holds 1 port", "Belegt 1 Port", "占用 1 个端口";
-    "Windows that close", "Fenster, die geschlossen werden", "将关闭的窗口";
     "Window list not available on this platform", "Fensterliste auf dieser Plattform nicht verfügbar", "此平台无法列出窗口";
-    "Child processes (not terminated; some may exit with it)", "Kindprozesse (werden nicht beendet, manche enden eventuell mit)", "子进程（不会被终止，部分可能随之退出）";
-    "Scanned files", "Gescannte Dateien", "已扫描的文件";
-    "Ports", "Ports", "端口";
     "/ search · f files · r refresh · a auto · k stop · x force · ? help · Esc back · q quit", "/ suchen · f Dateien · r aktualisieren · a automatisch · k beenden · x erzwingen · ? Hilfe · Esc zurück · q beenden", "/ 搜索 · f 文件 · r 刷新 · a 自动 · k 终止 · x 强制终止 · ? 帮助 · Esc 返回 · q 退出";
     "1/2/3 tabs · / search · s all/this path · Enter inspect · Space select · r refresh · a auto · k stop · x force · ? help · q quit", "1/2/3 Ansichten · / suchen · s alle/dieser Pfad · Enter untersuchen · Space auswählen · r aktualisieren · a automatisch · k beenden · x erzwingen · ? Hilfe · q beenden", "1/2/3 视图 · / 搜索 · s 所有/此路径 · Enter 检查 · Space 选择 · r 刷新 · a 自动 · k 终止 · x 强制终止 · ? 帮助 · q 退出";
     "/ search · p ports · l locks only · ↑↓ select · ←→ path · r refresh · a auto · k stop · x force · R GitHub · D Donate · Esc back · q quit", "/ suchen · p Ports · l nur Sperren · ↑↓ auswählen · ←→ Pfad · r aktualisieren · a automatisch · k beenden · x erzwingen · R GitHub · D Spenden · Esc zurück · q beenden", "/ 搜索 · p 端口 · l 仅锁定 · ↑↓ 选择 · ←→ 路径 · r 刷新 · a 自动 · k 终止 · x 强制终止 · R GitHub · D 捐赠 · Esc 返回 · q 退出";
@@ -255,32 +254,67 @@ labels! {
 }
 // Literal formats compile in all languages; arguments are evaluated in only one branch.
 macro_rules! localized {
-    ($language:expr, "Closes {n} windows" $(, $($arguments:tt)*)?) => {
+    ($language:expr, "{name} closes completely, with all {n} open windows, such as “{title}”." $(, $($arguments:tt)*)?) => {
         match $language {
-            $crate::view::messages::Language::English => format!("Closes {n} windows" $(, $($arguments)*)?),
-            $crate::view::messages::Language::German => format!("Schließt {n} Fenster" $(, $($arguments)*)?),
-            $crate::view::messages::Language::Chinese => format!("将关闭 {n} 个窗口" $(, $($arguments)*)?),
+            $crate::view::messages::Language::English => format!("{name} closes completely, with all {n} open windows, such as “{title}”." $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("{name} wird komplett geschlossen – mit allen {n} offenen Fenstern, z. B. „{title}“." $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("{name} 将完全关闭，包括全部 {n} 个打开的窗口，例如“{title}”。" $(, $($arguments)*)?),
         }
     };
-    ($language:expr, "{n} child processes" $(, $($arguments:tt)*)?) => {
+    ($language:expr, "{n} background processes keep running." $(, $($arguments:tt)*)?) => {
         match $language {
-            $crate::view::messages::Language::English => format!("{n} child processes" $(, $($arguments)*)?),
-            $crate::view::messages::Language::German => format!("{n} Kindprozesse" $(, $($arguments)*)?),
-            $crate::view::messages::Language::Chinese => format!("{n} 个子进程" $(, $($arguments)*)?),
+            $crate::view::messages::Language::English => format!("{n} background processes keep running." $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("{n} Hintergrundprozesse laufen weiter." $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("{n} 个后台进程会继续运行。" $(, $($arguments)*)?),
         }
     };
-    ($language:expr, "Uses {n} scanned files" $(, $($arguments:tt)*)?) => {
+    ($language:expr, "{n} more files it has open are released too." $(, $($arguments:tt)*)?) => {
         match $language {
-            $crate::view::messages::Language::English => format!("Uses {n} scanned files" $(, $($arguments)*)?),
-            $crate::view::messages::Language::German => format!("Nutzt {n} gescannte Dateien" $(, $($arguments)*)?),
-            $crate::view::messages::Language::Chinese => format!("使用 {n} 个已扫描文件" $(, $($arguments)*)?),
+            $crate::view::messages::Language::English => format!("{n} more files it has open are released too." $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Auch {n} weitere geöffnete Dateien werden freigegeben." $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("另外 {n} 个已打开的文件也会被释放。" $(, $($arguments)*)?),
         }
     };
-    ($language:expr, "Holds {n} ports" $(, $($arguments:tt)*)?) => {
+    ($language:expr, "Connections on {n} network ports will drop." $(, $($arguments:tt)*)?) => {
         match $language {
-            $crate::view::messages::Language::English => format!("Holds {n} ports" $(, $($arguments)*)?),
-            $crate::view::messages::Language::German => format!("Belegt {n} Ports" $(, $($arguments)*)?),
-            $crate::view::messages::Language::Chinese => format!("占用 {n} 个端口" $(, $($arguments)*)?),
+            $crate::view::messages::Language::English => format!("Connections on {n} network ports will drop." $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Verbindungen über {n} Netzwerkports werden getrennt." $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("{n} 个网络端口上的连接将断开。" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Windows ({n})" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Windows ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Fenster ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("窗口（{n}）" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Background processes ({n})" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Background processes ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Hintergrundprozesse ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("后台进程（{n}）" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Files ({n})" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Files ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Dateien ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("文件（{n}）" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Ports ({n})" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Ports ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Ports ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("端口（{n}）" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "{first}–{last} of {total} ↕" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("{first}–{last} of {total} ↕" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("{first}–{last} von {total} ↕" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("{first}–{last} / {total} ↕" $(, $($arguments)*)?),
         }
     };
     ($language:expr, "+{n} more" $(, $($arguments:tt)*)?) => {

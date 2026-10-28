@@ -488,21 +488,27 @@ const de: TranslationSchema<typeof en> = {
     k_visible_columns: "Sichtbare Spalten",
   },
   termination: {
-    k_impact_closes_windows: "Schließt {{count}} Fenster",
-    k_impact_child_one: "{{count}} Kindprozess",
-    k_impact_child_other: "{{count}} Kindprozesse",
-    k_impact_files: "Nutzt {{count}} gescannte Dateien",
-    k_impact_port_one: "Belegt {{count}} Port",
-    k_impact_port_other: "Belegt {{count}} Ports",
+    k_impact_targets_label: "Betroffene Prozesse",
+    k_impact_windows:
+      "{{name}} wird komplett geschlossen – mit allen {{count}} offenen Fenstern, z. B. „{{title}}“.",
+    k_impact_children_one: "1 Hintergrundprozess läuft weiter.",
+    k_impact_children_other: "{{count}} Hintergrundprozesse laufen weiter.",
+    k_impact_files_one: "Auch 1 weitere geöffnete Datei wird freigegeben.",
+    k_impact_files_other:
+      "Auch {{count}} weitere geöffnete Dateien werden freigegeben.",
+    k_impact_ports_one: "Eine Verbindung über 1 Netzwerkport wird getrennt.",
+    k_impact_ports_other:
+      "Verbindungen über {{count}} Netzwerkports werden getrennt.",
+    k_impact_group_windows: "Fenster ({{count}})",
+    k_impact_group_children: "Hintergrundprozesse ({{count}})",
+    k_impact_group_files: "Dateien ({{count}})",
+    k_impact_group_ports: "Ports ({{count}})",
+    k_impact_copy: "{{value}} kopieren",
     k_impact_details: "Details",
-    k_impact_windows_heading: "Fenster, die geschlossen werden",
     k_impact_windows_unavailable:
       "Dieses System stellt keine Fenstertitel bereit.",
-    k_impact_children_heading: "Kindprozesse",
     k_impact_children_note:
       "Sie werden nicht beendet und laufen meist weiter. Einige können zusammen mit diesem Prozess enden.",
-    k_impact_files_heading: "Gescannte Dateien",
-    k_impact_ports_heading: "Ports",
     k_impact_more: "+{{count}} weitere",
     k_impact_latest_scan:
       "Stand: letzter Scan und eine Prozessprüfung beim Öffnen dieses Dialogs.",

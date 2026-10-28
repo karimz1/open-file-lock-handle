@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ActionResult, Confirmation, ConfirmationTarget } from "./api";
-import { forceRecoveryTargets, impactSummary } from "./termination";
+import {
+  forceRecoveryTargets,
+  IMPACT_SENTENCES,
+  impactRow,
+  impactSummary,
+} from "./termination";
+import { t } from "./i18n";
 
 const confirmation: Confirmation = {
   ticket: "fixture",
@@ -67,7 +73,7 @@ describe("termination impact summary", () => {
   const target = (impact: Partial<ConfirmationTarget["impact"]>) =>
     ({
       key: "42:10:0",
-      name: "blender",
+      name: "Blender",
       pid: 42,
       role: "holder",
       impact: {
@@ -88,24 +94,56 @@ describe("termination impact summary", () => {
     expect(impactSummary({ key: "1:1:0", name: "legacy", pid: 1 })).toEqual([]);
   });
 
-  it("warns only about extra windows and counts capped remainders", () => {
-    expect(
-      impactSummary(
-        target({
-          windows: list(7),
-          children: list(1),
-          files: list(3),
-          ports: list(1),
-        }),
-      ),
-    ).toEqual([
-      { key: "termination.k_impact_closes_windows", count: 7, warn: true },
-      { key: "termination.k_impact_child_one", count: 1, warn: false },
-      { key: "termination.k_impact_files", count: 3, warn: false },
-      { key: "termination.k_impact_port_one", count: 1, warn: false },
+  it("orders plain sentences by surprise and names a window", () => {
+    const parts = impactSummary(
+      target({
+        windows: list(7),
+        children: list(1),
+        files: list(3),
+        ports: list(1),
+      }),
+    );
+    expect(parts.map((part) => [part.key, part.warn])).toEqual([
+      ["termination.k_impact_windows", true],
+      ["termination.k_impact_children_one", false],
+      ["termination.k_impact_files_other", false],
+      ["termination.k_impact_ports_one", false],
     ]);
-    expect(impactSummary(target({ ports: list(2) }))).toEqual([
-      { key: "termination.k_impact_port_other", count: 2, warn: false },
-    ]);
+    expect(t(parts[0].key, parts[0].values)).toBe(
+      "Blender closes completely, with all 7 open windows, such as “item 0”.",
+    );
+    expect(t(parts[2].key, parts[2].values)).toBe(
+      "2 more files it has open are released too.",
+    );
+    expect(IMPACT_SENTENCES).toBe(2);
+  });
+
+  it("splits detail rows into a recognizable label and muted technical info", () => {
+    expect(impactRow("children", "python3 (PID 4100)")).toEqual({
+      primary: "python3",
+      secondary: "PID 4100",
+      copy: "4100",
+    });
+    expect(impactRow("files", "/build/textures/a.png")).toEqual({
+      primary: "a.png",
+      secondary: "/build/textures",
+      copy: "/build/textures/a.png",
+    });
+    expect(impactRow("files", "C:\\Users\\k\\scene.blend").primary).toBe(
+      "scene.blend",
+    );
+    expect(impactRow("ports", "TCP 127.0.0.1:5432")).toEqual({
+      primary: "5432",
+      secondary: "TCP 127.0.0.1",
+    });
+    expect(impactRow("ports", "UDP [::1]:53").secondary).toBe("UDP [::1]");
+    expect(impactRow("ports", "TCP 3000")).toEqual({
+      primary: "3000",
+      secondary: "TCP",
+    });
+    expect(impactRow("windows", "scene.blend - Blender")).toEqual({
+      primary: "scene.blend - Blender",
+      secondary: "",
+    });
   });
 });

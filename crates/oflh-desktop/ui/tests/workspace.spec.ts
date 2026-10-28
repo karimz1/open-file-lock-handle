@@ -1147,10 +1147,10 @@ test("confirmation shows one impact line and reveals capped details on demand", 
   const dialog = page.getByRole("dialog");
   const summary = dialog.locator(".impact-summary");
   await expect(summary).toHaveText(
-    "Closes 3 windows · 1 child process · Uses 9 scanned files · Holds 1 port",
+    "Code closes completely, with all 3 open windows, such as “scene.blend - Blender”. 1 background process keeps running.",
   );
   await expect(summary.locator(".impact-warning")).toHaveText(
-    "Closes 3 windows",
+    "Code closes completely, with all 3 open windows, such as “scene.blend - Blender”.",
   );
   await expect(dialog.getByText("render.blend - Blender")).toBeHidden();
   await expect(
@@ -1161,9 +1161,36 @@ test("confirmation shows one impact line and reveals capped details on demand", 
   await dialog.locator(".impact-details summary").first().focus();
   await page.keyboard.press("Enter");
   await expect(dialog.getByText("render.blend - Blender")).toBeVisible();
-  await expect(dialog.getByText("python3 (PID 4100)")).toBeVisible();
+  await expect(
+    dialog.getByRole("heading", { name: "Windows (3)" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("heading", { name: "Background processes (1)" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("heading", { name: "Files (9)" }),
+  ).toBeVisible();
+  await expect(
+    dialog.locator(".impact-primary", { hasText: "python3" }),
+  ).toBeVisible();
+  await expect(dialog.getByText("PID 4100")).toBeVisible();
   await expect(dialog.getByText("+4 more")).toBeVisible();
-  await expect(dialog.getByText("TCP 3000")).toBeVisible();
+  await expect(
+    dialog.locator(".impact-secondary[title='/build/textures/a.png']"),
+  ).toHaveText("/build/textures");
+  await dialog.getByRole("button", { name: "Copy 4100" }).focus();
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).__testCalls.some(
+          (call: any) =>
+            call.command === "copy_diagnostic" && call.args.text === "4100",
+        ),
+      ),
+    )
+    .toBe(true);
+  await dialog.locator(".impact-details summary").first().focus();
   await expect(
     dialog.getByText("They are not terminated and usually keep running."),
   ).toBeVisible();
@@ -1175,6 +1202,72 @@ test("confirmation shows one impact line and reveals capped details on demand", 
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
 });
+
+for (const [width, height] of [
+  [800, 600],
+  [860, 560],
+]) {
+  test(`expanded impact scrolls inside the confirmation at ${width}x${height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.addInitScript(
+      (impact) => ((window as any).__impact = impact),
+      blenderImpact,
+    );
+    await page.goto("/");
+    const rows = page.getByRole("grid").getByRole("row");
+    await rows.nth(1).click();
+    for (let row = 2; row <= 6; row++)
+      await rows.nth(row).click({ modifiers: ["ControlOrMeta"] });
+    await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    const list = dialog.getByRole("list", { name: "Affected processes" });
+    await expect(list.locator(":scope > li")).toHaveCount(6);
+    for (const summary of await dialog.locator(".impact-details summary").all())
+      await summary.click();
+    const inViewport = async (locator: typeof dialog) => {
+      const box = (await locator.boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(height);
+    };
+    await inViewport(dialog);
+    await inViewport(dialog.locator("#dialog-title"));
+    await inViewport(
+      dialog.getByRole("button", { name: "Cancel", exact: true }),
+    );
+    await inViewport(
+      dialog.getByRole("button", { name: "Terminate", exact: true }),
+    );
+    const metrics = () =>
+      list.evaluate((node) => ({
+        top: node.scrollTop,
+        overflow: node.scrollHeight - node.clientHeight,
+        bar: (node as HTMLElement).offsetWidth - node.clientWidth,
+      }));
+    const before = await metrics();
+    expect(before.overflow).toBeGreaterThan(0);
+    expect(before.bar).toBeGreaterThan(0);
+    await list.focus();
+    await page.keyboard.press("PageDown");
+    await expect.poll(async () => (await metrics()).top).toBeGreaterThan(0);
+    await page.keyboard.press("End");
+    await expect
+      .poll(async () => {
+        const now = await metrics();
+        return now.overflow - now.top;
+      })
+      .toBeLessThan(2);
+    await inViewport(
+      dialog.getByRole("button", { name: "Terminate", exact: true }),
+    );
+    await page.screenshot({
+      path: `test-results/impact-small-${width}x${height}.png`,
+    });
+    await page.keyboard.press("Tab");
+    await expect(dialog.locator(":focus")).toHaveCount(1);
+  });
+}
 
 test("confirmation without impact adds nothing to the target row", async ({
   page,

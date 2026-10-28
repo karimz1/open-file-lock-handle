@@ -5,8 +5,8 @@
 
   Affected processes (including selections hidden by filters):
     424242    dotnet
-              Closes 7 windows · 1 child process · Uses 3 scanned files · Holds 1 port
-
+              dotnet closes completely, with all 7 open windows, such as “scene1.blend - Blender”.
+              1 background process keeps running.
 
 
 

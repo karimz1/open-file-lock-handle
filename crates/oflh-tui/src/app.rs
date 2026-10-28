@@ -209,6 +209,8 @@ pub struct App {
     pub impact: HashMap<Identity, oflh_core::impact::Impact>,
     /// Whether the confirmation lists the full impact (toggled with `d`).
     pub impact_details: bool,
+    /// Set while drawing: the confirmation is taller than the terminal.
+    pub confirm_scrollable: bool,
     pub scroll: usize,
     pub status: String,
     pub error: bool,
@@ -270,6 +272,7 @@ impl App {
             parent_action: false,
             impact: HashMap::new(),
             impact_details: false,
+            confirm_scrollable: false,
             scroll: 0,
             status: String::new(),
             error: false,
@@ -1087,8 +1090,10 @@ impl App {
             }
             K::Tab | K::Left | K::Right => self.confirm = !self.confirm,
             K::Char('d') => self.impact_details = !self.impact_details,
-            K::Up => self.scroll = self.scroll.saturating_sub(1),
+            K::Up | K::Char('k') => self.scroll = self.scroll.saturating_sub(1),
             K::Down | K::Char('j') => self.scroll += 1,
+            K::Home => self.scroll = 0,
+            K::End => self.scroll = usize::MAX / 2,
             K::PageUp => self.scroll = self.scroll.saturating_sub(self.page),
             K::PageDown => self.scroll += self.page,
             K::Enter => {

@@ -5,25 +5,25 @@
 
   Affected processes (including selections hidden by filters):
     424242    dotnet
-              Closes 7 windows · 1 child process · Uses 3 scanned files · Holds 1 port
-              Windows that close
+              dotnet closes completely, with all 7 open windows, such as “scene1.blend - Blender”.
+              1 background process keeps running.
+              Windows (7)
                 scene1.blend - Blender
                 scene2.blend - Blender
                 scene3.blend - Blender
                 scene4.blend - Blender
                 scene5.blend - Blender
                 +2 more
-              Child processes (not terminated; some may exit with it)
-                python3 (PID 4100)
-              Scanned files
-                /build/FileLockExampleCli.deps.json
-                /build/FileLockExampleCli.dll
-                /build/other.dll
-              Ports
-                TCP 127.0.0.1:5432
+              Background processes (1)
+                python3  PID 4100
+                Background processes are not closed; some may exit with it.
+              Files (3)
+                FileLockExampleCli.deps.json  /build
+                FileLockExampleCli.dll  /build
+                other.dll  /build
+              Ports (1)
+                5432  TCP 127.0.0.1
   Files and ports come from the latest scan.
-
-
 
 
 

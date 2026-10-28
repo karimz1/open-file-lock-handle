@@ -6,9 +6,8 @@
 
   Betroffene Prozesse (einschließlich ausgefilterter Auswahl):
     424242    dotnet
-              Nutzt 3 gescannte Dateien
+              Auch 2 weitere geöffnete Dateien werden freigegeben.
   Fenster und Kindprozesse werden geprüft…
-
 
 
 
@@ -22,3 +21,4 @@
   ────────────────────────────────────────────────────────────────────────────
   ▶ Abbrechen      Beenden erzwingen
   Tab / ←→ wählen · d Details · Enter bestätigen · Esc abbrechen
+

@@ -2401,6 +2401,7 @@ export function App() {
           }
           danger={confirmation.force}
           close={dismiss}
+          className="confirmation-modal"
         >
           <div className="confirmation-note">
             <ShieldAlert size={22} />
@@ -2435,7 +2436,11 @@ export function App() {
               )}
             </p>
           )}
-          <ul className="confirmation-list">
+          <ul
+            className="confirmation-list"
+            tabIndex={0}
+            aria-label={t("termination.k_impact_targets_label")}
+          >
             {confirmation.targets.map((target) => (
               <TerminationTarget key={target.key} target={target} />
             ))}

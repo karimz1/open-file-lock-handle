@@ -1452,6 +1452,30 @@ main {
   border: 1px solid var(--border);
   border-radius: 5px;
 }
+/* The target list is the only part that scrolls, so the heading, warnings and
+   buttons stay reachable in small windows. */
+.modal.confirmation-modal[open] {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+}
+.confirmation-modal > * {
+  flex: none;
+}
+.confirmation-modal > .confirmation-list {
+  flex: 0 1 auto;
+  min-height: 64px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.confirmation-list:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .confirmation-list > li {
   padding: 10px 12px;
   font-size: 0.9231rem;
@@ -1471,15 +1495,15 @@ main {
   font-weight: 500;
 }
 .impact-summary {
-  margin: 4px 0 0;
-  color: var(--muted);
+  margin: 4px 0 0 22px;
+  color: var(--text);
   font-size: 0.8462rem;
 }
 .impact-warning {
   color: var(--danger);
 }
 .impact-details {
-  margin-top: 4px;
+  margin: 4px 0 0 22px;
   font-size: 0.8462rem;
 }
 .impact-details summary {
@@ -1495,20 +1519,67 @@ main {
   margin: 6px 0 0;
 }
 .impact-group h4 {
-  margin: 8px 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 4px;
+  color: var(--muted);
   font-size: 0.8462rem;
   font-weight: 600;
 }
 .impact-group ul {
+  display: grid;
+  gap: 2px;
   margin: 0;
-  padding-left: 16px;
+  padding: 0 0 0 19px;
+  list-style: none;
 }
 .impact-group li {
-  overflow-wrap: anywhere;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 22px;
+}
+.impact-primary {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.impact-secondary {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.8462rem;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.impact-copy {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  opacity: 0.6;
+}
+.impact-group li:hover .impact-copy,
+.impact-copy:focus-visible {
+  opacity: 1;
+}
+.confirmation-target > strong {
+  flex: 1;
+  min-width: 0;
+}
+.target-icon {
+  flex: none;
+  color: var(--muted);
 }
 .impact-more {
   color: var(--muted);
-  list-style: none;
+  font-size: 0.8462rem;
 }
 .confirmation-list > li + li,
 .action-results li + li {

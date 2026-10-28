@@ -1182,7 +1182,12 @@ fn blender_impact() -> oflh_core::impact::Impact {
 }
 
 fn render_confirm(app: &mut App, name: &str) -> String {
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 40)).unwrap();
+    render_confirm_at(app, name, 100, 40)
+}
+
+fn render_confirm_at(app: &mut App, name: &str, width: u16, height: u16) -> String {
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
     terminal.draw(|frame| view::draw(frame, app)).unwrap();
     export_visual(name, terminal.backend().buffer());
     readable_buffer(terminal.backend().buffer())
@@ -1222,21 +1227,32 @@ fn confirmation_summarizes_impact_and_expands_details_with_d() {
     assert!(loading.contains("Checking windows and child processes…"));
     app.accept_impact(&[id], vec![blender_impact()]);
     let collapsed = render_confirm(&mut app, "impact-collapsed-en");
+    let flat = collapsed.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        collapsed
-            .contains("Closes 7 windows · 1 child process · Uses 3 scanned files · Holds 1 port")
+        flat.contains(
+            "closes completely, with all 7 open windows, such as “scene1.blend - Blender”."
+        ),
+        "{collapsed}"
     );
+    assert!(
+        flat.contains("1 background process keeps running."),
+        "{collapsed}"
+    );
+    // Two sentences at most while collapsed; files and ports wait in details.
+    assert!(!flat.contains("released too") && !flat.contains("Windows (7)"));
     assert!(collapsed.contains("d details"));
-    assert!(!collapsed.contains("scene1.blend"));
     key(&mut app, K::Char('d'));
     let expanded = render_confirm(&mut app, "impact-expanded-en");
     for text in [
-        "Windows that close",
+        "Windows (7)",
         "scene5.blend - Blender",
         "+2 more",
-        "python3 (PID 4100)",
-        "/build/other.dll",
-        "TCP 127.0.0.1:5432",
+        "Background processes (1)",
+        "python3  PID 4100",
+        "Files (3)",
+        "other.dll  /build",
+        "Ports (1)",
+        "5432  TCP 127.0.0.1",
         "latest scan",
     ] {
         assert!(expanded.contains(text), "{text}\n{expanded}");
@@ -1271,4 +1287,90 @@ fn confirmation_adds_nothing_without_notable_impact() {
     key(&mut app, K::Char('d'));
     let text = render_confirm(&mut app, "impact-none-en");
     assert!(!text.contains("Only window") && !text.contains("child process"));
+}
+
+fn crowded_confirmation() -> App {
+    let mut app = impact_app();
+    let template = app.snapshot.processes[0].clone();
+    for n in 1..8u32 {
+        let mut process = template.clone();
+        process.identity.pid = 500 + n;
+        process.name = format!("blender-{n}");
+        app.snapshot.processes.push(process);
+    }
+    let mut snapshot = app.snapshot.clone();
+    snapshot.warnings.clear();
+    app.replace(snapshot);
+    app.select_all();
+    assert!(matches!(key(&mut app, K::Char('k')), Effect::Impact(_)));
+    let ids: Vec<_> = app.pending.iter().map(|target| target.identity).collect();
+    let impact = ids.iter().map(|_| blender_impact()).collect();
+    app.accept_impact(&ids, impact);
+    key(&mut app, K::Char('d'));
+    app
+}
+
+#[test]
+fn small_terminals_scroll_the_confirmation_and_keep_the_buttons() {
+    for (width, height) in [(80u16, 24u16), (60, 20)] {
+        let mut app = crowded_confirmation();
+        assert_eq!(app.pending.len(), 8);
+        let top = render_confirm_at(
+            &mut app,
+            &format!("impact-small-{width}x{height}-top"),
+            width,
+            height,
+        );
+        let rows: Vec<&str> = top.lines().collect();
+        assert_eq!(rows.len(), height as usize);
+        assert!(app.confirm_scrollable, "{top}");
+        assert!(rows[0].contains("↕"), "{top}");
+        assert!(top.contains("Cancel") && top.contains("Terminate"), "{top}");
+        assert!(top.contains("scroll"), "{top}");
+        key(&mut app, K::PageDown);
+        key(&mut app, K::Char('j'));
+        let scrolled = render_confirm_at(
+            &mut app,
+            &format!("impact-small-{width}x{height}-mid"),
+            width,
+            height,
+        );
+        assert_ne!(top, scrolled);
+        assert!(scrolled.contains("Cancel") && scrolled.contains("Terminate"));
+        key(&mut app, K::End);
+        let bottom = render_confirm_at(
+            &mut app,
+            &format!("impact-small-{width}x{height}-end"),
+            width,
+            height,
+        );
+        assert!(bottom.contains("latest scan"), "{bottom}");
+        let indicator = bottom.lines().next().unwrap().trim().to_string();
+        let (range, _) = indicator.split_once(" ↕").unwrap();
+        let (span, total) = range.split_once(" of ").unwrap();
+        assert_eq!(span.split_once('–').unwrap().1, total, "{indicator}");
+        assert!(bottom.contains("Cancel") && bottom.contains("Terminate"));
+        key(&mut app, K::Home);
+        key(&mut app, K::Char('k'));
+        assert_eq!(
+            render_confirm_at(&mut app, "impact-small-home", width, height),
+            top
+        );
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "tests/snapshots/impact-small-{width}x{height}-en.txt"
+        ));
+        if std::env::var_os("OFLH_UPDATE_SNAPSHOTS").is_some() {
+            std::fs::write(&path, &top).unwrap();
+        }
+        assert_eq!(std::fs::read_to_string(path).unwrap(), top);
+    }
+}
+
+#[test]
+fn short_confirmation_does_not_show_a_scroll_hint() {
+    let mut app = impact_app();
+    key(&mut app, K::Char('k'));
+    let text = render_confirm_at(&mut app, "impact-short", 80, 24);
+    assert!(!app.confirm_scrollable);
+    assert!(!text.contains("↕") && !text.contains("PgUp"));
 }

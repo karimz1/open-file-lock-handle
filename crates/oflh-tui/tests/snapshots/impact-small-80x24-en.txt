@@ -1,0 +1,24 @@
+  oflh  ·  Open File Lock Handle                                 1–18 of 165 ↕
+
+  Terminate 8 processes?
+  Request a normal shutdown. Unsaved work may be lost.
+
+  Affected processes (including selections hidden by filters):
+    424242    dotnet
+              dotnet closes completely, with all 7 open windows, such as
+              “scene1.blend - Blender”.
+              1 background process keeps running.
+              Windows (7)
+                scene1.blend - Blender
+                scene2.blend - Blender
+                scene3.blend - Blender
+                scene4.blend - Blender
+                scene5.blend - Blender
+                +2 more
+              Background processes (1)
+                python3  PID 4100
+                Background processes are not closed; some may exit with it.
+  ────────────────────────────────────────────────────────────────────────────
+  ▶ Cancel      Terminate
+  Tab / ←→ choose · d details · ↑↓ PgUp/PgDn scroll · Enter confirm
+  Esc cancel
