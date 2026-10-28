@@ -10,7 +10,8 @@ import {
   Workflow,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
+import { useScrollFades } from "./ScrollArea";
 import { api, type CappedList, type ConfirmationTarget } from "./api";
 import { t, type MessageKey } from "./i18n";
 import {
@@ -19,7 +20,6 @@ import {
   impactRow,
   impactSummary,
   listTotal,
-  scrollFades,
 } from "./termination";
 
 type Kind = "windows" | "children" | "files" | "ports";
@@ -236,28 +236,7 @@ export function ImpactScrollArea({
   children: ReactNode;
 }) {
   const list = useRef<HTMLUListElement>(null);
-  const [fades, setFades] = useState({ top: false, bottom: false });
-  useEffect(() => {
-    const node = list.current;
-    if (!node) return;
-    const update = () =>
-      setFades((old) => {
-        const next = scrollFades(node);
-        return old.top === next.top && old.bottom === next.bottom ? old : next;
-      });
-    update();
-    node.addEventListener("scroll", update, { passive: true });
-    // Expanding Details changes the rows, not the list box, so watch both.
-    const resize = new ResizeObserver(update);
-    resize.observe(node);
-    for (const row of node.children) resize.observe(row);
-    node.addEventListener("toggle", update, true);
-    return () => {
-      node.removeEventListener("scroll", update);
-      node.removeEventListener("toggle", update, true);
-      resize.disconnect();
-    };
-  }, []);
+  const fades = useScrollFades(list);
   return (
     <div
       className="confirmation-scroll"

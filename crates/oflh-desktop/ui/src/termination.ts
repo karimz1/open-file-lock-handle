@@ -137,15 +137,7 @@ export function impactRow(
   return { primary: item, secondary: "" };
 }
 
-/** Which edges of a scroll area hide more content (1px slack for zoom rounding). */
-export function scrollFades(area: {
-  scrollTop: number;
-  scrollHeight: number;
-  clientHeight: number;
-}): { top: boolean; bottom: boolean } {
-  const rest = area.scrollHeight - area.clientHeight - area.scrollTop;
-  return { top: area.scrollTop > 1, bottom: rest > 1 };
-}
+export { scrollFades } from "./ScrollArea";
 
 /** Rows each Details group shows before "Show all". */
 export const IMPACT_PREVIEW = 5;
