@@ -32,6 +32,12 @@ pub struct Impact {
     /// Direct children that are running now. `None` means the process table
     /// could not be read.
     pub children: Option<Vec<Ancestor>>,
+    /// Service manager unit that owns the process and may restart it
+    /// (systemd unit, Windows service, launchd job). Best effort.
+    pub service: Option<String>,
+    /// Windows marks a few processes as critical: ending them stops the
+    /// system. Always `false` on other platforms.
+    pub critical: bool,
 }
 
 /// A display list capped at [`IMPACT_LIST_LIMIT`], with the remainder counted.
@@ -127,6 +133,57 @@ pub fn scanned_resources(process: &Process) -> (Capped, Capped) {
         Capped::new(files),
         Capped::new(ports.into_iter().map(port_label)),
     )
+}
+
+/// The systemd unit that manages a process, from `/proc/<pid>/cgroup`.
+///
+/// Only the deepest cgroup component counts: a desktop app below
+/// `user@1000.service/app.slice/app-….scope` is not restarted by the user
+/// manager, while `…/app.slice/pipewire.service` is a real user service.
+pub fn systemd_unit(cgroup: &str) -> Option<String> {
+    let path = cgroup
+        .lines()
+        .find_map(|line| line.strip_prefix("0::"))
+        .or_else(|| {
+            cgroup
+                .lines()
+                .find_map(|line| line.split_once(":name=systemd:").map(|(_, path)| path))
+        })?;
+    let unit = path.trim().rsplit('/').next()?;
+    (unit.ends_with(".service") && !unit.starts_with("user@")).then(|| unit.to_string())
+}
+
+/// Running jobs from `launchctl list` output (`PID\tStatus\tLabel`).
+///
+/// Apps started from Finder or the Dock show up as `application.*` jobs
+/// without a restart policy, so they are skipped.
+pub fn launchd_jobs(list: &str) -> std::collections::HashMap<u32, String> {
+    list.lines()
+        .filter_map(|line| {
+            let mut fields = line.split('\t');
+            let pid = fields.next()?.trim().parse().ok()?;
+            let label = fields.nth(1)?.trim();
+            (!label.is_empty() && !label.starts_with("application."))
+                .then(|| (pid, label.to_string()))
+        })
+        .collect()
+}
+
+/// Windows processes whose termination stops or reboots the system.
+pub fn windows_critical(pid: u32, name: &str) -> bool {
+    const CRITICAL: &[&str] = &[
+        "system",
+        "smss.exe",
+        "csrss.exe",
+        "wininit.exe",
+        "winlogon.exe",
+        "services.exe",
+        "lsass.exe",
+    ];
+    pid == 4
+        || CRITICAL
+            .iter()
+            .any(|critical| name.eq_ignore_ascii_case(critical))
 }
 
 #[cfg(test)]
@@ -244,5 +301,55 @@ mod tests {
             ports.items,
             ["TCP 3000", "TCP 127.0.0.1:5432", "UDP [::1]:53"]
         );
+    }
+    #[test]
+    fn systemd_unit_uses_the_deepest_service_only() {
+        assert_eq!(
+            systemd_unit("0::/system.slice/nginx.service\n").as_deref(),
+            Some("nginx.service")
+        );
+        assert_eq!(
+            systemd_unit(
+                "0::/user.slice/user-1000.slice/user@1000.service/app.slice/pipewire.service"
+            )
+            .as_deref(),
+            Some("pipewire.service")
+        );
+        assert_eq!(
+            systemd_unit(
+                "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-blender-42.scope"
+            ),
+            None
+        );
+        assert_eq!(
+            systemd_unit("0::/user.slice/user-1000.slice/user@1000.service"),
+            None
+        );
+        assert_eq!(
+            systemd_unit("12:pids:/\n1:name=systemd:/system.slice/cron.service\n").as_deref(),
+            Some("cron.service")
+        );
+        assert_eq!(systemd_unit("0::/docker/abc123"), None);
+        assert_eq!(systemd_unit(""), None);
+    }
+
+    #[test]
+    fn launchd_jobs_skip_stopped_and_app_jobs() {
+        let jobs = launchd_jobs(
+            "PID\tStatus\tLabel\n512\t0\tcom.apple.Finder\n-\t0\tcom.example.idle\n\
+             900\t0\tapplication.org.blenderfoundation.blender.1.2\n77\t-9\thomebrew.mxcl.postgresql\n",
+        );
+        assert_eq!(jobs.len(), 2);
+        assert_eq!(jobs[&512], "com.apple.Finder");
+        assert_eq!(jobs[&77], "homebrew.mxcl.postgresql");
+    }
+
+    #[test]
+    fn windows_critical_covers_system_and_session_processes() {
+        assert!(windows_critical(4, "anything"));
+        assert!(windows_critical(700, "LSASS.EXE"));
+        assert!(windows_critical(600, "csrss.exe"));
+        assert!(!windows_critical(800, "svchost.exe"));
+        assert!(!windows_critical(900, "blender.exe"));
     }
 }

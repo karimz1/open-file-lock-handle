@@ -1322,6 +1322,54 @@ test("short confirmation list shows no scroll fades", async ({ page }) => {
   await expect(area).not.toHaveAttribute("data-fade-top");
 });
 
+test("service warning fits and scrolls in a small confirmation", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 860, height: 560 });
+  await page.addInitScript(
+    () =>
+      ((window as any).__impact = {
+        windows: null,
+        children: {
+          items: Array.from({ length: 8 }, (_, n) => `worker (PID ${50 + n})`),
+          more: 4,
+        },
+        files: { items: ["/var/lib/postgresql/data/pg_wal"], more: 0 },
+        ports: { items: ["TCP 127.0.0.1:5432"], more: 0 },
+        service: "postgresql.service",
+        critical: false,
+      }),
+  );
+  await page.goto("/");
+  const rows = page.getByRole("grid").getByRole("row");
+  await rows.nth(1).click();
+  for (let row = 2; row <= 4; row++)
+    await rows.nth(row).click({ modifiers: ["ControlOrMeta"] });
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.locator(".impact-summary .impact-warning").first(),
+  ).toHaveText("A service will probably restart it right away.");
+  await page.screenshot({ path: "test-results/impact-service.png" });
+  for (const summary of await dialog.locator(".impact-details summary").all())
+    await summary.click();
+  const list = dialog.getByRole("list", { name: "Affected processes" });
+  const service = list.getByRole("heading", { name: "Service" }).last();
+  await expect(
+    list.getByRole("button", { name: "Copy postgresql.service" }).first(),
+  ).toBeAttached();
+  await service.scrollIntoViewIfNeeded();
+  await expect(service).toBeInViewport();
+  const cancel = (await dialog
+    .getByRole("button", { name: "Cancel", exact: true })
+    .boundingBox())!;
+  expect(cancel.y + cancel.height).toBeLessThanOrEqual(560);
+  expect(
+    await list.evaluate((node) => node.scrollHeight - node.clientHeight),
+  ).toBeGreaterThan(0);
+  await page.screenshot({ path: "test-results/impact-service-small.png" });
+});
+
 test("confirmation without impact adds nothing to the target row", async ({
   page,
 }) => {

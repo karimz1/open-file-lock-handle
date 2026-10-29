@@ -117,6 +117,8 @@ export interface TargetImpact {
   children: CappedList | null;
   files: CappedList;
   ports: CappedList;
+  service?: string | null;
+  critical?: boolean;
 }
 export interface ConfirmationTarget {
   key: string;

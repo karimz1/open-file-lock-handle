@@ -33,7 +33,8 @@
     "targets": "all",
     "category": "DeveloperTool",
     "publisher": "Karim Zouine",
-    "homepage": "https://github.com/karimz1/open-file-lock-handle",
+    "homepage": "https://oflh.karimzouine.com/",
+    "copyright": "Copyright © Karim Zouine",
     "shortDescription": "Find processes using files and folders",
     "icon": [
       "icons/32x32.png",
@@ -46,6 +47,15 @@
     "windows": {
       "nsis": {
         "installerHooks": "windows/installer-hooks.nsh",
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "windows/branding/header.bmp",
+        "sidebarImage": "windows/branding/sidebar.bmp",
+        "uninstallerHeaderImage": "windows/branding/header.bmp",
+        "customLanguageFiles": {
+          "English": "windows/languages/English.nsh",
+          "German": "windows/languages/German.nsh",
+          "SimpChinese": "windows/languages/SimpChinese.nsh"
+        },
         "languages": [
           "English",
           "German",

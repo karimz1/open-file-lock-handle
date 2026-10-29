@@ -6,6 +6,10 @@ use std::{
     path::{Path, PathBuf},
     ptr::{null, null_mut},
 };
+use windows_sys::Win32::System::Services::{
+    CloseServiceHandle, ENUM_SERVICE_STATUS_PROCESSW, EnumServicesStatusExW, OpenSCManagerW,
+    SC_ENUM_PROCESS_INFO, SC_HANDLE, SC_MANAGER_ENUMERATE_SERVICE, SERVICE_ACTIVE, SERVICE_WIN32,
+};
 use windows_sys::Win32::{
     Foundation::*,
     Security::*,
@@ -429,6 +433,94 @@ unsafe extern "system" fn collect_window_title(hwnd: HWND, param: isize) -> i32 
 }
 /// Titles of visible, unowned top-level windows by owner PID: the windows a
 /// user sees in the taskbar and that a graceful close request reaches.
+struct ServiceManager(SC_HANDLE);
+impl Drop for ServiceManager {
+    fn drop(&mut self) {
+        // SAFETY: the handle came from OpenSCManagerW and is closed exactly once.
+        unsafe { CloseServiceHandle(self.0) };
+    }
+}
+
+/// Display names of running Win32 services, grouped by hosting PID.
+fn services_by_pid() -> std::io::Result<HashMap<u32, Vec<String>>> {
+    // SAFETY: null machine and database names select the local active database.
+    let handle = unsafe {
+        OpenSCManagerW(
+            std::ptr::null(),
+            std::ptr::null(),
+            SC_MANAGER_ENUMERATE_SERVICE,
+        )
+    };
+    if handle.is_null() {
+        return Err(std::io::Error::last_os_error());
+    }
+    let manager = ServiceManager(handle);
+    // u64 storage keeps the buffer aligned for ENUM_SERVICE_STATUS_PROCESSW.
+    let mut buffer = vec![0u64; 8 * 1024];
+    let mut resume = 0u32;
+    let mut services: HashMap<u32, Vec<String>> = HashMap::new();
+    loop {
+        let (mut needed, mut count) = (0u32, 0u32);
+        // SAFETY: the buffer is writable for the passed byte size; the out
+        // pointers are valid locals; the group filter is null (all groups).
+        let ok = unsafe {
+            EnumServicesStatusExW(
+                manager.0,
+                SC_ENUM_PROCESS_INFO,
+                SERVICE_WIN32,
+                SERVICE_ACTIVE,
+                buffer.as_mut_ptr().cast(),
+                (buffer.len() * 8).min(u32::MAX as usize) as u32,
+                &mut needed,
+                &mut count,
+                &mut resume,
+                std::ptr::null(),
+            )
+        };
+        let more = ok == 0 && {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() != Some(windows_sys::Win32::Foundation::ERROR_MORE_DATA as i32)
+            {
+                return Err(error);
+            }
+            true
+        };
+        // SAFETY: on success or ERROR_MORE_DATA the first `count` entries are
+        // initialized, and their strings point into `buffer`, which outlives
+        // this slice.
+        let entries = unsafe {
+            std::slice::from_raw_parts(
+                buffer.as_ptr().cast::<ENUM_SERVICE_STATUS_PROCESSW>(),
+                count as usize,
+            )
+        };
+        for entry in entries {
+            let pid = entry.ServiceStatusProcess.dwProcessId;
+            if pid == 0 || entry.lpDisplayName.is_null() {
+                continue;
+            }
+            let mut len = 0;
+            // SAFETY: lpDisplayName is a NUL-terminated string inside `buffer`.
+            let name = unsafe {
+                while *entry.lpDisplayName.add(len) != 0 {
+                    len += 1
+                }
+                std::slice::from_raw_parts(entry.lpDisplayName, len)
+            };
+            services
+                .entry(pid)
+                .or_default()
+                .push(String::from_utf16_lossy(name));
+        }
+        if !more {
+            return Ok(services);
+        }
+        if count == 0 {
+            buffer.resize((needed as usize).div_ceil(8).max(buffer.len() * 2), 0);
+        }
+    }
+}
+
 fn window_titles() -> Result<HashMap<u32, Vec<String>>> {
     let mut titles = HashMap::new();
     // SAFETY: callback receives a pointer to the map, valid for synchronous EnumWindows.
@@ -665,16 +757,46 @@ impl Backend for Native {
     }
     fn impact(&mut self, ids: &[Identity]) -> Vec<impact::Impact> {
         let mut titles = window_titles().ok();
-        children_for(process_table(), ids)
+        let mut services = services_by_pid().ok();
+        let table = process_table();
+        let names: HashMap<u32, String> = table
+            .as_ref()
+            .map(|table| {
+                table
+                    .iter()
+                    .map(|entry| (entry.identity.pid, entry.name.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        children_for(table, ids)
             .into_iter()
             .zip(ids)
-            .map(|(children, &id)| impact::Impact {
-                // A PID read before EnumWindows must still name the same lifetime.
-                windows: titles
-                    .as_mut()
-                    .filter(|_| read_identity(id.pid).is_ok_and(|live| live == id))
-                    .map(|titles| titles.remove(&id.pid).unwrap_or_default()),
-                children,
+            .map(|(children, &id)| {
+                // A PID read before EnumWindows or the service list must still
+                // name the same lifetime.
+                let live = read_identity(id.pid).is_ok_and(|live| live == id);
+                impact::Impact {
+                    windows: titles
+                        .as_mut()
+                        .filter(|_| live)
+                        .map(|titles| titles.remove(&id.pid).unwrap_or_default()),
+                    children,
+                    service: services
+                        .as_mut()
+                        .filter(|_| live)
+                        .and_then(|services| services.remove(&id.pid))
+                        .and_then(|names| {
+                            let first = names.first()?.clone();
+                            Some(match names.len() {
+                                1 => first,
+                                n => format!("{first} +{}", n - 1),
+                            })
+                        }),
+                    critical: impact::windows_critical(
+                        id.pid,
+                        names.get(&id.pid).map_or("", String::as_str),
+                    ),
+                }
             })
             .collect()
     }
