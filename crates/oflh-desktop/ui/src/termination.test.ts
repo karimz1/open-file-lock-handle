@@ -253,3 +253,55 @@ describe("confirmation wording", () => {
     expect(long).toBe("A very long…");
   });
 });
+
+describe("service hint", () => {
+  const base = {
+    key: "4:1:0",
+    name: "svchost.exe",
+    pid: 900,
+    role: "holder" as const,
+  };
+  const empty = { items: [], more: 0 };
+  it("warns first about critical processes and restarting services", () => {
+    expect(
+      impactSummary({
+        ...base,
+        impact: {
+          windows: null,
+          children: { items: ["child (PID 2)"], more: 0 },
+          files: empty,
+          ports: empty,
+          service: "Print Spooler",
+          critical: true,
+        },
+      }).map(({ key, warn, values }) => ({ key, warn, values })),
+    ).toEqual([
+      { key: "termination.k_impact_critical", warn: true, values: {} },
+      {
+        key: "termination.k_impact_service",
+        warn: true,
+        values: { service: "Print Spooler" },
+      },
+      {
+        key: "termination.k_impact_children_one",
+        warn: false,
+        values: { count: 1 },
+      },
+    ]);
+  });
+  it("adds nothing for unmanaged processes", () => {
+    expect(
+      impactSummary({
+        ...base,
+        impact: {
+          windows: null,
+          children: null,
+          files: empty,
+          ports: empty,
+          service: null,
+          critical: false,
+        },
+      }),
+    ).toEqual([]);
+  });
+});

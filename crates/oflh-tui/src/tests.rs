@@ -1180,6 +1180,7 @@ fn blender_impact() -> oflh_core::impact::Impact {
             },
             name: "python3".into(),
         }]),
+        ..Default::default()
     }
 }
 
@@ -1284,6 +1285,7 @@ fn confirmation_adds_nothing_without_notable_impact() {
         vec![oflh_core::impact::Impact {
             windows: Some(vec!["Only window".into()]),
             children: Some(vec![]),
+            ..Default::default()
         }],
     );
     key(&mut app, K::Char('d'));
@@ -1454,4 +1456,71 @@ fn space_shows_every_item_in_a_group_and_collapses_again() {
     key(&mut app, K::Esc);
     key(&mut app, K::Char('k'));
     assert!(!app.impact_all && !app.impact_details);
+}
+
+#[test]
+fn confirmation_warns_about_services_and_critical_processes() {
+    let mut app = self::app();
+    app.snapshot.processes[0].usages.truncate(1);
+    let id = app.snapshot.processes[0].identity;
+    key(&mut app, K::Char('k'));
+    app.accept_impact(
+        &[id],
+        vec![oflh_core::impact::Impact {
+            service: Some("dotnet-worker.service".into()),
+            critical: true,
+            ..Default::default()
+        }],
+    );
+    let flat = |text: String| text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let text = flat(render_confirm(&mut app, "impact-service-en"));
+    assert!(
+        text.contains(
+            "Windows needs this process. Ending it can crash your PC. A service will probably restart it right away."
+        ),
+        "{text}"
+    );
+    key(&mut app, K::Char('d'));
+    let text = flat(render_confirm(&mut app, "impact-service-details-en"));
+    assert!(
+        text.contains("Service dotnet-worker.service may restart it"),
+        "{text}"
+    );
+    app.language = Language::German;
+    let text = flat(render_confirm(&mut app, "impact-service-de"));
+    assert!(
+        text.contains("Ein Dienst startet es wahrscheinlich sofort neu."),
+        "{text}"
+    );
+}
+
+#[test]
+fn service_line_fits_and_scrolls_in_small_terminals() {
+    for (width, height) in [(80u16, 24u16), (60, 20)] {
+        let mut app = crowded_confirmation();
+        let mut impact = blender_impact();
+        impact.service = Some("blender-render.service".into());
+        let ids: Vec<_> = app.pending.iter().map(|target| target.identity).collect();
+        app.accept_impact(&ids, ids.iter().map(|_| impact.clone()).collect());
+        let top = render_confirm_at(
+            &mut app,
+            &format!("impact-service-{width}x{height}"),
+            width,
+            height,
+        );
+        assert!(top.contains("A service will probably"), "{top}");
+        assert!(
+            top.lines()
+                .all(|row| unicode_width::UnicodeWidthStr::width(row) <= width as usize)
+        );
+        assert!(top.contains("Cancel") && top.contains("Close"));
+        let mut seen = false;
+        for _ in 0..80 {
+            key(&mut app, K::Char('j'));
+            let now = render_confirm_at(&mut app, "impact-service-scroll", width, height);
+            assert!(now.contains("Cancel") && now.contains("Close"));
+            seen |= now.contains("blender-render.service");
+        }
+        assert!(seen, "service row is reachable by scrolling");
+    }
 }
