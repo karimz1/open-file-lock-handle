@@ -51,8 +51,12 @@ pub struct RawSession {
     pub domain: String,
     /// WTSClientName.
     pub client: String,
-    /// WTSClientProtocolType: 0 console, 1 legacy ICA, 2 RDP.
+    /// WTSClientProtocolType: 0 console, 1 legacy ICA, 2 RDP. Windows also
+    /// reports 0 for a disconnected RDP session, so 0 alone does not mean console.
     pub protocol: u16,
+    /// `id == WTSGetActiveConsoleSessionId()`: the session attached to the
+    /// physical console.
+    pub console: bool,
     /// WTSINFO LogonTime (FILETIME ticks).
     pub logon_time: i64,
     /// WTSINFO ConnectTime (FILETIME ticks).
@@ -69,7 +73,7 @@ pub fn map(raw: RawSession) -> Option<Session> {
         SessionKind::Services
     } else if raw.protocol == 2 || station.starts_with("rdp") {
         SessionKind::Rdp
-    } else if station == "console" || raw.protocol == 0 {
+    } else if raw.console || station == "console" {
         SessionKind::Console
     } else {
         SessionKind::Other

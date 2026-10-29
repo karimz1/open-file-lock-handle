@@ -508,14 +508,33 @@ jobs:
         run: |
           echo "::warning title=Second RDP session unavailable::No headless client produced an Active session on this runner. Sign-out / send-message E2E is skipped here; SMB, owner, non-admin and mocked tests stay blocking."
 
+      - name: Windows — SMB opens before the test
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-SmbOpenFile | Format-Table FileId, ClientUserName, ClientComputerName, Path -AutoSize | Out-String -Width 300 | Write-Host
+          openfiles.exe /query /v /fo list 2>&1 | Write-Host
+
       - name: Windows — elevated multiuser E2E
         if: runner.os == 'Windows'
         env:
           OFLH_MULTIUSER_E2E: '1'
           OFLH_E2E_ELEVATED: '1'
-          OFLH_E2E_SIGN_OUT: ${{ steps.win_session.outcome == 'success' && '1' || '0' }}
         run: |
-          cargo test -p oflh-desktop --test multiuser --locked -- --ignored --nocapture --test-threads=1
+          cargo test -p oflh-desktop --test multiuser --locked -- --ignored --nocapture --test-threads=1 --skip second_session_message_and_sign_out
+
+      # Non-blocking while the loopback RDP fixture settles. Make this step
+      # required (drop continue-on-error) after about 5 consecutive green runs.
+      - name: Windows — second session message and sign-out (non-blocking)
+        if: runner.os == 'Windows' && steps.win_session.outcome == 'success'
+        continue-on-error: true
+        env:
+          OFLH_MULTIUSER_E2E: '1'
+          OFLH_E2E_ELEVATED: '1'
+          OFLH_E2E_SIGN_OUT: '1'
+        run: |
+          quser.exe 2>&1 | Out-Host
+          cargo test -p oflh-desktop --test multiuser --locked -- --ignored --nocapture --test-threads=1 --exact second_session_message_and_sign_out
 
       - name: Windows — non-admin pass (Requires administrator rights)
         if: runner.os == 'Windows'

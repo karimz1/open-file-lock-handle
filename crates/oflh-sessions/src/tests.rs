@@ -75,6 +75,7 @@ fn wts_mapping_handles_console_rdp_services_and_listeners() {
         domain: "CORP".into(),
         client: "LAPTOP-7".into(),
         protocol: 2,
+        console: false,
         logon_time: filetime(1_700_000_000),
         connect_time: 0,
     })
@@ -103,6 +104,43 @@ fn wts_mapping_handles_console_rdp_services_and_listeners() {
     );
     assert_eq!(console.client, None);
     assert_eq!(console.since, Some(1_600_000_000));
+    // The active console session, whatever its station name.
+    let attached = wts::map(wts::RawSession {
+        id: 2,
+        station: "Console".into(),
+        state: wts::state::ACTIVE,
+        user: "runneradmin".into(),
+        console: true,
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(attached.kind, SessionKind::Console);
+    // A disconnected RDP session loses its station name and reports protocol 0.
+    // It is not the console, so it must not be labelled as one.
+    let disconnected = wts::map(wts::RawSession {
+        id: 1,
+        station: String::new(),
+        state: wts::state::DISCONNECTED,
+        user: "oflh_u2".into(),
+        protocol: 0,
+        console: false,
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(
+        (disconnected.kind, disconnected.state),
+        (SessionKind::Other, SessionState::Disconnected)
+    );
+    // Protocol 2 is RDP even without a station name.
+    let connected = wts::map(wts::RawSession {
+        id: 5,
+        state: wts::state::ACTIVE,
+        user: "lee".into(),
+        protocol: 2,
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(connected.kind, SessionKind::Rdp);
     let services = wts::map(wts::RawSession {
         id: 0,
         station: "Services".into(),
@@ -160,6 +198,10 @@ fn share_file_matches_target_file_or_folder() {
     assert!(!file.matches(Path::new("C:\\Share"), false));
     assert!(!file.matches(Path::new("C:\\Sha"), true));
     assert!(!file.matches(Path::new(""), true));
+    // Canonicalized targets carry the verbatim prefix; NetFileEnum paths do not.
+    assert!(file.matches(Path::new(r"\\?\C:\Share\Reports\Q3.xlsx"), false));
+    assert!(file.matches(Path::new(r"\\?\c:\share"), true));
+    assert!(!file.matches(Path::new(r"\\?\C:\Sha"), true));
 }
 
 #[test]

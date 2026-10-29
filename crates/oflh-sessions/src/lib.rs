@@ -187,11 +187,23 @@ impl ShareFile {
     /// Whether this open is the inspected file, or inside the inspected folder.
     /// Windows paths compare case-insensitively with either slash.
     pub fn matches(&self, target: &Path, directory: bool) -> bool {
+        // NetFileEnum reports plain `C:\dir\file` paths, while an inspected
+        // target is canonicalized into the verbatim `\\?\C:\dir\file` form.
         let norm = |value: &str| {
-            value
-                .replace('/', "\\")
-                .trim_end_matches('\\')
-                .to_lowercase()
+            let value = value.replace('/', "\\");
+            let value = if let Some(rest) = value
+                .strip_prefix(r"\\?\UNC\")
+                .or_else(|| value.strip_prefix(r"\\?\unc\"))
+            {
+                format!(r"\\{rest}")
+            } else {
+                value
+                    .strip_prefix(r"\\?\")
+                    .or_else(|| value.strip_prefix(r"\??\"))
+                    .unwrap_or(&value)
+                    .to_owned()
+            };
+            value.trim_end_matches('\\').to_lowercase()
         };
         let open = norm(&self.path);
         let target = norm(&target.to_string_lossy());

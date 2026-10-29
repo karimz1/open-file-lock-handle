@@ -129,8 +129,19 @@ switch ($Stage) {
           Start-Process wsl.exe -ArgumentList '-d', 'Ubuntu', '-u', 'root', '--', 'xvfb-run', '-a', 'xfreerdp', "/v:$hostIp", "/u:$U2", "/p:$env:PW_OFLH_U2", '/cert:ignore' -PassThru -WindowStyle Hidden } },
       @{ Name = 'python aardwolf'; Start = {
           python -m pip install --quiet aardwolf 2>&1 | Write-Host
-          $env:RDP_USER = $U2; $env:RDP_PASSWORD = $env:PW_OFLH_U2
-          Start-Process python -ArgumentList "`"$Here\aardwolf_connect.py`"" -PassThru -WindowStyle Hidden -RedirectStandardError "$Run\aardwolf.err" } }
+          # Run the client from a scheduled task, outside this step's process tree, so
+          # it stays connected after the step ends. A client that exits disconnects the
+          # session and Windows then reports it with no station and protocol 0.
+          $python = (Get-Command python).Source
+          $cmd = "$Run\aardwolf.cmd"
+          Set-Content $cmd @('@echo off', "set RDP_USER=$U2", "set RDP_PASSWORD=$env:PW_OFLH_U2", "`"$python`" `"$Here\aardwolf_connect.py`" > `"$Run\aardwolf.log`" 2>&1") -Encoding ascii
+          icacls $cmd /inheritance:r /grant 'SYSTEM:F' 'Administrators:F' | Out-Null
+          $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c `"$cmd`""
+          $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+          $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -AllowStartIfOnBatteries
+          Register-ScheduledTask -TaskName 'oflh-rdp-client' -Action $action -Principal $principal -Settings $settings -Force | Out-Null
+          Start-ScheduledTask -TaskName 'oflh-rdp-client'
+          $null } }
     )
     foreach ($client in $clients) {
       Write-Host "::group::RDP loopback with $($client.Name)"
@@ -151,6 +162,8 @@ switch ($Stage) {
         exit 0
       }
       if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+      Stop-ScheduledTask -TaskName 'oflh-rdp-client' -ErrorAction SilentlyContinue
+      Get-Content "$Run\aardwolf.log" -ErrorAction SilentlyContinue | Write-Host
     }
     Write-Host "::warning title=Second RDP session unavailable::No headless client produced an Active session for $U2 on this runner. The sign-out / send-message E2E is skipped here; SMB, owner, non-admin and mocked tests still ran and are blocking."
     exit 1

@@ -13,8 +13,8 @@ use windows_sys::Win32::{
     System::RemoteDesktop::{
         ProcessIdToSessionId, WTS_CURRENT_SERVER_HANDLE, WTS_INFO_CLASS, WTS_SESSION_INFOW,
         WTSClientName, WTSClientProtocolType, WTSDomainName, WTSEnumerateSessionsW, WTSFreeMemory,
-        WTSINFOW, WTSLogoffSession, WTSQuerySessionInformationW, WTSSendMessageW, WTSSessionInfo,
-        WTSUserName,
+        WTSGetActiveConsoleSessionId, WTSINFOW, WTSLogoffSession, WTSQuerySessionInformationW,
+        WTSSendMessageW, WTSSessionInfo, WTSUserName,
     },
 };
 
@@ -107,6 +107,8 @@ fn raw(info: &WTS_SESSION_INFOW) -> RawSession {
         domain: text(id, WTSDomainName),
         client: text(id, WTSClientName),
         protocol,
+        // SAFETY: no arguments; returns 0xFFFFFFFF while no console session is attached.
+        console: id == unsafe { WTSGetActiveConsoleSessionId() },
         logon_time: times.0,
         connect_time: times.1,
     }
