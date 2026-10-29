@@ -63,6 +63,7 @@ import {
   type ColumnFilters,
 } from "./api";
 import { acceptStatus, initialStatus, selectKey } from "./state";
+import { readOpenMaximized, writeOpenMaximized } from "./windowStartup";
 import { scanDuration } from "./scanDuration";
 import { normalizeTypedPath } from "./targetPath";
 import { TargetHelp } from "./TargetHelp";
@@ -191,6 +192,9 @@ export function App() {
       return 14;
     }
   });
+  const [openMaximized, setOpenMaximized] = useState(() =>
+    readOpenMaximized(localStorage),
+  );
   const [autoReloadSeconds, setAutoReloadSeconds] = useState(0);
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontSize}px`;
@@ -1864,6 +1868,27 @@ export function App() {
                       </option>
                     ))}
                   </select>
+                </div>
+              </section>
+              <section className="setting-section">
+                <div>
+                  <h3>{t("settings.k_window")}</h3>
+                  <p className="muted">
+                    {t("settings.k_open_window_maximized_help")}
+                  </p>
+                </div>
+                <div className="font-setting">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={openMaximized}
+                      onChange={(event) => {
+                        setOpenMaximized(event.target.checked);
+                        writeOpenMaximized(localStorage, event.target.checked);
+                      }}
+                    />
+                    {t("settings.k_open_window_maximized")}
+                  </label>
                 </div>
               </section>
               <section className="setting-section">

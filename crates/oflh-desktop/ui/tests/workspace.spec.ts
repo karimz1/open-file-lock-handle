@@ -125,6 +125,10 @@ test.beforeEach(async ({ page }) => {
       __testCalls: calls,
       __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
       __TAURI_INTERNALS__: {
+        metadata: {
+          currentWindow: { label: "main" },
+          currentWebview: { windowLabel: "main", label: "main" },
+        },
         transformCallback(callback: (payload: unknown) => void) {
           callbacks.set(++callbackId, callback);
           return callbackId;
@@ -2292,6 +2296,41 @@ for (const mode of ["install", "download"] as const) {
     }
   });
 }
+
+test("Open window maximized is off by default, persists, and maximizes on the next launch", async ({
+  page,
+}) => {
+  const maximizeCalls = async () =>
+    (await page.evaluate(() => (window as any).__testCalls)).filter(
+      (call: any) => call.command === "plugin:window|maximize",
+    );
+  await page.goto("/");
+  await page.keyboard.press("Control+,");
+  const toggle = page.getByRole("checkbox", { name: "Open window maximized" });
+  await expect(toggle).not.toBeChecked();
+  expect(await maximizeCalls()).toHaveLength(0);
+  await page.screenshot({
+    path: "test-results/open-maximized-setting.png",
+    clip: (await toggle.locator("xpath=ancestor::section[1]").boundingBox())!,
+  });
+  await toggle.check();
+  expect(
+    await page.evaluate(() => localStorage.getItem("oflh-open-maximized")),
+  ).toBe("1");
+  // The change applies from the next launch, not to the running window.
+  expect(await maximizeCalls()).toHaveLength(0);
+  await page.reload();
+  await expect.poll(async () => (await maximizeCalls()).length).toBe(1);
+  expect((await maximizeCalls())[0].args).toMatchObject({ label: "main" });
+  await page.keyboard.press("Control+,");
+  await expect(toggle).toBeChecked();
+  await toggle.uncheck();
+  await page.reload();
+  await expect(
+    page.getByRole("checkbox", { name: "Open window maximized" }),
+  ).toHaveCount(0);
+  expect(await maximizeCalls()).toHaveLength(0);
+});
 
 test("Settings reports when no update is available and links to the releases page", async ({
   page,

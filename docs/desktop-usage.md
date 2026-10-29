@@ -273,6 +273,10 @@ between Light and VS Code Dark with your OS. Settings also controls font size
 and language (English, German, Simplified Chinese, or the system language). The
 app remembers theme, font size, language, and details panel width.
 
+**Open window maximized** (Settings, off by default) starts the window
+maximized. It stays a normal window: the title bar's restore button returns it
+to 1280 × 800. The setting applies from the next launch.
+
 ## Updates
 
 The app checks for a new release at startup and hourly. An available update

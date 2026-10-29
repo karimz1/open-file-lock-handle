@@ -442,6 +442,10 @@ const en = {
     k_selection_copied: "Selection copied",
   },
   settings: {
+    k_open_window_maximized: "Open window maximized",
+    k_open_window_maximized_help:
+      "Start OFLH maximized. You can still restore and resize the window. Applies from the next launch.",
+    k_window: "Window",
     k_about_oflh: "About OFLH",
     k_appearance: "Appearance",
     k_interface_font_size: "Interface font size",
