@@ -143,8 +143,6 @@ const zh: TranslationSchema<typeof en> = {
   },
   filters: {
     k_access_relation: "访问权限 / 关联类型",
-    k_all_targets_are_listed_below_including_1515b80a:
-      "下方列出了全部目标，包括被筛选器隐藏的目标。",
     k_any_evidence: "任意证据",
     k_applied_column_filters: "已应用的列筛选",
     k_apply_filters: "应用筛选",
@@ -456,6 +454,53 @@ const zh: TranslationSchema<typeof en> = {
     k_visible_columns: "可见列",
   },
   termination: {
+    k_impact_targets_label: "受影响的进程",
+    k_impact_windows:
+      "{{name}} 将完全关闭，包括全部 {{count}} 个打开的窗口，例如“{{title}}”。",
+    k_impact_children_one: "1 个后台进程会继续运行。",
+    k_impact_children_other: "{{count}} 个后台进程会继续运行。",
+    k_impact_files_one: "另外 1 个已打开的文件也会被释放。",
+    k_impact_files_other: "另外 {{count}} 个已打开的文件也会被释放。",
+    k_impact_ports_one: "1 个网络端口上的连接将断开。",
+    k_impact_ports_other: "{{count}} 个网络端口上的连接将断开。",
+    k_impact_group_windows: "窗口（{{count}}）",
+    k_impact_group_children: "后台进程（{{count}}）",
+    k_impact_group_files: "文件（{{count}}）",
+    k_impact_group_ports: "端口（{{count}}）",
+    k_impact_copy: "复制 {{value}}",
+    k_impact_details: "详情",
+    k_impact_windows_unavailable: "此系统不提供窗口标题。",
+    k_impact_children_note:
+      "子进程不会被终止，通常会继续运行，但部分可能随此进程一起退出。",
+    k_impact_show_all: "显示全部 {{count}} 项",
+    k_impact_show_less: "收起",
+    k_impact_not_listed: "另有 {{count}} 项未列出",
+    k_impact_filter: "筛选列表",
+    k_impact_filter_placeholder: "筛选…",
+    k_impact_filter_count: "{{shown}} / {{total}}",
+    k_impact_filter_none: "无匹配项",
+    k_confirm_title_one: "关闭 {{name}}？",
+    k_confirm_title_many: "关闭 {{count}} 个进程？",
+    k_force_title_one: "强制结束 {{name}}？",
+    k_force_title_many: "强制结束 {{count}} 个进程？",
+    k_confirm_button_one: "关闭 {{name}}",
+    k_confirm_button_many: "关闭 {{count}} 个进程",
+    k_force_button_one: "强制结束 {{name}}",
+    k_force_button_many: "强制结束 {{count}} 个进程",
+    k_confirm_note_one: "OFLH 会请求程序关闭。未保存的工作可能丢失。",
+    k_confirm_note_many: "OFLH 会请求每个程序关闭。未保存的工作可能丢失。",
+    k_force_note_one:
+      "OFLH 会立即结束它，不给它保存的机会。未保存的工作将会丢失。",
+    k_force_note_many:
+      "OFLH 会立即结束它们，不给它们保存的机会。未保存的工作将会丢失。",
+    k_safety_summary: "OFLH 如何确保安全",
+    k_safety_listed: "已列出所有选中的进程，包括被筛选隐藏的进程。",
+    k_safety_identity:
+      "发送前 OFLH 会再次核对每个进程，绝不会误伤被复用的 PID。",
+    k_safety_no_escalation:
+      "程序未关闭时，OFLH 不会强制结束。如需强制，请使用“强制结束”。",
+    k_impact_latest_scan: "依据最近一次扫描及打开此对话框时的进程检查。",
+    k_role_parent: "父进程",
     k_retry_admin: "以管理员权限重试…",
     k_admin_recovery:
       "权限不足。您可以授权对原始目标重试。管理员权限不保证成功。",
@@ -463,18 +508,12 @@ const zh: TranslationSchema<typeof en> = {
       "操作系统将为每个目标请求管理员授权。保留原来的终止方式。取消将停止后续请求。",
 
     k_normal_termination_recovery:
-      "部分进程无法正常终止。您可以使用强制终止，在不执行清理的情况下停止它们。未保存的工作可能会丢失。",
+      "部分进程无法正常终止。您可以使用强制终止，在不执行清理的情况下停止它们。未保存的工作可能丢失。",
     k_force_terminate: "强制终止…",
-    k_force_terminate_7b6445b3: "强制终止",
     k_force_terminate_parent: "强制终止父进程…",
     k_force_terminate_process: "强制终止进程…",
-    k_force_terminate_processes: "强制终止这些进程？",
-    k_force_termination_stops_these_processes_9c247038:
-      "强制终止会立即停止这些进程，不允许正常清理。未保存的工作可能丢失。",
     k_local_bindings_do_not_prove_external_re_a5cdb1ad:
       "本地绑定不代表可从外部访问。持有者未知时无法终止进程。",
-    k_oflh_validates_each_captured_process_id_5e6d1cc4:
-      "发送请求前，OFLH 会再次验证扫描时获取的每个进程身份。",
     k_process_changed_or_already_exited_no_te_9b7e90d2:
       "进程已变化或已退出。未发送终止请求。",
     k_process_exited: "进程已退出",
@@ -482,15 +521,11 @@ const zh: TranslationSchema<typeof en> = {
     k_request_sent_couldn_t_verify_exit: "已发送请求 · 无法确认退出",
     k_request_sent_still_running_after_1_5_seconds:
       "已发送请求 · 1.5 秒后仍在运行",
-    k_request_these_processes_to_stop_unsaved_8b80fb41:
-      "请求这些进程停止。未保存的工作可能丢失。不会自动升级为强制终止。",
     k_stopping_a_parent_may_close_its_childre_04c26acd:
       "停止父进程可能关闭其子进程或你的会话。",
     k_terminate: "终止…",
-    k_terminate_77517bd0: "终止",
     k_terminate_parent: "终止父进程…",
     k_terminate_process: "终止进程…",
-    k_terminate_processes: "终止这些进程？",
     k_termination_request_failed: "终止请求失败",
     k_termination_results: "终止结果",
     k_unknown_cpu_and_memory_stay_unavailable_1ca3b23b:

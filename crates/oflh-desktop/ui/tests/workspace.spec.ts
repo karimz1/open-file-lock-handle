@@ -21,7 +21,7 @@ test.beforeEach(async ({ page }) => {
     const processRows = Array.from({ length: 1500 }, (_, index) => ({
       key: `${4000 + index}:18446744073709551615:0/exe`,
       process_key: `${4000 + index}:18446744073709551615:0`,
-      name: ["Code", "node", "rust-analyzer", "cargo", "FixtureWorker"][
+      name: ["Blender", "node", "rust-analyzer", "cargo", "FixtureWorker"][
         index % 5
       ],
       pid: 4000 + index,
@@ -414,7 +414,16 @@ test.beforeEach(async ({ page }) => {
               force: args.force,
               targets: args.keys.map((key: string) => {
                 const row = processRows.find((row) => row.process_key === key)!;
-                return { key, name: row.name, pid: row.pid };
+                return {
+                  key,
+                  name: row.name,
+                  pid: row.pid,
+                  role: "holder",
+                  impact:
+                    typeof (window as any).__impact === "function"
+                      ? (window as any).__impact(row.name)
+                      : (window as any).__impact,
+                };
               }),
             };
           if (command === "prepare_elevated")
@@ -434,7 +443,14 @@ test.beforeEach(async ({ page }) => {
             return {
               ticket: "parent-ticket",
               force: args.force,
-              targets: [{ key: args.key, name: "fixture-shell", pid: 3000 }],
+              targets: [
+                {
+                  key: args.key,
+                  name: "fixture-shell",
+                  pid: 3000,
+                  role: "ancestor",
+                },
+              ],
             };
           if (command === "terminate" && (window as any).__terminationResults) {
             return (window as any).__terminationResults;
@@ -1078,7 +1094,7 @@ test("hidden selection confirmation defaults to cancel and preserves force mode"
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
   await page.getByRole("button", { name: "Terminate…", exact: true }).click();
-  await dialog.getByRole("button", { name: "Terminate", exact: true }).click();
+  await dialog.getByRole("button", { name: /^Close (?!dialog)/ }).click();
   await expect(
     page.getByText(
       "Process changed or already exited. No termination was sent.",
@@ -1100,6 +1116,231 @@ test("hidden selection confirmation defaults to cancel and preserves force mode"
       .filter((call) => call.command === "prepare")
       .map((call) => call.args.force),
   ).toEqual([true, false]);
+});
+
+const blenderImpact = {
+  windows: {
+    items: ["scene.blend - Blender", "render.blend - Blender", "Preferences"],
+    more: 0,
+  },
+  children: { items: ["python3 (PID 4100)"], more: 0 },
+  files: {
+    items: [
+      "/build/scene.blend",
+      "/build/textures/a.png",
+      "/build/textures/b.png",
+      "/build/textures/c.png",
+      "/build/textures/d.png",
+    ],
+    more: 4,
+  },
+  ports: { items: ["TCP 3000"], more: 0 },
+};
+
+test("confirmation shows one impact line and reveals capped details on demand", async ({
+  page,
+}) => {
+  await page.addInitScript(
+    (impact) => ((window as any).__impact = impact),
+    blenderImpact,
+  );
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  const summary = dialog.locator(".impact-summary");
+  await expect(summary).toHaveText(
+    "Blender closes completely, with all 3 open windows, such as “scene.blend - Blender”. 1 background process keeps running.",
+  );
+  await expect(summary.locator(".impact-warning")).toHaveText(
+    "Blender closes completely, with all 3 open windows, such as “scene.blend - Blender”.",
+  );
+  await expect(dialog.getByText("render.blend - Blender")).toBeHidden();
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  const box = await dialog.boundingBox();
+  await page.screenshot({ path: "test-results/impact-collapsed.png" });
+  await dialog.locator(".impact-details summary").first().focus();
+  await page.keyboard.press("Enter");
+  await expect(dialog.getByText("render.blend - Blender")).toBeVisible();
+  await expect(
+    dialog.getByRole("heading", { name: "Windows (3)" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("heading", { name: "Background processes (1)" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("heading", { name: "Files (9)" }),
+  ).toBeVisible();
+  await expect(
+    dialog.locator(".impact-primary", { hasText: "python3" }),
+  ).toBeVisible();
+  await expect(dialog.getByText("PID 4100")).toBeVisible();
+  // Rust kept five of nine files; expanding says the rest were not listed.
+  const showFiles = dialog.getByRole("button", { name: "Show all 9" });
+  await expect(showFiles).toHaveAttribute("aria-expanded", "false");
+  await showFiles.focus();
+  await page.keyboard.press("Enter");
+  const lessFiles = dialog.getByRole("button", { name: "Show less" });
+  await expect(lessFiles).toBeFocused();
+  await expect(lessFiles).toHaveAttribute("aria-expanded", "true");
+  await expect(dialog.getByText("+4 more not listed")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(showFiles).toBeFocused();
+  await expect(dialog.getByText("+4 more not listed")).toBeHidden();
+  // Short groups never show the control.
+  await expect(
+    dialog.getByRole("button", { name: /^Show all 3$/ }),
+  ).toHaveCount(0);
+  await expect(
+    dialog.locator(".impact-secondary[title='/build/textures/a.png']"),
+  ).toHaveText("/build/textures");
+  await dialog.getByRole("button", { name: "Copy 4100" }).focus();
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).__testCalls.some(
+          (call: any) =>
+            call.command === "copy_diagnostic" && call.args.text === "4100",
+        ),
+      ),
+    )
+    .toBe(true);
+  await dialog.locator(".impact-details summary").first().focus();
+  await expect(
+    dialog.getByText("They are not terminated and usually keep running."),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText("Based on the latest scan", { exact: false }),
+  ).toBeVisible();
+  await page.screenshot({ path: "test-results/impact-expanded.png" });
+  expect((await dialog.boundingBox())!.width).toBe(box!.width);
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+});
+
+for (const [width, height] of [
+  [800, 600],
+  [860, 560],
+]) {
+  test(`expanded impact scrolls inside the confirmation at ${width}x${height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.addInitScript(
+      (impact) =>
+        ((window as any).__impact = (name: string) =>
+          name === "Blender"
+            ? impact
+            : { ...impact, windows: { items: [`${name} – main`], more: 0 } }),
+      blenderImpact,
+    );
+    await page.goto("/");
+    const rows = page.getByRole("grid").getByRole("row");
+    await rows.nth(1).click();
+    for (let row = 2; row <= 6; row++)
+      await rows.nth(row).click({ modifiers: ["ControlOrMeta"] });
+    await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    const list = dialog.getByRole("list", { name: "Affected processes" });
+    await expect(list.locator(":scope > li")).toHaveCount(6);
+    for (const summary of await dialog.locator(".impact-details summary").all())
+      await summary.click();
+    const inViewport = async (locator: typeof dialog) => {
+      const box = (await locator.boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(height);
+    };
+    await inViewport(dialog);
+    await inViewport(dialog.locator("#dialog-title"));
+    await inViewport(
+      dialog.getByRole("button", { name: "Cancel", exact: true }),
+    );
+    await inViewport(dialog.getByRole("button", { name: /^Close (?!dialog)/ }));
+    const metrics = () =>
+      list.evaluate((node) => ({
+        top: node.scrollTop,
+        overflow: node.scrollHeight - node.clientHeight,
+        bar: (node as HTMLElement).offsetWidth - node.clientWidth,
+      }));
+    const area = dialog.locator(".confirmation-scroll");
+    const fade = (edge: "::before" | "::after") =>
+      area.evaluate(
+        (node, edge) => Number(getComputedStyle(node, edge).opacity),
+        edge,
+      );
+    await list.evaluate((node) => node.scrollTo({ top: 0 }));
+    await expect.poll(async () => (await metrics()).top).toBe(0);
+    const before = await metrics();
+    expect(before.overflow).toBeGreaterThan(0);
+    await expect(area).toHaveAttribute("data-fade-bottom", "true");
+    await expect(area).not.toHaveAttribute("data-fade-top");
+    await expect.poll(() => fade("::after")).toBe(1);
+    await expect.poll(() => fade("::before")).toBe(0);
+    // The slim thumb uses the theme's muted colour, not the faint border.
+    expect(
+      await list.evaluate(
+        (node) =>
+          getComputedStyle(node, "::-webkit-scrollbar-thumb").backgroundColor,
+      ),
+    ).not.toBe("rgba(0, 0, 0, 0)");
+    await page.screenshot({
+      path: `test-results/impact-small-${width}x${height}.png`,
+    });
+    expect(before.bar).toBeGreaterThan(0);
+    await list.focus();
+    await page.keyboard.press("PageDown");
+    await expect.poll(async () => (await metrics()).top).toBeGreaterThan(0);
+    await page.keyboard.press("End");
+    await expect
+      .poll(async () => {
+        const now = await metrics();
+        return now.overflow - now.top;
+      })
+      .toBeLessThan(2);
+    await expect(area).not.toHaveAttribute("data-fade-bottom");
+    await expect(area).toHaveAttribute("data-fade-top", "true");
+    await expect.poll(() => fade("::after")).toBe(0);
+    await page.screenshot({
+      path: `test-results/impact-small-scrolled-end-${width}x${height}.png`,
+    });
+    await inViewport(dialog.getByRole("button", { name: /^Close (?!dialog)/ }));
+    await page.keyboard.press("Tab");
+    await expect(dialog.locator(":focus")).toHaveCount(1);
+  });
+}
+
+test("short confirmation list shows no scroll fades", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const area = page.getByRole("dialog").locator(".confirmation-scroll");
+  await expect(area).toBeVisible();
+  await expect(area).not.toHaveAttribute("data-fade-bottom");
+  await expect(area).not.toHaveAttribute("data-fade-top");
+});
+
+test("confirmation without impact adds nothing to the target row", async ({
+  page,
+}) => {
+  await page.addInitScript(
+    () =>
+      ((window as any).__impact = {
+        windows: { items: ["Only window"], more: 0 },
+        children: { items: [], more: 0 },
+        files: { items: ["/build/scene.blend"], more: 0 },
+        ports: { items: [], more: 0 },
+      }),
+  );
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/PID \d+/).first()).toBeVisible();
+  await expect(dialog.locator(".impact-summary")).toHaveCount(0);
+  await expect(dialog.locator(".impact-details")).toHaveCount(0);
 });
 
 for (const initialTarget of ["/", "/?empty-target"]) {
@@ -1318,7 +1559,13 @@ test("parent termination verifies exit, clears stale details and refreshes", asy
   await expect(
     dialog.getByRole("button", { name: "Cancel", exact: true }),
   ).toBeFocused();
-  await dialog.getByRole("button", { name: "Terminate", exact: true }).click();
+  await expect(dialog.locator(".role-badge")).toHaveText("Parent");
+  await expect(
+    dialog.getByText(
+      "Stopping a parent may close its children or your session.",
+    ),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: /^Close (?!dialog)/ }).click();
   await expect(page.getByText("Waiting for process exit…")).toBeVisible();
   await expect(page.getByText("Process exited", { exact: true })).toBeVisible();
   await expect(
@@ -1404,7 +1651,7 @@ test("theme presets persist and ancestry reads from parent to highlighted proces
   await expect(ancestry.getByRole("button").nth(0)).toHaveText(/fixture-init/);
   await expect(ancestry.getByRole("button").nth(1)).toHaveText(/fixture-shell/);
   const current = ancestry.getByRole("button", {
-    name: /Code Current process 4000/,
+    name: /Blender Current process 4000/,
   });
   await expect(current).toHaveAttribute("aria-pressed", "true");
   await ancestry.getByRole("button", { name: "fixture-shell 3000" }).click();
@@ -1746,7 +1993,7 @@ test("termination preserves the captured owner port filter", async ({
   await page.getByRole("button", { name: "Terminate…", exact: true }).click();
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Terminate", exact: true })
+    .getByRole("button", { name: /^Close (?!dialog)/ })
     .click();
   await expect(page.getByText("Process exited", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Done", exact: true }).click();
@@ -2740,7 +2987,7 @@ test("Chinese system language translates the workspace and process confirmation"
   await expect(filters.getByLabel("进程名称")).toBeVisible();
   await page.screenshot({ path: "test-results/chinese-filters.png" });
   await filters.getByRole("button", { name: "关闭", exact: true }).click();
-  await page.getByRole("row").filter({ hasText: "Code" }).first().click();
+  await page.getByRole("row").filter({ hasText: "Blender" }).first().click();
   await page.getByRole("button", { name: "终止…", exact: true }).click();
   const confirmation = page.getByRole("dialog");
   await expect(confirmation).toContainText("未保存的工作可能丢失");
@@ -2795,7 +3042,7 @@ test("normal termination recovery confirms captured targets instead of refreshin
     .fill("node");
   await page.getByRole("button", { name: "Terminate…", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "Terminate", exact: true }).click();
+  await dialog.getByRole("button", { name: /^Close (?!dialog)/ }).click();
   await expect(
     dialog.getByText(/Some processes could not be stopped normally/),
   ).toBeVisible();
@@ -2810,9 +3057,7 @@ test("normal termination recovery confirms captured targets instead of refreshin
     dialog.getByRole("button", { name: "Cancel", exact: true }),
   ).toBeFocused();
   await expect(dialog.getByText("PID 4000")).toBeVisible();
-  await expect(
-    dialog.getByText(/without allowing normal cleanup/),
-  ).toBeVisible();
+  await expect(dialog.getByText(/without letting it save/)).toBeVisible();
   const calls = await page.evaluate(() => (window as any).__testCalls);
   expect(
     calls
@@ -2851,7 +3096,7 @@ test("normal ancestor failure offers force recovery for the captured ancestor", 
     .getByRole("button", { name: "Terminate parent…", exact: true })
     .click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "Terminate", exact: true }).click();
+  await dialog.getByRole("button", { name: /^Close (?!dialog)/ }).click();
   await expect(dialog.getByText("fixture permission failure")).toBeVisible();
   await dialog
     .getByRole("button", { name: "Force terminate…", exact: true })
@@ -2901,8 +3146,7 @@ for (const force of [false, true]) {
     await page
       .getByRole("dialog")
       .getByRole("button", {
-        name: force ? "Force terminate" : "Terminate",
-        exact: true,
+        name: force ? /^Force quit / : /^Close (?!dialog)/,
       })
       .click();
     await page
@@ -2956,7 +3200,7 @@ test("confirmed administrator retry uses its new receipt and never offers repeat
     .click();
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Force terminate", exact: true })
+    .getByRole("button", { name: /^Force quit / })
     .click();
   await page
     .getByRole("button", { name: "Retry with administrator privileges…" })
@@ -2977,7 +3221,7 @@ test("confirmed administrator retry uses its new receipt and never offers repeat
   });
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Force terminate", exact: true })
+    .getByRole("button", { name: /^Force quit / })
     .click();
   await expect(
     page.getByText("Synthetic elevated permission denied"),
@@ -3213,8 +3457,7 @@ test("pointer-opened menus and termination dialogs do not pre-highlight actions,
   });
   await page.keyboard.press("Tab");
   const terminate = dialog.getByRole("button", {
-    name: "Force terminate",
-    exact: true,
+    name: /^Force quit /,
   });
   await expect(terminate).toBeFocused();
   await expect(terminate).toHaveCSS("outline-style", "solid");
@@ -3930,7 +4173,7 @@ for (const action of ["exit", "reuse"] as const)
     const details = page.getByRole("complementary", {
       name: "Process details",
     });
-    await expect(details).toContainText("Code");
+    await expect(details).toContainText("Blender");
     await enableQuietRefresh(page);
     await page.evaluate((action) => {
       (window as any).__mutateRowsForTest(action);
@@ -3944,7 +4187,7 @@ for (const action of ["exit", "reuse"] as const)
     await expect(details).toContainText("This captured process is absent");
     await expect(details).toContainText("PID 4000");
     await expect(
-      details.getByRole("heading", { name: "Code", exact: true }),
+      details.getByRole("heading", { name: "Blender", exact: true }),
     ).toBeVisible();
     await expect(
       details.getByRole("button", { name: "Terminate process…", exact: true }),
@@ -4115,7 +4358,7 @@ test("quiet refresh rejects retained matches after a new query and publishes the
   });
   await expect(page.getByText("300 results", { exact: true })).toBeVisible();
   await expect(grid.getByText("node", { exact: true }).first()).toBeVisible();
-  await expect(grid.getByText("Code", { exact: true })).toHaveCount(0);
+  await expect(grid.getByText("Blender", { exact: true })).toHaveCount(0);
 });
 
 test("a native target scan after quiet refresh locks inspection controls without a modal", async ({
@@ -4691,5 +4934,168 @@ for (const locale of ["en", "de", "zh"]) {
     }
     if (locale === "de")
       await page.screenshot({ path: "test-results/drop-window-de.png" });
+  });
+}
+
+const manyWindows = {
+  ...blenderImpact,
+  windows: {
+    items: Array.from(
+      { length: 150 },
+      (_, index) => `scene${index + 1}.blend - Blender`,
+    ),
+    more: 0,
+  },
+};
+
+test("a group with 150 windows previews five, expands in place and filters", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 860, height: 560 });
+  await page.addInitScript(
+    (impact) => ((window as any).__impact = impact),
+    manyWindows,
+  );
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator(".impact-details summary").first().click();
+  const group = dialog.locator(".impact-group").first();
+  await expect(group.locator("li")).toHaveCount(5);
+  await expect(group.getByRole("searchbox")).toHaveCount(0);
+  await page.screenshot({ path: "test-results/impact-more-preview.png" });
+  const show = group.getByRole("button", { name: "Show all 150" });
+  await show.click();
+  await expect(group.locator("li")).toHaveCount(150);
+  const less = group.getByRole("button", { name: "Show less" });
+  await expect(less).toBeFocused();
+  // The list stays in the confirmation's scroll area; buttons stay reachable.
+  const scroll = dialog.locator(".confirmation-scroll");
+  await expect(scroll).toHaveAttribute("data-fade-bottom", "true");
+  const list = dialog.locator(".confirmation-list");
+  expect(
+    await list.evaluate((node) => node.scrollHeight > node.clientHeight),
+  ).toBe(true);
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeInViewport();
+  const filter = group.getByRole("searchbox", { name: "Filter list" });
+  await expect(filter).toBeVisible();
+  await page.screenshot({ path: "test-results/impact-more-expanded.png" });
+  await filter.fill("scene14");
+  await expect(group.locator("li")).toHaveCount(11);
+  await expect(group.getByText("11 of 150")).toBeVisible();
+  await page.screenshot({ path: "test-results/impact-more-filtered.png" });
+  await filter.fill("nothing here");
+  await expect(group.getByText("No matches")).toBeVisible();
+  // Escape clears the filter first and only then closes the dialog.
+  await page.keyboard.press("Escape");
+  await expect(filter).toHaveValue("");
+  await expect(dialog).toBeVisible();
+  await less.click();
+  await expect(group.locator("li")).toHaveCount(5);
+  await expect(show).toBeFocused();
+});
+
+for (const [locale, terminate, label, less] of [
+  ["de", "Beenden …", "Alle 150 anzeigen", "Weniger anzeigen"],
+  ["zh", "终止…", "显示全部 150 项", "收起"],
+]) {
+  test(`Show all is localized in ${locale}`, async ({ page }) => {
+    await page.addInitScript(
+      ([impact, language]) => {
+        (window as any).__impact = impact;
+        localStorage.setItem("oflh-language", language as string);
+      },
+      [manyWindows, locale] as const,
+    );
+    await page.goto("/");
+    await page.getByRole("grid").getByRole("row").nth(1).click();
+    await page.getByRole("button", { name: terminate, exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.locator(".impact-details summary").first().click();
+    await dialog.getByRole("button", { name: label }).click();
+    await expect(dialog.getByRole("button", { name: less })).toBeFocused();
+  });
+}
+
+for (const [width, height] of [
+  [860, 560],
+  [800, 600],
+]) {
+  test(`one target: plain title, short note and Show all in view at ${width}x${height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.addInitScript(
+      (impact) => ((window as any).__impact = impact),
+      manyWindows,
+    );
+    await page.goto("/");
+    await page.getByRole("grid").getByRole("row").nth(1).click();
+    await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Close Blender?" });
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByText(
+        "OFLH asks the program to close. Unsaved work may be lost.",
+      ),
+    ).toBeVisible();
+    await expect(dialog.getByText(/escalate/)).toHaveCount(0);
+    await expect(
+      dialog.getByRole("button", { name: "Close Blender", exact: true }),
+    ).toBeVisible();
+    // The safety details are one line until asked for.
+    const safety = dialog.locator(".safety-note");
+    await expect(
+      safety.getByText("including any hidden by filters", { exact: false }),
+    ).toBeHidden();
+    await dialog.locator(".impact-details summary").first().click();
+    const list = dialog.locator(".confirmation-list");
+    const show = dialog.getByRole("button", { name: "Show all 150" });
+    const listBox = (await list.boundingBox())!;
+    const showBox = (await show.boundingBox())!;
+    expect(showBox.y + showBox.height).toBeLessThanOrEqual(
+      listBox.y + listBox.height,
+    );
+    expect(await list.evaluate((node) => node.scrollTop)).toBe(0);
+    await page.screenshot({
+      path: `test-results/polish-confirm-single-${width}x${height}.png`,
+    });
+    await safety.locator("summary").click();
+    await expect(
+      safety.getByText("including any hidden by filters", { exact: false }),
+    ).toBeVisible();
+    await expect(
+      safety.getByText("does not force it", { exact: false }),
+    ).toBeVisible();
+  });
+
+  test(`several targets are counted in title and button at ${width}x${height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.addInitScript(
+      (impact) => ((window as any).__impact = impact),
+      blenderImpact,
+    );
+    await page.goto("/");
+    const rows = page.getByRole("grid").getByRole("row");
+    await rows.nth(1).click();
+    await rows.nth(2).click({ modifiers: ["Shift"] });
+    await rows.nth(3).click({ modifiers: ["Shift"] });
+    await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Close 3 processes?" });
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByText("OFLH asks each program to close.", { exact: false }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Close 3 processes", exact: true }),
+    ).toBeInViewport({ ratio: 1 });
+    await page.screenshot({
+      path: `test-results/polish-confirm-multi-${width}x${height}.png`,
+    });
   });
 }

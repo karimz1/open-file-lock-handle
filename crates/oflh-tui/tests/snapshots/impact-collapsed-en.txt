@@ -1,0 +1,40 @@
+  oflh  ·  Open File Lock Handle
+
+  Close Blender?
+  OFLH asks the program to close. Unsaved work may be lost.
+
+  Processes (filtered ones included):
+    424242    Blender
+              Blender closes completely, with all 7 open windows, such as “scene1.blend -
+              Blender”.
+              1 background process keeps running.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  ▶ Cancel      Close
+  Tab / ←→ choose · d details · Enter confirm · Esc cancel

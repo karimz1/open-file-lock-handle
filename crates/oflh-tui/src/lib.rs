@@ -26,6 +26,7 @@ enum Event {
     ScopedScan(u64, Box<Result<(Target, PreparedSnapshot)>>),
     Metrics(u64, Result<Vec<(Identity, Metrics)>>),
     Killed(usize, Vec<String>),
+    Impact(Vec<Identity>, Vec<oflh_core::impact::Impact>),
     Update(std::result::Result<Option<String>, String>),
 }
 const REFRESH: Duration = Duration::from_secs(5);
@@ -85,6 +86,7 @@ pub fn run(
         None
     };
     let mut update_schedule = UpdateSchedule::new(app.update.enabled, Instant::now());
+    let impact_sender = sender.clone();
     std::thread::Builder::new()
         .name("oflh-input".into())
         .spawn(move || {
@@ -222,6 +224,10 @@ pub fn run(
                 effect = Effect::Scan;
                 dirty = true
             }
+            Ok(Event::Impact(ids, impact)) => {
+                app.accept_impact(&ids, impact);
+                dirty = true
+            }
             Ok(Event::Update(result)) => {
                 if let Some(worker) = &mut updates {
                     worker.completed();
@@ -283,6 +289,23 @@ pub fn run(
                     app.update.begin(true);
                     update_schedule.started();
                     dirty = true;
+                }
+            }
+            Effect::Impact(ids) => {
+                // A fresh backend keeps this read off the scan worker, so it
+                // neither cancels nor waits for a running scan.
+                let sender = impact_sender.clone();
+                let spawned = std::thread::Builder::new()
+                    .name("oflh-impact".into())
+                    .spawn(move || {
+                        let impact = match oflh_platform::native() {
+                            Ok(mut backend) => backend.impact(&ids),
+                            Err(_) => vec![Default::default(); ids.len()],
+                        };
+                        let _ = sender.send(Event::Impact(ids, impact));
+                    });
+                if spawned.is_err() {
+                    app.impact.clear()
                 }
             }
             Effect::None | Effect::Scan | Effect::FollowPort(..) => {}

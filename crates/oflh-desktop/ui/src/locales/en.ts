@@ -142,8 +142,6 @@ const en = {
   },
   filters: {
     k_access_relation: "Access / relation",
-    k_all_targets_are_listed_below_including_1515b80a:
-      "all targets are listed below, including any hidden by filters.",
     k_any_evidence: "Any evidence",
     k_applied_column_filters: "Applied column filters",
     k_apply_filters: "Apply filters",
@@ -472,6 +470,57 @@ const en = {
     k_visible_columns: "Visible columns",
   },
   termination: {
+    k_impact_targets_label: "Affected processes",
+    k_impact_windows:
+      "{{name}} closes completely, with all {{count}} open windows, such as “{{title}}”.",
+    k_impact_children_one: "1 background process keeps running.",
+    k_impact_children_other: "{{count}} background processes keep running.",
+    k_impact_files_one: "1 more file it has open is released too.",
+    k_impact_files_other: "{{count}} more files it has open are released too.",
+    k_impact_ports_one: "A connection on 1 network port will drop.",
+    k_impact_ports_other: "Connections on {{count}} network ports will drop.",
+    k_impact_group_windows: "Windows ({{count}})",
+    k_impact_group_children: "Background processes ({{count}})",
+    k_impact_group_files: "Files ({{count}})",
+    k_impact_group_ports: "Ports ({{count}})",
+    k_impact_copy: "Copy {{value}}",
+    k_impact_details: "Details",
+    k_impact_windows_unavailable: "This system does not expose window titles.",
+    k_impact_children_note:
+      "They are not terminated and usually keep running. Some may exit together with this process.",
+    k_impact_show_all: "Show all {{count}}",
+    k_impact_show_less: "Show less",
+    k_impact_not_listed: "+{{count}} more not listed",
+    k_impact_filter: "Filter list",
+    k_impact_filter_placeholder: "Filter…",
+    k_impact_filter_count: "{{shown}} of {{total}}",
+    k_impact_filter_none: "No matches",
+    k_confirm_title_one: "Close {{name}}?",
+    k_confirm_title_many: "Close {{count}} processes?",
+    k_force_title_one: "Force quit {{name}}?",
+    k_force_title_many: "Force quit {{count}} processes?",
+    k_confirm_button_one: "Close {{name}}",
+    k_confirm_button_many: "Close {{count}} processes",
+    k_force_button_one: "Force quit {{name}}",
+    k_force_button_many: "Force quit {{count}} processes",
+    k_confirm_note_one:
+      "OFLH asks the program to close. Unsaved work may be lost.",
+    k_confirm_note_many:
+      "OFLH asks each program to close. Unsaved work may be lost.",
+    k_force_note_one:
+      "OFLH stops it immediately, without letting it save. Unsaved work will be lost.",
+    k_force_note_many:
+      "OFLH stops them immediately, without letting them save. Unsaved work will be lost.",
+    k_safety_summary: "How OFLH keeps this safe",
+    k_safety_listed:
+      "Every selected process is listed, including any hidden by filters.",
+    k_safety_identity:
+      "Right before sending, OFLH checks each process again, so a reused PID is never hit.",
+    k_safety_no_escalation:
+      "If a program does not close, OFLH does not force it. Use Force quit for that.",
+    k_impact_latest_scan:
+      "Based on the latest scan and a process check when this dialog opened.",
+    k_role_parent: "Parent",
     k_retry_admin: "Retry with administrator privileges…",
     k_admin_recovery:
       "Permission denied. You can authorize a retry for these original targets. Administrator privileges do not guarantee success.",
@@ -481,16 +530,10 @@ const en = {
     k_normal_termination_recovery:
       "Some processes could not be stopped normally. You can use Force Terminate to stop them without cleanup. Unsaved work may be lost.",
     k_force_terminate: "Force terminate…",
-    k_force_terminate_7b6445b3: "Force terminate",
     k_force_terminate_parent: "Force terminate parent…",
     k_force_terminate_process: "Force terminate process…",
-    k_force_terminate_processes: "Force terminate processes?",
-    k_force_termination_stops_these_processes_9c247038:
-      "Force termination stops these processes without allowing normal cleanup. Unsaved work may be lost.",
     k_local_bindings_do_not_prove_external_re_a5cdb1ad:
       "Local bindings do not prove external reachability. Unknown owners cannot be terminated.",
-    k_oflh_validates_each_captured_process_id_5e6d1cc4:
-      "OFLH validates each captured process identity again before sending the request.",
     k_process_changed_or_already_exited_no_te_9b7e90d2:
       "Process changed or already exited. No termination was sent.",
     k_process_exited: "Process exited",
@@ -499,15 +542,11 @@ const en = {
     k_request_sent_couldn_t_verify_exit: "Request sent · couldn’t verify exit",
     k_request_sent_still_running_after_1_5_seconds:
       "Request sent · still running after 1.5 seconds",
-    k_request_these_processes_to_stop_unsaved_8b80fb41:
-      "Request these processes to stop. Unsaved work may be lost. This will not escalate to force termination.",
     k_stopping_a_parent_may_close_its_childre_04c26acd:
       "Stopping a parent may close its children or your session.",
     k_terminate: "Terminate…",
-    k_terminate_77517bd0: "Terminate",
     k_terminate_parent: "Terminate parent…",
     k_terminate_process: "Terminate process…",
-    k_terminate_processes: "Terminate processes?",
     k_termination_request_failed: "Termination request failed",
     k_termination_results: "Termination results",
     k_unknown_cpu_and_memory_stay_unavailable_1ca3b23b:

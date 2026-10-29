@@ -210,16 +210,25 @@ async fn prepare(
     force: bool,
 ) -> Result<Confirmation, Failure> {
     let service = service.inner().clone();
-    blocking(move || service.prepare(revision, &keys, force)).await
+    blocking(move || {
+        let mut backend = oflh_platform::native().map_err(Failure::from)?;
+        service.prepare(revision, &keys, force, &mut *backend)
+    })
+    .await
 }
 #[tauri::command]
-fn prepare_ancestor(
+async fn prepare_ancestor(
     service: Desktop<'_>,
     owner: String,
     key: String,
     force: bool,
 ) -> Result<Confirmation, Failure> {
-    service.prepare_ancestor(&owner, &key, force)
+    let service = service.inner().clone();
+    blocking(move || {
+        let mut backend = oflh_platform::native().map_err(Failure::from)?;
+        service.prepare_ancestor(&owner, &key, force, &mut *backend)
+    })
+    .await
 }
 #[tauri::command]
 fn prepare_elevated(service: Desktop<'_>, ticket: String) -> Result<Confirmation, Failure> {

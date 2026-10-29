@@ -286,7 +286,7 @@ fn confirmation_focus_has_distinct_backgrounds() {
     let cancel_background = label_background(terminal.backend().buffer(), "Cancel");
     assert_ne!(cancel_background, Color::Reset);
     assert_eq!(
-        label_background(terminal.backend().buffer(), "Terminate"),
+        label_background(terminal.backend().buffer(), "Close"),
         Color::Reset
     );
     export_visual("confirm-cancel", terminal.backend().buffer());
@@ -294,7 +294,7 @@ fn confirmation_focus_has_distinct_backgrounds() {
     terminal
         .draw(|frame| view::draw(frame, &mut application))
         .unwrap();
-    let terminate_background = label_background(terminal.backend().buffer(), "Terminate");
+    let terminate_background = label_background(terminal.backend().buffer(), "Close");
     assert_ne!(terminate_background, Color::Reset);
     assert_ne!(terminate_background, cancel_background);
     assert_eq!(
@@ -1151,4 +1151,307 @@ fn translated_update_footer_has_stable_viewport_and_no_modal_overlay() {
             export_visual(&format!("update-{language:?}-{width}"), after);
         }
     }
+}
+
+fn impact_app() -> App {
+    let mut app = self::app();
+    // The fixture's windows are Blender's, so name the process to match.
+    app.snapshot.processes[0].name = "Blender".into();
+    app.snapshot.processes[0].ports = vec![Port {
+        protocol: Protocol::Tcp,
+        address: "127.0.0.1".parse().unwrap(),
+        number: 5432,
+    }];
+    app
+}
+
+fn blender_impact() -> oflh_core::impact::Impact {
+    oflh_core::impact::Impact {
+        windows: Some(
+            (1..=7)
+                .map(|n| format!("scene{n}.blend - Blender"))
+                .collect(),
+        ),
+        children: Some(vec![Ancestor {
+            identity: Identity {
+                pid: 4100,
+                started: 11,
+                started_sub: 0,
+            },
+            name: "python3".into(),
+        }]),
+    }
+}
+
+fn render_confirm(app: &mut App, name: &str) -> String {
+    render_confirm_at(app, name, 100, 40)
+}
+
+fn render_confirm_at(app: &mut App, name: &str, width: u16, height: u16) -> String {
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+    terminal.draw(|frame| view::draw(frame, app)).unwrap();
+    export_visual(name, terminal.backend().buffer());
+    readable_buffer(terminal.backend().buffer())
+}
+
+#[test]
+fn confirmation_requests_impact_and_ignores_stale_results() {
+    let mut app = impact_app();
+    let id = app.snapshot.processes[0].identity;
+    assert!(matches!(key(&mut app, K::Char('k')), Effect::Impact(ids) if ids == vec![id]));
+    let other = Identity {
+        pid: 9,
+        started: 1,
+        started_sub: 0,
+    };
+    app.accept_impact(&[other], vec![blender_impact()]);
+    assert!(app.impact.is_empty());
+    app.accept_impact(&[id], vec![blender_impact()]);
+    assert_eq!(app.impact.len(), 1);
+    key(&mut app, K::Char('d'));
+    assert!(app.impact_details);
+    // Enter still terminates only the captured target.
+    key(&mut app, K::Tab);
+    assert!(matches!(key(&mut app, K::Enter), Effect::Kill(ids, false) if ids == vec![id]));
+    // A new confirmation starts collapsed with no carried-over impact.
+    app.stopping = false;
+    key(&mut app, K::Char('k'));
+    assert!(app.impact.is_empty() && !app.impact_details);
+}
+
+#[test]
+fn confirmation_summarizes_impact_and_expands_details_with_d() {
+    let mut app = impact_app();
+    let id = app.snapshot.processes[0].identity;
+    key(&mut app, K::Char('k'));
+    let loading = render_confirm(&mut app, "impact-loading-en");
+    assert!(loading.contains("Checking windows and child processes…"));
+    app.accept_impact(&[id], vec![blender_impact()]);
+    let collapsed = render_confirm(&mut app, "impact-collapsed-en");
+    let flat = collapsed.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains(
+            "closes completely, with all 7 open windows, such as “scene1.blend - Blender”."
+        ),
+        "{collapsed}"
+    );
+    assert!(
+        flat.contains("1 background process keeps running."),
+        "{collapsed}"
+    );
+    // Two sentences at most while collapsed; files and ports wait in details.
+    assert!(!flat.contains("released too") && !flat.contains("Windows (7)"));
+    assert!(collapsed.contains("d details"));
+    key(&mut app, K::Char('d'));
+    let expanded = render_confirm(&mut app, "impact-expanded-en");
+    for text in [
+        "Windows (7)",
+        "scene5.blend - Blender",
+        "▾ +2 more · Space show all 7",
+        "Background processes (1)",
+        "python3  PID 4100",
+        "Files (3)",
+        "other.dll  /build",
+        "Ports (1)",
+        "5432  TCP 127.0.0.1",
+        "latest scan",
+    ] {
+        assert!(expanded.contains(text), "{text}\n{expanded}");
+    }
+    assert!(!expanded.contains("scene6.blend"));
+    for (name, text) in [
+        ("impact-collapsed", &collapsed),
+        ("impact-expanded", &expanded),
+    ] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("tests/snapshots/{name}-en.txt"));
+        if std::env::var_os("OFLH_UPDATE_SNAPSHOTS").is_some() {
+            std::fs::write(&path, text).unwrap();
+        }
+        assert_eq!(&std::fs::read_to_string(path).unwrap(), text, "{name}");
+    }
+}
+
+#[test]
+fn confirmation_adds_nothing_without_notable_impact() {
+    let mut app = self::app();
+    app.snapshot.processes[0].usages.truncate(1);
+    let id = app.snapshot.processes[0].identity;
+    key(&mut app, K::Char('k'));
+    app.accept_impact(
+        &[id],
+        vec![oflh_core::impact::Impact {
+            windows: Some(vec!["Only window".into()]),
+            children: Some(vec![]),
+        }],
+    );
+    key(&mut app, K::Char('d'));
+    let text = render_confirm(&mut app, "impact-none-en");
+    assert!(!text.contains("Only window") && !text.contains("child process"));
+}
+
+fn crowded_confirmation() -> App {
+    let mut app = impact_app();
+    let template = app.snapshot.processes[0].clone();
+    for n in 1..8u32 {
+        let mut process = template.clone();
+        process.identity.pid = 500 + n;
+        process.name = "Blender".into();
+        app.snapshot.processes.push(process);
+    }
+    let mut snapshot = app.snapshot.clone();
+    snapshot.warnings.clear();
+    app.replace(snapshot);
+    app.select_all();
+    assert!(matches!(key(&mut app, K::Char('k')), Effect::Impact(_)));
+    let ids: Vec<_> = app.pending.iter().map(|target| target.identity).collect();
+    let impact = ids.iter().map(|_| blender_impact()).collect();
+    app.accept_impact(&ids, impact);
+    key(&mut app, K::Char('d'));
+    app
+}
+
+#[test]
+fn small_terminals_scroll_the_confirmation_and_keep_the_buttons() {
+    for (width, height) in [(80u16, 24u16), (60, 20)] {
+        let mut app = crowded_confirmation();
+        assert_eq!(app.pending.len(), 8);
+        let top = render_confirm_at(
+            &mut app,
+            &format!("impact-small-{width}x{height}-top"),
+            width,
+            height,
+        );
+        let rows: Vec<&str> = top.lines().collect();
+        assert_eq!(rows.len(), height as usize);
+        assert!(app.confirm_scrollable, "{top}");
+        assert!(rows[0].contains("↕"), "{top}");
+        assert!(
+            rows[1].contains("↑↓ / PgUp PgDn scroll · Home/End"),
+            "{top}"
+        );
+        // A scrollbar in the last column of the body: thumb at the top, track below.
+        let column = |text: &str| -> String {
+            text.lines()
+                .skip(2)
+                .take(6)
+                .map(|row| row.trim_end().chars().last().unwrap_or(' '))
+                .collect()
+        };
+        assert_eq!(column(&top).chars().next(), Some('█'), "{top}");
+        assert!(column(&top).contains('│'), "{top}");
+        assert!(top.contains("Cancel") && top.contains("Close"), "{top}");
+        assert!(top.contains("scroll"), "{top}");
+        key(&mut app, K::PageDown);
+        key(&mut app, K::Char('j'));
+        let scrolled = render_confirm_at(
+            &mut app,
+            &format!("impact-small-{width}x{height}-mid"),
+            width,
+            height,
+        );
+        assert_ne!(top, scrolled);
+        assert!(scrolled.contains("Cancel") && scrolled.contains("Close"));
+        key(&mut app, K::End);
+        let bottom = render_confirm_at(
+            &mut app,
+            &format!("impact-small-{width}x{height}-end"),
+            width,
+            height,
+        );
+        assert!(bottom.contains("latest scan"), "{bottom}");
+        let end_row = bottom
+            .lines()
+            .find(|row| row.contains("latest scan"))
+            .unwrap();
+        assert!(
+            end_row.trim_end().ends_with('█'),
+            "thumb reaches the end\n{bottom}"
+        );
+        let indicator = bottom.lines().next().unwrap().trim().to_string();
+        let (range, _) = indicator.split_once(" ↕").unwrap();
+        let (span, total) = range.split_once(" of ").unwrap();
+        assert_eq!(span.split_once('–').unwrap().1, total, "{indicator}");
+        assert!(bottom.contains("Cancel") && bottom.contains("Close"));
+        key(&mut app, K::Home);
+        key(&mut app, K::Char('k'));
+        assert_eq!(
+            render_confirm_at(&mut app, "impact-small-home", width, height),
+            top
+        );
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "tests/snapshots/impact-small-{width}x{height}-en.txt"
+        ));
+        if std::env::var_os("OFLH_UPDATE_SNAPSHOTS").is_some() {
+            std::fs::write(&path, &top).unwrap();
+        }
+        assert_eq!(std::fs::read_to_string(path).unwrap(), top);
+    }
+}
+
+#[test]
+fn short_confirmation_does_not_show_a_scroll_hint() {
+    let mut app = impact_app();
+    key(&mut app, K::Char('k'));
+    let text = render_confirm_at(&mut app, "impact-short", 80, 24);
+    assert!(!app.confirm_scrollable);
+    assert!(!text.contains("↕") && !text.contains("PgUp"));
+    assert!(!text.contains('█') && !text.contains("Home/End"));
+}
+
+#[test]
+fn space_shows_every_item_in_a_group_and_collapses_again() {
+    let mut app = impact_app();
+    let id = app.snapshot.processes[0].identity;
+    key(&mut app, K::Char('k'));
+    let mut many = blender_impact();
+    many.windows = Some(
+        (1..=150)
+            .map(|n| format!("scene{n}.blend - Blender"))
+            .collect(),
+    );
+    app.accept_impact(&[id], vec![many]);
+    // Space opens Details already expanded, so one key reaches every window.
+    key(&mut app, K::Char(' '));
+    assert!(app.impact_details && app.impact_all);
+    let top = render_confirm_at(&mut app, "impact-more-all-80x24", 80, 24);
+    assert!(top.contains("of "), "{top}");
+    assert!(top.contains('█'), "scrollbar\n{top}");
+    key(&mut app, K::End);
+    let end = render_confirm_at(&mut app, "impact-more-all-end-80x24", 80, 24);
+    assert!(end.contains("scene150.blend"), "{end}");
+    assert!(end.contains("▴ Space show less"), "{end}");
+    assert!(!end.contains("Space show all"), "{end}");
+    // Space again collapses to the preview and keeps Details open.
+    key(&mut app, K::Char(' '));
+    assert!(app.impact_details && !app.impact_all);
+    key(&mut app, K::Home);
+    let preview = render_confirm_at(&mut app, "impact-more-preview-80x24", 80, 24);
+    key(&mut app, K::End);
+    let preview_end = render_confirm_at(&mut app, "impact-more-preview-end-80x24", 80, 24);
+    let both = format!("{preview}{preview_end}");
+    assert!(both.contains("▾ +145 more · Space show all 150"), "{both}");
+    assert!(
+        !both.contains("scene6.blend") && !both.contains("show less"),
+        "{both}"
+    );
+    // Small groups never offer an expander.
+    assert_eq!(
+        both.matches("Space show all").count(),
+        both.matches("Space show all 150").count(),
+        "{both}"
+    );
+    // German uses the du-form keyboard wording.
+    app.language = Language::German;
+    key(&mut app, K::Home);
+    let german = render_confirm_at(&mut app, "impact-more-preview-de", 100, 40);
+    assert!(
+        german.contains("▾ +145 weitere · Leertaste alle 150 zeigen"),
+        "{german}"
+    );
+    // A new confirmation starts with the preview again.
+    key(&mut app, K::Esc);
+    key(&mut app, K::Char('k'));
+    assert!(!app.impact_all && !app.impact_details);
 }

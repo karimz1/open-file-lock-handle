@@ -320,6 +320,45 @@ pub struct Details {
     /// Whether an identity-checked owner-folder inspection can be requested.
     pub can_inspect_folder: bool,
 }
+/// Why a process is listed in a confirmation.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetRole {
+    /// The process the scan attributed the file or port to.
+    #[default]
+    Holder,
+    /// An ancestor chosen from the holder's process tree.
+    Ancestor,
+}
+/// A display list capped in Rust; `more` counts entries left out.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct CappedList {
+    /// Sanitized entries, in display order.
+    pub items: Vec<String>,
+    /// Entries not included in `items`.
+    pub more: usize,
+}
+impl From<oflh_core::impact::Capped> for CappedList {
+    fn from(capped: oflh_core::impact::Capped) -> Self {
+        Self {
+            items: capped.items,
+            more: capped.more,
+        }
+    }
+}
+/// What else terminating one process may affect, read when the confirmation
+/// was prepared. Termination still targets only this process.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct TargetImpact {
+    /// Visible top-level window titles; `None` when the platform cannot list them.
+    pub windows: Option<CappedList>,
+    /// Running direct children as `name (PID n)`; `None` when unreadable.
+    pub children: Option<CappedList>,
+    /// Files the latest scan attributed to this process.
+    pub files: CappedList,
+    /// Local ports the latest scan attributed to this process.
+    pub ports: CappedList,
+}
 /// A process displayed in a destructive-action confirmation.
 #[derive(Clone, Debug, Serialize)]
 pub struct ActionTarget {
@@ -329,6 +368,10 @@ pub struct ActionTarget {
     pub name: String,
     /// Observed PID; never sufficient on its own for an action.
     pub pid: u32,
+    /// Holder or selected ancestor.
+    pub role: TargetRole,
+    /// Best-effort side effects, collected before the confirmation is shown.
+    pub impact: TargetImpact,
 }
 /// Single-use confirmation receipt. The Rust service retains the actual identities.
 #[derive(Clone, Debug, Serialize)]

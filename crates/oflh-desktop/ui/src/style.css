@@ -1452,22 +1452,276 @@ main {
   border: 1px solid var(--border);
   border-radius: 5px;
 }
-.confirmation-list li {
+/* The target list is the only part that scrolls, so the heading, warnings and
+   buttons stay reachable in small windows. */
+.modal.confirmation-modal[open] {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+}
+.confirmation-modal > * {
+  flex: none;
+}
+.confirmation-modal > .confirmation-scroll {
+  flex: 0 1 auto;
+  min-height: 64px;
+}
+.confirmation-scroll {
+  --scroll-thumb: color-mix(in srgb, var(--muted) 55%, transparent);
+  --scroll-thumb-hover: var(--muted);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin: 16px 0;
+}
+.confirmation-scroll > .confirmation-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+/* Chromium ignores ::-webkit-scrollbar once scrollbar-width is set, so the
+   standard properties are only for engines without the pseudo-elements. */
+@supports not selector(::-webkit-scrollbar) {
+  .confirmation-scroll > .confirmation-list {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scroll-thumb) transparent;
+  }
+  .confirmation-scroll > .confirmation-list:hover {
+    scrollbar-color: var(--scroll-thumb-hover) transparent;
+  }
+}
+/* WebView2 and WebKit: a slim rounded thumb that floats inside the border. */
+.confirmation-list::-webkit-scrollbar {
+  width: 8px;
+}
+.confirmation-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.confirmation-list::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background-clip: padding-box;
+}
+.confirmation-list:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 75%, transparent);
+  background-clip: padding-box;
+}
+.confirmation-list::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+  background-clip: padding-box;
+}
+/* Fades hint that the list continues; they never catch clicks. */
+.confirmation-scroll::before,
+.confirmation-scroll::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 10px;
+  height: 28px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 1;
+}
+.confirmation-scroll::before {
+  top: 1px;
+  border-radius: 5px 5px 0 0;
+  background: linear-gradient(var(--panel), transparent);
+}
+.confirmation-scroll::after {
+  bottom: 1px;
+  border-radius: 0 0 5px 5px;
+  background: linear-gradient(transparent, var(--panel));
+}
+.confirmation-scroll[data-fade-top]::before,
+.confirmation-scroll[data-fade-bottom]::after {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .confirmation-scroll::before,
+  .confirmation-scroll::after {
+    transition: none;
+  }
+}
+.confirmation-list:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.confirmation-list > li {
   padding: 10px 12px;
   font-size: 0.9231rem;
 }
-.confirmation-list li + li,
+.confirmation-target {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.role-badge {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.8462rem;
+  font-weight: 500;
+}
+.impact-summary {
+  margin: 4px 0 0 22px;
+  color: var(--text);
+  font-size: 0.8462rem;
+}
+.impact-warning {
+  color: var(--danger);
+}
+.impact-details {
+  margin: 4px 0 0 22px;
+  font-size: 0.8462rem;
+}
+.impact-details summary {
+  width: fit-content;
+  color: var(--muted);
+  cursor: pointer;
+}
+.impact-details summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.impact-details .hint {
+  margin: 6px 0 0;
+}
+.impact-group h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 4px;
+  color: var(--muted);
+  font-size: 0.8462rem;
+  font-weight: 600;
+}
+.impact-group ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0 0 0 19px;
+  list-style: none;
+}
+.impact-group li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 22px;
+}
+.impact-primary {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.impact-secondary {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.8462rem;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.impact-copy {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  opacity: 0.6;
+}
+.impact-group li:hover .impact-copy,
+.impact-copy:focus-visible {
+  opacity: 1;
+}
+.confirmation-target > strong {
+  flex: 1;
+  min-width: 0;
+}
+.target-icon {
+  flex: none;
+  color: var(--muted);
+}
+.impact-more {
+  color: var(--muted);
+  font-size: 0.8462rem;
+}
+/* "Show all" reads as a quiet link under the preview, not another action. */
+.impact-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 0 15px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.8462rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.impact-toggle:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.impact-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Stays at the top of the scroll area while a long group is browsed. */
+.impact-filter {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 4px 19px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--muted);
+}
+.impact-filter:focus-within {
+  border-color: var(--accent);
+}
+.impact-filter input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8462rem;
+}
+.impact-filter-count {
+  flex: none;
+  font-size: 0.7692rem;
+  font-variant-numeric: tabular-nums;
+}
+.confirmation-list > li + li,
 .action-results li + li {
   border-top: 1px solid var(--border);
 }
-.confirmation-list code {
+.confirmation-target code {
   color: var(--muted);
   white-space: nowrap;
 }
-.confirmation-list strong {
+.confirmation-target strong {
   overflow-wrap: anywhere;
   margin-right: 12px;
 }
@@ -2412,4 +2666,37 @@ kbd.shortcut {
 }
 .inspection-details-panel p {
   margin: 10px 0 0;
+}
+
+/* Safety details for power users; one quiet line for everyone else. */
+.safety-note {
+  margin: 0 0 2px;
+  color: var(--muted);
+  font-size: 0.8462rem;
+}
+.safety-note summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.safety-note summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.safety-note ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.confirmation-modal .confirmation-note {
+  gap: 9px;
+  align-items: flex-start;
+}
+.confirmation-modal .confirmation-note p {
+  margin: 0;
+}
+/* The target list takes the room the shorter text frees up. */
+.confirmation-scroll > .confirmation-list {
+  max-height: min(60vh, 520px);
 }

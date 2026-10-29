@@ -50,6 +50,7 @@ pub fn version_report(application: &str) -> String {
     report
 }
 
+pub mod impact;
 pub mod ports;
 pub mod releases;
 pub mod search;
@@ -296,7 +297,7 @@ pub struct Usage {
 }
 
 /// A captured ancestor whose identity must survive UI refreshes unchanged.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Ancestor {
     /// Captured process lifetime; a zero birth token is not actionable.
     pub identity: Identity,
