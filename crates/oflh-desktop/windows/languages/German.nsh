@@ -1,0 +1,43 @@
+; Tauri's German installer messages, reworded for OFLH Desktop.
+; Same keys as tauri-bundler's languages/German.nsh; keep them in sync when
+; Tauri adds strings. Tauri does not template these files, so use ${PRODUCTNAME}.
+LangString addOrReinstall ${LANG_GERMAN} "Komponenten hinzufügen oder neu installieren"
+LangString alreadyInstalled ${LANG_GERMAN} "Bereits installiert"
+LangString alreadyInstalledLong ${LANG_GERMAN} "${PRODUCTNAME} ${VERSION} ist bereits installiert. Wähle aus, was passieren soll, und klicke auf Weiter."
+LangString appRunning ${LANG_GERMAN} "${PRODUCTNAME} läuft noch. Schließe es und versuche es erneut."
+LangString appRunningOkKill ${LANG_GERMAN} "${PRODUCTNAME} läuft noch.$\nKlicke auf OK, um es zu beenden."
+LangString chooseMaintenanceOption ${LANG_GERMAN} "Wähle aus, was passieren soll."
+LangString chooseHowToInstall ${LANG_GERMAN} "Wähle aus, wie ${PRODUCTNAME} installiert werden soll."
+LangString createDesktop ${LANG_GERMAN} "Desktop-Verknüpfung erstellen"
+LangString dontUninstall ${LANG_GERMAN} "Nicht deinstallieren"
+LangString dontUninstallDowngrade ${LANG_GERMAN} "Nicht deinstallieren (ein Downgrade ist nur nach der Deinstallation möglich)"
+LangString failedToKillApp ${LANG_GERMAN} "${PRODUCTNAME} konnte nicht beendet werden. Schließe es und versuche es erneut."
+LangString installingWebview2 ${LANG_GERMAN} "WebView2 wird installiert..."
+LangString newerVersionInstalled ${LANG_GERMAN} "Eine neuere Version von ${PRODUCTNAME} ist bereits installiert. Um diese ältere Version zu installieren, deinstalliere zuerst die aktuelle. Wähle aus, was passieren soll, und klicke auf Weiter."
+LangString older ${LANG_GERMAN} "ältere"
+LangString olderOrUnknownVersionInstalled ${LANG_GERMAN} "Eine $R4 Version von ${PRODUCTNAME} ist installiert. Es wird empfohlen, sie zuerst zu deinstallieren. Wähle aus, was passieren soll, und klicke auf Weiter."
+LangString silentDowngrades ${LANG_GERMAN} "Im stillen Modus ist kein Downgrade möglich. Starte den Installer ohne /S.$\n"
+LangString unableToUninstall ${LANG_GERMAN} "Deinstallation fehlgeschlagen."
+LangString uninstallApp ${LANG_GERMAN} "${PRODUCTNAME} deinstallieren"
+LangString uninstallBeforeInstalling ${LANG_GERMAN} "Vor der Installation deinstallieren"
+LangString unknown ${LANG_GERMAN} "unbekannte"
+LangString webview2AbortError ${LANG_GERMAN} "WebView2 konnte nicht installiert werden, die App braucht es aber. Starte den Installer neu, um es erneut zu versuchen."
+LangString webview2DownloadError ${LANG_GERMAN} "Fehler: WebView2 konnte nicht heruntergeladen werden - $0"
+LangString webview2DownloadSuccess ${LANG_GERMAN} "WebView2-Bootstrapper heruntergeladen"
+LangString webview2Downloading ${LANG_GERMAN} "WebView2-Bootstrapper wird heruntergeladen..."
+LangString webview2InstallError ${LANG_GERMAN} "Fehler: WebView2-Installation mit Exit-Code $1 fehlgeschlagen"
+LangString webview2InstallSuccess ${LANG_GERMAN} "WebView2 installiert"
+LangString deleteAppData ${LANG_GERMAN} "Auch Einstellungen und App-Daten löschen"
+
+; Modern UI's German page texts use "Sie"; the app says "du". These replace
+; the MUI strings of the pages the installer and uninstaller show. Tauri
+; includes this file after MUI_LANGUAGE, so the later definitions win.
+LangString MUI_TEXT_DIRECTORY_SUBTITLE ${LANG_GERMAN} "Wähle den Ordner, in den $(^NameDA) installiert werden soll."
+LangString MUI_TEXT_INSTALLING_SUBTITLE ${LANG_GERMAN} "Bitte warte, während $(^NameDA) installiert wird."
+LangString MUI_TEXT_FINISH_INFO_REBOOT ${LANG_GERMAN} "Windows muss neu gestartet werden, um die Installation von $(^NameDA) abzuschließen. Möchtest du Windows jetzt neu starten?"
+LangString MUI_TEXT_ABORTWARNING ${LANG_GERMAN} "Möchtest du die Installation von $(^Name) wirklich abbrechen?"
+LangString MUI_UNTEXT_CONFIRM_SUBTITLE ${LANG_GERMAN} "$(^NameDA) wird von deinem Computer entfernt."
+LangString MUI_UNTEXT_UNINSTALLING_SUBTITLE ${LANG_GERMAN} "Bitte warte, während $(^NameDA) entfernt wird."
+LangString MUI_UNTEXT_FINISH_INFO_TEXT ${LANG_GERMAN} "$(^NameDA) wurde entfernt.$\r$\n$\r$\nKlicke auf Fertig stellen, um den Assistenten zu schließen."
+LangString MUI_UNTEXT_FINISH_INFO_REBOOT ${LANG_GERMAN} "Windows muss neu gestartet werden, um die Deinstallation von $(^NameDA) abzuschließen. Möchtest du Windows jetzt neu starten?"
+LangString MUI_UNTEXT_ABORTWARNING ${LANG_GERMAN} "Möchtest du die Deinstallation von $(^Name) wirklich abbrechen?"
