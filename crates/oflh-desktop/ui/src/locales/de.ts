@@ -2,6 +2,65 @@ import type { TranslationSchema } from "../i18n/types";
 import en from "./en";
 
 const de: TranslationSchema<typeof en> = {
+  sessions: {
+    k_user: "Benutzer",
+    k_session: "Sitzung",
+    k_owner: "Besitzer und Sitzung",
+    k_session_n: "Sitzung {{id}}",
+    k_kind_console: "Konsole",
+    k_kind_rdp: "RDP",
+    k_kind_ssh: "SSH",
+    k_kind_tty: "Terminal",
+    k_kind_x11: "X11",
+    k_kind_wayland: "Wayland",
+    k_kind_services: "Dienste",
+    k_kind_other: "Andere",
+    k_state_active: "aktiv",
+    k_state_idle: "untätig",
+    k_state_disconnected: "getrennt",
+    k_state_closing: "meldet sich ab",
+    k_state_other: "Status unbekannt",
+    k_since: "seit {{time}}",
+    k_from: "von {{client}}",
+    k_service_account: "Dienstkonto",
+    k_this_session: "deine Sitzung",
+    k_no_session: "Keine Anmeldesitzung",
+    k_send_message: "Nachricht senden…",
+    k_sign_out: "Benutzer abmelden…",
+    k_requires_admin: "Erfordert Administratorrechte",
+    k_requires_root: "Erfordert root",
+    k_requires_admin_hint:
+      "Starte OFLH als Administrator, um das zu nutzen. OFLH fordert nie selbst Rechte an.",
+    k_requires_root_hint:
+      "Starte OFLH mit sudo, um das zu nutzen. OFLH fordert nie selbst Rechte an.",
+    k_message_title: "Nachricht an {{user}} senden",
+    k_message_label: "Nachricht",
+    k_message_placeholder:
+      "Bitte speichere deine Arbeit, der Server startet um 18:00 neu.",
+    k_message_send: "Senden",
+    k_message_sent: "Nachricht an {{user}} gesendet.",
+    k_sign_out_title: "{{user}} abmelden?",
+    k_sign_out_note:
+      "Alle Programme in dieser Sitzung werden geschlossen. Nicht gespeicherte Arbeit von {{user}} geht verloren.",
+    k_sign_out_button: "{{user}} abmelden",
+    k_sign_out_processes: "Programme, die geschlossen werden",
+    k_sign_out_done: "{{user}} wird abgemeldet.",
+    k_share_title: "Über das Netzwerk geöffnet",
+    k_share_summary_one:
+      "1 Person hat das über eine Netzwerkfreigabe geöffnet.",
+    k_share_summary_many: "{{n}} Netzwerkzugriffe auf dieses Ziel.",
+    k_share_locks: "{{n}} Sperren",
+    k_share_write: "darf schreiben",
+    k_share_close: "Geöffnete Datei schließen",
+    k_share_close_title: "{{path}} für {{user}} schließen?",
+    k_share_close_note:
+      "{{user}} verliert den Zugriff auf die Datei. Nicht gespeicherte Änderungen können verloren gehen.",
+    k_share_closed: "Datei für {{user}} geschlossen.",
+    k_share_unreadable:
+      "Netzwerkzugriffe lassen sich nur mit Administratorrechten lesen.",
+    k_session_changed:
+      "Die Sitzung oder Datei hat sich seit deiner Bestätigung geändert. Es ist nichts passiert; prüfe sie erneut.",
+  },
   about: {
     k_version: "Version",
     k_commit: "Commit",

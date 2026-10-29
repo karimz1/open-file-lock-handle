@@ -39,6 +39,9 @@ export interface Row {
   path_ref: string;
   /** Opaque executable reference for the row's app icon. */
   icon_ref?: string;
+  /** Login session id, filled for visible rows; null when unknown. */
+  session?: string | null;
+  session_kind?: SessionKind | null;
   relation: string;
   access: string;
   evidence: string | null;
@@ -100,7 +103,58 @@ export interface PathValue {
   display: string;
   reference: string;
 }
+export type SessionKind =
+  "console" | "rdp" | "ssh" | "tty" | "x11" | "wayland" | "services" | "other";
+export type SessionState =
+  "active" | "idle" | "disconnected" | "closing" | "other";
+export type Availability =
+  "available" | "requires_admin" | "requires_root" | "unsupported";
+export interface SessionView {
+  id: string;
+  user: string;
+  domain: string | null;
+  kind: SessionKind;
+  state: SessionState;
+  client: string | null;
+  tty: string | null;
+  /** Logon time, Unix seconds. */
+  since: number | null;
+  own: boolean;
+}
+export interface OwnerView {
+  user: string;
+  service: boolean;
+  session: SessionView | null;
+}
+export interface SessionActions {
+  send_message: Availability;
+  sign_out: Availability;
+}
+export interface SignOutConfirmation {
+  ticket: string;
+  session: SessionView;
+  processes: CappedList;
+}
+export interface ShareFileView {
+  id: number;
+  path: string;
+  user: string;
+  client: string | null;
+  locks: number;
+  write: boolean;
+}
+export interface ShareFiles {
+  close: Availability;
+  files: ShareFileView[];
+  error: string | null;
+}
+export interface CloseFileConfirmation {
+  ticket: string;
+  file: ShareFileView;
+}
 export interface Details {
+  owner?: OwnerView;
+  session_actions?: SessionActions | null;
   process: Row;
   ports: number;
   can_inspect_folder: boolean;
@@ -126,6 +180,7 @@ export interface ConfirmationTarget {
   pid: number;
   role?: "holder" | "ancestor";
   impact?: TargetImpact;
+  owner?: OwnerView;
 }
 export interface Confirmation {
   ticket: string;
@@ -189,6 +244,15 @@ export const api = {
     invoke<Confirmation>("prepare_elevated", { ticket }),
   terminate: (ticket: string) =>
     invoke<ActionResult[]>("terminate", { ticket }),
+  prepareSignOut: (revision: number, key: string) =>
+    invoke<SignOutConfirmation>("prepare_sign_out", { revision, key }),
+  signOut: (ticket: string) => invoke<void>("sign_out", { ticket }),
+  sendMessage: (revision: number, key: string, text: string) =>
+    invoke<void>("send_message", { revision, key, text }),
+  shareFiles: () => invoke<ShareFiles>("share_files"),
+  prepareCloseFile: (id: number) =>
+    invoke<CloseFileConfirmation>("prepare_close_file", { id }),
+  closeFile: (ticket: string) => invoke<void>("close_file", { ticket }),
   recent: () => invoke<{ id: number; display: string }[]>("recent"),
   revisit: (id: number) => invoke<Status>("revisit", { id }),
   removeRecent: (id: number) => invoke<void>("remove_recent", { id }),

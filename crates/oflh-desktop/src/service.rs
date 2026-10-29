@@ -71,6 +71,7 @@ fn storage_failure(error: impl std::fmt::Display) -> Failure {
 /// Long-lived desktop service. One worker and one pending scan bound native work.
 pub struct Service {
     shared: Arc<Shared>,
+    sessions: Arc<crate::sessions::Sessions>,
 }
 impl Service {
     /// Start a worker-owned native scanner and a completion callback.
@@ -184,7 +185,80 @@ impl Service {
                     notify(status);
                 }
             })?;
-        Ok(Self { shared })
+        Ok(Self {
+            shared,
+            sessions: Arc::new(crate::sessions::Sessions::native()),
+        })
+    }
+    /// Replace the session source (tests, fixtures).
+    pub fn with_sessions(mut self, sessions: crate::sessions::Sessions) -> Self {
+        self.sessions = Arc::new(sessions);
+        self
+    }
+    /// One table page with session columns filled for its rows only.
+    pub fn page(&self, revision: u32, query: &TableQuery) -> Result<Page, Failure> {
+        let mut page = self.dataset(revision)?.page(query)?;
+        self.sessions.annotate(&mut page.rows);
+        Ok(page)
+    }
+    fn owner(&self, process: &Process) -> OwnerView {
+        self.sessions.owner(&process.user, process.identity.pid)
+    }
+    fn target(&self) -> Option<(PathBuf, bool)> {
+        let path = self.shared.lock().target.clone()?;
+        let directory = path.is_dir();
+        Some((path, directory))
+    }
+    /// Capture the session of a scanned process for "Sign out user".
+    pub fn prepare_sign_out(
+        &self,
+        revision: u32,
+        key: &str,
+    ) -> Result<SignOutConfirmation, Failure> {
+        let dataset = self.dataset(revision)?;
+        let (_, process) = dataset.process(key)?;
+        self.dismiss();
+        self.sessions.prepare_sign_out(
+            process.identity.pid,
+            dataset
+                .snapshot
+                .processes
+                .iter()
+                .map(|process| (process.identity.pid, process.name.clone())),
+        )
+    }
+    /// Sign out the captured session after revalidating it.
+    pub fn sign_out(&self, ticket: &str) -> Result<(), Failure> {
+        self.sessions.sign_out(ticket)
+    }
+    /// Send a message to the session of a scanned process.
+    pub fn send_message(&self, revision: u32, key: &str, text: &str) -> Result<(), Failure> {
+        let (_, process) = self
+            .dataset(revision)?
+            .process(key)
+            .map(|(i, p)| (i, p.identity.pid))?;
+        self.sessions.send_message(process, text)
+    }
+    /// Files of the current target opened over SMB shares.
+    pub fn share_files(&self) -> ShareFiles {
+        let target = self.target();
+        self.sessions.share_files(
+            target
+                .as_ref()
+                .map(|(path, directory)| (path.as_path(), *directory)),
+        )
+    }
+    /// Capture one share open of the current target for "Close open file".
+    pub fn prepare_close_file(&self, id: u32) -> Result<CloseFileConfirmation, Failure> {
+        let (path, directory) = self
+            .target()
+            .ok_or_else(|| Failure::invalid("Inspect a file or folder first"))?;
+        self.dismiss();
+        self.sessions.prepare_close_file(id, (&path, directory))
+    }
+    /// Close the captured share open after revalidating it.
+    pub fn close_file(&self, ticket: &str) -> Result<(), Failure> {
+        self.sessions.close_file(ticket)
     }
     /// Start an inspection. Requests during queued or active work preserve that request.
     pub fn inspect(&self, path: PathBuf) -> Result<Status, Failure> {
@@ -378,6 +452,12 @@ impl Service {
         {
             state.ancestry = Some((key.into(), process.ancestors.clone()));
         }
+        details.owner = self.owner(process);
+        details.session_actions = details
+            .owner
+            .session
+            .as_ref()
+            .map(|session| self.sessions.actions(session));
         if let Some((_, ancestors)) = &state.ancestry {
             details.ancestors = ancestors
                 .iter()
@@ -427,6 +507,9 @@ impl Service {
                 name: oflh_core::safe(&ancestor.name),
                 pid: ancestor.identity.pid,
                 role: TargetRole::Ancestor,
+                owner: scanned
+                    .map(|process| self.owner(process))
+                    .unwrap_or_else(|| self.sessions.owner("", ancestor.identity.pid)),
                 impact: target_impact(native, scanned),
             }],
             force,
@@ -463,6 +546,7 @@ impl Service {
                 name: oflh_core::safe(&process.name),
                 pid: process.identity.pid,
                 role: TargetRole::Holder,
+                owner: self.owner(process),
                 impact: target_impact(native.next().unwrap_or_default(), Some(process)),
             })
             .collect();
@@ -531,6 +615,7 @@ impl Service {
     /// Invalidate an outstanding confirmation without sending any process signal.
     pub fn dismiss(&self) {
         self.shared.lock().action = None;
+        self.sessions.dismiss();
     }
     /// Consume a confirmation exactly once. The caller cannot change the IDs or force mode.
     pub fn terminate(
@@ -1015,6 +1100,96 @@ mod tests {
         ));
         (service, identity)
     }
+    /// Integration: scan data, session backend and tickets together, from
+    /// details through the termination confirmation to sign-out and share close.
+    #[test]
+    fn multi_user_flow_from_details_to_sign_out_and_share_close() {
+        use oflh_sessions::{Fake, Os, Session, SessionKind, SessionState, ShareFile};
+        let (service, identity) = action_service();
+        {
+            let mut shared = service.shared.lock();
+            let mut snapshot = shared.dataset.snapshot.clone();
+            snapshot.processes[0].user = "max.muster".into();
+            shared.dataset = Arc::new(Dataset::new(1, snapshot));
+            shared.target = Some(PathBuf::from("c:/shares/finance/Q3.XLSX"));
+        }
+        let fake = Arc::new(Fake {
+            own: Some("1".into()),
+            ..Fake::default()
+        });
+        fake.sessions.lock().unwrap().push(Session {
+            id: "3".into(),
+            user: "max.muster".into(),
+            kind: SessionKind::Rdp,
+            state: SessionState::Active,
+            client: Some("LAPTOP-7".into()),
+            since: Some(1_700_000_000),
+            ..Session::default()
+        });
+        fake.processes
+            .lock()
+            .unwrap()
+            .insert(identity.pid, "3".into());
+        fake.share_files.lock().unwrap().push(ShareFile {
+            id: 71,
+            path: r"C:\Shares\Finance\Q3.xlsx".into(),
+            user: "anna".into(),
+            client: Some("PC-ANNA".into()),
+            locks: 1,
+            write: true,
+        });
+        let service = service.with_sessions(crate::sessions::Sessions::new(
+            fake.clone(),
+            Os::Windows,
+            true,
+        ));
+        let key = identity_key(identity);
+
+        let details = service.details(1, &key).unwrap();
+        assert_eq!(details.owner.user, "max.muster");
+        let session = details.owner.session.as_ref().unwrap();
+        assert_eq!((session.id.as_str(), session.kind), ("3", "rdp"));
+        let actions = details.session_actions.as_ref().unwrap();
+        assert_eq!(
+            (actions.send_message, actions.sign_out),
+            ("available", "available")
+        );
+
+        let termination = service
+            .prepare(
+                1,
+                std::slice::from_ref(&key),
+                false,
+                &mut Recorder::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            termination.targets[0]
+                .owner
+                .session
+                .as_ref()
+                .map(|s| s.id.as_str()),
+            Some("3")
+        );
+
+        service.send_message(1, &key, "Restart at 18:00").unwrap();
+        let confirmation = service.prepare_sign_out(1, &key).unwrap();
+        assert!(confirmation.processes.items[0].starts_with("fixture (PID "));
+        service.sign_out(&confirmation.ticket).unwrap();
+        assert!(
+            service.sign_out(&confirmation.ticket).is_err(),
+            "single use"
+        );
+
+        let shares = service.share_files();
+        assert_eq!((shares.close, shares.files.len()), ("available", 1));
+        let close = service.prepare_close_file(71).unwrap();
+        service.close_file(&close.ticket).unwrap();
+        assert_eq!(
+            fake.actions(),
+            ["message 3 Restart at 18:00", "sign_out 3", "close 71"]
+        );
+    }
     #[test]
     fn closing_an_inspection_invalidates_results_actions_and_retains_recent_targets() {
         let (service, identity) = action_service();
@@ -1115,6 +1290,7 @@ mod tests {
                 pid: identity.pid,
                 name: "fixture".into(),
                 role: TargetRole::Holder,
+                owner: OwnerView::default(),
                 impact: TargetImpact::default(),
             })
             .collect();

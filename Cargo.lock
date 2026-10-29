@@ -3142,6 +3142,7 @@ dependencies = [
  "oflh-core",
  "oflh-icons",
  "oflh-platform",
+ "oflh-sessions",
  "rusqlite",
  "serde",
  "serde_json",
@@ -3186,12 +3187,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "oflh-sessions"
+version = "0.8.0"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "oflh-tui"
 version = "0.8.0"
 dependencies = [
  "crossterm",
  "oflh-core",
  "oflh-platform",
+ "oflh-sessions",
  "ratatui",
  "unicode-width",
 ]

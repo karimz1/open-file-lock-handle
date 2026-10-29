@@ -449,6 +449,8 @@ impl Dataset {
             path: display(row_path(process, usage_index)),
             path_ref: self.path_ref(process_index, &path_index),
             icon_ref: self.path_ref(process_index, "exe"),
+            session: None,
+            session_kind: None,
             relation: usage
                 .map(|value| value.relation.label())
                 .unwrap_or("process")
@@ -483,6 +485,12 @@ impl Dataset {
         Ok(Details {
             ports: process.ports.len(),
             can_inspect_folder: process.inspection_folder().is_some(),
+            owner: OwnerView {
+                user: safe(&process.user),
+                service: oflh_sessions::is_service_account(&process.user),
+                session: None,
+            },
+            session_actions: None,
             process: self.row(index, None),
             executable: PathValue {
                 display: display(&process.executable),

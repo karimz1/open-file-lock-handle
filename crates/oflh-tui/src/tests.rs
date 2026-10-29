@@ -1574,3 +1574,158 @@ fn fitting_regions_show_no_scroll_affordance() {
         assert!(!details.contains("PgUp PgDn scroll"), "{details}");
     }
 }
+
+mod sessions {
+    use super::*;
+    use oflh_sessions::{Fake, Os, Session, SessionKind, SessionState};
+    use std::sync::Arc;
+
+    fn rdp() -> Session {
+        Session {
+            id: "3".into(),
+            user: "alice".into(),
+            domain: Some("CORP".into()),
+            kind: SessionKind::Rdp,
+            state: SessionState::Active,
+            client: Some("LAPTOP-7".into()),
+            tty: None,
+            since: Some(1_000),
+        }
+    }
+
+    fn multi(os: Os, elevated: bool) -> (App, Arc<Fake>) {
+        let fake = Arc::new(Fake {
+            own: Some("1".into()),
+            ..Fake::default()
+        });
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        fake.sessions.lock().unwrap().push(Session {
+            since: Some(now - 7_500),
+            ..rdp()
+        });
+        fake.processes.lock().unwrap().insert(424242, "3".into());
+        let mut a = app();
+        a.sessions = session::Sessions::new(fake.clone(), os, elevated);
+        key(&mut a, K::Enter);
+        assert_eq!(a.screen, Screen::Details);
+        (a, fake)
+    }
+
+    #[test]
+    fn owner_line_names_user_session_state_and_client() {
+        let line = session::owner_line_at(
+            Language::English,
+            "alice",
+            Some(&rdp()),
+            false,
+            1_000 + 7_500,
+        );
+        assert_eq!(
+            line,
+            "alice · Session 3 (RDP) · active for 2 h 05 min · from LAPTOP-7"
+        );
+        let ssh = Session {
+            kind: SessionKind::Ssh,
+            tty: Some("pts/2".into()),
+            client: Some("10.0.0.7".into()),
+            state: SessionState::Idle,
+            ..rdp()
+        };
+        assert_eq!(
+            session::owner_line_at(Language::German, "alice", Some(&ssh), true, 0),
+            "alice · SSH pts/2 · inaktiv · von 10.0.0.7 · deine Sitzung"
+        );
+        assert_eq!(
+            session::owner_line_at(Language::English, "SYSTEM", None, false, 0),
+            "SYSTEM · Service account"
+        );
+        // Control characters from the OS never reach the terminal.
+        assert!(
+            !session::owner_line_at(Language::English, "a\u{1b}[2J", None, false, 0)
+                .contains('\u{1b}')
+        );
+    }
+
+    #[test]
+    fn without_admin_rights_sign_out_is_explained_and_never_prompts() {
+        let (mut a, fake) = multi(Os::Windows, false);
+        let screen = render_confirm_at(&mut a, "sessions-nonadmin", 80, 24);
+        assert!(
+            screen.contains("SESSION Session 3 (RDP) · active for 2 h 05 min · from LAPTOP-7"),
+            "{screen}"
+        );
+        assert!(
+            screen.contains("L · Requires administrator rights"),
+            "{screen}"
+        );
+        assert!(matches!(key(&mut a, K::Char('L')), Effect::None));
+        assert!(a.sign_out.is_none() && a.error);
+        assert!(a.status.starts_with("Requires administrator rights"));
+        assert!(fake.actions().is_empty());
+    }
+
+    #[test]
+    fn sign_out_prompt_lists_programs_starts_on_cancel_and_revalidates() {
+        let (mut a, fake) = multi(Os::Windows, true);
+        key(&mut a, K::Char('L'));
+        let screen = render_confirm_at(&mut a, "sessions-tui-80x24", 80, 24);
+        for text in [
+            "Sign out alice?",
+            "Unsaved work of alice will be lost.",
+            "Programs that will close (1):",
+            "dotnet (PID 424242)",
+            "▶ Cancel",
+        ] {
+            assert!(screen.contains(text), "{text}\n{screen}");
+        }
+        // Enter on the default button cancels.
+        assert!(matches!(key(&mut a, K::Enter), Effect::None));
+        assert!(a.sign_out.is_none());
+        key(&mut a, K::Char('L'));
+        key(&mut a, K::Tab);
+        let Effect::SignOut(confirmed) = key(&mut a, K::Enter) else {
+            panic!("expected a sign-out")
+        };
+        a.finish_sign_out(&confirmed);
+        assert_eq!(fake.actions(), ["sign_out 3"]);
+        assert_eq!(a.status, "alice is being signed out.");
+        // The ticket is single use.
+        a.finish_sign_out(&confirmed);
+        assert_eq!(fake.actions().len(), 1);
+    }
+
+    #[test]
+    fn a_session_that_changed_after_confirming_is_left_alone() {
+        let (mut a, fake) = multi(Os::Windows, true);
+        key(&mut a, K::Char('L'));
+        key(&mut a, K::Tab);
+        let Effect::SignOut(confirmed) = key(&mut a, K::Enter) else {
+            panic!("expected a sign-out")
+        };
+        // Someone else signed in to session 3 in the meantime.
+        fake.sessions.lock().unwrap()[0].since = Some(2_000);
+        a.sessions.invalidate();
+        a.finish_sign_out(&confirmed);
+        assert!(fake.actions().is_empty());
+        assert!(a.error && a.status.contains("changed"));
+    }
+
+    #[test]
+    fn linux_needs_root_and_macos_shows_the_user_only() {
+        let (mut a, _) = multi(Os::Linux, false);
+        a.language = Language::German;
+        key(&mut a, K::Char('L'));
+        assert_eq!(a.status, "Erfordert root (starte OFLH mit sudo)");
+        let (mut a, _) = multi(Os::MacOs, true);
+        let screen = render_confirm_at(&mut a, "sessions-macos", 80, 24);
+        assert!(
+            screen.contains("SESSION") && !screen.contains("L sign out"),
+            "{screen}"
+        );
+        key(&mut a, K::Char('L'));
+        assert!(a.sign_out.is_none());
+    }
+}

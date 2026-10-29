@@ -1,4 +1,5 @@
 import { ProcessIcon } from "./AppIcon";
+import { ownerLine } from "./sessions";
 import {
   AppWindow,
   Check,
@@ -77,7 +78,15 @@ function ImpactRow({ kind, item }: { kind: Kind; item: string }) {
  * One Details group: a short preview, then "Show all" expands the rest in
  * place. Long groups get a filter so a hundred window titles stay usable.
  */
-export function ImpactGroup({ kind, list }: { kind: Kind; list: CappedList }) {
+export function ImpactGroup({
+  kind,
+  list,
+  title,
+}: {
+  kind: Kind;
+  list: CappedList;
+  title?: string;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState("");
   const id = useId();
@@ -93,7 +102,7 @@ export function ImpactGroup({ kind, list }: { kind: Kind; list: CappedList }) {
     <section className="impact-group" data-expanded={expanded || undefined}>
       <h4>
         <Icon size={13} aria-hidden="true" />
-        {t(heading, { count: total })}
+        {title ?? t(heading, { count: total })}
       </h4>
       {view.filterable && (
         <div className="impact-filter">
@@ -185,6 +194,11 @@ export function TerminationTarget({ target }: { target: ConfirmationTarget }) {
         </strong>
         <code>PID {target.pid}</code>
       </div>
+      {target.owner &&
+        (target.owner.service ||
+          (target.owner.session && !target.owner.session.own)) && (
+          <p className="owner-line target-owner">{ownerLine(target.owner)}</p>
+        )}
       {impact && parts.length > 0 && (
         <>
           <p className="impact-summary">

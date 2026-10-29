@@ -181,6 +181,112 @@ test.beforeEach(async ({ page }) => {
               generation: status.generation + 1,
               scanning: false,
             });
+          // Terminal-server fixture: several people signed in at once.
+          const multi = (window as any).__multiUser as
+            { elevated: boolean; os?: string } | undefined;
+          const sessionsFixture = [
+            {
+              id: "1",
+              user: "karim",
+              domain: "TS01",
+              kind: "console",
+              state: "active",
+              client: null,
+              tty: null,
+              since: Math.floor(Date.now() / 1000) - 3 * 3600,
+              own: true,
+            },
+            {
+              id: "3",
+              user: "max.muster",
+              domain: "CORP",
+              kind: "rdp",
+              state: "active",
+              client: "LAPTOP-7",
+              tty: null,
+              since: Math.floor(Date.now() / 1000) - 2 * 3600,
+              own: false,
+            },
+            {
+              id: "5",
+              user: "anna.schmidt",
+              domain: "CORP",
+              kind: "rdp",
+              state: "disconnected",
+              client: "PC-ANNA",
+              tty: null,
+              since: Math.floor(Date.now() / 1000) - 5 * 3600,
+              own: false,
+            },
+          ];
+          const ownerOf = (pid: number) => {
+            const index = pid - 4000;
+            if (index % 7 === 6)
+              return { user: "SYSTEM", service: true, session: null };
+            const session = sessionsFixture[index % 3];
+            return { user: session.user, service: false, session };
+          };
+          const gate = (own: boolean) =>
+            multi?.os === "linux"
+              ? multi.elevated
+                ? "available"
+                : "requires_root"
+              : multi?.elevated || own
+                ? "available"
+                : "requires_admin";
+          if (command === "share_files")
+            return multi && multi.os !== "linux"
+              ? {
+                  close: multi.elevated ? "available" : "requires_admin",
+                  error: null,
+                  files: ((window as any).__shareFiles ??= [
+                    {
+                      id: 71,
+                      path: "C:\\Shares\\Finance\\Q3-report.xlsx",
+                      user: "anna.schmidt",
+                      client: "PC-ANNA",
+                      locks: 2,
+                      write: true,
+                    },
+                    {
+                      id: 72,
+                      path: "C:\\Shares\\Finance\\budget.docx",
+                      user: "max.muster",
+                      client: "LAPTOP-7",
+                      locks: 0,
+                      write: false,
+                    },
+                  ]),
+                }
+              : { close: "unsupported", files: [], error: null };
+          if (command === "prepare_close_file") {
+            const file = (window as any).__shareFiles.find(
+              (item: any) => item.id === args.id,
+            );
+            return { ticket: "close-ticket", file };
+          }
+          if (command === "close_file") {
+            (window as any).__shareFiles = (window as any).__shareFiles.filter(
+              (item: any) => item.id !== 71,
+            );
+            return;
+          }
+          if (command === "prepare_sign_out") {
+            const owner = ownerOf(Number(String(args.key).split(":")[0]));
+            const session = owner.session!;
+            const items = processRows
+              .filter((row) => ownerOf(row.pid).session?.id === session.id)
+              .map((row) => `${row.name} (PID ${row.pid})`);
+            return {
+              ticket: "sign-out-ticket",
+              session,
+              processes: {
+                items: items.slice(0, 500),
+                more: Math.max(0, items.length - 500),
+              },
+            };
+          }
+          if (command === "sign_out" || command === "send_message") return;
           if (command === "process_icon") {
             // Blender and node have app icons; the rest use the fallback.
             const index = Number(String(args.reference).split(":")[1]);
@@ -303,6 +409,13 @@ test.beforeEach(async ({ page }) => {
           }
           const freshRow = (row: (typeof processRows)[number]) => ({
             ...row,
+            ...(multi && row.pid
+              ? {
+                  user: ownerOf(row.pid).user,
+                  session: ownerOf(row.pid).session?.id ?? "0",
+                  session_kind: ownerOf(row.pid).session?.kind ?? "services",
+                }
+              : {}),
             path_ref: row.path_ref.replace(/^\d+:/, `${args.revision}:`),
             icon_ref: row.icon_ref.replace(/^\d+:/, `${args.revision}:`),
             port: row.port
@@ -382,8 +495,20 @@ test.beforeEach(async ({ page }) => {
                 os_code: null,
               };
             const process = freshRow(captured);
+            const owner =
+              multi && process.pid ? ownerOf(process.pid) : undefined;
             return {
               process,
+              owner,
+              session_actions: owner?.session
+                ? {
+                    send_message:
+                      multi?.os === "linux"
+                        ? "unsupported"
+                        : gate(owner.session.own),
+                    sign_out: gate(multi?.os !== "linux" && owner.session.own),
+                  }
+                : null,
               ports: 1,
               can_inspect_folder: process?.pid !== 0,
               executable: {
@@ -431,6 +556,7 @@ test.beforeEach(async ({ page }) => {
                   name: row.name,
                   pid: row.pid,
                   role: "holder",
+                  owner: multi ? ownerOf(row.pid) : undefined,
                   impact:
                     typeof (window as any).__impact === "function"
                       ? (window as any).__impact(row.name)
@@ -5297,4 +5423,215 @@ test.describe("process icons", () => {
       });
     });
   }
+});
+
+test.describe("multi-user sessions", () => {
+  const setup = async (
+    page: import("@playwright/test").Page,
+    fixture: { elevated: boolean; os?: string },
+    columns = false,
+  ) => {
+    await page.addInitScript(
+      ([value, show]) => {
+        (window as any).__multiUser = value;
+        if (show) {
+          localStorage.setItem("oflh-optional-columns", "1");
+          localStorage.setItem("oflh-hidden-columns", "[]");
+        }
+      },
+      [fixture, columns] as const,
+    );
+    await page.goto("/");
+  };
+  const panel = (page: import("@playwright/test").Page) =>
+    page.getByRole("complementary", { name: "Process details" });
+  const calls = (page: import("@playwright/test").Page, command: string) =>
+    page.evaluate(
+      (name) =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === name,
+        ),
+      command,
+    );
+
+  test("user and session columns stay hidden until chosen", async ({
+    page,
+  }) => {
+    await setup(page, { elevated: true });
+    const grid = page.getByRole("grid");
+    await expect(
+      grid.getByRole("columnheader", { name: /Process/ }),
+    ).toBeVisible();
+    await expect(grid.getByRole("columnheader", { name: "User" })).toHaveCount(
+      0,
+    );
+    await expect(
+      grid.getByRole("columnheader", { name: "Session" }),
+    ).toHaveCount(0);
+  });
+
+  for (const [width, height] of [
+    [860, 560],
+    [1280, 800],
+  ]) {
+    test(`admin sees owner, session and can message and sign out at ${width}x${height}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height });
+      await setup(page, { elevated: true }, true);
+      const grid = page.getByRole("grid");
+      await expect(
+        grid.getByRole("columnheader", { name: "User" }),
+      ).toBeVisible();
+      const row = grid.getByRole("row").nth(2);
+      await expect(row).toContainText("max.muster");
+      await expect(row).toContainText("3 · RDP");
+      await page.screenshot({
+        path: `test-results/sessions-table-${width}x${height}.png`,
+      });
+      await row.click();
+      const details = panel(page);
+      await expect(details.locator(".owner-line")).toContainText(
+        /max\.muster · Session 3 \(RDP\) · active since .+ · from LAPTOP-7/,
+      );
+      await expect(page.locator(".share-panel summary")).toContainText("2");
+      await page.locator(".share-panel summary").click();
+      await page.screenshot({
+        path: `test-results/sessions-details-${width}x${height}.png`,
+      });
+      await page.locator(".share-panel summary").click();
+
+      await details.getByRole("button", { name: "Send message…" }).click();
+      const message = page.getByRole("dialog");
+      await message.getByRole("textbox").fill("Server restarts at 18:00.");
+      await message.getByRole("button", { name: "Send", exact: true }).click();
+      await expect(page.getByText("Message sent to max.muster.")).toBeVisible();
+      expect((await calls(page, "send_message"))[0].args.text).toBe(
+        "Server restarts at 18:00.",
+      );
+
+      await details.getByRole("button", { name: "Sign out user…" }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toContainText("Sign out max.muster?");
+      await expect(dialog).toContainText(
+        "Unsaved work of max.muster will be lost.",
+      );
+      await expect(dialog).toContainText(/Programs that will close \(\d+\)/);
+      await expect(dialog).toContainText(/node\s*PID 4001/);
+      await page.screenshot({
+        path: `test-results/sessions-signout-${width}x${height}.png`,
+      });
+      // Nothing happens until the explicit, user-named button.
+      expect(await calls(page, "sign_out")).toHaveLength(0);
+      await dialog
+        .getByRole("button", { name: "Sign out max.muster", exact: true })
+        .click();
+      await expect(
+        page.getByText("max.muster is being signed out."),
+      ).toBeVisible();
+      expect((await calls(page, "sign_out"))[0].args.ticket).toBe(
+        "sign-out-ticket",
+      );
+    });
+  }
+
+  test("termination confirmation names the other user's session", async ({
+    page,
+  }) => {
+    await setup(page, { elevated: true });
+    const grid = page.getByRole("grid");
+    await grid.getByRole("row").nth(2).click();
+    await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+    const target = page.getByRole("dialog").locator(".target-owner");
+    await expect(target).toContainText("max.muster · Session 3 (RDP)");
+    await page.screenshot({
+      path: "test-results/sessions-confirm-860x560.png",
+    });
+  });
+
+  test("without admin rights actions are disabled and explained", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 860, height: 560 });
+    await setup(page, { elevated: false });
+    await page.getByRole("grid").getByRole("row").nth(2).click();
+    const details = panel(page);
+    const signOut = details.getByRole("button", { name: /^Sign out user…/ });
+    await expect(signOut).toBeDisabled();
+    await expect(
+      details.getByRole("button", { name: /^Send message…/ }),
+    ).toBeDisabled();
+    await expect(
+      details.getByText("Requires administrator rights").first(),
+    ).toBeVisible();
+    await page.locator(".share-panel summary").click();
+    await expect(
+      page
+        .locator(".share-panel")
+        .getByRole("button", { name: /^Close open file/ })
+        .first(),
+    ).toBeDisabled();
+    await page.screenshot({
+      path: "test-results/sessions-nonadmin-860x560.png",
+    });
+    await page.locator(".share-panel summary").click();
+    // The own session never needs elevation.
+    await page.getByRole("grid").getByRole("row").nth(1).click();
+    await expect(
+      details.getByRole("button", { name: "Sign out user…" }),
+    ).toBeEnabled();
+    await expect(details.locator(".owner-line")).toContainText("your session");
+  });
+
+  test("closing a share file needs confirmation and refreshes the list", async ({
+    page,
+  }) => {
+    await setup(page, { elevated: true });
+    const shares = page.locator(".share-panel");
+    await shares.locator("summary").click();
+    await shares
+      .getByRole("listitem")
+      .filter({ hasText: "Q3-report.xlsx" })
+      .getByRole("button", { name: "Close open file" })
+      .click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("anna.schmidt loses access");
+    expect(await calls(page, "close_file")).toHaveLength(0);
+    await dialog.getByRole("button", { name: "Close open file" }).click();
+    await expect(
+      page.getByText("Closed the file for anna.schmidt."),
+    ).toBeVisible();
+    await expect(shares.getByRole("listitem")).toHaveCount(1); // admin: no requirement row
+    expect((await calls(page, "close_file"))[0].args.ticket).toBe(
+      "close-ticket",
+    );
+  });
+
+  test("linux without root offers sign-out only, disabled with a reason", async ({
+    page,
+  }) => {
+    await setup(page, { elevated: false, os: "linux" });
+    await page.getByRole("grid").getByRole("row").nth(2).click();
+    const details = panel(page);
+    await expect(
+      details.getByRole("button", { name: /^Send message/ }),
+    ).toHaveCount(0);
+    await expect(
+      details.getByRole("button", { name: /^Sign out user…/ }),
+    ).toBeDisabled();
+    await expect(details.getByText("Requires root")).toBeVisible();
+    await expect(page.locator(".share-panel")).toHaveCount(0);
+  });
+
+  test("German labels use the informal voice", async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem("oflh-language", "de"));
+    await setup(page, { elevated: false });
+    await page.getByRole("grid").getByRole("row").nth(2).click();
+    await expect(
+      page.getByText("Erfordert Administratorrechte").first(),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^Benutzer abmelden…/ }),
+    ).toBeDisabled();
+  });
 });

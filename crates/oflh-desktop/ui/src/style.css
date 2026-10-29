@@ -2789,3 +2789,77 @@ kbd.shortcut {
 .confirmation-target .app-icon {
   margin-right: 4px;
 }
+
+/* Owner, session and network-share details (multi-user servers). */
+.owner-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.15rem 0 0.4rem;
+  color: var(--muted, inherit);
+  overflow-wrap: anywhere;
+}
+.target-owner {
+  margin: 0.2rem 0 0 1.75rem;
+  font-size: 0.85em;
+}
+.session-actions {
+  flex-wrap: wrap;
+}
+.session-action {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.session-requirement {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.78em;
+  color: var(--warning, #b7791f);
+}
+.message-field {
+  display: grid;
+  gap: 0.35rem;
+}
+.message-field textarea {
+  resize: vertical;
+  min-height: 4.5rem;
+  font: inherit;
+}
+.sign-out-note {
+  font-weight: 600;
+}
+.evidence-note .share-panel > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.share-summary {
+  color: var(--muted);
+}
+.evidence-note .share-list {
+  /* Open above the bar so the summary stays clickable when the bar wraps. */
+  bottom: calc(100% + 4px);
+  list-style: none;
+  display: grid;
+  gap: 0.4rem;
+  padding: 12px 14px;
+  z-index: 5;
+}
+.share-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text, inherit);
+}
+@media (max-width: 900px) {
+  .share-summary {
+    display: none;
+  }
+}
+.share-list li.share-requirement {
+  display: flex;
+  color: var(--warning, #b7791f);
+}
