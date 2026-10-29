@@ -578,7 +578,11 @@ jobs:
           OFLH_E2E_ELEVATED: '1'
           OFLH_E2E_SIGN_OUT: '0'
         run: |
-          cargo test -p oflh-desktop --test multiuser --locked -- --ignored --nocapture --test-threads=1
+          # The runner user is an admin but not root. macOS only lets root read
+          # another user's open files (proc_pidinfo), so run the already-built
+          # test binary as root, like the Linux step.
+          sudo --preserve-env=OFLH_MULTIUSER_E2E,OFLH_E2E_ELEVATED,OFLH_E2E_SIGN_OUT,OFLH_E2E_USER,OFLH_E2E_FILE,OFLH_E2E_PID \
+            "${{ steps.bin.outputs.path }}" --ignored --nocapture --test-threads=1
 
       - name: macOS — non-admin pass (informational)
         if: runner.os == 'macOS'

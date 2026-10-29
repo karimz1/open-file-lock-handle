@@ -37,6 +37,7 @@ stage_owner() {
   echo "held by second user" | sudo tee "$file" >/dev/null
   sudo chown "$U2:staff" "$file"
   local pidfile=$RUN/owner.pid
+  rm -f "$pidfile"
   sudo -u "$U2" bash -c "
 python3 -c \"
 import os, time
@@ -49,6 +50,7 @@ time.sleep(1800)
     [[ -f $pidfile ]] && break
     sleep 0.5
   done
+  [[ -f $pidfile ]] || { echo "owner locker did not start"; return 1; }
   local pid
   pid=$(cat "$pidfile")
   echo "owner locker pid=$pid"
