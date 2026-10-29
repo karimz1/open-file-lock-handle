@@ -526,8 +526,10 @@ jobs:
       # Non-blocking while the loopback RDP fixture settles. Make this step
       # required (drop continue-on-error) after about 5 consecutive green runs.
       - name: Windows — second session message and sign-out (non-blocking)
+        id: win_sign_out
         if: runner.os == 'Windows' && steps.win_session.outcome == 'success'
         continue-on-error: true
+        shell: pwsh
         env:
           OFLH_MULTIUSER_E2E: '1'
           OFLH_E2E_ELEVATED: '1'
@@ -535,6 +537,18 @@ jobs:
         run: |
           quser.exe 2>&1 | Out-Host
           cargo test -p oflh-desktop --test multiuser --locked -- --ignored --nocapture --test-threads=1 --exact second_session_message_and_sign_out
+
+      # continue-on-error reports the step as success; surface the real outcome.
+      - name: Windows — report the second-session test result
+        if: always() && runner.os == 'Windows' && steps.win_session.outcome == 'success'
+        env:
+          OUTCOME: ${{ steps.win_sign_out.outcome }}
+        run: |
+          echo "second_session_message_and_sign_out outcome: $OUTCOME"
+          echo "### Windows second-session test: $OUTCOME" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$OUTCOME" != success ]; then
+            echo "::warning title=Second-session test ${OUTCOME}::second_session_message_and_sign_out did not pass (outcome: ${OUTCOME}). The step is non-blocking; see its log."
+          fi
 
       - name: Windows — non-admin pass (Requires administrator rights)
         if: runner.os == 'Windows'
