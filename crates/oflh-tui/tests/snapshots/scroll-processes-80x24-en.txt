@@ -1,22 +1,22 @@
   oflh   1 Processes  2 Locked files  3 Ports                             test
-  /tmp  ·  MANUAL · r refresh
+  /build  ·  MANUAL · r refresh
   Navigation · / search · Tab/→ tree
   ╭──────────────────────────────────────────────────────────────────────────╮
   │/ Search PID, process, path… · * wildcard                                 │
   ╰──────────────────────────────────────────────────────────────────────────╯
   60 of 60 processes · sort: pid
      PID     PROCESS            ACCESS      PORTS MATCHED PATH    1–11 of 60 ↕
-     1000    worker-0           unknown     0     /build/file-0.dll          █
-     1001    worker-1           unknown     0     /build/file-0.dll          █
-     1002    worker-2           unknown     0     /build/file-0.dll          │
-     1003    worker-3           unknown     0     /build/file-0.dll          │
-     1004    worker-4           unknown     0     /build/file-0.dll          │
-     1005    worker-5           unknown     0     /build/file-0.dll          │
-     1006    worker-6           unknown     0     /build/file-0.dll          │
-     1007    worker-7           unknown     0     /build/file-0.dll          │
-     1008    worker-8           unknown     0     /build/file-0.dll          │
-     1009    worker-9           unknown     0     /build/file-0.dll          │
-     1010    worker-10          unknown     0     /build/file-0.dll          │
+     1000    worker-0           unknown     0     file-0.dll                 █
+     1001    worker-1           unknown     0     file-0.dll                 █
+     1002    worker-2           unknown     0     file-0.dll                 │
+     1003    worker-3           unknown     0     file-0.dll                 │
+     1004    worker-4           unknown     0     file-0.dll                 │
+     1005    worker-5           unknown     0     file-0.dll                 │
+     1006    worker-6           unknown     0     file-0.dll                 │
+     1007    worker-7           unknown     0     file-0.dll                 │
+     1008    worker-8           unknown     0     file-0.dll                 │
+     1009    worker-9           unknown     0     file-0.dll                 │
+     1010    worker-10          unknown     0     file-0.dll                 │
   Enter inspect · Space select · m RAM / c CPU / n name / p PID
   ────────────────────────────────────────────────────────────────────────────
   1/2/3 tabs · / search · ↑↓ move · Enter inspect · Space select · Ctrl+A all

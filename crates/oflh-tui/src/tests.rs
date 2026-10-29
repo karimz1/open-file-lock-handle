@@ -1474,6 +1474,8 @@ fn crowded(processes: usize, usages: usize) -> App {
         })
         .collect();
     app.replace(snapshot);
+    // Fixed target so the header line in the snapshots is the same on every OS.
+    app.target.path = "/build".into();
     app
 }
 
