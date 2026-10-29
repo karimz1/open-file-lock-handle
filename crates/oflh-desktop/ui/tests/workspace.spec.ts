@@ -5147,3 +5147,139 @@ for (const [width, height] of [
     });
   });
 }
+
+/** True when the element overflows and its scrollbar takes real width. */
+const overflowsWithScrollbar = (node: Element) => {
+  const element = node as HTMLElement;
+  return (
+    element.scrollHeight > element.clientHeight + 1 &&
+    element.offsetWidth - element.clientWidth >= 6
+  );
+};
+
+for (const [width, height] of [
+  [800, 600],
+  [860, 560],
+]) {
+  test.describe(`scroll affordance at ${width}x${height}`, () => {
+    test.use({ viewport: { width, height } });
+
+    test("the results table shows a slim scrollbar and fades only at the bottom", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      const table = page.locator(".table-scroll").first();
+      await expect(
+        page.getByRole("grid").getByRole("row").nth(1),
+      ).toBeVisible();
+      expect(await table.evaluate(overflowsWithScrollbar)).toBe(true);
+      await expect(table).toHaveAttribute("data-fade-bottom", "");
+      await page.screenshot({
+        path: `test-results/scroll-table-${width}x${height}.png`,
+      });
+      // The sticky header stays crisp.
+      await table.evaluate((node) => (node.scrollTop = 400));
+      await expect(table).not.toHaveAttribute("data-fade-top", /.*/);
+      await table.evaluate((node) => (node.scrollTop = node.scrollHeight));
+      await expect(table).not.toHaveAttribute("data-fade-bottom", /.*/);
+    });
+
+    test("long dialogs scroll their body while the title and buttons stay visible", async ({
+      page,
+    }) => {
+      await page.addInitScript(() =>
+        localStorage.setItem("oflh-font-size", "24"),
+      );
+      await page.goto("/");
+      await page.getByRole("button", { name: "Donate", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Support OFLH" });
+      const body = dialog.locator(".modal-body");
+      expect(await body.evaluate(overflowsWithScrollbar)).toBe(true);
+      await expect(body).toHaveAttribute("data-fade-bottom", "");
+      await expect(
+        dialog.getByRole("heading", { name: "Support OFLH" }),
+      ).toBeInViewport();
+      await expect(
+        dialog.getByRole("button", { name: "Close dialog" }),
+      ).toBeInViewport();
+      await page.screenshot({
+        path: `test-results/scroll-modal-${width}x${height}.png`,
+      });
+      await body.evaluate((node) => (node.scrollTop = 60));
+      await expect(body).toHaveAttribute("data-fade-top", "");
+      await body.evaluate((node) => (node.scrollTop = node.scrollHeight));
+      await expect(body).not.toHaveAttribute("data-fade-bottom", /.*/);
+    });
+
+    test("dialog buttons outside the body never scroll away", async ({
+      page,
+    }) => {
+      await page.addInitScript(
+        (impact) => ((window as any).__impact = impact),
+        manyWindows,
+      );
+      await page.goto("/");
+      await page.getByRole("grid").getByRole("row").nth(1).click();
+      await page
+        .getByRole("button", { name: "Terminate…", exact: true })
+        .click();
+      const dialog = page.getByRole("dialog");
+      await dialog.locator(".impact-details summary").first().click();
+      const actions = dialog.locator(":scope > .modal-actions");
+      await expect(actions).toBeInViewport({ ratio: 1 });
+      await dialog.getByRole("button", { name: "Show all 150" }).click();
+      await expect(actions).toBeInViewport({ ratio: 1 });
+      await expect(
+        dialog.getByRole("button", { name: "Cancel", exact: true }),
+      ).toBeInViewport({ ratio: 1 });
+      const box = (await dialog.boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(height);
+      await page.screenshot({
+        path: `test-results/scroll-confirm-${width}x${height}.png`,
+      });
+    });
+
+    test("the inspector and sidebar use the same affordance when they overflow", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await page.getByRole("grid").getByRole("row").nth(1).click();
+      const inspector = page.locator(".inspector");
+      await expect(inspector).toBeVisible();
+      for (const region of [inspector, page.locator(".sidebar")]) {
+        const overflows = await region.evaluate(
+          (node) => node.scrollHeight > node.clientHeight + 1,
+        );
+        if (overflows) {
+          expect(await region.evaluate(overflowsWithScrollbar)).toBe(true);
+          await expect(region).toHaveAttribute("data-fade-bottom", "");
+        } else {
+          await expect(region).not.toHaveAttribute("data-fade-bottom", /.*/);
+        }
+      }
+      expect(
+        await inspector.evaluate(
+          (node) => node.scrollHeight > node.clientHeight,
+        ),
+      ).toBe(true);
+      await page.screenshot({
+        path: `test-results/scroll-inspector-${width}x${height}.png`,
+      });
+    });
+
+    test("fitting regions show no fades", async ({ page }) => {
+      await page.setViewportSize({ width: 1280, height: 1000 });
+      await page.goto("/");
+      await page.getByRole("button", { name: "Donate", exact: true }).click();
+      const body = page.getByRole("dialog").locator(".modal-body");
+      const fits = await body.evaluate(
+        (node) => node.scrollHeight <= node.clientHeight + 1,
+      );
+      expect(fits).toBe(true);
+      await expect(body).not.toHaveAttribute("data-fade-bottom", /.*/);
+      await expect(body).not.toHaveAttribute("data-fade-top", /.*/);
+      expect(await body.evaluate(overflowsWithScrollbar)).toBe(false);
+    });
+  });
+}

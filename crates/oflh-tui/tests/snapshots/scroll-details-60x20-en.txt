@@ -1,0 +1,20 @@
+  oflh  /  process details
+  worker-0   PID 1000 · alice
+  CPU — · RAM — · PARENT 0
+  PORTS · p inspect · none detected
+  ╭──────────────────────────────────────────────────────╮
+  │/ Search files, DLLs, paths… · * wildcard             │
+  ╰──────────────────────────────────────────────────────╯
+  ALL USAGES · 40 of 40 usages · 0 locked files   1 / 40
+  FILE file-0.dll
+  ╭───────────────────────────────────────────1–3 of 40 ↕╮
+  │FILE                                       RELATION   │
+  │file-0.dll                                 open       █
+  │file-1.dll                                 open       │
+  ╰──────────────────────────────────────────────────────╯
+  SELECTED PATH · open · unknown
+  /build/file-0.dll
+
+  ────────────────────────────────────────────────────────
+  ↑↓ select · / search · p ports · l locks · r refresh
+  ? help · Esc back · q quit

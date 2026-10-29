@@ -2,6 +2,8 @@ use crate::app::*;
 #[path = "messages.rs"]
 pub(crate) mod messages;
 use messages::localized;
+#[path = "scroll.rs"]
+mod scroll;
 use oflh_core::*;
 use ratatui::{
     Frame,
@@ -743,6 +745,16 @@ fn render_main_table(frame: &mut Frame, area: Rect, app: &App) {
         .column_spacing(0);
     let mut state = TableState::default().with_selected(Some(app.cursor - start));
     frame.render_stateful_widget(table, area, &mut state);
+    scroll::table(
+        frame,
+        area,
+        app.language,
+        scroll::Window {
+            offset: start,
+            visible: count,
+            total: app.rows.len(),
+        },
+    );
 }
 fn process_port_summary(process: &Process, language: messages::Language) -> String {
     let ports: std::collections::BTreeSet<_> = process
@@ -1102,6 +1114,16 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
             );
         let mut state = TableState::default().with_selected(Some(app.usage_cursor - start));
         frame.render_stateful_widget(table, body, &mut state);
+        scroll::bordered_table(
+            frame,
+            body,
+            app.language,
+            scroll::Window {
+                offset: start,
+                visible: count,
+                total: app.usage_rows.len(),
+            },
+        );
     }
     let preview_y = area.bottom().saturating_sub(foot_h + 3);
     if let Some(usage) = current {
@@ -1529,61 +1551,38 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
     let footer_height = (footer_lines(area.width, app).len() as u16).min(area.height);
     let height = area.height.saturating_sub(footer_height + 2);
     app.page = height.max(1) as usize;
-    let logical = lines.len();
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     let mut body = Rect::new(area.x, area.y + 2, area.width, height);
-    if confirm {
-        let mut total = paragraph.line_count(area.width);
-        if total > height as usize && area.width > 1 {
-            // Leave the right column for the scrollbar and re-measure.
-            body.width -= 1;
-            total = paragraph.line_count(body.width);
-        }
-        let last = total.saturating_sub(height as usize);
-        app.scroll = app.scroll.min(last);
-        app.confirm_scrollable = last > 0;
-        if last > 0 {
-            let dim = Style::default().add_modifier(Modifier::DIM);
-            frame.render_widget(
-                Paragraph::new(localized!(
-                    app.language,
-                    "{first}–{last} of {total} ↕",
-                    first = app.scroll + 1,
-                    last = (app.scroll + height as usize).min(total),
-                    total = total
-                ))
-                .style(dim)
-                .alignment(ratatui::layout::Alignment::Right),
-                line_area(area, 0),
-            );
-            let hint = app.language.text("↑↓ / PgUp PgDn scroll · Home/End");
-            if unicode_width::UnicodeWidthStr::width(hint) + 2 <= area.width as usize {
-                frame.render_widget(
-                    Paragraph::new(hint)
-                        .style(dim)
-                        .alignment(ratatui::layout::Alignment::Right),
-                    line_area(area, 1),
-                );
-            }
-            let mut state = ratatui::widgets::ScrollbarState::new(last + 1)
-                .position(app.scroll)
-                .viewport_content_length(height as usize);
-            frame.render_stateful_widget(
-                ratatui::widgets::Scrollbar::new(
-                    ratatui::widgets::ScrollbarOrientation::VerticalRight,
-                )
-                .begin_symbol(None)
-                .end_symbol(None)
-                .track_symbol(Some("│"))
-                .thumb_symbol("█")
-                .track_style(dim),
-                Rect::new(area.x, body.y, area.width, body.height),
-                &mut state,
-            );
-        }
-    } else {
-        app.scroll = app.scroll.min(logical.saturating_sub(1));
+    // Help and the confirmation scroll by wrapped line, with the shared
+    // scrollbar, indicator and key hint while they overflow.
+    let mut total = paragraph.line_count(area.width);
+    if total > height as usize && area.width > 1 {
+        // Leave the right column for the scrollbar and re-measure.
+        body.width -= 1;
+        total = paragraph.line_count(body.width);
     }
+    let last = total.saturating_sub(height as usize);
+    app.scroll = app.scroll.min(last);
+    if confirm {
+        app.confirm_scrollable = last > 0;
+    }
+    let window = scroll::Window {
+        offset: app.scroll,
+        visible: height as usize,
+        total,
+    };
+    scroll::indicator_line(
+        frame,
+        line_area(area, 0),
+        Some(line_area(area, 1)),
+        app.language,
+        window,
+    );
+    scroll::scrollbar(
+        frame,
+        Rect::new(area.x, body.y, area.width, body.height),
+        window,
+    );
     frame.render_widget(
         paragraph.scroll((app.scroll.min(u16::MAX as usize) as u16, 0)),
         body,
@@ -1661,6 +1660,16 @@ fn locked_table(frame: &mut Frame, area: Rect, app: &App) {
         .row_highlight_style(selected());
     let mut state = TableState::default().with_selected(Some(app.cursor - start));
     frame.render_stateful_widget(table, area, &mut state);
+    scroll::table(
+        frame,
+        area,
+        app.language,
+        scroll::Window {
+            offset: start,
+            visible: count,
+            total: app.rows.len(),
+        },
+    );
 }
 
 fn port_table(frame: &mut Frame, area: Rect, app: &App, detail: bool) {
@@ -1798,6 +1807,16 @@ fn port_table(frame: &mut Frame, area: Rect, app: &App, detail: bool) {
         .row_highlight_style(selected());
     let mut state = TableState::default().with_selected(Some(cursor - start));
     frame.render_stateful_widget(table, area, &mut state);
+    scroll::table(
+        frame,
+        area,
+        app.language,
+        scroll::Window {
+            offset: start,
+            visible: count,
+            total: length,
+        },
+    );
 }
 
 fn port_details(frame: &mut Frame, area: Rect, app: &mut App) {

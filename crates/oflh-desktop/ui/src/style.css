@@ -353,6 +353,8 @@ code {
   gap: 5px;
   user-select: none;
   transition: width 0.15s ease;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 /* Collapsed sidebar keeps icon-only navigation, like VS Code's collapsed activity bar. */
 .sidebar.collapsed {
@@ -1347,9 +1349,28 @@ main {
   padding: 22px;
   max-width: 540px;
   width: calc(100% - 50px);
-  max-height: 80vh;
-  overflow: auto;
+  max-height: min(80vh, calc(100vh - 32px));
+  overflow: hidden;
   margin: auto;
+}
+/* Only the body scrolls, so the title and the buttons are always reachable
+   however small the window is. */
+.modal[open] {
+  display: flex;
+  flex-direction: column;
+}
+.modal > header,
+.modal > .modal-actions {
+  flex: none;
+}
+.modal-body {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Room for focus rings and the scrollbar without clipping content. */
+  margin: 0 -8px;
+  padding: 2px 8px;
 }
 .modal::backdrop {
   background: #05091288;
@@ -1455,21 +1476,20 @@ main {
 /* The target list is the only part that scrolls, so the heading, warnings and
    buttons stay reachable in small windows. */
 .modal.confirmation-modal[open] {
+  max-height: calc(100vh - 32px);
+}
+.confirmation-modal > .modal-body {
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 32px);
-  overflow: hidden;
 }
-.confirmation-modal > * {
+.confirmation-modal > .modal-body > * {
   flex: none;
 }
-.confirmation-modal > .confirmation-scroll {
+.confirmation-modal > .modal-body > .confirmation-scroll {
   flex: 0 1 auto;
   min-height: 64px;
 }
 .confirmation-scroll {
-  --scroll-thumb: color-mix(in srgb, var(--muted) 55%, transparent);
-  --scroll-thumb-hover: var(--muted);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1482,38 +1502,6 @@ main {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-}
-/* Chromium ignores ::-webkit-scrollbar once scrollbar-width is set, so the
-   standard properties are only for engines without the pseudo-elements. */
-@supports not selector(::-webkit-scrollbar) {
-  .confirmation-scroll > .confirmation-list {
-    scrollbar-width: thin;
-    scrollbar-color: var(--scroll-thumb) transparent;
-  }
-  .confirmation-scroll > .confirmation-list:hover {
-    scrollbar-color: var(--scroll-thumb-hover) transparent;
-  }
-}
-/* WebView2 and WebKit: a slim rounded thumb that floats inside the border. */
-.confirmation-list::-webkit-scrollbar {
-  width: 8px;
-}
-.confirmation-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-.confirmation-list::-webkit-scrollbar-thumb {
-  background: var(--scroll-thumb);
-  border: 2px solid transparent;
-  border-radius: 8px;
-  background-clip: padding-box;
-}
-.confirmation-list:hover::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--muted) 75%, transparent);
-  background-clip: padding-box;
-}
-.confirmation-list::-webkit-scrollbar-thumb:hover {
-  background: var(--scroll-thumb-hover);
-  background-clip: padding-box;
 }
 /* Fades hint that the list continues; they never catch clicks. */
 .confirmation-scroll::before,
@@ -2699,4 +2687,87 @@ kbd.shortcut {
 /* The target list takes the room the shorter text frees up. */
 .confirmation-scroll > .confirmation-list {
   max-height: min(60vh, 520px);
+}
+
+/* Scroll affordance shared by every scrolling region: a slim thumb that is
+   always visible while content overflows, plus edge fades (set by
+   useScrollRegionFades) where content is hidden. */
+:root {
+  --scroll-thumb: color-mix(in srgb, var(--muted) 55%, transparent);
+  --scroll-thumb-hover: var(--muted);
+}
+/* Chromium ignores ::-webkit-scrollbar once scrollbar-width is set, so the
+   standard properties are only for engines without the pseudo-elements. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scroll-thumb) transparent;
+  }
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background-clip: padding-box;
+}
+:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 75%, transparent);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+  background-clip: padding-box;
+}
+@property --fade-top {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --fade-bottom {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+/* The mask fades content, never the scrollbar strip on the right. */
+[data-fade-top],
+[data-fade-bottom] {
+  mask-image:
+    linear-gradient(
+      to bottom,
+      transparent,
+      #000 var(--fade-top),
+      #000 calc(100% - var(--fade-bottom)),
+      transparent
+    ),
+    linear-gradient(#000, #000);
+  mask-size:
+    calc(100% - 10px) 100%,
+    10px 100%;
+  mask-position:
+    0 0,
+    100% 0;
+  mask-repeat: no-repeat;
+  transition:
+    --fade-top 0.15s ease,
+    --fade-bottom 0.15s ease;
+}
+[data-fade-top] {
+  --fade-top: 24px;
+}
+[data-fade-bottom] {
+  --fade-bottom: 24px;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-fade-top],
+  [data-fade-bottom] {
+    transition: none;
+  }
 }

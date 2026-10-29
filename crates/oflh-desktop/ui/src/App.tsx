@@ -1,3 +1,4 @@
+import { useScrollRegionFades } from "./ScrollArea";
 import {
   confirmationText,
   confirmationValues,
@@ -148,6 +149,7 @@ function formatFailureDetails(failure: unknown): string {
   return String(failure);
 }
 export function App() {
+  useScrollRegionFades();
   const updates = useUpdates();
   const [showAbout, setShowAbout] = useState(false);
 
