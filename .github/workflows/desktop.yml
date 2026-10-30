@@ -2,7 +2,7 @@ name: Desktop
 on:
   pull_request:
   push:
-    branches: [main, feature/oflh-desktop-rc]
+    branches: [main, feature/oflh-desktop-rc, 'release/**']
   workflow_dispatch:
     inputs:
       upload_artifacts:
@@ -132,6 +132,9 @@ jobs:
       RELEASE_TAG: ${{ inputs.version || 'dev' }}
       BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
       PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+      # Release-branch pushes and PRs into release/** always publish one
+      # downloadable build per main platform (Linux RPM, Windows x64, macOS ARM).
+      RELEASE_BRANCH_DOWNLOAD: ${{ ((github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) || (github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/'))) && ((matrix.os == 'linux' && matrix.arch == 'amd64') || (matrix.os == 'windows' && matrix.arch == 'amd64') || (matrix.os == 'darwin' && matrix.arch == 'arm64')) }}
     defaults:
       run:
         shell: bash
@@ -316,6 +319,28 @@ jobs:
         with:
           archive: false
           path: desktop-dist/oflh-desktop.windows.${{ matrix.arch }}-installer.exe.sig
+          if-no-files-found: error
+          retention-days: 1
+      - name: Stage release-branch download
+        id: release-download
+        if: env.RELEASE_BRANCH_DOWNLOAD == 'true'
+        run: |
+          case '${{ matrix.os }}' in
+            linux) source=desktop-dist/oflh-desktop.linux.amd64.rpm; suffix=linux-x86_64.rpm ;;
+            windows) source=desktop-dist/oflh-desktop.windows.amd64-installer.exe; suffix=windows-x64-setup.exe ;;
+            darwin) source=desktop-dist/oflh-desktop.darwin.arm64.dmg; suffix=macos-apple-silicon.dmg ;;
+          esac
+          test -s "$source"
+          version=$(printf '%s' "$OFLH_VERSION" | tr -c 'A-Za-z0-9._-' '-')
+          name="oflh-${version}-${BUILD_COMMIT::7}-${suffix}"
+          mkdir -p release-download
+          cp "$source" "release-download/$name"
+          echo "path=release-download/$name" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        if: env.RELEASE_BRANCH_DOWNLOAD == 'true'
+        with:
+          archive: false
+          path: ${{ steps.release-download.outputs.path }}
           if-no-files-found: error
           retention-days: 1
       - uses: actions/upload-artifact@v7
