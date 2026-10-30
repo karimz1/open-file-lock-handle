@@ -37,6 +37,8 @@ export interface Row {
   user: string;
   path: string;
   path_ref: string;
+  /** Opaque executable reference for the row's app icon. */
+  icon_ref?: string;
   relation: string;
   access: string;
   evidence: string | null;
@@ -155,6 +157,8 @@ export const api = {
   openProject: () => invoke<void>("open_project"),
   openReleaseNotes: () => invoke<void>("open_release_notes"),
   status: () => invoke<Status>("status"),
+  processIcon: (revision: number, reference: string) =>
+    invoke<string | null>("process_icon", { revision, reference }),
   inspect: (path: string) => invoke<Status>("inspect", { path }),
   inspectDropped: (request: number) =>
     invoke<Status>("inspect_dropped", { request }),

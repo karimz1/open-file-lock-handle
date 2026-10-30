@@ -28,6 +28,7 @@ test.beforeEach(async ({ page }) => {
       user: "developer",
       path: "/workspace/project/target/debug/fixture",
       path_ref: `1:${index}:exe`,
+      icon_ref: `1:${index}:exe`,
       relation: "process",
       access: "unknown",
       evidence: null,
@@ -180,6 +181,16 @@ test.beforeEach(async ({ page }) => {
               generation: status.generation + 1,
               scanning: false,
             });
+          if (command === "process_icon") {
+            // Blender and node have app icons; the rest use the fallback.
+            const index = Number(String(args.reference).split(":")[1]);
+            const color = ["#e87d0d", "#3c873a"][index % 5];
+            return color
+              ? `data:image/svg+xml,${encodeURIComponent(
+                  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="${color}"/></svg>`,
+                )}`
+              : null;
+          }
           if (command === "recent") return recentTargets;
           if (command === "remove_recent") {
             recentTargets = recentTargets.filter(
@@ -293,6 +304,7 @@ test.beforeEach(async ({ page }) => {
           const freshRow = (row: (typeof processRows)[number]) => ({
             ...row,
             path_ref: row.path_ref.replace(/^\d+:/, `${args.revision}:`),
+            icon_ref: row.icon_ref.replace(/^\d+:/, `${args.revision}:`),
             port: row.port
               ? {
                   ...(row.port as any),
@@ -5348,4 +5360,55 @@ test("tall windows keep the full page header", async ({ page }) => {
   await expect(
     page.locator(".search-toolbar .compact-label").first(),
   ).toBeVisible();
+});
+
+test.describe("process icons", () => {
+  for (const [width, height] of [
+    [860, 560],
+    [1280, 800],
+  ]) {
+    test(`rows and the confirmation show app icons with a neutral fallback at ${width}x${height}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height });
+      await page.goto("/");
+      const grid = page.getByRole("grid");
+      const blender = grid.getByRole("row").nth(1);
+      await expect(blender.locator("img.app-icon")).toBeVisible();
+      await expect(
+        grid.getByRole("row").nth(3).locator(".app-icon-fallback"),
+      ).toBeVisible();
+      // Icons are decorative: the row's accessible text is unchanged.
+      await expect(blender.locator("img.app-icon")).toHaveAttribute("alt", "");
+      const calls = await page.evaluate(() =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "process_icon",
+        ),
+      );
+      // Lazy: only rendered rows ask for an icon, each once.
+      expect(calls.length).toBeGreaterThan(0);
+      expect(calls.length).toBeLessThan(80);
+      expect(new Set(calls.map((call: any) => call.args.reference)).size).toBe(
+        calls.length,
+      );
+      await page.screenshot({
+        path: `test-results/icons-table-${width}x${height}.png`,
+      });
+      await blender.click();
+      await grid
+        .getByRole("row")
+        .nth(3)
+        .click({ modifiers: ["Shift"] });
+      await page
+        .getByRole("button", { name: "Terminate…", exact: true })
+        .click();
+      const dialog = page.getByRole("dialog");
+      const targets = dialog.locator(".confirmation-target");
+      await expect(targets.nth(0).locator("img.app-icon")).toBeVisible();
+      await expect(targets.nth(1).locator(".app-icon-fallback")).toBeVisible();
+      await page.screenshot({
+        path: `test-results/icons-confirm-${width}x${height}.png`,
+      });
+    });
+  }
 });

@@ -2772,6 +2772,24 @@ kbd.shortcut {
   }
 }
 
+/* App icons in rows and confirmations; the fallback glyph stays muted. */
+.app-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+.app-icon-fallback {
+  color: var(--muted);
+  opacity: 0.7;
+}
+.process-cell .app-icon {
+  margin-right: 2px;
+}
+.confirmation-target .app-icon {
+  margin-right: 4px;
+}
+
 /* Short windows (about 860x560 / 800x600): the page header and inspect bar
    shrink so the results table keeps most of the height. Every action stays
    on screen; only the page description and the long button labels give way

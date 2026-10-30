@@ -72,6 +72,27 @@ async fn blocking<T: Send + 'static>(
         .await
         .map_err(integration)?
 }
+/// Application icon for a row's executable as a `data:` URL, or `null` for the
+/// neutral fallback. Runs off the UI thread; results are cached per path.
+#[tauri::command]
+async fn process_icon(
+    service: Desktop<'_>,
+    revision: u32,
+    reference: String,
+) -> Result<Option<String>, Failure> {
+    static ICONS: std::sync::OnceLock<oflh_icons::IconCache> = std::sync::OnceLock::new();
+    let dataset = service.dataset(revision)?;
+    blocking(move || {
+        let Ok(path) = dataset.executable(&reference) else {
+            return Ok(None);
+        };
+        Ok(ICONS
+            .get_or_init(oflh_icons::IconCache::native)
+            .data_url(&path)
+            .map(|url| url.to_string()))
+    })
+    .await
+}
 #[tauri::command]
 fn status(service: Desktop<'_>) -> Status {
     service.status()
@@ -548,7 +569,8 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
             remove_recent,
             open_paypal,
             clear_recent,
-            revisit
+            revisit,
+            process_icon
         ])
         .run(tauri::generate_context!())?;
     Ok(())
