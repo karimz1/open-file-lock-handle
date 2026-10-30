@@ -74,7 +74,7 @@ Click the image to watch the recording.
 
 ## OFLH Desktop
 
-Open a file, a folder, or a whole drive: use **Open file** or **Open folder**, drop it onto the window, paste a path, or on Windows right-click it in File Explorer and choose **Inspect file** or **Inspect folder**. The **Processes** view then lists every process that uses the target, as in the screenshot above. Click a row to see its PID, memory and CPU use, the exact files it has open (**Matching handles**), its **Local ports**, and its **Process ancestry**. The search box matches process names, PIDs, and full paths, and **Auto** refresh keeps the list current while you work. The app is available in English, German, and Simplified Chinese, with light and dark themes.
+Open a file, a folder, or a whole drive: use **Open file** or **Open folder**, drop it onto the window, paste a path, or on Windows right-click it in File Explorer and choose **Inspect file** or **Inspect folder**. The **Processes** view then lists every process that uses the target, as in the screenshot above. Click a row to see its PID, memory and CPU use, the exact files it has open (**Matching handles**), its **Local ports**, and its **Process ancestry**. The search box matches process names, PIDs, and full paths, and **Auto** refresh keeps the list current while you work. Each process shows its real app icon. The app is available in English, German, and Simplified Chinese, with light and dark themes, and can optionally start maximized.
 
 Using a file is not the same as locking it. Tick **Lock evidence only** to keep rows with lock or sharing-conflict evidence. Windows can show that a file is blocked but not always which process blocked it; those rows say *owner unverified*.
 
@@ -87,6 +87,12 @@ Right-click a row for its actions: copy its path or PID, reveal the file in the 
 ![OFLH Desktop "Terminate processes?" confirmation dialog on Windows listing firefox.exe with PID 19196, warning that unsaved work may be lost and that OFLH checks each process identity again before ending it, with Cancel and Terminate buttons](images/oflh-desktop-windows-terminate-process-confirmation.webp)
 
 Nothing is ended without this confirmation. It names every target, including selected processes hidden by a filter, and **Cancel** is the default. Right before acting, oflh checks that each PID still belongs to the process you picked, so a reused PID cannot redirect the action. Unsaved work in that program can still be lost.
+
+Since 0.9 the confirmation, in both apps, also says what ending the process affects: the windows that close with it (Windows), background processes that keep running, other files and ports it holds, and a warning when a service manager (Windows service, systemd, launchd) will probably restart it right away. Processes Windows needs to keep running get a crash warning.
+
+### Shared computers
+
+On shared Windows and Linux machines, oflh 0.9 shows who owns a process and which login session (console, RDP, SSH) it runs in. With administrator or root rights you can sign that user out, and on Windows send them a message or close a file they have open over an SMB share. Every action asks first and checks the session again before acting.
 
 ### Find what holds a port
 
