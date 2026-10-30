@@ -13,6 +13,11 @@ $ErrorActionPreference = 'Stop'
 $env:PSModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Machine')
 Import-Module (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\Modules\Appx\Appx.psd1')
 $name = 'KarimZouine.OFLHDesktop.ContextMenu'
+# InstallLocation of a package with external location is its WindowsApps
+# folder, so remember the external location here (machine-wide, like the
+# unsigned package itself; readable without admin rights).
+$stateKey = 'HKLM:\SOFTWARE\KarimZouine\OFLH Desktop'
+$stateValue = 'ContextMenuExternalLocation'
 $log = Join-Path $env:TEMP 'oflh-context-menu.log'
 function Log([string] $text) { Add-Content -Path $log -Value "$(Get-Date -Format s) [$Action] $text" }
 
@@ -30,8 +35,9 @@ try {
       $packages = Get-Registered
       if ($packages.Count -eq 0) { exit 2 }
       $packages | ForEach-Object { Write-Output "$($_.PackageFullName) $($_.InstallLocation)" }
-      $here = $packages | Where-Object { $_.InstallLocation -and ((Resolve-Path $_.InstallLocation -ErrorAction SilentlyContinue).Path -eq (Resolve-Path $installDir).Path) }
-      if ($here) { exit 0 } else { exit 3 }
+      $location = (Get-ItemProperty -Path $stateKey -Name $stateValue -ErrorAction SilentlyContinue).$stateValue
+      Write-Output "External location: $location"
+      if ($location -and $location.TrimEnd('\') -eq $installDir.TrimEnd('\')) { exit 0 } else { exit 3 }
     }
     'Register' {
       if ([Environment]::OSVersion.Version.Build -lt 22000) { Log 'Not Windows 11; classic menu only.'; exit 2 }
@@ -51,6 +57,8 @@ try {
         # unsigned-package OID, only from an elevated process.
         Add-AppxPackage -Path $msix -ExternalLocation $installDir -AllowUnsigned
       }
+      New-Item -Path $stateKey -Force | Out-Null
+      Set-ItemProperty -Path $stateKey -Name $stateValue -Value $installDir
       Log "Registered (signed: $signed) for $installDir"
       exit 0
     }
@@ -59,6 +67,9 @@ try {
         Log "Removing $($old.PackageFullName)"
         try { Remove-AppxPackage -Package $old.PackageFullName -AllUsers } catch { Remove-AppxPackage -Package $old.PackageFullName }
       }
+      Remove-Item -Path $stateKey -Recurse -ErrorAction SilentlyContinue
+      $parent = Split-Path -Parent $stateKey
+      if ((Test-Path $parent) -and -not (Get-ChildItem $parent)) { Remove-Item $parent -ErrorAction SilentlyContinue }
       exit 0
     }
   }

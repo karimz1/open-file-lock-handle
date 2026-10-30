@@ -36,7 +36,9 @@ if (-not $package) {
     Where-Object LevelDisplayName -in 'Error', 'Warning' | ForEach-Object { Write-Host "AppX: $($_.Message)" }
 } else {
   $package | Format-List Name, PackageFullName, InstallLocation, IsDevelopmentMode, SignatureKind, Status | Out-String | Write-Host
-  if ($package.InstallLocation.TrimEnd('\') -ne $installDir.TrimEnd('\')) { $failures += "external location is $($package.InstallLocation)" }
+  $status = & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installDir 'shell-ext\register.ps1') -Action Status
+  Write-Host "register.ps1 Status ($LASTEXITCODE): $status"
+  if ($LASTEXITCODE -ne 0) { $failures += "package not recorded for $installDir" }
   $manifest = (Get-AppxPackageManifest -Package $package.PackageFullName).Package
   $menus = $manifest.Applications.Application.Extensions.Extension | Where-Object Category -eq 'windows.fileExplorerContextMenus'
   if (-not $menus) { $failures += 'manifest has no windows.fileExplorerContextMenus' }
@@ -65,6 +67,7 @@ foreach ($class in $classes) {
   if (Test-Path -LiteralPath "Registry::HKEY_CURRENT_USER\Software\Classes\$class\shell\$verb") { $failures += "classic verb left after uninstall: $class" }
 }
 if (Get-AppxPackage -AllUsers -Name $name) { $failures += 'identity package left after uninstall' }
+if (Test-Path 'HKLM:\SOFTWARE\KarimZouine\OFLH Desktop') { $failures += 'registration state left after uninstall' }
 
 if ($failures) {
   $failures | ForEach-Object { Write-Host "::error::$_" }
