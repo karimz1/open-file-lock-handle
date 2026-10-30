@@ -3194,6 +3194,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "oflh-shell-ext"
+version = "0.8.0"
+dependencies = [
+ "windows",
+ "windows-core 0.61.2",
+]
+
+[[package]]
 name = "oflh-tui"
 version = "0.8.0"
 dependencies = [

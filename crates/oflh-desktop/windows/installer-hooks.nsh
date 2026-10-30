@@ -15,6 +15,15 @@
 ; that page and keep the stored choice (on when never chosen). `/NOCONTEXTMENU`
 ; on the installer command line turns the entries off.
 ;
+; Windows 11 shows these registry verbs only under "Show more options" (or
+; Shift+right-click). Its top-level menu lists only IExplorerCommand handlers
+; from a package with identity, so when the option is checked the installer
+; also registers the identity package in <install dir>\shell-ext\ (built by
+; crates/oflh-shell-ext). Unsigned builds can register it only from an elevated
+; process (Add-AppxPackage -AllowUnsigned), so a per-user install asks for
+; administrator rights once; when that is declined, or in silent and passive
+; installs without admin rights, only the classic entries are written.
+;
 ; Entries are written to SHCTX\Software\Classes, which follows the install
 ; mode: HKCU for the default per-user install, HKLM for a per-machine install.
 ; Explorer resolves HKCU over HKLM for the current user.
@@ -148,6 +157,53 @@ FunctionEnd
   WriteRegStr SHCTX "Software\Classes\${CLASS}\shell\${OFLH_CONTEXT_MENU_VERB}\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" --inspect $\"${PLACEHOLDER}$\""
 !macroend
 
+;;; Windows 11 identity package ;;;
+
+!define OFLH_SHELL_EXT_SCRIPT "$INSTDIR\shell-ext\register.ps1"
+!define OFLH_POWERSHELL "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe"
+!define OFLH_POWERSHELL_ARGS "-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File"
+
+; Leaves register.ps1's exit code in $0: see the script for its meaning.
+!macro OFLH_SHELL_EXT_STATUS
+  nsExec::Exec '"${OFLH_POWERSHELL}" ${OFLH_POWERSHELL_ARGS} "${OFLH_SHELL_EXT_SCRIPT}" -Action Status'
+  Pop $0
+!macroend
+
+; Runs register.ps1 with administrator rights: directly when the installer is
+; already elevated, otherwise through one UAC prompt, but never in silent or
+; passive installs, which must not show dialogs.
+!macro OFLH_SHELL_EXT_ELEVATED ACTION
+  System::Call 'shell32::IsUserAnAdmin() i .r0'
+  ${If} $0 <> 0
+    nsExec::Exec '"${OFLH_POWERSHELL}" ${OFLH_POWERSHELL_ARGS} "${OFLH_SHELL_EXT_SCRIPT}" -Action ${ACTION}'
+    Pop $0
+  ${ElseIfNot} ${Silent}
+  ${AndIf} $PassiveMode <> 1
+    ExecShellWait "runas" "${OFLH_POWERSHELL}" '${OFLH_POWERSHELL_ARGS} "${OFLH_SHELL_EXT_SCRIPT}" -Action ${ACTION}' SW_HIDE
+  ${EndIf}
+!macroend
+
+!macro OFLH_REGISTER_MODERN_CONTEXT_MENU
+  ${If} ${FileExists} "${OFLH_SHELL_EXT_SCRIPT}"
+    !insertmacro OFLH_SHELL_EXT_STATUS
+    ; Already registered for this folder (updates, repairs): nothing to do.
+    ${If} $0 <> 0
+      !insertmacro OFLH_SHELL_EXT_ELEVATED Register
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+!macro OFLH_UNREGISTER_MODERN_CONTEXT_MENU
+  ${If} ${FileExists} "${OFLH_SHELL_EXT_SCRIPT}"
+    !insertmacro OFLH_SHELL_EXT_STATUS
+    ; Only ask for rights when there is something to remove.
+    ${If} $0 = 0
+    ${OrIf} $0 = 3
+      !insertmacro OFLH_SHELL_EXT_ELEVATED Unregister
+    ${EndIf}
+  ${EndIf}
+!macroend
+
 !macro OFLH_REFRESH_SHELL
   System::Call 'shell32::SHChangeNotify(i ${OFLH_SHCNE_ASSOCCHANGED}, i ${OFLH_SHCNF_IDLIST}, p 0, p 0)'
 !macroend
@@ -180,10 +236,23 @@ FunctionEnd
     !insertmacro OFLH_WRITE_CONTEXT_MENU_VERB "Directory\Background" "$(oflhInspectFolder)" "%V"
     !insertmacro OFLH_WRITE_CONTEXT_MENU_VERB "Drive" "$(oflhInspectFolder)" "%1"
     WriteRegDWORD SHCTX "${MANUPRODUCTKEY}" "${OFLH_CONTEXT_MENU_PREFERENCE}" 1
+    !insertmacro OFLH_REGISTER_MODERN_CONTEXT_MENU
   ${Else}
     WriteRegDWORD SHCTX "${MANUPRODUCTKEY}" "${OFLH_CONTEXT_MENU_PREFERENCE}" 0
+    !insertmacro OFLH_UNREGISTER_MODERN_CONTEXT_MENU
   ${EndIf}
   !insertmacro OFLH_REFRESH_SHELL
+  Pop $0
+!macroend
+
+; The identity package must be removed while register.ps1 still exists, so
+; before the template deletes the files. Updates keep it: the install folder,
+; and with it the package's external location, stays the same.
+!macro NSIS_HOOK_PREUNINSTALL
+  Push $0
+  ${If} $UpdateMode <> 1
+    !insertmacro OFLH_UNREGISTER_MODERN_CONTEXT_MENU
+  ${EndIf}
   Pop $0
 !macroend
 

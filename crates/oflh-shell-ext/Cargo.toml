@@ -1,0 +1,20 @@
+[package]
+name = "oflh-shell-ext"
+description = "Windows 11 File Explorer context menu handler (IExplorerCommand) for OFLH Desktop"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "oflh_shell_ext"
+crate-type = ["cdylib", "rlib"]
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_LibraryLoader", "Win32_System_SystemServices", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_Globalization"] }
+windows-core = "0.61"
