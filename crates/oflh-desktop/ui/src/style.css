@@ -2789,3 +2789,89 @@ kbd.shortcut {
 .confirmation-target .app-icon {
   margin-right: 4px;
 }
+
+/* Short windows (about 860x560 / 800x600): the page header and inspect bar
+   shrink so the results table keeps most of the height. Every action stays
+   on screen; only the page description and the long button labels give way
+   (the labels remain the buttons' accessible names and tooltips). */
+@media (max-height: 700px) {
+  .app-header {
+    min-height: 0;
+    height: auto;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  .app-header button {
+    min-height: 2rem;
+  }
+  .brand {
+    gap: 8px;
+  }
+  .brand-symbol {
+    width: 26px;
+    height: 26px;
+  }
+  .brand strong {
+    font-size: 1.1rem;
+  }
+  .workspace-heading {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    padding: 0;
+  }
+  .target-area {
+    margin: 8px 16px;
+  }
+  .target-bar {
+    padding: 2px 4px 2px 8px;
+    gap: 8px;
+  }
+  .target-bar button,
+  .search-toolbar button,
+  .search-toolbar summary,
+  .selection-toolbar button {
+    min-height: 2rem;
+  }
+  .search-toolbar {
+    gap: 6px;
+    padding: 6px 12px;
+  }
+  .search-toolbar > button:not(.icon-button),
+  .search-toolbar summary {
+    padding-left: 9px;
+    padding-right: 9px;
+  }
+  .search-box {
+    min-height: 2.2rem;
+    min-width: 96px;
+    padding: 2px 10px;
+  }
+  .search-box kbd {
+    display: none;
+  }
+  .search-toolbar .compact-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .selection-toolbar {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  .evidence-note {
+    padding: 4px 16px;
+  }
+  .evidence-note > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

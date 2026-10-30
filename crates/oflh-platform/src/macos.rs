@@ -514,11 +514,24 @@ impl Backend for Native {
     fn impact(&mut self, ids: &[Identity]) -> Vec<impact::Impact> {
         // Window titles need the Screen Recording permission on macOS 10.15+;
         // OFLH does not request it, so windows stay unavailable.
+        // `launchctl list` covers this user's launchd domain only; system
+        // daemons need root to inspect and stay unlabelled.
+        let mut jobs = std::process::Command::new("/bin/launchctl")
+            .arg("list")
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| impact::launchd_jobs(&String::from_utf8_lossy(&output.stdout)))
+            .unwrap_or_default();
         children_for(process_table(), ids)
             .into_iter()
-            .map(|children| impact::Impact {
+            .zip(ids)
+            .map(|(children, &id)| impact::Impact {
                 windows: None,
                 children,
+                service: jobs.remove(&id.pid),
+                critical: false,
             })
             .collect()
     }

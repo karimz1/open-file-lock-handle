@@ -360,6 +360,10 @@ pub struct TargetImpact {
     pub files: CappedList,
     /// Local ports the latest scan attributed to this process.
     pub ports: CappedList,
+    /// Service manager unit that may restart the process; best effort.
+    pub service: Option<String>,
+    /// Windows critical process: ending it stops the system.
+    pub critical: bool,
 }
 /// A process displayed in a destructive-action confirmation.
 #[derive(Clone, Debug, Serialize)]

@@ -454,6 +454,10 @@ const zh: TranslationSchema<typeof en> = {
     k_visible_columns: "可见列",
   },
   termination: {
+    k_impact_critical: "Windows 需要此进程。结束它可能导致电脑崩溃。",
+    k_impact_service: "某个服务很可能会立即重新启动它。",
+    k_impact_group_service: "服务",
+    k_impact_service_restarts: "可能会重新启动它",
     k_impact_targets_label: "受影响的进程",
     k_impact_windows:
       "{{name}} 将完全关闭，包括全部 {{count}} 个打开的窗口，例如“{{title}}”。",
