@@ -428,6 +428,10 @@ const zh: TranslationSchema<typeof en> = {
     k_selection_copied: "已复制所选内容",
   },
   settings: {
+    k_open_window_maximized: "以最大化方式打开窗口",
+    k_open_window_maximized_help:
+      "OFLH 启动时最大化窗口。你仍然可以还原窗口并调整其大小。下次启动时生效。",
+    k_window: "窗口",
     k_interface_zoom: "界面缩放",
     k_scale_the_whole_interface_zoom_help:
       "缩放整个界面，包括图标、按钮和间距。适用于难以看清较小界面元素的情况。",

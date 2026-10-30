@@ -458,6 +458,10 @@ const de: TranslationSchema<typeof en> = {
     k_selection_copied: "Auswahl kopiert",
   },
   settings: {
+    k_open_window_maximized: "Fenster maximiert öffnen",
+    k_open_window_maximized_help:
+      "OFLH startet maximiert. Das Fenster lässt sich weiterhin wiederherstellen und in der Größe ändern. Gilt ab dem nächsten Start.",
+    k_window: "Fenster",
     k_about_oflh: "Über OFLH",
     k_appearance: "Darstellung",
     k_interface_font_size: "Schriftgröße der Oberfläche",
