@@ -4,6 +4,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 mod app;
 mod refresh;
+mod session;
 mod update_worker;
 pub use view::messages::{Language, LanguageError};
 mod view;
@@ -73,6 +74,7 @@ pub fn run(
     app.ports_path_only = options.ports_path_only;
     app.follow_port_folder = options.follow_port_folder;
     app.ports_requested = true;
+    app.sessions = session::Sessions::native(oflh_platform::elevation::is_elevated());
     app.port_query = options
         .port
         .map_or_else(String::new, |port| format!("port:{port}"));
@@ -307,6 +309,10 @@ pub fn run(
                 if spawned.is_err() {
                     app.impact.clear()
                 }
+            }
+            Effect::SignOut(key) => {
+                app.finish_sign_out(&key);
+                dirty = true
             }
             Effect::None | Effect::Scan | Effect::FollowPort(..) => {}
         }

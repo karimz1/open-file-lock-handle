@@ -464,3 +464,216 @@ jobs:
           result=$?
           set -e
           test "$result" -eq 124
+
+  # Real multi-user / terminal-server E2E (separate from the native build matrix).
+  # Free GitHub-hosted runners only. First runs are observational — see the PR
+  # "Verify on first run" list before making this job required.
+  multiuser-e2e:
+    name: Multi-user E2E / ${{ matrix.os }}
+    if: ${{ !inputs.administrator_only }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, windows-2022, ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup show
+
+      - name: Linux WebView build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libxdo-dev libssl-dev librsvg2-dev patchelf
+
+      - name: Build multiuser E2E binary
+        run: cargo test -p oflh-desktop --test multiuser --no-run --locked
+
+      - name: Locate multiuser test binary
+        id: bin
+        run: |
+          BIN=$(ls -1 target/debug/deps/multiuser-* 2>/dev/null | grep -v '\.d$' | head -1)
+          test -n "$BIN" && test -x "$BIN"
+          echo "path=$BIN" >> "$GITHUB_OUTPUT"
+          echo "multiuser binary: $BIN"
+
+      # ── Windows ──────────────────────────────────────────────────────────
+      - name: Windows — create test users
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\.github\scripts\multiuser\windows.ps1 -Stage users
+
+      - name: Windows — second-user file holder (owner annotation)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\.github\scripts\multiuser\windows.ps1 -Stage owner
+
+      - name: Windows — SMB share opened by a third user
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\.github\scripts\multiuser\windows.ps1 -Stage share
+
+      - name: Windows — enable RDP loopback
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\.github\scripts\multiuser\windows.ps1 -Stage rdp
+
+      - name: Windows — second interactive session (RDP client chain)
+        id: win_session
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        run: .\.github\scripts\multiuser\windows.ps1 -Stage session
+
+      - name: Windows — annotate when the second session was unavailable
+        if: runner.os == 'Windows' && steps.win_session.outcome == 'failure'
+        run: |
+          echo "::warning title=Second RDP session unavailable::No headless client produced an Active session on this runner. Sign-out / send-message E2E is skipped here; SMB, owner, non-admin and mocked tests stay blocking."
+
+      - name: Windows — SMB opens before the test
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-SmbOpenFile | Format-Table FileId, ClientUserName, ClientComputerName, Path -AutoSize | Out-String -Width 300 | Write-Host
+          openfiles.exe /query /v /fo list 2>&1 | Write-Host
+
+      - name: Windows — elevated multiuser E2E
+        if: runner.os == 'Windows'
+        env:
+          OFLH_MULTIUSER_E2E: '1'
+          OFLH_E2E_ELEVATED: '1'
+        run: |
+          cargo test -p oflh-desktop --test multiuser --locked -- --ignored --nocapture --test-threads=1 --skip second_session_message_and_sign_out
+
+      # Non-blocking while the loopback RDP fixture settles. Make this step
+      # required (drop continue-on-error) after about 5 consecutive green runs.
+      - name: Windows — second session message and sign-out (non-blocking)
+        id: win_sign_out
+        if: runner.os == 'Windows' && steps.win_session.outcome == 'success'
+        continue-on-error: true
+        shell: pwsh
+        env:
+          OFLH_MULTIUSER_E2E: '1'
+          OFLH_E2E_ELEVATED: '1'
+          OFLH_E2E_SIGN_OUT: '1'
+        run: |
+          quser.exe 2>&1 | Out-Host
+          cargo test -p oflh-desktop --test multiuser --locked -- --ignored --nocapture --test-threads=1 --exact second_session_message_and_sign_out
+
+      # continue-on-error reports the step as success; surface the real outcome.
+      - name: Windows — report the second-session test result
+        if: always() && runner.os == 'Windows' && steps.win_session.outcome == 'success'
+        env:
+          OUTCOME: ${{ steps.win_sign_out.outcome }}
+        run: |
+          echo "second_session_message_and_sign_out outcome: $OUTCOME"
+          echo "### Windows second-session test: $OUTCOME" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$OUTCOME" != success ]; then
+            echo "::warning title=Second-session test ${OUTCOME}::second_session_message_and_sign_out did not pass (outcome: ${OUTCOME}). The step is non-blocking; see its log."
+          fi
+
+      - name: Windows — non-admin pass (Requires administrator rights)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          OFLH_E2E_TEST_EXE: ${{ steps.bin.outputs.path }}
+        run: .\.github\scripts\multiuser\windows.ps1 -Stage nonadmin
+
+      # ── Linux ────────────────────────────────────────────────────────────
+      - name: Linux — create test user
+        if: runner.os == 'Linux'
+        run: bash .github/scripts/multiuser/linux.sh users
+
+      - name: Linux — second-user file holder (owner annotation)
+        if: runner.os == 'Linux'
+        run: bash .github/scripts/multiuser/linux.sh owner
+
+      - name: Linux — logind session (systemd-run PAMName=login, else ssh)
+        id: linux_session
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: bash .github/scripts/multiuser/linux.sh session
+
+      - name: Linux — annotate when logind session was unavailable
+        if: runner.os == 'Linux' && steps.linux_session.outcome == 'failure'
+        run: |
+          echo "::warning title=logind session unavailable::PAMName=login / ssh localhost did not register a session. Sign-out E2E is skipped here; owner and non-root gating stay blocking."
+
+      - name: Linux — elevated (root) multiuser E2E
+        if: runner.os == 'Linux'
+        env:
+          OFLH_MULTIUSER_E2E: '1'
+          OFLH_E2E_ELEVATED: '1'
+          OFLH_E2E_SIGN_OUT: ${{ steps.linux_session.outcome == 'success' && '1' || '0' }}
+        run: |
+          # geteuid()==0 is required for sign-out / cross-user reads on Linux.
+          # Run the already-built test binary so cargo does not rebuild as root.
+          sudo --preserve-env=OFLH_MULTIUSER_E2E,OFLH_E2E_ELEVATED,OFLH_E2E_SIGN_OUT,OFLH_E2E_USER,OFLH_E2E_FILE,OFLH_E2E_PID,OFLH_E2E_SESSION_USER,OFLH_E2E_SESSION_FILE,OFLH_E2E_SESSION_PID \
+            "${{ steps.bin.outputs.path }}" --ignored --nocapture --test-threads=1
+
+      - name: Linux — non-root pass (Requires root)
+        if: runner.os == 'Linux'
+        env:
+          OFLH_E2E_TEST_EXE: ${{ steps.bin.outputs.path }}
+        run: bash .github/scripts/multiuser/linux.sh nonadmin
+
+      # ── macOS ────────────────────────────────────────────────────────────
+      - name: macOS — create test user
+        if: runner.os == 'macOS'
+        run: bash .github/scripts/multiuser/macos.sh users
+
+      - name: macOS — second-user file holder (owner annotation only)
+        if: runner.os == 'macOS'
+        run: bash .github/scripts/multiuser/macos.sh owner
+
+      - name: macOS — elevated multiuser E2E (owner only; no remote sign-out)
+        if: runner.os == 'macOS'
+        env:
+          OFLH_MULTIUSER_E2E: '1'
+          OFLH_E2E_ELEVATED: '1'
+          OFLH_E2E_SIGN_OUT: '0'
+        run: |
+          # The runner user is an admin but not root. macOS only lets root read
+          # another user's open files (proc_pidinfo), so run the already-built
+          # test binary as root, like the Linux step.
+          sudo --preserve-env=OFLH_MULTIUSER_E2E,OFLH_E2E_ELEVATED,OFLH_E2E_SIGN_OUT,OFLH_E2E_USER,OFLH_E2E_FILE,OFLH_E2E_PID \
+            "${{ steps.bin.outputs.path }}" --ignored --nocapture --test-threads=1
+
+      - name: macOS — non-admin pass (informational)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        env:
+          OFLH_E2E_TEST_EXE: ${{ steps.bin.outputs.path }}
+        run: bash .github/scripts/multiuser/macos.sh nonadmin
+
+      # ── Shared cleanup / diagnostics ─────────────────────────────────────
+      - name: Collect diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            Windows) pwsh -File .github/scripts/multiuser/windows.ps1 -Stage diagnostics ;;
+            Linux)   bash .github/scripts/multiuser/linux.sh diagnostics ;;
+            macOS)   bash .github/scripts/multiuser/macos.sh diagnostics ;;
+          esac
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: multiuser-e2e-${{ matrix.os }}
+          path: ${{ runner.temp }}/oflh-multiuser-diag
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Cleanup fixtures
+        if: always()
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            Windows) pwsh -File .github/scripts/multiuser/windows.ps1 -Stage cleanup ;;
+            Linux)   bash .github/scripts/multiuser/linux.sh cleanup ;;
+            macOS)   bash .github/scripts/multiuser/macos.sh cleanup ;;
+          esac

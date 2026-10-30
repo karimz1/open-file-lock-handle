@@ -13,6 +13,7 @@ pub mod launch;
 mod path_text;
 mod recent;
 pub mod service;
+pub mod sessions;
 #[cfg(feature = "desktop")]
 pub mod shell;
 pub mod startup;

@@ -158,8 +158,8 @@ async fn choose(
 }
 #[tauri::command]
 async fn page(service: Desktop<'_>, revision: u32, query: TableQuery) -> Result<Page, Failure> {
-    let dataset = service.dataset(revision)?;
-    blocking(move || dataset.page(&query)).await
+    let service = service.inner().clone();
+    blocking(move || service.page(revision, &query)).await
 }
 #[tauri::command]
 async fn details(service: Desktop<'_>, revision: u32, key: String) -> Result<Details, Failure> {
@@ -267,6 +267,48 @@ async fn terminate(service: Desktop<'_>, ticket: String) -> Result<Vec<ActionRes
         service.terminate(&ticket, &mut *backend)
     })
     .await
+}
+#[tauri::command]
+async fn prepare_sign_out(
+    service: Desktop<'_>,
+    revision: u32,
+    key: String,
+) -> Result<SignOutConfirmation, Failure> {
+    let service = service.inner().clone();
+    blocking(move || service.prepare_sign_out(revision, &key)).await
+}
+#[tauri::command]
+async fn sign_out(service: Desktop<'_>, ticket: String) -> Result<(), Failure> {
+    let service = service.inner().clone();
+    blocking(move || service.sign_out(&ticket)).await
+}
+#[tauri::command]
+async fn send_message(
+    service: Desktop<'_>,
+    revision: u32,
+    key: String,
+    text: String,
+) -> Result<(), Failure> {
+    let service = service.inner().clone();
+    blocking(move || service.send_message(revision, &key, &text)).await
+}
+#[tauri::command]
+async fn share_files(service: Desktop<'_>) -> Result<ShareFiles, Failure> {
+    let service = service.inner().clone();
+    blocking(move || Ok(service.share_files())).await
+}
+#[tauri::command]
+async fn prepare_close_file(
+    service: Desktop<'_>,
+    id: u32,
+) -> Result<CloseFileConfirmation, Failure> {
+    let service = service.inner().clone();
+    blocking(move || service.prepare_close_file(id)).await
+}
+#[tauri::command]
+async fn close_file(service: Desktop<'_>, ticket: String) -> Result<(), Failure> {
+    let service = service.inner().clone();
+    blocking(move || service.close_file(&ticket)).await
 }
 #[derive(Serialize)]
 struct Recent {
@@ -570,7 +612,13 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
             open_paypal,
             clear_recent,
             revisit,
-            process_icon
+            process_icon,
+            prepare_sign_out,
+            sign_out,
+            send_message,
+            share_files,
+            prepare_close_file,
+            close_file
         ])
         .run(tauri::generate_context!())?;
     Ok(())

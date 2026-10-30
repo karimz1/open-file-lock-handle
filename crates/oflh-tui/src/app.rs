@@ -51,6 +51,8 @@ pub enum Effect {
     /// Read windows and children for the pending targets.
     Impact(Vec<Identity>),
     Link(&'static str),
+    /// Sign out the confirmed session after revalidating it.
+    SignOut(oflh_sessions::SessionKey),
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum UpdateFeedback {
@@ -219,6 +221,10 @@ pub struct App {
     pub width: u16,
     pub height: u16,
     pub page: usize,
+    /// Owner sessions of processes; empty in tests unless a fake is set.
+    pub sessions: crate::session::Sessions,
+    /// Sign-out awaiting confirmation.
+    pub sign_out: Option<crate::session::SignOutPrompt>,
 }
 impl App {
     pub fn new(target: Target, version: String) -> Self {
@@ -278,6 +284,8 @@ impl App {
             confirm_scrollable: false,
             scroll: 0,
             status: String::new(),
+            sessions: Default::default(),
+            sign_out: None,
             error: false,
             width: 80,
             height: 24,
@@ -710,6 +718,9 @@ impl App {
         if key.code == K::Char('z') && self.scanning {
             return Effect::CancelScan;
         }
+        if self.sign_out.is_some() {
+            return self.sign_out_key(key.code);
+        }
         if self.screen == Screen::Confirm {
             return self.confirm_key(key.code);
         }
@@ -812,6 +823,7 @@ impl App {
                         }
                     }
                 }
+                K::Char('L') => self.prepare_sign_out(),
                 K::Char('l') if !self.detail_ports => {
                     self.detail_locks = !self.detail_locks;
                     self.filter_details()
@@ -1089,6 +1101,103 @@ impl App {
         }
         self.impact = ids.iter().copied().zip(impact).collect()
     }
+    /// Session of the process shown in details, if it has one.
+    pub fn detail_session(&mut self) -> Option<oflh_sessions::Session> {
+        let pid = self.detail()?.identity.pid;
+        self.sessions.of(pid)
+    }
+
+    fn prepare_sign_out(&mut self) {
+        use crate::session;
+        let Some(target) = self.detail_session() else {
+            self.status = session::unsupported(self.language).into();
+            self.error = true;
+            return;
+        };
+        match self
+            .sessions
+            .availability(oflh_sessions::Action::SignOut, &target)
+        {
+            oflh_sessions::Availability::Available => {}
+            availability => {
+                self.status = session::requirement(self.language, availability)
+                    .unwrap_or_else(|| session::unsupported(self.language))
+                    .into();
+                self.error = true;
+                return;
+            }
+        }
+        let pids: Vec<(u32, String)> = self
+            .snapshot
+            .processes
+            .iter()
+            .map(|process| (process.identity.pid, process.name.clone()))
+            .collect();
+        let processes = pids
+            .into_iter()
+            .filter(|(pid, _)| {
+                self.sessions
+                    .of(*pid)
+                    .is_some_and(|other| other.id == target.id)
+            })
+            .map(|(pid, name)| format!("{} (PID {pid})", oflh_core::safe(&name)))
+            .collect();
+        self.sign_out = Some(session::SignOutPrompt {
+            session: target,
+            processes,
+            confirm: false,
+        });
+    }
+
+    fn sign_out_key(&mut self, key: K) -> Effect {
+        let Some(prompt) = &mut self.sign_out else {
+            return Effect::None;
+        };
+        match key {
+            K::Esc | K::Char('q' | 'n') => self.sign_out = None,
+            K::Tab | K::BackTab | K::Left | K::Right => prompt.confirm = !prompt.confirm,
+            K::Enter if prompt.confirm => {
+                let key = prompt.key();
+                return Effect::SignOut(key);
+            }
+            K::Enter => self.sign_out = None,
+            _ => {}
+        }
+        Effect::None
+    }
+
+    /// Run a confirmed sign-out: single use, revalidated, never elevated.
+    pub fn finish_sign_out(&mut self, key: &oflh_sessions::SessionKey) {
+        let Some(prompt) = self.sign_out.take() else {
+            return;
+        };
+        if prompt.key() != *key {
+            return;
+        }
+        let result = match self.sessions.source() {
+            Some(source)
+                if self
+                    .sessions
+                    .availability(oflh_sessions::Action::SignOut, &prompt.session)
+                    == oflh_sessions::Availability::Available =>
+            {
+                oflh_sessions::sign_out(source.as_ref(), key)
+            }
+            _ => Err(oflh_sessions::Error::PermissionDenied),
+        };
+        self.sessions.invalidate();
+        match result {
+            Ok(()) => {
+                self.status = crate::session::done(self.language, &prompt.session.user);
+                self.error = false
+            }
+            Err(error) => {
+                self.status = crate::session::failed(self.language, &error);
+                self.error = true
+            }
+        }
+    }
+
     fn confirm_key(&mut self, key: K) -> Effect {
         match key {
             K::Esc | K::Char('q' | 'n') => {

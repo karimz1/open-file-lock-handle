@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 oflh-core.workspace = true
 oflh-platform.workspace = true
+oflh-sessions = { path = "../oflh-sessions" }
 ratatui = { workspace = true, features = ["unstable-rendered-line-info"] }
 crossterm.workspace = true
 unicode-width.workspace = true

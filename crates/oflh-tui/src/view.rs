@@ -129,23 +129,23 @@ fn search(frame: &mut Frame, area: Rect, app: &App, detail: bool) {
     }
 }
 /// Render distinct action colors with a pointer on the focused choice.
+fn button(label: &str, focused: bool, color: Color) -> Span<'static> {
+    let style = if focused {
+        Style::default()
+            .fg(Color::Rgb(24, 24, 32))
+            .bg(color)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(color)
+    };
+    Span::styled(
+        format!("{} {label} ", if focused { "▶" } else { " " }),
+        style,
+    )
+}
 fn confirmation_buttons(app: &App) -> Line<'static> {
     let cancel_color = Color::Rgb(155, 197, 161);
     let terminate_color = LOCK;
-    let button = |label: &str, focused: bool, color: Color| {
-        let style = if focused {
-            Style::default()
-                .fg(Color::Rgb(24, 24, 32))
-                .bg(color)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(color)
-        };
-        Span::styled(
-            format!("{} {label} ", if focused { "▶" } else { " " }),
-            style,
-        )
-    };
     Line::from(vec![
         button(app.language.text("Cancel"), !app.confirm, cancel_color),
         Span::raw("   "),
@@ -357,7 +357,10 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
     match app.screen {
         Screen::Main => main_view(frame, area, app),
-        Screen::Details => details(frame, area, app),
+        Screen::Details => {
+            details(frame, area, app);
+            sign_out_prompt(frame, area, app)
+        }
         Screen::Help | Screen::Confirm => dialog(frame, area, app),
     }
 }
@@ -937,7 +940,33 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
         );
         return;
     };
-    let header = vec![
+    let process = process.clone();
+    let process = &process;
+    let session = app.detail_session();
+    // The user is already on the first line; this line adds the session.
+    let owner = session.as_ref().map(|session| {
+        let line = crate::session::owner_line(
+            app.language,
+            &process.user,
+            Some(session),
+            app.sessions.is_own(session),
+        );
+        let user = format!("{} · ", safe(&process.user));
+        line.strip_prefix(&user)
+            .map_or(line.clone(), str::to_string)
+    });
+    let action = session.as_ref().and_then(|session| {
+        let availability = app
+            .sessions
+            .availability(oflh_sessions::Action::SignOut, session);
+        if availability == oflh_sessions::Availability::Available {
+            Some((crate::session::hint(app.language).to_string(), false))
+        } else {
+            crate::session::requirement(app.language, availability)
+                .map(|why| (format!("L · {why}"), true))
+        }
+    });
+    let mut header = vec![
         Line::styled(
             format!(
                 "{}   PID {} · {}",
@@ -964,10 +993,29 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
             memory(process)
         )),
     ];
+    // A process in a login session gets its own owner line, so the session,
+    // its state and the sign-out key are never cut off by the process name.
+    let mut owner_lines = Vec::new();
+    if let Some(owner) = owner {
+        owner_lines.push(Line::styled(
+            format!("SESSION {owner}"),
+            Style::default().fg(Color::Rgb(155, 197, 161)),
+        ));
+    }
+    if let Some((action, blocked)) = action {
+        owner_lines.push(Line::styled(
+            action,
+            Style::default().fg(if blocked { LOCK } else { Color::DarkGray }),
+        ));
+    }
+    let extra = owner_lines.len() as u16;
+    for (index, line) in owner_lines.iter().enumerate() {
+        header.insert(1 + index, line.clone());
+    }
     let compact = area.height < 24;
-    let head_height = if compact { 4 } else { 7 };
+    let head_height = if compact { 4 } else { 7 } + extra;
     if compact {
-        let lines = vec![
+        let mut lines = vec![
             header[0].clone(),
             Line::raw(localized!(
                 app.language,
@@ -977,14 +1025,17 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
                 process.parent
             )),
         ];
+        for (index, line) in owner_lines.into_iter().enumerate() {
+            lines.insert(1 + index, line);
+        }
         frame.render_widget(
             Paragraph::new(lines),
-            Rect::new(area.x, area.y + 1, area.width, 2),
+            Rect::new(area.x, area.y + 1, area.width, 2 + extra),
         );
     } else {
         frame.render_widget(
             Paragraph::new(header),
-            Rect::new(area.x, area.y + 1, area.width, 5),
+            Rect::new(area.x, area.y + 1, area.width, 5 + extra),
         );
     }
     text(
@@ -1816,6 +1867,70 @@ fn port_table(frame: &mut Frame, area: Rect, app: &App, detail: bool) {
             visible: count,
             total: length,
         },
+    );
+}
+
+/// The sign-out confirmation, drawn over details. Cancel has focus first.
+fn sign_out_prompt(frame: &mut Frame, area: Rect, app: &App) {
+    let Some(prompt) = &app.sign_out else { return };
+    let language = app.language;
+    let user = safe(&prompt.session.user);
+    let mut lines = vec![
+        Line::styled(
+            crate::session::prompt_title(language, &user),
+            Style::default().fg(LOCK).add_modifier(Modifier::BOLD),
+        ),
+        Line::raw(crate::session::prompt_note(language, &user)),
+        Line::raw(crate::session::owner_line(
+            language,
+            &prompt.session.user,
+            Some(&prompt.session),
+            false,
+        )),
+        Line::raw(""),
+        Line::raw(crate::session::prompt_processes(
+            language,
+            prompt.processes.len(),
+        )),
+    ];
+    let room = usize::from(area.height.saturating_sub(10));
+    for name in prompt.processes.iter().take(room) {
+        lines.push(Line::raw(format!("  {name}")));
+    }
+    if prompt.processes.len() > room {
+        lines.push(Line::raw(format!("  … +{}", prompt.processes.len() - room)));
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::from(vec![
+        button(
+            language.text("Cancel"),
+            !prompt.confirm,
+            Color::Rgb(155, 197, 161),
+        ),
+        Span::raw("  "),
+        button(
+            &crate::session::button(language, &user),
+            prompt.confirm,
+            LOCK,
+        ),
+    ]));
+    lines.push(Line::styled(
+        language.text("Tab / ←→ choose · Enter confirm · Esc cancel"),
+        Style::default().fg(Color::DarkGray),
+    ));
+    let height = (lines.len() as u16 + 2).min(area.height);
+    let box_area = Rect::new(
+        area.x,
+        area.y + (area.height - height) / 2,
+        area.width,
+        height,
+    );
+    frame.render_widget(ratatui::widgets::Clear, box_area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .block(ratatui::widgets::Block::bordered().border_style(Style::default().fg(LOCK))),
+        box_area,
     );
 }
 

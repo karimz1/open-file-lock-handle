@@ -127,6 +127,12 @@ jobs:
         run: |
           mkdir -p .profile-base/crates/oflh-tui/examples tui-profiles
           cp crates/oflh-tui/examples/navigation_profile.rs .profile-base/crates/oflh-tui/examples/navigation_profile.rs
+          # The example includes src modules by path; drop any the baseline does not have yet.
+          for module in $(sed -n 's|^#\[path = "\.\./src/\(.*\)\.rs"\]$|\1|p' crates/oflh-tui/examples/navigation_profile.rs); do
+            if [ ! -f ".profile-base/crates/oflh-tui/src/$module.rs" ]; then
+              sed -i.bak "/^#\[path = \"\.\.\/src\/$module\.rs\"\]$/,+1d" .profile-base/crates/oflh-tui/examples/navigation_profile.rs
+            fi
+          done
           profile_features=()
           if grep -q '^profiling = ' .profile-base/crates/oflh-tui/Cargo.toml; then
             profile_features=(--features profiling)

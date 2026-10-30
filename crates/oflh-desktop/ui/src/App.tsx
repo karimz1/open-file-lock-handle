@@ -68,6 +68,7 @@ import { normalizeTypedPath } from "./targetPath";
 import { TargetHelp } from "./TargetHelp";
 import { Inspector } from "./Inspector";
 import { Modal } from "./Modal";
+import { SharePanel } from "./SharePanel";
 import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
 import { AutoRefresh } from "./AutoRefresh";
 import {
@@ -98,6 +99,8 @@ const AboutDialog = lazy(() =>
 const columnKeys = new Set<ColumnKey>([
   "process",
   "pid",
+  "user",
+  "session",
   "path",
   "evidence",
   "memory",
@@ -117,7 +120,20 @@ const filterLabels: Record<keyof ColumnFilters, MessageKey> = {
   memory_max: "inspector.k_memory_max",
   evidence: "filters.k_evidence",
 };
+/** Columns that stay hidden until someone turns them on in the column picker. */
+const optInColumns: ColumnKey[] = ["user", "session"];
 function readHiddenColumns(): Set<ColumnKey> {
+  const hidden = readSavedHiddenColumns();
+  try {
+    // Saved sets from before these columns existed keep them hidden too.
+    if (localStorage.getItem("oflh-optional-columns") === null)
+      optInColumns.forEach((column) => hidden.add(column));
+  } catch {
+    optInColumns.forEach((column) => hidden.add(column));
+  }
+  return hidden;
+}
+function readSavedHiddenColumns(): Set<ColumnKey> {
   try {
     const saved: unknown = JSON.parse(
       localStorage.getItem("oflh-hidden-columns") ?? "[]",
@@ -247,6 +263,7 @@ export function App() {
       else next.add(column);
       try {
         localStorage.setItem("oflh-hidden-columns", JSON.stringify([...next]));
+        localStorage.setItem("oflh-optional-columns", "1");
       } catch {
         // The current session can still use the changed column set.
       }
@@ -1631,6 +1648,9 @@ export function App() {
                             .finally(() => setActing(false));
                         }}
                         details={details}
+                        revision={detailsRevision}
+                        notify={setToast}
+                        report={(failure) => report(failure)}
                         rowCurrent={activeRow?.revision === status.revision}
                         availability={
                           detailsMissing
@@ -1688,6 +1708,13 @@ export function App() {
                           : "app.k_file_usage_is_not_proof_of_a_lock_windo_f7640915",
                       )}
                     </span>
+                    {view !== "ports" && status.revision > 0 && (
+                      <SharePanel
+                        revision={status.revision}
+                        notify={setToast}
+                        report={(failure) => report(failure)}
+                      />
+                    )}
                     {status.warnings.length > 0 && (
                       <details>
                         <summary>
