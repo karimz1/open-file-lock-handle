@@ -9,6 +9,7 @@ a process to exit. For installation, see the [README](../README.md#install).
 - [Search](#search)
 - [Ports](#ports)
 - [Process actions](#process-actions)
+- [Other users and sessions](#sessions)
 - [Refresh and cancel](#refresh-and-cancel)
 - [Keyboard reference](#keyboard-reference)
 - [Languages](#terminal-languages)
@@ -221,6 +222,57 @@ processes hidden by the current filter, with **Cancel** preselected:
   ▶ Cancel      Force kill
 ```
 
+### What the confirmation shows
+
+Since 0.9 the confirmation also says what ending each process will affect. Press
+`d` to expand or collapse the details, and `Space` on a capped list to show all
+of its items:
+
+- **Windows** (Windows only): the open top-level windows that close with the
+  program, for example every open document of an editor. Linux and macOS show
+  that the window list is not available on that platform.
+- **Background processes**: running child processes. oflh does not end them;
+  some may exit together with their parent.
+- **Files** and **Ports**: the other files the process has open and the ports
+  it holds, taken from the latest scan.
+- **Service**: when a service manager runs the process (a Windows service, a
+  systemd unit on Linux, or a launchd job in your user domain on macOS), the
+  confirmation warns that the service will probably restart it right away.
+  Detection is best effort.
+- On Windows, processes the system needs (such as `csrss.exe` or
+  `services.exe`) carry a warning that ending them can crash the PC.
+
+A trimmed example from the snapshot tests:
+
+```text
+  Close Blender?
+  OFLH asks the program to close. Unsaved work may be lost.
+
+  Processes (filtered ones included):
+    424242    Blender
+              Blender closes completely, with all 7 open windows, such as “scene1.blend -
+              Blender”.
+              1 background process keeps running.
+              Windows (7)
+                scene1.blend - Blender
+                …
+                ▾ +2 more · Space show all 7
+              Background processes (1)
+                python3  PID 4100
+                Background processes are not closed; some may exit with it.
+              Files (3)
+                FileLockExampleCli.dll  /build
+                …
+              Ports (1)
+                5432  TCP 127.0.0.1
+  Files and ports come from the latest scan.
+
+  ▶ Cancel      Close
+  Tab / ←→ choose · d details · Enter confirm · Esc cancel
+```
+
+A long confirmation scrolls with `↑`/`↓` and `PgUp`/`PgDn`.
+
 Before sending anything, oflh checks that each PID still belongs to the same
 process (PID plus start time). Protected processes and parents that could not
 be identified cannot be stopped. A successful request triggers a refresh, but
@@ -237,6 +289,24 @@ tree.
 The tree keeps the processes it captured across refreshes. Stopping a parent
 may close its application and affect its children, but oflh does not
 recursively kill the tree. Save your work first.
+
+<a id="sessions"></a>
+
+### Other users and sessions
+
+On shared Windows and Linux machines, process details show a `SESSION` line
+with the owner, the login session (console, RDP, SSH, terminal, X11, Wayland,
+or services), its state, how long it has been in that state, and the remote
+client for RDP and SSH. Your own session is marked as such. macOS shows the
+owner only.
+
+`L` asks to sign out the user of the selected process's session. The prompt
+lists the programs that will close and starts on **Cancel**. Signing out
+another user needs administrator rights on Windows; on Linux it always needs
+root. oflh checks the session again before acting and does nothing if it
+changed.
+
+> This section depends on [#138](https://github.com/karimz1/open-file-lock-handle/pull/138).
 
 ## Refresh and cancel
 
@@ -257,6 +327,10 @@ confirmation, or focus the parent tree.
 
 Press `?` in the app for the complete list.
 
+Lists that do not fit show their position in the header (for example
+`1–11 of 60 ↕`) and a scrollbar on the right edge. This applies to the process
+and port tables, process details, the help screen, and the confirmation.
+
 | Key | Action |
 | --- | --- |
 | `1` / `2` / `3` | Processes / Locked files / Ports |
@@ -271,6 +345,8 @@ Press `?` in the app for the complete list.
 | `f` / `p` / `l` | Details: files / ports / lock evidence only |
 | `Space` / `Ctrl+A` | Select one / all visible |
 | `k` / `x` / `K` / `X` | Terminate / force-kill (see [actions](#process-actions)) |
+| `L` | Sign out the selected process's session user (see [sessions](#sessions)) |
+| `d` | Confirmation: show or hide what each target affects |
 | `r` / `F5` / `a` / `z` | Refresh / refresh / auto-refresh / cancel scan |
 | `u` / `U` / `b` | Check for release / open release page / dismiss notice |
 | `R` / `D` | Open the GitHub repository / donation page |

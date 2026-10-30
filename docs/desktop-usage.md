@@ -191,10 +191,53 @@ still belongs to the process you selected; results refresh afterwards.
 **Desktop example (Windows):** review the named processes before confirming;
 **Cancel** is the default.
 
+### What the confirmation shows
+
+Since 0.9 the confirmation also lists what ending each process affects. Open
+**Details** under a target to see every item:
+
+- **Windows** (Windows only): open top-level windows that close with the
+  program.
+- **Background processes**: running child processes. They are not ended; some
+  may exit with their parent.
+- **Files** and **Ports**: other files the process has open and the network
+  ports whose connections will drop, from the latest scan.
+- **Service**: when a Windows service, a systemd unit, or a launchd job in your
+  user domain runs the process, a warning says the service will probably
+  restart it right away. Detection is best effort.
+- On Windows, processes the system needs (for example `csrss.exe`,
+  `winlogon.exe`, or `lsass.exe`) carry a warning that ending them can crash
+  the PC.
+
+Long confirmations scroll; a slim scrollbar and faded edges show that there is
+more content. The same applies to every scrolling region in the app.
+
 If a normal termination fails or the process is still running, the results
 dialog offers **Force terminate** for just those processes, again behind a
 confirmation. Normal termination never escalates automatically, and processes
 whose identity changed or could not be checked are not offered this option.
+
+## Other users and sessions
+
+On shared Windows and Linux machines, the details of a process show its owner
+and login session: session type (console, RDP, SSH, and so on), state, and the
+remote client. The **User** and **Session** columns can be turned on in the
+process table. macOS shows the owner only.
+
+- **Sign out user…** closes every program in that session after a confirmation
+  that lists them. On Windows, signing out another user needs administrator
+  rights; on Linux it always needs root.
+- **Send message…** (Windows) shows a message in that user's session, for
+  example to ask them to save and close a file. Another user's session needs
+  administrator rights.
+- **Open over the network** (Windows, administrator): when someone has the
+  target open through an SMB share, the panel lists them and **Close open
+  file** closes that network open.
+
+oflh checks the session or file again right before acting; if it changed,
+nothing is done.
+
+> This section depends on [#138](https://github.com/karimz1/open-file-lock-handle/pull/138).
 
 ### Administrator retry
 
@@ -270,8 +313,14 @@ keys. **Fit all columns** fits every visible column.
 The gear menu at the bottom left opens **Settings** and **Themes**. Themes are
 Light, System, Rider Dark, VS Code Dark, and OFLH Purple; **System** switches
 between Light and VS Code Dark with your OS. Settings also controls font size
-and language (English, German, Simplified Chinese, or the system language). The
-app remembers theme, font size, language, and details panel width.
+and language (English, German, Simplified Chinese, or the system language). 
+**Open window maximized** (under **Window**, off by default) starts the app
+maximized from the next launch; the window can still be restored and resized.
+The app remembers theme, font size, language, and details panel width.
+
+The process table and the confirmation show each program's real icon, read
+from the executable on Windows, the app bundle on macOS, and the `.desktop`
+entry and icon theme on Linux. Processes without one get a neutral icon.
 
 **Open window maximized** (Settings, off by default) starts the window
 maximized. It stays a normal window: the title bar's restore button returns it
