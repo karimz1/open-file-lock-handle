@@ -77,6 +77,26 @@ if ($more) {
   $result.classicItems = $classic
 }
 [Windows.Forms.SendKeys]::SendWait('{ESC}{ESC}')
-$result | ConvertTo-Json | Set-Content (Join-Path $OutDir 'result.json')
+Start-Sleep 1
+
+# Click the top-level entry and check that it starts OFLH with the file.
+[OflhInput]::Click([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2), $true)
+Start-Sleep 3
+$entry = Find-Named 'Inspect file' | Select-Object -First 1
+$result.launched = $false
+if ($entry) {
+  $e = $entry.Current.BoundingRectangle
+  [OflhInput]::Click([int]($e.X + $e.Width / 2), [int]($e.Y + $e.Height / 2), $false)
+  for ($i = 0; $i -lt 15 -and -not $result.launched; $i++) {
+    Start-Sleep 1
+    $app = Get-CimInstance Win32_Process -Filter "Name='oflh-desktop.exe'" | Where-Object CommandLine -like '*--inspect*oflh-test.txt*'
+    if ($app) { $result.launched = $true; Write-Host "Started: $($app.CommandLine)" }
+  }
+  Start-Sleep 3
+  Shot '3-after-inspect-file'
+  Get-Process oflh-desktop -ErrorAction SilentlyContinue | Stop-Process -Force
+}
+Write-Host "Inspect file started OFLH: $($result.launched)"
+$result | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $OutDir 'result.json')
 Write-Host "Inspect file in Windows 11 menu: $($result.modern); in classic menu: $($result.classic)"
 if (-not $result.modern) { Write-Host '::warning title=Windows 11 menu::"Inspect file" was not found in the top-level context menu (see screenshots).' }
