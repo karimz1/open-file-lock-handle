@@ -13,6 +13,7 @@ public static class OflhInput {
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, UIntPtr e);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr FindWindow(string c, string n);
   public static void Click(int x, int y, bool right) {
     SetCursorPos(x, y);
     if (right) { mouse_event(0x0008, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0010, 0, 0, 0, UIntPtr.Zero); }
@@ -64,7 +65,13 @@ if ($more) {
   [OflhInput]::Click([int]($m.X + $m.Width / 2), [int]($m.Y + $m.Height / 2), $false)
   Start-Sleep 3
   Shot '2-classic-menu'
-  $classic = Menu-Names
+  # The classic menu is a Win32 popup (#32768); read it from its window.
+  $classic = @()
+  $popup = [OflhInput]::FindWindow('#32768', $null)
+  if ($popup -ne [IntPtr]::Zero) {
+    $cond = [Windows.Automation.PropertyCondition]::new($A::ControlTypeProperty, [Windows.Automation.ControlType]::MenuItem)
+    $classic = @($A::FromHandle($popup).FindAll($T::Descendants, $cond) | ForEach-Object { $_.Current.Name })
+  }
   Write-Host "Classic menu items: $($classic -join ' | ')"
   $result.classic = [bool]($classic -like '*Inspect file*')
   $result.classicItems = $classic

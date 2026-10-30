@@ -74,6 +74,8 @@ if ($pfx) {
   if ($code -ne 0) { throw "signtool failed with $code" }
 }
 
+$marker = Join-Path $OutDir 'unsigned'
+if ($pfx) { Remove-Item -Force $marker -ErrorAction SilentlyContinue } else { Set-Content $marker 'identity package is unsigned' }
 Copy-Item $DllPath (Join-Path $OutDir 'oflh_shell_ext.dll')
 Copy-Item (Join-Path $here 'register.ps1') (Join-Path $OutDir 'register.ps1')
 Remove-Item -Recurse -Force $stage

@@ -8,6 +8,10 @@
 #>
 param([ValidateSet('Register', 'Unregister', 'Status')] [string] $Action = 'Status')
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 5.1 started from PowerShell 7 inherits a PSModulePath that
+# breaks loading its own Appx module; use the system value.
+$env:PSModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Machine')
+Import-Module (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\Modules\Appx\Appx.psd1')
 $name = 'KarimZouine.OFLHDesktop.ContextMenu'
 $log = Join-Path $env:TEMP 'oflh-context-menu.log'
 function Log([string] $text) { Add-Content -Path $log -Value "$(Get-Date -Format s) [$Action] $text" }
@@ -38,7 +42,8 @@ try {
         Remove-AppxPackage -Package $old.PackageFullName -AllUsers -ErrorAction SilentlyContinue
         Remove-AppxPackage -Package $old.PackageFullName -ErrorAction SilentlyContinue
       }
-      $signed = (Get-AuthenticodeSignature $msix).Status -eq 'Valid'
+      # package.ps1 leaves this marker next to packages it did not sign.
+      $signed = -not (Test-Path (Join-Path $PSScriptRoot 'unsigned'))
       if ($signed) {
         Add-AppxPackage -Path $msix -ExternalLocation $installDir
       } else {
