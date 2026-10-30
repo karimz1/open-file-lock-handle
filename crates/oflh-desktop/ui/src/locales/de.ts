@@ -545,6 +545,11 @@ const de: TranslationSchema<typeof en> = {
     k_visible_columns: "Sichtbare Spalten",
   },
   termination: {
+    k_impact_critical:
+      "Windows braucht diesen Prozess. Wenn du ihn beendest, kann dein PC abstürzen.",
+    k_impact_service: "Ein Dienst startet es wahrscheinlich sofort neu.",
+    k_impact_group_service: "Dienst",
+    k_impact_service_restarts: "startet es eventuell neu",
     k_impact_targets_label: "Betroffene Prozesse",
     k_impact_windows:
       "{{name}} wird komplett geschlossen – mit allen {{count}} offenen Fenstern, z. B. „{{title}}“.",

@@ -86,6 +86,12 @@ macOS. It prints the paths of the new packages under
 | `--clean` | Run `npm ci` even if `node_modules` exists |
 | `--signed` | Also build signed updater artifacts; needs `TAURI_SIGNING_PRIVATE_KEY` |
 
+The Windows installer artwork (`crates/oflh-desktop/windows/branding/*.bmp`)
+is generated from the app logo. After changing the logo or colours, run
+`python3 crates/oflh-desktop/windows/branding/generate.py` (needs Pillow) and
+commit the new bitmaps. They are drawn at the 100% sizes MUI2 reserves, so
+NSIS stretches them slightly on high-DPI screens.
+
 Without a signing key, updater artifacts (`.sig`, `.app.tar.gz`) are turned
 off for the build, so local installers work without the release keys. When
 `TAURI_SIGNING_PRIVATE_KEY` is set, they are built as in CI.

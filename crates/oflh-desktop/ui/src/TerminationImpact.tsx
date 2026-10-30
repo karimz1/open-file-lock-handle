@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Cog,
   Copy,
   FileText,
   Network,
@@ -231,6 +232,25 @@ export function TerminationTarget({ target }: { target: ConfirmationTarget }) {
             )}
             <ImpactGroup kind="files" list={impact.files} />
             <ImpactGroup kind="ports" list={impact.ports} />
+            {impact.service && (
+              <section className="impact-group">
+                <h4>
+                  <Cog size={13} aria-hidden="true" />
+                  {t("termination.k_impact_group_service")}
+                </h4>
+                <ul>
+                  <li>
+                    <span className="impact-primary" title={impact.service}>
+                      {impact.service}
+                    </span>
+                    <span className="impact-secondary">
+                      {t("termination.k_impact_service_restarts")}
+                    </span>
+                    <CopyButton value={impact.service} />
+                  </li>
+                </ul>
+              </section>
+            )}
             <p className="hint">{t("termination.k_impact_latest_scan")}</p>
           </details>
         </>

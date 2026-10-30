@@ -1235,6 +1235,23 @@ fn impact_lines(lines: &mut Vec<Line<'static>>, app: &App, target: &ActionTarget
     let children = native.and_then(|impact| impact.children.as_ref());
     // Plain consequences, most surprising first; at most two in the summary.
     let mut sentences: Vec<(String, bool)> = Vec::new();
+    if native.is_some_and(|impact| impact.critical) {
+        sentences.push((
+            language
+                .text("Windows needs this process. Ending it can crash your PC.")
+                .into(),
+            true,
+        ))
+    }
+    let service = native.and_then(|impact| impact.service.as_deref());
+    if service.is_some() {
+        sentences.push((
+            language
+                .text("A service will probably restart it right away.")
+                .into(),
+            true,
+        ))
+    }
     if let Some(windows) = windows.filter(|windows| windows.len() > 1) {
         sentences.push((
             localized!(
@@ -1427,6 +1444,13 @@ fn impact_lines(lines: &mut Vec<Line<'static>>, app: &App, target: &ActionTarget
             }
         }),
     );
+    if let Some(service) = service {
+        group(
+            lines,
+            language.text("Service").into(),
+            vec![(safe(service), language.text("may restart it").into())],
+        );
+    }
 }
 
 /// Collapsed confirmation rows stay at about two lines.

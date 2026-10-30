@@ -1372,7 +1372,9 @@ export function App() {
                     <details className="column-picker">
                       <summary>
                         <Columns3 size={14} />
-                        {t("table.k_columns")}
+                        <span className="compact-label">
+                          {t("table.k_columns")}
+                        </span>
                         <ChevronDown
                           size={12}
                           className="column-picker-caret"
@@ -1410,7 +1412,9 @@ export function App() {
                       onClick={() => setShowColumns((visible) => !visible)}
                     >
                       <SlidersHorizontal size={14} />
-                      {t("filters.k_column_filters")}
+                      <span className="compact-label">
+                        {t("filters.k_column_filters")}
+                      </span>
                       {columnCount ? ` (${columnCount})` : ""}
                     </button>
                     <button
@@ -1420,7 +1424,9 @@ export function App() {
                       onClick={() => setFitAllRequest((current) => current + 1)}
                     >
                       <MoveHorizontal size={14} />{" "}
-                      {t("table.k_fit_all_columns")}
+                      <span className="compact-label">
+                        {t("table.k_fit_all_columns")}
+                      </span>
                     </button>
                     <span className="muted result-count">
                       {total} {t("app.k_results")}

@@ -1460,6 +1460,54 @@ test("short confirmation list shows no scroll fades", async ({ page }) => {
   await expect(area).not.toHaveAttribute("data-fade-top");
 });
 
+test("service warning fits and scrolls in a small confirmation", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 860, height: 560 });
+  await page.addInitScript(
+    () =>
+      ((window as any).__impact = {
+        windows: null,
+        children: {
+          items: Array.from({ length: 8 }, (_, n) => `worker (PID ${50 + n})`),
+          more: 4,
+        },
+        files: { items: ["/var/lib/postgresql/data/pg_wal"], more: 0 },
+        ports: { items: ["TCP 127.0.0.1:5432"], more: 0 },
+        service: "postgresql.service",
+        critical: false,
+      }),
+  );
+  await page.goto("/");
+  const rows = page.getByRole("grid").getByRole("row");
+  await rows.nth(1).click();
+  for (let row = 2; row <= 4; row++)
+    await rows.nth(row).click({ modifiers: ["ControlOrMeta"] });
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.locator(".impact-summary .impact-warning").first(),
+  ).toHaveText("A service will probably restart it right away.");
+  await page.screenshot({ path: "test-results/impact-service.png" });
+  for (const summary of await dialog.locator(".impact-details summary").all())
+    await summary.click();
+  const list = dialog.getByRole("list", { name: "Affected processes" });
+  const service = list.getByRole("heading", { name: "Service" }).last();
+  await expect(
+    list.getByRole("button", { name: "Copy postgresql.service" }).first(),
+  ).toBeAttached();
+  await service.scrollIntoViewIfNeeded();
+  await expect(service).toBeInViewport();
+  const cancel = (await dialog
+    .getByRole("button", { name: "Cancel", exact: true })
+    .boundingBox())!;
+  expect(cancel.y + cancel.height).toBeLessThanOrEqual(560);
+  expect(
+    await list.evaluate((node) => node.scrollHeight - node.clientHeight),
+  ).toBeGreaterThan(0);
+  await page.screenshot({ path: "test-results/impact-service-small.png" });
+});
+
 test("confirmation without impact adds nothing to the target row", async ({
   page,
 }) => {
@@ -2954,11 +3002,11 @@ test("gear stays last in the sidebar and support actions fit the minimum window 
   expect(footerBounds.scrollWidth).toBeLessThanOrEqual(
     footerBounds.clientWidth,
   );
-  await page.getByText("Columns", { exact: true }).click();
+  await page.locator(".column-picker > summary").click();
   const columnMenu = page.getByRole("group", { name: "Visible columns" });
   const menuBounds = await columnMenu.boundingBox();
   expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(860);
-  await page.getByText("Columns", { exact: true }).click();
+  await page.locator(".column-picker > summary").click();
   for (const name of ["Settings"]) {
     const button = page
       .getByRole("navigation")
@@ -5373,6 +5421,72 @@ for (const [width, height] of [
     });
   });
 }
+
+test.describe("compact header on short windows", () => {
+  for (const [width, height] of [
+    [860, 560],
+    [800, 600],
+  ]) {
+    test(`at ${width}x${height} the table gets the room and key actions stay visible`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height });
+      await page.goto("/");
+      const grid = page.getByRole("grid");
+      await grid.getByRole("row").nth(1).click();
+      // Labels hidden by the compact layout stay the accessible names.
+      for (const name of ["Column filters", "Fit all columns"])
+        await expect(page.getByRole("button", { name })).toBeInViewport();
+      const header = page.locator(".app-header");
+      for (const control of [
+        page.getByRole("button", { name: /^Refresh/ }),
+        page.getByRole("button", { name: "Inspect", exact: true }),
+        page.getByRole("button", { name: "Close inspection" }),
+        page.getByRole("textbox", { name: "Target file or folder path" }),
+        page.getByRole("textbox", { name: "Search loaded results" }),
+        page.getByRole("button", { name: "Terminate…", exact: true }),
+      ])
+        await expect(control).toBeInViewport({ ratio: 1 });
+      await expect(
+        page.getByRole("heading", { level: 1, name: "Processes" }),
+      ).toBeAttached();
+      const gridBox = (await grid.boundingBox())!;
+      const headerBox = (await header.boundingBox())!;
+      const rows = await grid.evaluate(
+        (node) =>
+          [...node.querySelectorAll('[role="row"]')].filter((row) => {
+            const box = row.getBoundingClientRect();
+            const outer = node.getBoundingClientRect();
+            return box.top >= outer.top && box.bottom <= outer.bottom;
+          }).length - 1,
+      );
+      console.log(
+        `header ${width}x${height}: app-header ${headerBox.height}px, grid top ${gridBox.y}px, ${rows} rows`,
+      );
+      await page.screenshot({
+        path: `test-results/header-${process.env.OFLH_HEADER_BASELINE === "1" ? "before" : "after"}-${width}x${height}.png`,
+      });
+      if (process.env.OFLH_HEADER_BASELINE !== "1") {
+        expect(headerBox.height).toBeLessThanOrEqual(46);
+        expect(rows).toBeGreaterThanOrEqual(6);
+      }
+    });
+  }
+});
+
+test("tall windows keep the full page header", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Processes" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Processes referencing your target and its contents."),
+  ).toBeVisible();
+  await expect(
+    page.locator(".search-toolbar .compact-label").first(),
+  ).toBeVisible();
+});
 
 test.describe("process icons", () => {
   for (const [width, height] of [

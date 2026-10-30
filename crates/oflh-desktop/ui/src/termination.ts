@@ -38,7 +38,9 @@ export interface ImpactPart {
     | "termination.k_impact_files_one"
     | "termination.k_impact_files_other"
     | "termination.k_impact_ports_one"
-    | "termination.k_impact_ports_other";
+    | "termination.k_impact_ports_other"
+    | "termination.k_impact_critical"
+    | "termination.k_impact_service";
   values: Record<string, string | number>;
   warn: boolean;
 }
@@ -62,6 +64,18 @@ export function impactSummary(target: ConfirmationTarget): ImpactPart[] {
   const children = listTotal(impact.children);
   const files = listTotal(impact.files);
   const ports = listTotal(impact.ports);
+  if (impact.critical)
+    parts.push({
+      key: "termination.k_impact_critical",
+      values: {},
+      warn: true,
+    });
+  if (impact.service)
+    parts.push({
+      key: "termination.k_impact_service",
+      values: { service: impact.service },
+      warn: true,
+    });
   if (windows > 1)
     parts.push({
       key: "termination.k_impact_windows",

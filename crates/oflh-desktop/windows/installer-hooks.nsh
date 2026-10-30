@@ -23,6 +23,7 @@
 !include nsDialogs.nsh
 !include FileFunc.nsh
 
+!define OFLH_WEBSITE_LABEL "oflh.karimzouine.com"
 !define OFLH_CONTEXT_MENU_VERB "oflh-desktop.inspect"
 !define OFLH_CONTEXT_MENU_PREFERENCE "ExplorerContextMenu"
 !define OFLH_SHCNE_ASSOCCHANGED 0x08000000
@@ -36,6 +37,23 @@
 LangString oflhContextMenuOption 1033 "Add $\"Inspect file$\" and $\"Inspect folder$\" to the Explorer context menu"
 LangString oflhContextMenuOption 1031 "$\"Datei untersuchen$\" und $\"Ordner untersuchen$\" zum Explorer-Kontextmenü hinzufügen"
 LangString oflhContextMenuOption 2052 "将“检查文件”和“检查文件夹”添加到资源管理器右键菜单"
+; Replaces the stock welcome text, whose advice to close other applications
+; to avoid a reboot does not apply: OFLH installs only into its own folder.
+LangString oflhWelcomeText 1033 "This wizard installs OFLH Desktop. It shows you which process is locking a file, folder or port.$\r$\n$\r$\nClick Next to continue."
+LangString oflhWelcomeText 1031 "Dieser Assistent installiert OFLH Desktop. Damit findest du heraus, welcher Prozess eine Datei, einen Ordner oder einen Port blockiert.$\r$\n$\r$\nKlicke auf Weiter, um fortzufahren."
+LangString oflhWelcomeText 2052 "此向导将安装 OFLH Desktop。它可以告诉你是哪个进程占用了文件、文件夹或端口。$\r$\n$\r$\n单击“下一步”继续。"
+LangString oflhFinishText 1033 "OFLH Desktop is installed.$\r$\n$\r$\nClick Finish to close the wizard."
+LangString oflhFinishText 1031 "OFLH Desktop ist installiert.$\r$\n$\r$\nKlicke auf Fertig stellen, um den Assistenten zu schließen."
+LangString oflhFinishText 2052 "OFLH Desktop 已安装。$\r$\n$\r$\n单击“完成”关闭向导。"
+LangString oflhDirectoryText 1033 "Setup installs OFLH Desktop in the folder below. To use a different folder, click Browse.$\r$\n$\r$\nClick Install to start."
+LangString oflhDirectoryText 1031 "OFLH Desktop wird in den unten angegebenen Ordner installiert. Für einen anderen Ordner klicke auf Durchsuchen.$\r$\n$\r$\nKlicke auf Installieren, um zu starten."
+LangString oflhDirectoryText 2052 "OFLH Desktop 将安装到下面的文件夹。如需使用其他文件夹，请单击“浏览”。$\r$\n$\r$\n单击“安装”开始安装。"
+LangString oflhUninstallText 1033 "OFLH Desktop will be removed from the folder below. Click Uninstall to start."
+LangString oflhUninstallText 1031 "OFLH Desktop wird aus dem unten angegebenen Ordner entfernt. Klicke auf Deinstallieren, um zu starten."
+LangString oflhUninstallText 2052 "OFLH Desktop 将从下面的文件夹中删除。单击“卸载”开始。"
+LangString oflhRunApp 1033 "Start OFLH Desktop"
+LangString oflhRunApp 1031 "OFLH Desktop starten"
+LangString oflhRunApp 2052 "启动 OFLH Desktop"
 LangString oflhInspectFile 1033 "Inspect file"
 LangString oflhInspectFile 1031 "Datei untersuchen"
 LangString oflhInspectFile 2052 "检查文件"
@@ -47,12 +65,55 @@ LangString oflhInspectFolder 2052 "检查文件夹"
 Var OflhContextMenuChoice
 Var OflhContextMenuCheckbox
 
+!define MUI_WELCOMEPAGE_TEXT "$(oflhWelcomeText)"
+; Consumed later by the template's finish page; it sets MUI_FINISHPAGE_RUN.
+; Consumed by the directory and uninstall confirm pages; replace NSIS's
+; built-in texts, which are formal in German.
+!define MUI_DIRECTORYPAGE_TEXT_TOP "$(oflhDirectoryText)"
+!define MUI_UNCONFIRMPAGE_TEXT_TOP "$(oflhUninstallText)"
+!define MUI_FINISHPAGE_TEXT "$(oflhFinishText)"
+!define MUI_FINISHPAGE_RUN_TEXT "$(oflhRunApp)"
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW OflhWelcomeShow
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE OflhWelcomeLeave
 
+; MUI2 welcome page layout in dialog units: the page is 193u high, the text
+; (one 28u title above it) sits at 120u 45u 195u 130u. The text is shortened
+; to 60u (the longest welcome text, German, needs about 40u) and the checkbox
+; gets a 30u, three-line slot below it, well above the bottom edge.
+; Dialog units scale with the font and DPI, so nothing is clipped at 100-200%.
+!define OFLH_WELCOME_TEXT_HEIGHT 60
+!define OFLH_CHECKBOX_TOP 115
+!define OFLH_CHECKBOX_HEIGHT 30
+
 Function OflhWelcomeShow
-  ; Below the welcome text (120u 45u 195u 130u); the page background is white.
-  ${NSD_CreateCheckbox} 120u 175u 195u 18u "$(oflhContextMenuOption)"
+  ; Branding line at the bottom of every page: "OFLH Desktop <version> ·
+  ; oflh.karimzouine.com". The template's defines, VERSION included, do not
+  ; exist yet here, so read the version Tauri stamps on this setup exe.
+  GetDLLVersion "$EXEPATH" $1 $2
+  IntOp $3 $1 >> 16
+  IntOp $4 $1 & 0xFFFF
+  IntOp $5 $2 >> 16
+  ; 1028 is the branding text control of the outer installer window.
+  GetDlgItem $0 $HWNDPARENT 1028
+  SendMessage $0 ${WM_SETTEXT} 0 "STR:$(^Name) $3.$4.$5  ·  ${OFLH_WEBSITE_LABEL}"
+
+  ; $mui.WelcomePage.* are declared after this file is included, so find the
+  ; welcome text at runtime: the page's third static control, after the
+  ; sidebar bitmap and the title.
+  FindWindow $0 "#32770" "" $HWNDPARENT
+  FindWindow $6 "STATIC" "" $0
+  FindWindow $6 "STATIC" "" $0 $6
+  FindWindow $6 "STATIC" "" $0 $6
+  ; Shorten it: map dialog units to pixels for SetWindowPos.
+  System::Call "*(i 120, i 45, i 195, i ${OFLH_WELCOME_TEXT_HEIGHT}) p .r1"
+  System::Call "user32::MapDialogRect(p r0, p r1)"
+  System::Call "*$1(i .r2, i .r3, i .r4, i .r5)"
+  System::Free $1
+  ; SWP_NOZORDER | SWP_NOACTIVATE
+  System::Call "user32::SetWindowPos(p r6, p 0, i r2, i r3, i r4, i r5, i 0x14)"
+
+  ; nsDialogs checkboxes wrap (BS_MULTILINE); German takes two lines.
+  ${NSD_CreateCheckbox} 120u ${OFLH_CHECKBOX_TOP}u 195u ${OFLH_CHECKBOX_HEIGHT}u "$(oflhContextMenuOption)"
   Pop $OflhContextMenuCheckbox
   SetCtlColors $OflhContextMenuCheckbox "" "FFFFFF"
   ${If} $OflhContextMenuChoice != "0"

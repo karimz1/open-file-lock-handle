@@ -868,6 +868,8 @@ fn target_impact(native: oflh_core::impact::Impact, scanned: Option<&Process>) -
         }),
         files: files.into(),
         ports: ports.into(),
+        service: native.service.as_deref().map(oflh_core::safe),
+        critical: native.critical,
     }
 }
 
@@ -1536,6 +1538,8 @@ mod tests {
             impact: Some(Impact {
                 windows: Some((0..7).map(|n| format!("scene {n}.blend")).collect()),
                 children: Some(vec![child(7), child(8)]),
+                service: Some("Blender Render Farm".into()),
+                critical: false,
             }),
             ..Recorder::default()
         };
@@ -1552,9 +1556,18 @@ mod tests {
         );
         assert_eq!(target.impact.files.items, ["/build/scene.blend"]);
         assert_eq!(target.impact.ports.items, ["TCP 3000"]);
+        assert_eq!(
+            target.impact.service.as_deref(),
+            Some("Blender Render Farm")
+        );
+        assert!(!target.impact.critical);
         let json = serde_json::to_value(&confirmation).unwrap();
         assert_eq!(json["targets"][0]["role"], "holder");
         assert_eq!(json["targets"][0]["impact"]["windows"]["more"], 0);
+        assert_eq!(
+            json["targets"][0]["impact"]["service"],
+            "Blender Render Farm"
+        );
         assert_eq!(
             json["targets"][0]["impact"]["ports"]["items"][0],
             "TCP 3000"
@@ -1578,6 +1591,8 @@ mod tests {
         let json = serde_json::to_value(&confirmation).unwrap();
         assert!(json["targets"][0]["impact"]["windows"].is_null());
         assert!(json["targets"][0]["impact"]["children"].is_null());
+        assert!(json["targets"][0]["impact"]["service"].is_null());
+        assert_eq!(json["targets"][0]["impact"]["critical"], false);
         assert_eq!(
             json["targets"][0]["impact"]["files"]["items"],
             serde_json::json!([])

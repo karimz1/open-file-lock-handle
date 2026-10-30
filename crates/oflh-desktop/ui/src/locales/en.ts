@@ -527,6 +527,11 @@ const en = {
     k_visible_columns: "Visible columns",
   },
   termination: {
+    k_impact_critical:
+      "Windows needs this process. Ending it can crash your PC.",
+    k_impact_service: "A service will probably restart it right away.",
+    k_impact_group_service: "Service",
+    k_impact_service_restarts: "may restart it",
     k_impact_targets_label: "Affected processes",
     k_impact_windows:
       "{{name}} closes completely, with all {{count}} open windows, such as “{{title}}”.",
