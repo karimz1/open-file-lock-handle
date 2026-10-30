@@ -2,7 +2,7 @@ name: Desktop
 on:
   pull_request:
   push:
-    branches: [main, feature/oflh-desktop-rc]
+    branches: [main, feature/oflh-desktop-rc, 'release/**']
   workflow_dispatch:
     inputs:
       upload_artifacts:
@@ -132,6 +132,9 @@ jobs:
       RELEASE_TAG: ${{ inputs.version || 'dev' }}
       BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
       PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+      # Release-branch pushes, PRs into release/** and PRs from release/** (e.g. into main) always publish one
+      # downloadable build per main platform (Linux RPM, Windows x64, macOS ARM).
+      RELEASE_BRANCH_DOWNLOAD: ${{ ((github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) || (github.event_name == 'pull_request' && (startsWith(github.base_ref, 'release/') || startsWith(github.head_ref, 'release/')))) && ((matrix.os == 'linux' && matrix.arch == 'amd64') || (matrix.os == 'windows' && matrix.arch == 'amd64') || (matrix.os == 'darwin' && matrix.arch == 'arm64')) }}
     defaults:
       run:
         shell: bash
@@ -224,6 +227,30 @@ jobs:
       - name: Bundle the built executable without rebuilding
         run: npm run tauri -- bundle --config "$RUNNER_TEMP/desktop-version.json" --no-binary-patching --bundles '${{ matrix.bundles }}'
         working-directory: crates/oflh-desktop/ui
+      - name: Check the generated NSIS script
+        if: matrix.os == 'windows'
+        run: |
+          python - <<'PY'
+          import pathlib
+          import re
+
+          scripts = list(pathlib.Path("target/release/nsis").glob("*/installer.nsi"))
+          if len(scripts) != 1:
+              raise SystemExit(f"expected one generated installer.nsi, found {scripts}")
+          text = scripts[0].read_text(encoding="utf-8-sig")
+          # NSIS falls back to the first inserted language for display
+          # languages it has no table for, so English must come first.
+          languages = re.findall(r'^!insertmacro MUI_LANGUAGE "(\w+)"', text, re.M)
+          if languages != ["English", "German", "SimpChinese"]:
+              raise SystemExit(f"unexpected installer languages {languages}")
+          for name in ["installer-hooks.nsh", "English.nsh", "German.nsh", "SimpChinese.nsh"]:
+              if not re.search(r'^\s*!include "[^"]*' + re.escape(name) + '"', text, re.M):
+                  raise SystemExit(f"{name} is not included")
+          for define in ["SIDEBARIMAGE", "HEADERIMAGE", "INSTALLERICON"]:
+              if re.search(r'^!define ' + define + r' ""', text, re.M):
+                  raise SystemExit(f"{define} is empty")
+          print(f"{scripts[0]}: languages {languages}, hooks, language files and artwork present")
+          PY
       - name: Collect desktop packages separately from CLI artifacts
         env:
           RELEASE_TAG: ${{ inputs.version || 'dev' }}
@@ -294,6 +321,29 @@ jobs:
           path: desktop-dist/oflh-desktop.windows.${{ matrix.arch }}-installer.exe.sig
           if-no-files-found: error
           retention-days: 1
+      - name: Stage release-branch download
+        id: release-download
+        if: env.RELEASE_BRANCH_DOWNLOAD == 'true'
+        run: |
+          case '${{ matrix.os }}' in
+            linux) source=desktop-dist/oflh-desktop.linux.amd64.rpm; suffix=linux-x86_64.rpm ;;
+            windows) source=desktop-dist/oflh-desktop.windows.amd64-installer.exe; suffix=windows-x64-setup.exe ;;
+            darwin) source=desktop-dist/oflh-desktop.darwin.arm64.dmg; suffix=macos-apple-silicon.dmg ;;
+          esac
+          test -s "$source"
+          # OFLH_VERSION already carries PR, run and SHA; keep only the base version.
+          version=${OFLH_VERSION%%-*}
+          name="oflh-${version}-${BUILD_COMMIT::7}-${suffix}"
+          mkdir -p release-download
+          cp "$source" "release-download/$name"
+          echo "path=release-download/$name" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        if: env.RELEASE_BRANCH_DOWNLOAD == 'true'
+        with:
+          archive: false
+          path: ${{ steps.release-download.outputs.path }}
+          if-no-files-found: error
+          retention-days: 1
       - uses: actions/upload-artifact@v7
         if: inputs.upload_artifacts
         with:
@@ -301,6 +351,40 @@ jobs:
           path: desktop-dist/*.manifest
           if-no-files-found: error
           retention-days: 1
+
+  prune-tester-builds:
+    name: Delete older tester builds of this branch or PR
+    needs: native
+    # Only after every native job, including the three tester uploads, succeeded.
+    # Fork PRs get a read-only token, so they skip instead of failing.
+    if: >-
+      ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) ||
+          (github.event_name == 'pull_request' && (startsWith(github.base_ref, 'release/') || startsWith(github.head_ref, 'release/')) &&
+           github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: write
+    steps:
+      - name: Delete tester artifacts from older runs of the same branch or PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          CURRENT_RUN: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Only runs of this workflow, same branch and event, strictly older than this run.
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/desktop.yml/runs?branch=$(jq -rn --arg b "$BRANCH" '$b|@uri')&event=$EVENT&per_page=100" \
+            --jq ".workflow_runs[] | select(.id < $CURRENT_RUN) | .id" |
+          while read -r run; do
+            gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.expired | not) | select(.name | test("^oflh-.*-(linux-x86_64\\.rpm|macos-apple-silicon\\.dmg|windows-x64-setup\\.exe)$")) | "\(.id) \(.name)"' |
+            while read -r id name; do
+              echo "Deleting $name from run $run"
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+            done
+          done
 
   package-smoke:
     needs: native
@@ -440,3 +524,216 @@ jobs:
           result=$?
           set -e
           test "$result" -eq 124
+
+  # Real multi-user / terminal-server E2E (separate from the native build matrix).
+  # Free GitHub-hosted runners only. First runs are observational — see the PR
+  # "Verify on first run" list before making this job required.
+  multiuser-e2e:
+    name: Multi-user E2E / ${{ matrix.os }}
+    if: ${{ !inputs.administrator_only }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, windows-2022, ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup show
+
+      - name: Linux WebView build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libxdo-dev libssl-dev librsvg2-dev patchelf
+
+      - name: Build multiuser E2E binary
+        run: cargo test -p oflh-desktop --test multiuser --no-run --locked
+
+      - name: Locate multiuser test binary
+        id: bin
+        run: |
+          BIN=$(ls -1 target/debug/deps/multiuser-* 2>/dev/null | grep -v '\.d$' | head -1)
+          test -n "$BIN" && test -x "$BIN"
+          echo "path=$BIN" >> "$GITHUB_OUTPUT"
+          echo "multiuser binary: $BIN"
+
+      # ── Windows ──────────────────────────────────────────────────────────
+      - name: Windows — create test users
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\.github\scripts\multiuser\windows.ps1 -Stage users
+
+      - name: Windows — second-user file holder (owner annotation)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\.github\scripts\multiuser\windows.ps1 -Stage owner
+
+      - name: Windows — SMB share opened by a third user
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\.github\scripts\multiuser\windows.ps1 -Stage share
+
+      - name: Windows — enable RDP loopback
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\.github\scripts\multiuser\windows.ps1 -Stage rdp
+
+      - name: Windows — second interactive session (RDP client chain)
+        id: win_session
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        run: .\.github\scripts\multiuser\windows.ps1 -Stage session
+
+      - name: Windows — annotate when the second session was unavailable
+        if: runner.os == 'Windows' && steps.win_session.outcome == 'failure'
+        run: |
+          echo "::warning title=Second RDP session unavailable::No headless client produced an Active session on this runner. Sign-out / send-message E2E is skipped here; SMB, owner, non-admin and mocked tests stay blocking."
+
+      - name: Windows — SMB opens before the test
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-SmbOpenFile | Format-Table FileId, ClientUserName, ClientComputerName, Path -AutoSize | Out-String -Width 300 | Write-Host
+          openfiles.exe /query /v /fo list 2>&1 | Write-Host
+
+      - name: Windows — elevated multiuser E2E
+        if: runner.os == 'Windows'
+        env:
+          OFLH_MULTIUSER_E2E: '1'
+          OFLH_E2E_ELEVATED: '1'
+        run: |
+          cargo test -p oflh-desktop --test multiuser --locked -- --ignored --nocapture --test-threads=1 --skip second_session_message_and_sign_out
+
+      # Non-blocking while the loopback RDP fixture settles. Make this step
+      # required (drop continue-on-error) after about 5 consecutive green runs.
+      - name: Windows — second session message and sign-out (non-blocking)
+        id: win_sign_out
+        if: runner.os == 'Windows' && steps.win_session.outcome == 'success'
+        continue-on-error: true
+        shell: pwsh
+        env:
+          OFLH_MULTIUSER_E2E: '1'
+          OFLH_E2E_ELEVATED: '1'
+          OFLH_E2E_SIGN_OUT: '1'
+        run: |
+          quser.exe 2>&1 | Out-Host
+          cargo test -p oflh-desktop --test multiuser --locked -- --ignored --nocapture --test-threads=1 --exact second_session_message_and_sign_out
+
+      # continue-on-error reports the step as success; surface the real outcome.
+      - name: Windows — report the second-session test result
+        if: always() && runner.os == 'Windows' && steps.win_session.outcome == 'success'
+        env:
+          OUTCOME: ${{ steps.win_sign_out.outcome }}
+        run: |
+          echo "second_session_message_and_sign_out outcome: $OUTCOME"
+          echo "### Windows second-session test: $OUTCOME" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$OUTCOME" != success ]; then
+            echo "::warning title=Second-session test ${OUTCOME}::second_session_message_and_sign_out did not pass (outcome: ${OUTCOME}). The step is non-blocking; see its log."
+          fi
+
+      - name: Windows — non-admin pass (Requires administrator rights)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          OFLH_E2E_TEST_EXE: ${{ steps.bin.outputs.path }}
+        run: .\.github\scripts\multiuser\windows.ps1 -Stage nonadmin
+
+      # ── Linux ────────────────────────────────────────────────────────────
+      - name: Linux — create test user
+        if: runner.os == 'Linux'
+        run: bash .github/scripts/multiuser/linux.sh users
+
+      - name: Linux — second-user file holder (owner annotation)
+        if: runner.os == 'Linux'
+        run: bash .github/scripts/multiuser/linux.sh owner
+
+      - name: Linux — logind session (systemd-run PAMName=login, else ssh)
+        id: linux_session
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: bash .github/scripts/multiuser/linux.sh session
+
+      - name: Linux — annotate when logind session was unavailable
+        if: runner.os == 'Linux' && steps.linux_session.outcome == 'failure'
+        run: |
+          echo "::warning title=logind session unavailable::PAMName=login / ssh localhost did not register a session. Sign-out E2E is skipped here; owner and non-root gating stay blocking."
+
+      - name: Linux — elevated (root) multiuser E2E
+        if: runner.os == 'Linux'
+        env:
+          OFLH_MULTIUSER_E2E: '1'
+          OFLH_E2E_ELEVATED: '1'
+          OFLH_E2E_SIGN_OUT: ${{ steps.linux_session.outcome == 'success' && '1' || '0' }}
+        run: |
+          # geteuid()==0 is required for sign-out / cross-user reads on Linux.
+          # Run the already-built test binary so cargo does not rebuild as root.
+          sudo --preserve-env=OFLH_MULTIUSER_E2E,OFLH_E2E_ELEVATED,OFLH_E2E_SIGN_OUT,OFLH_E2E_USER,OFLH_E2E_FILE,OFLH_E2E_PID,OFLH_E2E_SESSION_USER,OFLH_E2E_SESSION_FILE,OFLH_E2E_SESSION_PID \
+            "${{ steps.bin.outputs.path }}" --ignored --nocapture --test-threads=1
+
+      - name: Linux — non-root pass (Requires root)
+        if: runner.os == 'Linux'
+        env:
+          OFLH_E2E_TEST_EXE: ${{ steps.bin.outputs.path }}
+        run: bash .github/scripts/multiuser/linux.sh nonadmin
+
+      # ── macOS ────────────────────────────────────────────────────────────
+      - name: macOS — create test user
+        if: runner.os == 'macOS'
+        run: bash .github/scripts/multiuser/macos.sh users
+
+      - name: macOS — second-user file holder (owner annotation only)
+        if: runner.os == 'macOS'
+        run: bash .github/scripts/multiuser/macos.sh owner
+
+      - name: macOS — elevated multiuser E2E (owner only; no remote sign-out)
+        if: runner.os == 'macOS'
+        env:
+          OFLH_MULTIUSER_E2E: '1'
+          OFLH_E2E_ELEVATED: '1'
+          OFLH_E2E_SIGN_OUT: '0'
+        run: |
+          # The runner user is an admin but not root. macOS only lets root read
+          # another user's open files (proc_pidinfo), so run the already-built
+          # test binary as root, like the Linux step.
+          sudo --preserve-env=OFLH_MULTIUSER_E2E,OFLH_E2E_ELEVATED,OFLH_E2E_SIGN_OUT,OFLH_E2E_USER,OFLH_E2E_FILE,OFLH_E2E_PID \
+            "${{ steps.bin.outputs.path }}" --ignored --nocapture --test-threads=1
+
+      - name: macOS — non-admin pass (informational)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        env:
+          OFLH_E2E_TEST_EXE: ${{ steps.bin.outputs.path }}
+        run: bash .github/scripts/multiuser/macos.sh nonadmin
+
+      # ── Shared cleanup / diagnostics ─────────────────────────────────────
+      - name: Collect diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            Windows) pwsh -File .github/scripts/multiuser/windows.ps1 -Stage diagnostics ;;
+            Linux)   bash .github/scripts/multiuser/linux.sh diagnostics ;;
+            macOS)   bash .github/scripts/multiuser/macos.sh diagnostics ;;
+          esac
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: multiuser-e2e-${{ matrix.os }}
+          path: ${{ runner.temp }}/oflh-multiuser-diag
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Cleanup fixtures
+        if: always()
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            Windows) pwsh -File .github/scripts/multiuser/windows.ps1 -Stage cleanup ;;
+            Linux)   bash .github/scripts/multiuser/linux.sh cleanup ;;
+            macOS)   bash .github/scripts/multiuser/macos.sh cleanup ;;
+          esac

@@ -83,8 +83,12 @@ fn native_scan_and_confirmed_force_action_use_captured_child_lifetime() {
         .unwrap();
     assert_eq!(page.total, 1);
     assert!(dataset.path(&page.rows[0].path_ref).unwrap().is_file());
-    let confirmation = service.prepare(status.revision, &[key], true).unwrap();
     let mut backend = oflh_platform::native().unwrap();
+    let confirmation = service
+        .prepare(status.revision, &[key], true, &mut *backend)
+        .unwrap();
+    // The impact preview reads the same process table on every platform.
+    assert!(confirmation.targets[0].impact.children.is_some());
     assert!(
         backend
             .is_running(

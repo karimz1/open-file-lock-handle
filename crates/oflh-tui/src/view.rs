@@ -2,6 +2,8 @@ use crate::app::*;
 #[path = "messages.rs"]
 pub(crate) mod messages;
 use messages::localized;
+#[path = "scroll.rs"]
+mod scroll;
 use oflh_core::*;
 use ratatui::{
     Frame,
@@ -127,31 +129,31 @@ fn search(frame: &mut Frame, area: Rect, app: &App, detail: bool) {
     }
 }
 /// Render distinct action colors with a pointer on the focused choice.
+fn button(label: &str, focused: bool, color: Color) -> Span<'static> {
+    let style = if focused {
+        Style::default()
+            .fg(Color::Rgb(24, 24, 32))
+            .bg(color)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(color)
+    };
+    Span::styled(
+        format!("{} {label} ", if focused { "▶" } else { " " }),
+        style,
+    )
+}
 fn confirmation_buttons(app: &App) -> Line<'static> {
     let cancel_color = Color::Rgb(155, 197, 161);
     let terminate_color = LOCK;
-    let button = |label: &str, focused: bool, color: Color| {
-        let style = if focused {
-            Style::default()
-                .fg(Color::Rgb(24, 24, 32))
-                .bg(color)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(color)
-        };
-        Span::styled(
-            format!("{} {label} ", if focused { "▶" } else { " " }),
-            style,
-        )
-    };
     Line::from(vec![
         button(app.language.text("Cancel"), !app.confirm, cancel_color),
         Span::raw("   "),
         button(
             if app.force {
-                app.language.text("Force kill")
+                app.language.text("Force quit")
             } else {
-                app.language.text("Terminate")
+                app.language.text("Close")
             },
             app.confirm,
             terminate_color,
@@ -161,7 +163,8 @@ fn confirmation_buttons(app: &App) -> Line<'static> {
 
 fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
     let (keys, status) = match app.screen {
-        Screen::Confirm => (app.language.text("Tab / ←→ choose · Enter confirm · Esc cancel"), ""),
+        Screen::Confirm if app.confirm_scrollable => (app.language.text("Tab / ←→ choose · d details · ↑↓ PgUp/PgDn scroll · Enter confirm · Esc cancel"), ""),
+        Screen::Confirm => (app.language.text("Tab / ←→ choose · d details · Enter confirm · Esc cancel"), ""),
         Screen::Details if app.detail_ports => (
             app.language.text("/ search · f files · r refresh · a auto · k stop · x force · ? help · Esc back · q quit"),
             "",
@@ -354,7 +357,10 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
     match app.screen {
         Screen::Main => main_view(frame, area, app),
-        Screen::Details => details(frame, area, app),
+        Screen::Details => {
+            details(frame, area, app);
+            sign_out_prompt(frame, area, app)
+        }
         Screen::Help | Screen::Confirm => dialog(frame, area, app),
     }
 }
@@ -742,6 +748,16 @@ fn render_main_table(frame: &mut Frame, area: Rect, app: &App) {
         .column_spacing(0);
     let mut state = TableState::default().with_selected(Some(app.cursor - start));
     frame.render_stateful_widget(table, area, &mut state);
+    scroll::table(
+        frame,
+        area,
+        app.language,
+        scroll::Window {
+            offset: start,
+            visible: count,
+            total: app.rows.len(),
+        },
+    );
 }
 fn process_port_summary(process: &Process, language: messages::Language) -> String {
     let ports: std::collections::BTreeSet<_> = process
@@ -924,7 +940,33 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
         );
         return;
     };
-    let header = vec![
+    let process = process.clone();
+    let process = &process;
+    let session = app.detail_session();
+    // The user is already on the first line; this line adds the session.
+    let owner = session.as_ref().map(|session| {
+        let line = crate::session::owner_line(
+            app.language,
+            &process.user,
+            Some(session),
+            app.sessions.is_own(session),
+        );
+        let user = format!("{} · ", safe(&process.user));
+        line.strip_prefix(&user)
+            .map_or(line.clone(), str::to_string)
+    });
+    let action = session.as_ref().and_then(|session| {
+        let availability = app
+            .sessions
+            .availability(oflh_sessions::Action::SignOut, session);
+        if availability == oflh_sessions::Availability::Available {
+            Some((crate::session::hint(app.language).to_string(), false))
+        } else {
+            crate::session::requirement(app.language, availability)
+                .map(|why| (format!("L · {why}"), true))
+        }
+    });
+    let mut header = vec![
         Line::styled(
             format!(
                 "{}   PID {} · {}",
@@ -951,10 +993,29 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
             memory(process)
         )),
     ];
+    // A process in a login session gets its own owner line, so the session,
+    // its state and the sign-out key are never cut off by the process name.
+    let mut owner_lines = Vec::new();
+    if let Some(owner) = owner {
+        owner_lines.push(Line::styled(
+            format!("SESSION {owner}"),
+            Style::default().fg(Color::Rgb(155, 197, 161)),
+        ));
+    }
+    if let Some((action, blocked)) = action {
+        owner_lines.push(Line::styled(
+            action,
+            Style::default().fg(if blocked { LOCK } else { Color::DarkGray }),
+        ));
+    }
+    let extra = owner_lines.len() as u16;
+    for (index, line) in owner_lines.iter().enumerate() {
+        header.insert(1 + index, line.clone());
+    }
     let compact = area.height < 24;
-    let head_height = if compact { 4 } else { 7 };
+    let head_height = if compact { 4 } else { 7 } + extra;
     if compact {
-        let lines = vec![
+        let mut lines = vec![
             header[0].clone(),
             Line::raw(localized!(
                 app.language,
@@ -964,14 +1025,17 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
                 process.parent
             )),
         ];
+        for (index, line) in owner_lines.into_iter().enumerate() {
+            lines.insert(1 + index, line);
+        }
         frame.render_widget(
             Paragraph::new(lines),
-            Rect::new(area.x, area.y + 1, area.width, 2),
+            Rect::new(area.x, area.y + 1, area.width, 2 + extra),
         );
     } else {
         frame.render_widget(
             Paragraph::new(header),
-            Rect::new(area.x, area.y + 1, area.width, 5),
+            Rect::new(area.x, area.y + 1, area.width, 5 + extra),
         );
     }
     text(
@@ -1101,6 +1165,16 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
             );
         let mut state = TableState::default().with_selected(Some(app.usage_cursor - start));
         frame.render_stateful_widget(table, body, &mut state);
+        scroll::bordered_table(
+            frame,
+            body,
+            app.language,
+            scroll::Window {
+                offset: start,
+                visible: count,
+                total: app.usage_rows.len(),
+            },
+        );
     }
     let preview_y = area.bottom().saturating_sub(foot_h + 3);
     if let Some(usage) = current {
@@ -1144,6 +1218,273 @@ fn details(frame: &mut Frame, area: Rect, app: &mut App) {
         app,
     );
 }
+/// What terminating `target` may also touch: one summary line, plus the
+/// capped lists when details are expanded. Silent when nothing is notable.
+fn impact_lines(lines: &mut Vec<Line<'static>>, app: &App, target: &ActionTarget, width: usize) {
+    const INDENT: &str = "            ";
+    let language = app.language;
+    let native = app.impact.get(&target.identity);
+    let (files, ports) = app
+        .snapshot
+        .processes
+        .iter()
+        .find(|process| process.identity == target.identity)
+        .map(impact::scanned_resources)
+        .unwrap_or_default();
+    let windows = native.and_then(|impact| impact.windows.as_ref());
+    let children = native.and_then(|impact| impact.children.as_ref());
+    // Plain consequences, most surprising first; at most two in the summary.
+    let mut sentences: Vec<(String, bool)> = Vec::new();
+    if native.is_some_and(|impact| impact.critical) {
+        sentences.push((
+            language
+                .text("Windows needs this process. Ending it can crash your PC.")
+                .into(),
+            true,
+        ))
+    }
+    let service = native.and_then(|impact| impact.service.as_deref());
+    if service.is_some() {
+        sentences.push((
+            language
+                .text("A service will probably restart it right away.")
+                .into(),
+            true,
+        ))
+    }
+    if let Some(windows) = windows.filter(|windows| windows.len() > 1) {
+        sentences.push((
+            localized!(
+                language,
+                "{name} closes completely, with all {n} open windows, such as “{title}”.",
+                name = safe(&target.name),
+                n = windows.len(),
+                title = safe(&windows[0])
+            ),
+            true,
+        ))
+    }
+    match children.map(Vec::len) {
+        Some(1) => sentences.push((
+            language.text("1 background process keeps running.").into(),
+            false,
+        )),
+        Some(n) if n > 1 => sentences.push((
+            localized!(language, "{n} background processes keep running.", n = n),
+            false,
+        )),
+        _ => {}
+    }
+    match files.total() {
+        2 => sentences.push((
+            language
+                .text("1 more file it has open is released too.")
+                .into(),
+            false,
+        )),
+        n if n > 2 => sentences.push((
+            localized!(
+                language,
+                "{n} more files it has open are released too.",
+                n = n - 1
+            ),
+            false,
+        )),
+        _ => {}
+    }
+    if ports.total() > 1 || (ports.total() == 1 && files.total() > 0) {
+        sentences.push((
+            if ports.total() == 1 {
+                language
+                    .text("A connection on 1 network port will drop.")
+                    .into()
+            } else {
+                localized!(
+                    language,
+                    "Connections on {n} network ports will drop.",
+                    n = ports.total()
+                )
+            },
+            false,
+        ))
+    }
+    if sentences.is_empty() {
+        return;
+    }
+    // One sentence per line, wrapped under the indent so it stays readable.
+    let room = width.saturating_sub(INDENT.len()).max(16);
+    for (text, warn) in sentences.into_iter().take(SUMMARY_SENTENCES) {
+        let style = if warn {
+            Style::default().fg(LOCK)
+        } else {
+            Style::default()
+        };
+        for row in wrap_words(&text, room) {
+            lines.push(Line::from(vec![
+                Span::raw(INDENT),
+                Span::styled(row, style),
+            ]))
+        }
+    }
+    if !app.impact_details {
+        return;
+    }
+    let group = |lines: &mut Vec<Line<'static>>, heading: String, rows: Vec<(String, String)>| {
+        if rows.is_empty() {
+            return;
+        }
+        lines.push(Line::styled(format!("{INDENT}{heading}"), accent()));
+        for (primary, secondary) in rows {
+            let mut row = vec![Span::raw(format!("{INDENT}  {primary}"))];
+            if !secondary.is_empty() {
+                row.push(Span::styled(
+                    format!("  {secondary}"),
+                    Style::default().add_modifier(Modifier::DIM),
+                ))
+            }
+            lines.push(Line::from(row))
+        }
+    };
+    // Each group previews a few rows; Space shows every kept row in place.
+    let all = app.impact_all;
+    let shorten = |mut rows: Vec<(String, String)>, unlisted: usize| {
+        let total = rows.len() + unlisted;
+        if total <= impact::IMPACT_PREVIEW {
+            return rows;
+        }
+        if all {
+            if unlisted > 0 {
+                rows.push((
+                    localized!(language, "+{n} more not listed", n = unlisted),
+                    String::new(),
+                ))
+            }
+            rows.push((language.text("▴ Space show less").into(), String::new()))
+        } else {
+            rows.truncate(impact::IMPACT_PREVIEW);
+            rows.push((
+                localized!(
+                    language,
+                    "▾ +{n} more · Space show all {total}",
+                    n = total - impact::IMPACT_PREVIEW,
+                    total = total
+                ),
+                String::new(),
+            ))
+        }
+        rows
+    };
+    let capped = |items: Vec<(String, String)>| (items.len(), shorten(items, 0));
+    let from = |list: &impact::Capped, split: fn(&str) -> (String, String)| {
+        shorten(
+            list.items.iter().map(|item| split(item)).collect(),
+            list.more,
+        )
+    };
+    match windows {
+        Some(windows) => {
+            let (total, rows) = capped(
+                windows
+                    .iter()
+                    .map(|title| (safe(title), String::new()))
+                    .collect(),
+            );
+            group(
+                lines,
+                localized!(language, "Windows ({n})", n = total),
+                rows,
+            )
+        }
+        None => lines.push(Line::styled(
+            format!(
+                "{INDENT}{}",
+                language.text("Window list not available on this platform")
+            ),
+            Style::default().add_modifier(Modifier::DIM),
+        )),
+    }
+    if let Some(children) = children.filter(|children| !children.is_empty()) {
+        let (total, rows) = capped(
+            children
+                .iter()
+                .map(|child| (safe(&child.name), format!("PID {}", child.identity.pid)))
+                .collect(),
+        );
+        group(
+            lines,
+            localized!(language, "Background processes ({n})", n = total),
+            rows,
+        );
+        lines.push(Line::styled(
+            format!(
+                "{INDENT}  {}",
+                language.text("Background processes are not closed; some may exit with it.")
+            ),
+            Style::default().add_modifier(Modifier::DIM),
+        ))
+    }
+    group(
+        lines,
+        localized!(language, "Files ({n})", n = files.total()),
+        from(&files, |path| match path.rfind(['/', '\\']) {
+            Some(cut) if cut > 0 && cut + 1 < path.len() => {
+                (path[cut + 1..].to_string(), path[..cut].to_string())
+            }
+            _ => (path.to_string(), String::new()),
+        }),
+    );
+    group(
+        lines,
+        localized!(language, "Ports ({n})", n = ports.total()),
+        from(&ports, |label| {
+            let (protocol, rest) = label.split_once(' ').unwrap_or(("", label));
+            match rest.rsplit_once(':') {
+                Some((address, port)) => (port.to_string(), format!("{protocol} {address}")),
+                None => (rest.to_string(), protocol.to_string()),
+            }
+        }),
+    );
+    if let Some(service) = service {
+        group(
+            lines,
+            language.text("Service").into(),
+            vec![(safe(service), language.text("may restart it").into())],
+        );
+    }
+}
+
+/// Collapsed confirmation rows stay at about two lines.
+const SUMMARY_SENTENCES: usize = 2;
+
+/// Wraps at spaces, or between characters for scripts without them.
+fn wrap_words(text: &str, width: usize) -> Vec<String> {
+    use unicode_width::UnicodeWidthStr;
+    let mut rows = Vec::new();
+    let mut row = String::new();
+    for word in text.split_inclusive(' ') {
+        if row.width() + word.trim_end().width() > width && !row.is_empty() {
+            rows.push(row.trim_end().to_string());
+            row.clear();
+        }
+        if word.trim_end().width() > width {
+            for ch in word.chars() {
+                if row.width() + unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0) > width
+                    && !row.is_empty()
+                {
+                    rows.push(std::mem::take(&mut row));
+                }
+                row.push(ch)
+            }
+        } else {
+            row.push_str(word)
+        }
+    }
+    if !row.trim().is_empty() {
+        rows.push(row.trim_end().to_string())
+    }
+    rows
+}
+
 fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
     text(
         frame,
@@ -1154,25 +1495,20 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
     let mut lines = Vec::new();
     if app.screen == Screen::Confirm {
         lines.push(Line::styled(
-            localized!(
-                app.language,
-                "{} {} processes?",
-                if app.force {
-                    app.language.text("FORCE KILL")
-                } else {
-                    app.language.text("Terminate")
-                },
-                app.pending.len()
-            ),
+            confirm_title(app),
             Style::default().fg(LOCK).add_modifier(Modifier::BOLD),
         ));
-        lines.push(Line::raw(if app.force {
-            app.language
-                .text("Immediate termination: no cleanup. Unsaved work may be lost.")
-        } else {
-            app.language
-                .text("Request a normal shutdown. Unsaved work may be lost.")
-        }));
+        let single = app.pending.len() == 1;
+        lines.push(Line::raw(app.language.text(match (app.force, single) {
+            (false, true) => "OFLH asks the program to close. Unsaved work may be lost.",
+            (false, false) => "OFLH asks each program to close. Unsaved work may be lost.",
+            (true, true) => {
+                "OFLH stops it immediately, without letting it save. Unsaved work will be lost."
+            }
+            (true, false) => {
+                "OFLH stops them immediately, without letting them save. Unsaved work will be lost."
+            }
+        })));
         if app.parent_action {
             lines.push(Line::styled(
                 app.language.text(
@@ -1182,15 +1518,29 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
             ))
         }
         lines.push(Line::raw(""));
-        lines.push(Line::raw(app.language.text(
-            "Affected processes (including selections hidden by filters):",
-        )));
+        lines.push(Line::raw(
+            app.language.text("Processes (filtered ones included):"),
+        ));
+        let checking = app.impact.is_empty();
         for process in &app.pending {
             lines.push(Line::raw(format!(
                 "  {:<9} {}",
                 process.identity.pid,
                 safe(&process.name)
-            )))
+            )));
+            impact_lines(&mut lines, app, process, area.width as usize);
+        }
+        if checking {
+            lines.push(Line::styled(
+                app.language.text("Checking windows and child processes…"),
+                Style::default().add_modifier(Modifier::DIM),
+            ))
+        } else if app.impact_details {
+            lines.push(Line::styled(
+                app.language
+                    .text("Files and ports come from the latest scan."),
+                Style::default().add_modifier(Modifier::DIM),
+            ))
         }
     } else {
         lines.push(Line::styled(app.language.text("LINKS"), accent()));
@@ -1245,15 +1595,48 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
         lines.push(Line::raw(""));
         lines.extend(app.language.help().lines().map(|s| Line::raw(s.to_owned())));
     }
+    let confirm = app.screen == Screen::Confirm;
+    // Size the footer for the longer scroll hint so the body height below is
+    // final; the buttons in the footer are never covered by content.
+    app.confirm_scrollable = confirm;
     let footer_height = (footer_lines(area.width, app).len() as u16).min(area.height);
     let height = area.height.saturating_sub(footer_height + 2);
     app.page = height.max(1) as usize;
-    app.scroll = app.scroll.min(lines.len().saturating_sub(1));
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let mut body = Rect::new(area.x, area.y + 2, area.width, height);
+    // Help and the confirmation scroll by wrapped line, with the shared
+    // scrollbar, indicator and key hint while they overflow.
+    let mut total = paragraph.line_count(area.width);
+    if total > height as usize && area.width > 1 {
+        // Leave the right column for the scrollbar and re-measure.
+        body.width -= 1;
+        total = paragraph.line_count(body.width);
+    }
+    let last = total.saturating_sub(height as usize);
+    app.scroll = app.scroll.min(last);
+    if confirm {
+        app.confirm_scrollable = last > 0;
+    }
+    let window = scroll::Window {
+        offset: app.scroll,
+        visible: height as usize,
+        total,
+    };
+    scroll::indicator_line(
+        frame,
+        line_area(area, 0),
+        Some(line_area(area, 1)),
+        app.language,
+        window,
+    );
+    scroll::scrollbar(
+        frame,
+        Rect::new(area.x, body.y, area.width, body.height),
+        window,
+    );
     frame.render_widget(
-        Paragraph::new(lines)
-            .wrap(Wrap { trim: false })
-            .scroll((app.scroll.min(u16::MAX as usize) as u16, 0)),
-        Rect::new(area.x, area.y + 2, area.width, height),
+        paragraph.scroll((app.scroll.min(u16::MAX as usize) as u16, 0)),
+        body,
     );
     footer(
         frame,
@@ -1328,6 +1711,16 @@ fn locked_table(frame: &mut Frame, area: Rect, app: &App) {
         .row_highlight_style(selected());
     let mut state = TableState::default().with_selected(Some(app.cursor - start));
     frame.render_stateful_widget(table, area, &mut state);
+    scroll::table(
+        frame,
+        area,
+        app.language,
+        scroll::Window {
+            offset: start,
+            visible: count,
+            total: app.rows.len(),
+        },
+    );
 }
 
 fn port_table(frame: &mut Frame, area: Rect, app: &App, detail: bool) {
@@ -1465,6 +1858,80 @@ fn port_table(frame: &mut Frame, area: Rect, app: &App, detail: bool) {
         .row_highlight_style(selected());
     let mut state = TableState::default().with_selected(Some(cursor - start));
     frame.render_stateful_widget(table, area, &mut state);
+    scroll::table(
+        frame,
+        area,
+        app.language,
+        scroll::Window {
+            offset: start,
+            visible: count,
+            total: length,
+        },
+    );
+}
+
+/// The sign-out confirmation, drawn over details. Cancel has focus first.
+fn sign_out_prompt(frame: &mut Frame, area: Rect, app: &App) {
+    let Some(prompt) = &app.sign_out else { return };
+    let language = app.language;
+    let user = safe(&prompt.session.user);
+    let mut lines = vec![
+        Line::styled(
+            crate::session::prompt_title(language, &user),
+            Style::default().fg(LOCK).add_modifier(Modifier::BOLD),
+        ),
+        Line::raw(crate::session::prompt_note(language, &user)),
+        Line::raw(crate::session::owner_line(
+            language,
+            &prompt.session.user,
+            Some(&prompt.session),
+            false,
+        )),
+        Line::raw(""),
+        Line::raw(crate::session::prompt_processes(
+            language,
+            prompt.processes.len(),
+        )),
+    ];
+    let room = usize::from(area.height.saturating_sub(10));
+    for name in prompt.processes.iter().take(room) {
+        lines.push(Line::raw(format!("  {name}")));
+    }
+    if prompt.processes.len() > room {
+        lines.push(Line::raw(format!("  … +{}", prompt.processes.len() - room)));
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::from(vec![
+        button(
+            language.text("Cancel"),
+            !prompt.confirm,
+            Color::Rgb(155, 197, 161),
+        ),
+        Span::raw("  "),
+        button(
+            &crate::session::button(language, &user),
+            prompt.confirm,
+            LOCK,
+        ),
+    ]));
+    lines.push(Line::styled(
+        language.text("Tab / ←→ choose · Enter confirm · Esc cancel"),
+        Style::default().fg(Color::DarkGray),
+    ));
+    let height = (lines.len() as u16 + 2).min(area.height);
+    let box_area = Rect::new(
+        area.x,
+        area.y + (area.height - height) / 2,
+        area.width,
+        height,
+    );
+    frame.render_widget(ratatui::widgets::Clear, box_area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .block(ratatui::widgets::Block::bordered().border_style(Style::default().fg(LOCK))),
+        box_area,
+    );
 }
 
 fn port_details(frame: &mut Frame, area: Rect, app: &mut App) {
@@ -1574,4 +2041,27 @@ fn port_details(frame: &mut Frame, area: Rect, app: &mut App) {
         ),
         app,
     );
+}
+
+/// "Close Blender?" for one target, "Close 3 processes?" for several; the
+/// force variant says "Force quit" so title and button use the same verb.
+fn confirm_title(app: &App) -> String {
+    let n = app.pending.len();
+    let name = app
+        .pending
+        .first()
+        .map(|process| safe(&process.name).chars().take(40).collect::<String>())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| {
+            app.pending
+                .first()
+                .map(|process| format!("PID {}", process.identity.pid))
+                .unwrap_or_default()
+        });
+    match (app.force, n == 1) {
+        (false, true) => localized!(app.language, "Close {name}?", name = name),
+        (false, false) => localized!(app.language, "Close {n} processes?", n = n),
+        (true, true) => localized!(app.language, "Force quit {name}?", name = name),
+        (true, false) => localized!(app.language, "Force quit {n} processes?", n = n),
+    }
 }

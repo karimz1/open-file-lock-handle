@@ -4,7 +4,7 @@ use crate::{
     dataset::{Dataset, display},
     recent::RecentTargets,
 };
-use oflh_core::{Ancestor, Cancellation, Identity, Snapshot, Target};
+use oflh_core::{Ancestor, Cancellation, Identity, Process, Snapshot, Target};
 use oflh_platform::Backend;
 use std::{
     collections::HashSet,
@@ -71,6 +71,7 @@ fn storage_failure(error: impl std::fmt::Display) -> Failure {
 /// Long-lived desktop service. One worker and one pending scan bound native work.
 pub struct Service {
     shared: Arc<Shared>,
+    sessions: Arc<crate::sessions::Sessions>,
 }
 impl Service {
     /// Start a worker-owned native scanner and a completion callback.
@@ -184,7 +185,80 @@ impl Service {
                     notify(status);
                 }
             })?;
-        Ok(Self { shared })
+        Ok(Self {
+            shared,
+            sessions: Arc::new(crate::sessions::Sessions::native()),
+        })
+    }
+    /// Replace the session source (tests, fixtures).
+    pub fn with_sessions(mut self, sessions: crate::sessions::Sessions) -> Self {
+        self.sessions = Arc::new(sessions);
+        self
+    }
+    /// One table page with session columns filled for its rows only.
+    pub fn page(&self, revision: u32, query: &TableQuery) -> Result<Page, Failure> {
+        let mut page = self.dataset(revision)?.page(query)?;
+        self.sessions.annotate(&mut page.rows);
+        Ok(page)
+    }
+    fn owner(&self, process: &Process) -> OwnerView {
+        self.sessions.owner(&process.user, process.identity.pid)
+    }
+    fn target(&self) -> Option<(PathBuf, bool)> {
+        let path = self.shared.lock().target.clone()?;
+        let directory = path.is_dir();
+        Some((path, directory))
+    }
+    /// Capture the session of a scanned process for "Sign out user".
+    pub fn prepare_sign_out(
+        &self,
+        revision: u32,
+        key: &str,
+    ) -> Result<SignOutConfirmation, Failure> {
+        let dataset = self.dataset(revision)?;
+        let (_, process) = dataset.process(key)?;
+        self.dismiss();
+        self.sessions.prepare_sign_out(
+            process.identity.pid,
+            dataset
+                .snapshot
+                .processes
+                .iter()
+                .map(|process| (process.identity.pid, process.name.clone())),
+        )
+    }
+    /// Sign out the captured session after revalidating it.
+    pub fn sign_out(&self, ticket: &str) -> Result<(), Failure> {
+        self.sessions.sign_out(ticket)
+    }
+    /// Send a message to the session of a scanned process.
+    pub fn send_message(&self, revision: u32, key: &str, text: &str) -> Result<(), Failure> {
+        let (_, process) = self
+            .dataset(revision)?
+            .process(key)
+            .map(|(i, p)| (i, p.identity.pid))?;
+        self.sessions.send_message(process, text)
+    }
+    /// Files of the current target opened over SMB shares.
+    pub fn share_files(&self) -> ShareFiles {
+        let target = self.target();
+        self.sessions.share_files(
+            target
+                .as_ref()
+                .map(|(path, directory)| (path.as_path(), *directory)),
+        )
+    }
+    /// Capture one share open of the current target for "Close open file".
+    pub fn prepare_close_file(&self, id: u32) -> Result<CloseFileConfirmation, Failure> {
+        let (path, directory) = self
+            .target()
+            .ok_or_else(|| Failure::invalid("Inspect a file or folder first"))?;
+        self.dismiss();
+        self.sessions.prepare_close_file(id, (&path, directory))
+    }
+    /// Close the captured share open after revalidating it.
+    pub fn close_file(&self, ticket: &str) -> Result<(), Failure> {
+        self.sessions.close_file(ticket)
     }
     /// Start an inspection. Requests during queued or active work preserve that request.
     pub fn inspect(&self, path: PathBuf) -> Result<Status, Failure> {
@@ -378,6 +452,12 @@ impl Service {
         {
             state.ancestry = Some((key.into(), process.ancestors.clone()));
         }
+        details.owner = self.owner(process);
+        details.session_actions = details
+            .owner
+            .session
+            .as_ref()
+            .map(|session| self.sessions.actions(session));
         if let Some((_, ancestors)) = &state.ancestry {
             details.ancestors = ancestors
                 .iter()
@@ -397,6 +477,7 @@ impl Service {
         owner: &str,
         key: &str,
         force: bool,
+        backend: &mut dyn Backend,
     ) -> Result<Confirmation, Failure> {
         let ancestor = self
             .shared
@@ -414,12 +495,22 @@ impl Service {
                 Failure::invalid("Ancestry selection expired; reopen process details")
             })?;
         ancestor.identity.validate().map_err(Failure::from)?;
+        // The ancestor may also appear in the scan; its files and ports count too.
+        let dataset = self.shared.lock().dataset.clone();
+        let scanned = dataset.process(key).ok().map(|(_, process)| process);
+        let [native] = <[_; 1]>::try_from(backend.impact(&[ancestor.identity]))
+            .unwrap_or_else(|_| [oflh_core::impact::Impact::default()]);
         self.confirm(
             vec![ancestor.identity],
             vec![ActionTarget {
                 key: key.into(),
                 name: oflh_core::safe(&ancestor.name),
                 pid: ancestor.identity.pid,
+                role: TargetRole::Ancestor,
+                owner: scanned
+                    .map(|process| self.owner(process))
+                    .unwrap_or_else(|| self.sessions.owner("", ancestor.identity.pid)),
+                impact: target_impact(native, scanned),
             }],
             force,
         )
@@ -430,6 +521,7 @@ impl Service {
         revision: u32,
         keys: &[String],
         force: bool,
+        backend: &mut dyn Backend,
     ) -> Result<Confirmation, Failure> {
         if keys.is_empty() || keys.len() > 10000 {
             return Err(Failure::invalid("Select between 1 and 10,000 processes"));
@@ -437,19 +529,27 @@ impl Service {
         let dataset = self.dataset(revision)?;
         let mut seen = HashSet::new();
         let mut identities = Vec::new();
-        let mut targets = Vec::new();
+        let mut processes = Vec::new();
         for key in keys {
             let (_, process) = dataset.process(key)?;
             process.identity.validate().map_err(Failure::from)?;
             if seen.insert(process.identity) {
                 identities.push(process.identity);
-                targets.push(ActionTarget {
-                    key: identity_key(process.identity),
-                    name: oflh_core::safe(&process.name),
-                    pid: process.identity.pid,
-                });
+                processes.push(process);
             }
         }
+        let mut native = backend.impact(&identities).into_iter();
+        let targets = processes
+            .into_iter()
+            .map(|process| ActionTarget {
+                key: identity_key(process.identity),
+                name: oflh_core::safe(&process.name),
+                pid: process.identity.pid,
+                role: TargetRole::Holder,
+                owner: self.owner(process),
+                impact: target_impact(native.next().unwrap_or_default(), Some(process)),
+            })
+            .collect();
         self.confirm(identities, targets, force)
     }
     fn confirm(
@@ -515,6 +615,7 @@ impl Service {
     /// Invalidate an outstanding confirmation without sending any process signal.
     pub fn dismiss(&self) {
         self.shared.lock().action = None;
+        self.sessions.dismiss();
     }
     /// Consume a confirmation exactly once. The caller cannot change the IDs or force mode.
     pub fn terminate(
@@ -747,6 +848,30 @@ fn status(state: &State) -> Status {
         pull_request_url: oflh_core::PULL_REQUEST_URL,
     }
 }
+/// Combine native observations with what the latest scan attributed to the process.
+fn target_impact(native: oflh_core::impact::Impact, scanned: Option<&Process>) -> TargetImpact {
+    use oflh_core::impact::{Capped, scanned_resources};
+    let (files, ports) = scanned.map(scanned_resources).unwrap_or_default();
+    TargetImpact {
+        windows: native
+            .windows
+            .map(|titles| Capped::new(titles.iter().map(|title| oflh_core::safe(title))).into()),
+        children: native.children.map(|children| {
+            Capped::new(children.iter().map(|child| {
+                format!(
+                    "{} (PID {})",
+                    oflh_core::safe(&child.name),
+                    child.identity.pid
+                )
+            }))
+            .into()
+        }),
+        files: files.into(),
+        ports: ports.into(),
+        service: native.service.as_deref().map(oflh_core::safe),
+        critical: native.critical,
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -923,6 +1048,7 @@ mod tests {
     }
     #[derive(Default)]
     struct Recorder {
+        impact: Option<oflh_core::impact::Impact>,
         calls: Vec<(Identity, bool)>,
         changed: bool,
         running: bool,
@@ -943,6 +1069,9 @@ mod tests {
             } else {
                 Ok(self.running)
             }
+        }
+        fn impact(&mut self, ids: &[Identity]) -> Vec<oflh_core::impact::Impact> {
+            vec![self.impact.clone().unwrap_or_default(); ids.len()]
         }
         fn terminate(&mut self, identity: Identity, force: bool, _: &Cancellation) -> Result<()> {
             self.calls.push((identity, force));
@@ -973,12 +1102,107 @@ mod tests {
         ));
         (service, identity)
     }
+    /// Integration: scan data, session backend and tickets together, from
+    /// details through the termination confirmation to sign-out and share close.
+    #[test]
+    fn multi_user_flow_from_details_to_sign_out_and_share_close() {
+        use oflh_sessions::{Fake, Os, Session, SessionKind, SessionState, ShareFile};
+        let (service, identity) = action_service();
+        {
+            let mut shared = service.shared.lock();
+            let mut snapshot = shared.dataset.snapshot.clone();
+            snapshot.processes[0].user = "max.muster".into();
+            shared.dataset = Arc::new(Dataset::new(1, snapshot));
+            shared.target = Some(PathBuf::from("c:/shares/finance/Q3.XLSX"));
+        }
+        let fake = Arc::new(Fake {
+            own: Some("1".into()),
+            ..Fake::default()
+        });
+        fake.sessions.lock().unwrap().push(Session {
+            id: "3".into(),
+            user: "max.muster".into(),
+            kind: SessionKind::Rdp,
+            state: SessionState::Active,
+            client: Some("LAPTOP-7".into()),
+            since: Some(1_700_000_000),
+            ..Session::default()
+        });
+        fake.processes
+            .lock()
+            .unwrap()
+            .insert(identity.pid, "3".into());
+        fake.share_files.lock().unwrap().push(ShareFile {
+            id: 71,
+            path: r"C:\Shares\Finance\Q3.xlsx".into(),
+            user: "anna".into(),
+            client: Some("PC-ANNA".into()),
+            locks: 1,
+            write: true,
+        });
+        let service = service.with_sessions(crate::sessions::Sessions::new(
+            fake.clone(),
+            Os::Windows,
+            true,
+        ));
+        let key = identity_key(identity);
+
+        let details = service.details(1, &key).unwrap();
+        assert_eq!(details.owner.user, "max.muster");
+        let session = details.owner.session.as_ref().unwrap();
+        assert_eq!((session.id.as_str(), session.kind), ("3", "rdp"));
+        let actions = details.session_actions.as_ref().unwrap();
+        assert_eq!(
+            (actions.send_message, actions.sign_out),
+            ("available", "available")
+        );
+
+        let termination = service
+            .prepare(
+                1,
+                std::slice::from_ref(&key),
+                false,
+                &mut Recorder::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            termination.targets[0]
+                .owner
+                .session
+                .as_ref()
+                .map(|s| s.id.as_str()),
+            Some("3")
+        );
+
+        service.send_message(1, &key, "Restart at 18:00").unwrap();
+        let confirmation = service.prepare_sign_out(1, &key).unwrap();
+        assert!(confirmation.processes.items[0].starts_with("fixture (PID "));
+        service.sign_out(&confirmation.ticket).unwrap();
+        assert!(
+            service.sign_out(&confirmation.ticket).is_err(),
+            "single use"
+        );
+
+        let shares = service.share_files();
+        assert_eq!((shares.close, shares.files.len()), ("available", 1));
+        let close = service.prepare_close_file(71).unwrap();
+        service.close_file(&close.ticket).unwrap();
+        assert_eq!(
+            fake.actions(),
+            ["message 3 Restart at 18:00", "sign_out 3", "close 71"]
+        );
+    }
     #[test]
     fn closing_an_inspection_invalidates_results_actions_and_retains_recent_targets() {
         let (service, identity) = action_service();
         let revision = service.status().revision;
         let confirmation = service
-            .prepare(revision, &[identity_key(identity)], false)
+            .prepare(
+                revision,
+                &[identity_key(identity)],
+                false,
+                &mut Recorder::default(),
+            )
             .unwrap();
         service
             .shared
@@ -1003,7 +1227,12 @@ mod tests {
         for force in [false, true] {
             let (service, identity) = action_service();
             let confirmation = service
-                .prepare(1, &[identity_key(identity)], force)
+                .prepare(
+                    1,
+                    &[identity_key(identity)],
+                    force,
+                    &mut Recorder::default(),
+                )
                 .unwrap();
             let mut backend = Recorder::default();
             let results = service
@@ -1062,6 +1291,9 @@ mod tests {
                 key: identity_key(*identity),
                 pid: identity.pid,
                 name: "fixture".into(),
+                role: TargetRole::Holder,
+                owner: OwnerView::default(),
+                impact: TargetImpact::default(),
             })
             .collect();
         let confirmation = service.confirm(identities.clone(), targets, true).unwrap();
@@ -1133,7 +1365,9 @@ mod tests {
             (false, Error::Cancelled),
         ] {
             let (service, identity) = action_service();
-            let confirmation = service.prepare(1, &[identity_key(identity)], true).unwrap();
+            let confirmation = service
+                .prepare(1, &[identity_key(identity)], true, &mut Recorder::default())
+                .unwrap();
             let mut error = Some(error);
             let results = service
                 .terminate_using(
@@ -1186,7 +1420,12 @@ mod tests {
         ] {
             let (service, identity) = action_service();
             let confirmation = service
-                .prepare(1, &[identity_key(identity)], false)
+                .prepare(
+                    1,
+                    &[identity_key(identity)],
+                    false,
+                    &mut Recorder::default(),
+                )
                 .unwrap();
             let mut backend = Recorder {
                 running,
@@ -1235,28 +1474,137 @@ mod tests {
         );
         assert!(
             service
-                .prepare_ancestor(&owner, "42000:13:0", true)
+                .prepare_ancestor(&owner, "42000:13:0", true, &mut Recorder::default())
                 .is_err()
         );
         assert!(
             service
-                .prepare_ancestor("forged", &identity_key(parent), true)
+                .prepare_ancestor(
+                    "forged",
+                    &identity_key(parent),
+                    true,
+                    &mut Recorder::default()
+                )
                 .is_err()
         );
         let confirmation = service
-            .prepare_ancestor(&owner, &identity_key(parent), true)
+            .prepare_ancestor(
+                &owner,
+                &identity_key(parent),
+                true,
+                &mut Recorder::default(),
+            )
             .unwrap();
         let mut backend = Recorder::default();
         service
             .terminate(&confirmation.ticket, &mut backend)
             .unwrap();
         assert_eq!(backend.calls, [(parent, true)]);
+        assert_eq!(confirmation.targets[0].role, TargetRole::Ancestor);
+    }
+    #[test]
+    fn confirmation_carries_capped_impact_without_changing_the_action() {
+        use oflh_core::{Port, Protocol, Usage, impact::Impact};
+        let (service, identity) = action_service();
+        service.shared.lock().dataset = Arc::new(Dataset::new(
+            1,
+            Snapshot {
+                processes: vec![Process {
+                    identity,
+                    name: "blender".into(),
+                    usages: vec![Usage {
+                        path: "/build/scene.blend".into(),
+                        ..Usage::default()
+                    }],
+                    ports: vec![Port {
+                        protocol: Protocol::Tcp,
+                        address: std::net::Ipv4Addr::UNSPECIFIED.into(),
+                        number: 3000,
+                    }],
+                    ..Process::default()
+                }],
+                warnings: vec![],
+            },
+        ));
+        let child = |pid| Ancestor {
+            identity: Identity {
+                pid,
+                started: 1,
+                started_sub: 0,
+            },
+            name: "worker".into(),
+        };
+        let mut backend = Recorder {
+            impact: Some(Impact {
+                windows: Some((0..7).map(|n| format!("scene {n}.blend")).collect()),
+                children: Some(vec![child(7), child(8)]),
+                service: Some("Blender Render Farm".into()),
+                critical: false,
+            }),
+            ..Recorder::default()
+        };
+        let confirmation = service
+            .prepare(1, &[identity_key(identity)], false, &mut backend)
+            .unwrap();
+        let target = &confirmation.targets[0];
+        assert_eq!(target.role, TargetRole::Holder);
+        let windows = target.impact.windows.as_ref().unwrap();
+        assert_eq!((windows.items.len(), windows.more), (7, 0));
+        assert_eq!(
+            target.impact.children.as_ref().unwrap().items,
+            ["worker (PID 7)", "worker (PID 8)"]
+        );
+        assert_eq!(target.impact.files.items, ["/build/scene.blend"]);
+        assert_eq!(target.impact.ports.items, ["TCP 3000"]);
+        assert_eq!(
+            target.impact.service.as_deref(),
+            Some("Blender Render Farm")
+        );
+        assert!(!target.impact.critical);
+        let json = serde_json::to_value(&confirmation).unwrap();
+        assert_eq!(json["targets"][0]["role"], "holder");
+        assert_eq!(json["targets"][0]["impact"]["windows"]["more"], 0);
+        assert_eq!(
+            json["targets"][0]["impact"]["service"],
+            "Blender Render Farm"
+        );
+        assert_eq!(
+            json["targets"][0]["impact"]["ports"]["items"][0],
+            "TCP 3000"
+        );
+        service
+            .terminate(&confirmation.ticket, &mut backend)
+            .unwrap();
+        assert_eq!(backend.calls, [(identity, false)]);
+    }
+    #[test]
+    fn unavailable_impact_serializes_as_null_not_empty() {
+        let (service, identity) = action_service();
+        let confirmation = service
+            .prepare(
+                1,
+                &[identity_key(identity)],
+                false,
+                &mut Recorder::default(),
+            )
+            .unwrap();
+        let json = serde_json::to_value(&confirmation).unwrap();
+        assert!(json["targets"][0]["impact"]["windows"].is_null());
+        assert!(json["targets"][0]["impact"]["children"].is_null());
+        assert!(json["targets"][0]["impact"]["service"].is_null());
+        assert_eq!(json["targets"][0]["impact"]["critical"], false);
+        assert_eq!(
+            json["targets"][0]["impact"]["files"]["items"],
+            serde_json::json!([])
+        );
     }
     #[test]
     fn tickets_capture_mode_deduplicate_and_cannot_be_replayed() {
         let (service, identity) = action_service();
         let key = identity_key(identity);
-        let confirmation = service.prepare(1, &[key.clone(), key], true).unwrap();
+        let confirmation = service
+            .prepare(1, &[key.clone(), key], true, &mut Recorder::default())
+            .unwrap();
         assert_eq!(confirmation.targets.len(), 1);
         let mut backend = Recorder::default();
         assert!(service.terminate("forged", &mut backend).is_err());
@@ -1276,7 +1624,12 @@ mod tests {
     fn changed_identity_reports_failure_without_escalation() {
         let (service, identity) = action_service();
         let confirmation = service
-            .prepare(1, &[identity_key(identity)], false)
+            .prepare(
+                1,
+                &[identity_key(identity)],
+                false,
+                &mut Recorder::default(),
+            )
             .unwrap();
         let mut backend = Recorder {
             changed: true,
@@ -1293,15 +1646,33 @@ mod tests {
     #[test]
     fn invalid_selections_and_dismissed_confirmations_cannot_act() {
         let (service, identity) = action_service();
-        assert!(service.prepare(1, &[], false).is_err());
         assert!(
             service
-                .prepare(0, &[identity_key(identity)], false)
+                .prepare(1, &[], false, &mut Recorder::default())
                 .is_err()
         );
-        assert!(service.prepare(1, &["1:1:0".into()], false).is_err());
+        assert!(
+            service
+                .prepare(
+                    0,
+                    &[identity_key(identity)],
+                    false,
+                    &mut Recorder::default()
+                )
+                .is_err()
+        );
+        assert!(
+            service
+                .prepare(1, &["1:1:0".into()], false, &mut Recorder::default())
+                .is_err()
+        );
         let confirmation = service
-            .prepare(1, &[identity_key(identity)], false)
+            .prepare(
+                1,
+                &[identity_key(identity)],
+                false,
+                &mut Recorder::default(),
+            )
             .unwrap();
         service.dismiss();
         let mut backend = Recorder::default();
@@ -1327,7 +1698,7 @@ mod tests {
         ));
         assert_eq!(
             service
-                .prepare(2, &["1:1:0".into()], false)
+                .prepare(2, &["1:1:0".into()], false, &mut Recorder::default())
                 .unwrap_err()
                 .kind,
             "protected"

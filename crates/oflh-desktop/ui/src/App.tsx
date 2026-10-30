@@ -1,4 +1,10 @@
-import { forceRecoveryTargets } from "./termination";
+import { useScrollRegionFades } from "./ScrollArea";
+import {
+  confirmationText,
+  confirmationValues,
+  forceRecoveryTargets,
+} from "./termination";
+import { ImpactScrollArea, TerminationTarget } from "./TerminationImpact";
 import {
   lazy,
   Suspense,
@@ -37,6 +43,7 @@ import {
   RefreshCw,
   Search,
   ShieldAlert,
+  Info,
   Trash2,
   X,
   ZoomIn,
@@ -56,11 +63,13 @@ import {
   type ColumnFilters,
 } from "./api";
 import { acceptStatus, initialStatus, selectKey } from "./state";
+import { readOpenMaximized, writeOpenMaximized } from "./windowStartup";
 import { scanDuration } from "./scanDuration";
 import { normalizeTypedPath } from "./targetPath";
 import { TargetHelp } from "./TargetHelp";
 import { Inspector } from "./Inspector";
 import { Modal } from "./Modal";
+import { SharePanel } from "./SharePanel";
 import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
 import { AutoRefresh } from "./AutoRefresh";
 import {
@@ -91,6 +100,8 @@ const AboutDialog = lazy(() =>
 const columnKeys = new Set<ColumnKey>([
   "process",
   "pid",
+  "user",
+  "session",
   "path",
   "evidence",
   "memory",
@@ -110,7 +121,20 @@ const filterLabels: Record<keyof ColumnFilters, MessageKey> = {
   memory_max: "inspector.k_memory_max",
   evidence: "filters.k_evidence",
 };
+/** Columns that stay hidden until someone turns them on in the column picker. */
+const optInColumns: ColumnKey[] = ["user", "session"];
 function readHiddenColumns(): Set<ColumnKey> {
+  const hidden = readSavedHiddenColumns();
+  try {
+    // Saved sets from before these columns existed keep them hidden too.
+    if (localStorage.getItem("oflh-optional-columns") === null)
+      optInColumns.forEach((column) => hidden.add(column));
+  } catch {
+    optInColumns.forEach((column) => hidden.add(column));
+  }
+  return hidden;
+}
+function readSavedHiddenColumns(): Set<ColumnKey> {
   try {
     const saved: unknown = JSON.parse(
       localStorage.getItem("oflh-hidden-columns") ?? "[]",
@@ -142,6 +166,7 @@ function formatFailureDetails(failure: unknown): string {
   return String(failure);
 }
 export function App() {
+  useScrollRegionFades();
   const updates = useUpdates();
   const [showAbout, setShowAbout] = useState(false);
 
@@ -167,6 +192,9 @@ export function App() {
       return 14;
     }
   });
+  const [openMaximized, setOpenMaximized] = useState(() =>
+    readOpenMaximized(localStorage),
+  );
   const [autoReloadSeconds, setAutoReloadSeconds] = useState(0);
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontSize}px`;
@@ -239,6 +267,7 @@ export function App() {
       else next.add(column);
       try {
         localStorage.setItem("oflh-hidden-columns", JSON.stringify([...next]));
+        localStorage.setItem("oflh-optional-columns", "1");
       } catch {
         // The current session can still use the changed column set.
       }
@@ -1347,7 +1376,9 @@ export function App() {
                     <details className="column-picker">
                       <summary>
                         <Columns3 size={14} />
-                        {t("table.k_columns")}
+                        <span className="compact-label">
+                          {t("table.k_columns")}
+                        </span>
                         <ChevronDown
                           size={12}
                           className="column-picker-caret"
@@ -1385,7 +1416,9 @@ export function App() {
                       onClick={() => setShowColumns((visible) => !visible)}
                     >
                       <SlidersHorizontal size={14} />
-                      {t("filters.k_column_filters")}
+                      <span className="compact-label">
+                        {t("filters.k_column_filters")}
+                      </span>
                       {columnCount ? ` (${columnCount})` : ""}
                     </button>
                     <button
@@ -1395,7 +1428,9 @@ export function App() {
                       onClick={() => setFitAllRequest((current) => current + 1)}
                     >
                       <MoveHorizontal size={14} />{" "}
-                      {t("table.k_fit_all_columns")}
+                      <span className="compact-label">
+                        {t("table.k_fit_all_columns")}
+                      </span>
                     </button>
                     <span className="muted result-count">
                       {total} {t("app.k_results")}
@@ -1617,6 +1652,9 @@ export function App() {
                             .finally(() => setActing(false));
                         }}
                         details={details}
+                        revision={detailsRevision}
+                        notify={setToast}
+                        report={(failure) => report(failure)}
                         rowCurrent={activeRow?.revision === status.revision}
                         availability={
                           detailsMissing
@@ -1674,6 +1712,13 @@ export function App() {
                           : "app.k_file_usage_is_not_proof_of_a_lock_windo_f7640915",
                       )}
                     </span>
+                    {view !== "ports" && status.revision > 0 && (
+                      <SharePanel
+                        revision={status.revision}
+                        notify={setToast}
+                        report={(failure) => report(failure)}
+                      />
+                    )}
                     {status.warnings.length > 0 && (
                       <details>
                         <summary>
@@ -1823,6 +1868,27 @@ export function App() {
                       </option>
                     ))}
                   </select>
+                </div>
+              </section>
+              <section className="setting-section">
+                <div>
+                  <h3>{t("settings.k_window")}</h3>
+                  <p className="muted">
+                    {t("settings.k_open_window_maximized_help")}
+                  </p>
+                </div>
+                <div className="font-setting">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={openMaximized}
+                      onChange={(event) => {
+                        setOpenMaximized(event.target.checked);
+                        writeOpenMaximized(localStorage, event.target.checked);
+                      }}
+                    />
+                    {t("settings.k_open_window_maximized")}
+                  </label>
                 </div>
               </section>
               <section className="setting-section">
@@ -2393,51 +2459,48 @@ export function App() {
       )}
       {confirmation && (
         <Modal
-          title={
-            confirmation.force
-              ? t("termination.k_force_terminate_processes")
-              : t("termination.k_terminate_processes")
-          }
+          title={t(
+            confirmationText(confirmation, "title"),
+            confirmationValues(confirmation),
+          )}
           danger={confirmation.force}
           close={dismiss}
+          className="confirmation-modal"
         >
           <div className="confirmation-note">
-            <ShieldAlert size={22} />
-            <p>
-              {confirmation.force
-                ? t(
-                    "termination.k_force_termination_stops_these_processes_9c247038",
-                  )
-                : t(
-                    "termination.k_request_these_processes_to_stop_unsaved_8b80fb41",
-                  )}
-            </p>
+            <ShieldAlert size={18} aria-hidden="true" />
+            <p>{t(confirmationText(confirmation, "note"))}</p>
           </div>
           {confirmation.elevated && (
             <p role="status">{t("termination.k_admin_confirmation")}</p>
           )}
-          <p>
-            <strong>
-              {confirmation.targets.length}{" "}
-              {confirmation.targets.length === 1
-                ? t("app.k_process_c2e2d662")
-                : t("navigation.k_processes_da2c4eba")}
-            </strong>{" "}
-            — {t("filters.k_all_targets_are_listed_below_including_1515b80a")}
-          </p>
-          <ul className="confirmation-list">
+          {confirmation.targets.some(
+            (target) => target.role === "ancestor",
+          ) && (
+            <p className="impact-warning">
+              {t(
+                "termination.k_stopping_a_parent_may_close_its_childre_04c26acd",
+              )}
+            </p>
+          )}
+          <ImpactScrollArea label={t("termination.k_impact_targets_label")}>
             {confirmation.targets.map((target) => (
-              <li key={target.key}>
-                <strong>{target.name || t("app.k_unnamed")}</strong>
-                <code>PID {target.pid}</code>
-              </li>
+              <TerminationTarget key={target.key} target={target} />
             ))}
-          </ul>
-          <p className="hint">
-            {t(
-              "termination.k_oflh_validates_each_captured_process_id_5e6d1cc4",
-            )}
-          </p>
+          </ImpactScrollArea>
+          <details className="safety-note">
+            <summary>
+              <Info size={13} aria-hidden="true" />
+              {t("termination.k_safety_summary")}
+            </summary>
+            <ul>
+              <li>{t("termination.k_safety_listed")}</li>
+              <li>{t("termination.k_safety_identity")}</li>
+              {!confirmation.force && (
+                <li>{t("termination.k_safety_no_escalation")}</li>
+              )}
+            </ul>
+          </details>
           <div className="modal-actions">
             <button
               data-default-focus
@@ -2451,9 +2514,10 @@ export function App() {
               {acting && <LoaderCircle size={14} className="spin" />}
               {acting
                 ? t("app.k_waiting_for_process_exit")
-                : confirmation.force
-                  ? t("termination.k_force_terminate_7b6445b3")
-                  : t("termination.k_terminate_77517bd0")}
+                : t(
+                    confirmationText(confirmation, "button"),
+                    confirmationValues(confirmation, 28),
+                  )}
             </button>
           </div>
         </Modal>

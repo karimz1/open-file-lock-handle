@@ -286,7 +286,7 @@ fn confirmation_focus_has_distinct_backgrounds() {
     let cancel_background = label_background(terminal.backend().buffer(), "Cancel");
     assert_ne!(cancel_background, Color::Reset);
     assert_eq!(
-        label_background(terminal.backend().buffer(), "Terminate"),
+        label_background(terminal.backend().buffer(), "Close"),
         Color::Reset
     );
     export_visual("confirm-cancel", terminal.backend().buffer());
@@ -294,7 +294,7 @@ fn confirmation_focus_has_distinct_backgrounds() {
     terminal
         .draw(|frame| view::draw(frame, &mut application))
         .unwrap();
-    let terminate_background = label_background(terminal.backend().buffer(), "Terminate");
+    let terminate_background = label_background(terminal.backend().buffer(), "Close");
     assert_ne!(terminate_background, Color::Reset);
     assert_ne!(terminate_background, cancel_background);
     assert_eq!(
@@ -1150,5 +1150,653 @@ fn translated_update_footer_has_stable_viewport_and_no_modal_overlay() {
             assert!(readable_buffer(after).contains("1.2.0"));
             export_visual(&format!("update-{language:?}-{width}"), after);
         }
+    }
+}
+
+fn impact_app() -> App {
+    let mut app = self::app();
+    // The fixture's windows are Blender's, so name the process to match.
+    app.snapshot.processes[0].name = "Blender".into();
+    app.snapshot.processes[0].ports = vec![Port {
+        protocol: Protocol::Tcp,
+        address: "127.0.0.1".parse().unwrap(),
+        number: 5432,
+    }];
+    app
+}
+
+fn blender_impact() -> oflh_core::impact::Impact {
+    oflh_core::impact::Impact {
+        windows: Some(
+            (1..=7)
+                .map(|n| format!("scene{n}.blend - Blender"))
+                .collect(),
+        ),
+        children: Some(vec![Ancestor {
+            identity: Identity {
+                pid: 4100,
+                started: 11,
+                started_sub: 0,
+            },
+            name: "python3".into(),
+        }]),
+        ..Default::default()
+    }
+}
+
+fn render_confirm(app: &mut App, name: &str) -> String {
+    render_confirm_at(app, name, 100, 40)
+}
+
+fn render_confirm_at(app: &mut App, name: &str, width: u16, height: u16) -> String {
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+    terminal.draw(|frame| view::draw(frame, app)).unwrap();
+    export_visual(name, terminal.backend().buffer());
+    readable_buffer(terminal.backend().buffer())
+}
+
+#[test]
+fn confirmation_requests_impact_and_ignores_stale_results() {
+    let mut app = impact_app();
+    let id = app.snapshot.processes[0].identity;
+    assert!(matches!(key(&mut app, K::Char('k')), Effect::Impact(ids) if ids == vec![id]));
+    let other = Identity {
+        pid: 9,
+        started: 1,
+        started_sub: 0,
+    };
+    app.accept_impact(&[other], vec![blender_impact()]);
+    assert!(app.impact.is_empty());
+    app.accept_impact(&[id], vec![blender_impact()]);
+    assert_eq!(app.impact.len(), 1);
+    key(&mut app, K::Char('d'));
+    assert!(app.impact_details);
+    // Enter still terminates only the captured target.
+    key(&mut app, K::Tab);
+    assert!(matches!(key(&mut app, K::Enter), Effect::Kill(ids, false) if ids == vec![id]));
+    // A new confirmation starts collapsed with no carried-over impact.
+    app.stopping = false;
+    key(&mut app, K::Char('k'));
+    assert!(app.impact.is_empty() && !app.impact_details);
+}
+
+#[test]
+fn confirmation_summarizes_impact_and_expands_details_with_d() {
+    let mut app = impact_app();
+    let id = app.snapshot.processes[0].identity;
+    key(&mut app, K::Char('k'));
+    let loading = render_confirm(&mut app, "impact-loading-en");
+    assert!(loading.contains("Checking windows and child processes…"));
+    app.accept_impact(&[id], vec![blender_impact()]);
+    let collapsed = render_confirm(&mut app, "impact-collapsed-en");
+    let flat = collapsed.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains(
+            "closes completely, with all 7 open windows, such as “scene1.blend - Blender”."
+        ),
+        "{collapsed}"
+    );
+    assert!(
+        flat.contains("1 background process keeps running."),
+        "{collapsed}"
+    );
+    // Two sentences at most while collapsed; files and ports wait in details.
+    assert!(!flat.contains("released too") && !flat.contains("Windows (7)"));
+    assert!(collapsed.contains("d details"));
+    key(&mut app, K::Char('d'));
+    let expanded = render_confirm(&mut app, "impact-expanded-en");
+    for text in [
+        "Windows (7)",
+        "scene5.blend - Blender",
+        "▾ +2 more · Space show all 7",
+        "Background processes (1)",
+        "python3  PID 4100",
+        "Files (3)",
+        "other.dll  /build",
+        "Ports (1)",
+        "5432  TCP 127.0.0.1",
+        "latest scan",
+    ] {
+        assert!(expanded.contains(text), "{text}\n{expanded}");
+    }
+    assert!(!expanded.contains("scene6.blend"));
+    for (name, text) in [
+        ("impact-collapsed", &collapsed),
+        ("impact-expanded", &expanded),
+    ] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("tests/snapshots/{name}-en.txt"));
+        if std::env::var_os("OFLH_UPDATE_SNAPSHOTS").is_some() {
+            std::fs::write(&path, text).unwrap();
+        }
+        assert_eq!(&std::fs::read_to_string(path).unwrap(), text, "{name}");
+    }
+}
+
+#[test]
+fn confirmation_adds_nothing_without_notable_impact() {
+    let mut app = self::app();
+    app.snapshot.processes[0].usages.truncate(1);
+    let id = app.snapshot.processes[0].identity;
+    key(&mut app, K::Char('k'));
+    app.accept_impact(
+        &[id],
+        vec![oflh_core::impact::Impact {
+            windows: Some(vec!["Only window".into()]),
+            children: Some(vec![]),
+            ..Default::default()
+        }],
+    );
+    key(&mut app, K::Char('d'));
+    let text = render_confirm(&mut app, "impact-none-en");
+    assert!(!text.contains("Only window") && !text.contains("child process"));
+}
+
+fn crowded_confirmation() -> App {
+    let mut app = impact_app();
+    let template = app.snapshot.processes[0].clone();
+    for n in 1..8u32 {
+        let mut process = template.clone();
+        process.identity.pid = 500 + n;
+        process.name = "Blender".into();
+        app.snapshot.processes.push(process);
+    }
+    let mut snapshot = app.snapshot.clone();
+    snapshot.warnings.clear();
+    app.replace(snapshot);
+    app.select_all();
+    assert!(matches!(key(&mut app, K::Char('k')), Effect::Impact(_)));
+    let ids: Vec<_> = app.pending.iter().map(|target| target.identity).collect();
+    let impact = ids.iter().map(|_| blender_impact()).collect();
+    app.accept_impact(&ids, impact);
+    key(&mut app, K::Char('d'));
+    app
+}
+
+#[test]
+fn small_terminals_scroll_the_confirmation_and_keep_the_buttons() {
+    for (width, height) in [(80u16, 24u16), (60, 20)] {
+        let mut app = crowded_confirmation();
+        assert_eq!(app.pending.len(), 8);
+        let top = render_confirm_at(
+            &mut app,
+            &format!("impact-small-{width}x{height}-top"),
+            width,
+            height,
+        );
+        let rows: Vec<&str> = top.lines().collect();
+        assert_eq!(rows.len(), height as usize);
+        assert!(app.confirm_scrollable, "{top}");
+        assert!(rows[0].contains("↕"), "{top}");
+        assert!(
+            rows[1].contains("↑↓ / PgUp PgDn scroll · Home/End"),
+            "{top}"
+        );
+        // A scrollbar in the last column of the body: thumb at the top, track below.
+        let column = |text: &str| -> String {
+            text.lines()
+                .skip(2)
+                .take(6)
+                .map(|row| row.trim_end().chars().last().unwrap_or(' '))
+                .collect()
+        };
+        assert_eq!(column(&top).chars().next(), Some('█'), "{top}");
+        assert!(column(&top).contains('│'), "{top}");
+        assert!(top.contains("Cancel") && top.contains("Close"), "{top}");
+        assert!(top.contains("scroll"), "{top}");
+        key(&mut app, K::PageDown);
+        key(&mut app, K::Char('j'));
+        let scrolled = render_confirm_at(
+            &mut app,
+            &format!("impact-small-{width}x{height}-mid"),
+            width,
+            height,
+        );
+        assert_ne!(top, scrolled);
+        assert!(scrolled.contains("Cancel") && scrolled.contains("Close"));
+        key(&mut app, K::End);
+        let bottom = render_confirm_at(
+            &mut app,
+            &format!("impact-small-{width}x{height}-end"),
+            width,
+            height,
+        );
+        assert!(bottom.contains("latest scan"), "{bottom}");
+        let end_row = bottom
+            .lines()
+            .find(|row| row.contains("latest scan"))
+            .unwrap();
+        assert!(
+            end_row.trim_end().ends_with('█'),
+            "thumb reaches the end\n{bottom}"
+        );
+        let indicator = bottom.lines().next().unwrap().trim().to_string();
+        let (range, _) = indicator.split_once(" ↕").unwrap();
+        let (span, total) = range.split_once(" of ").unwrap();
+        assert_eq!(span.split_once('–').unwrap().1, total, "{indicator}");
+        assert!(bottom.contains("Cancel") && bottom.contains("Close"));
+        key(&mut app, K::Home);
+        key(&mut app, K::Char('k'));
+        assert_eq!(
+            render_confirm_at(&mut app, "impact-small-home", width, height),
+            top
+        );
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "tests/snapshots/impact-small-{width}x{height}-en.txt"
+        ));
+        if std::env::var_os("OFLH_UPDATE_SNAPSHOTS").is_some() {
+            std::fs::write(&path, &top).unwrap();
+        }
+        assert_eq!(std::fs::read_to_string(path).unwrap(), top);
+    }
+}
+
+#[test]
+fn short_confirmation_does_not_show_a_scroll_hint() {
+    let mut app = impact_app();
+    key(&mut app, K::Char('k'));
+    let text = render_confirm_at(&mut app, "impact-short", 80, 24);
+    assert!(!app.confirm_scrollable);
+    assert!(!text.contains("↕") && !text.contains("PgUp"));
+    assert!(!text.contains('█') && !text.contains("Home/End"));
+}
+
+#[test]
+fn space_shows_every_item_in_a_group_and_collapses_again() {
+    let mut app = impact_app();
+    let id = app.snapshot.processes[0].identity;
+    key(&mut app, K::Char('k'));
+    let mut many = blender_impact();
+    many.windows = Some(
+        (1..=150)
+            .map(|n| format!("scene{n}.blend - Blender"))
+            .collect(),
+    );
+    app.accept_impact(&[id], vec![many]);
+    // Space opens Details already expanded, so one key reaches every window.
+    key(&mut app, K::Char(' '));
+    assert!(app.impact_details && app.impact_all);
+    let top = render_confirm_at(&mut app, "impact-more-all-80x24", 80, 24);
+    assert!(top.contains("of "), "{top}");
+    assert!(top.contains('█'), "scrollbar\n{top}");
+    key(&mut app, K::End);
+    let end = render_confirm_at(&mut app, "impact-more-all-end-80x24", 80, 24);
+    assert!(end.contains("scene150.blend"), "{end}");
+    assert!(end.contains("▴ Space show less"), "{end}");
+    assert!(!end.contains("Space show all"), "{end}");
+    // Space again collapses to the preview and keeps Details open.
+    key(&mut app, K::Char(' '));
+    assert!(app.impact_details && !app.impact_all);
+    key(&mut app, K::Home);
+    let preview = render_confirm_at(&mut app, "impact-more-preview-80x24", 80, 24);
+    key(&mut app, K::End);
+    let preview_end = render_confirm_at(&mut app, "impact-more-preview-end-80x24", 80, 24);
+    let both = format!("{preview}{preview_end}");
+    assert!(both.contains("▾ +145 more · Space show all 150"), "{both}");
+    assert!(
+        !both.contains("scene6.blend") && !both.contains("show less"),
+        "{both}"
+    );
+    // Small groups never offer an expander.
+    assert_eq!(
+        both.matches("Space show all").count(),
+        both.matches("Space show all 150").count(),
+        "{both}"
+    );
+    // German uses the du-form keyboard wording.
+    app.language = Language::German;
+    key(&mut app, K::Home);
+    let german = render_confirm_at(&mut app, "impact-more-preview-de", 100, 40);
+    assert!(
+        german.contains("▾ +145 weitere · Leertaste alle 150 zeigen"),
+        "{german}"
+    );
+    // A new confirmation starts with the preview again.
+    key(&mut app, K::Esc);
+    key(&mut app, K::Char('k'));
+    assert!(!app.impact_all && !app.impact_details);
+}
+fn crowded(processes: usize, usages: usize) -> App {
+    let mut app = self::app();
+    let mut snapshot = app.snapshot.clone();
+    let template = snapshot.processes[0].clone();
+    snapshot.processes = (0..processes as u32)
+        .map(|n| {
+            let mut process = template.clone();
+            process.identity.pid = 1000 + n;
+            process.name = format!("worker-{n}");
+            process.usages = (0..usages)
+                .map(|u| Usage {
+                    path: format!("/build/file-{u}.dll").into(),
+                    ..Usage::default()
+                })
+                .collect();
+            process
+        })
+        .collect();
+    app.replace(snapshot);
+    // Fixed target so the header line in the snapshots is the same on every OS.
+    app.target.path = "/build".into();
+    app
+}
+
+fn screen_text(app: &mut App, name: &str, width: u16, height: u16) -> String {
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+    terminal.draw(|frame| view::draw(frame, app)).unwrap();
+    export_visual(name, terminal.backend().buffer());
+    readable_buffer(terminal.backend().buffer())
+}
+
+fn has_scrollbar(text: &str) -> bool {
+    text.lines()
+        .filter(|row| matches!(row.trim_end().chars().last(), Some('█' | '│')))
+        .count()
+        >= 3
+        && text.contains('█')
+}
+
+#[test]
+fn every_scrolling_region_shows_the_shared_affordance_in_small_terminals() {
+    for (width, height) in [(80u16, 24u16), (60, 20)] {
+        // Process list.
+        let mut app = crowded(60, 1);
+        let top = screen_text(
+            &mut app,
+            &format!("scroll-processes-{width}x{height}"),
+            width,
+            height,
+        );
+        assert!(top.contains("of 60 ↕"), "{top}");
+        assert!(has_scrollbar(&top), "{top}");
+        for _ in 0..59 {
+            key(&mut app, K::Down);
+        }
+        let end = screen_text(&mut app, "scroll-processes-end", width, height);
+        assert!(end.contains("of 60 ↕") && end.contains("60 of 60"), "{end}");
+        // Locked files and ports tabs share the table chrome.
+        let mut app = crowded(60, 1);
+        key(&mut app, K::Char('3'));
+        let ports = screen_text(&mut app, "scroll-ports", width, height);
+        assert!(!ports.contains('↕') || has_scrollbar(&ports), "{ports}");
+        // File usages in Details.
+        let mut app = crowded(1, 40);
+        key(&mut app, K::Enter);
+        assert_eq!(app.screen, Screen::Details);
+        let details = screen_text(
+            &mut app,
+            &format!("scroll-details-{width}x{height}"),
+            width,
+            height,
+        );
+        assert!(details.contains("of 40 ↕"), "{details}");
+        assert!(has_scrollbar(&details), "{details}");
+        // Help: indicator, the key hint on its own line and the scrollbar.
+        let mut app = self::app();
+        app.screen = Screen::Help;
+        let help = screen_text(
+            &mut app,
+            &format!("scroll-help-{width}x{height}"),
+            width,
+            height,
+        );
+        let rows: Vec<&str> = help.lines().collect();
+        assert!(rows[0].contains('↕'), "{help}");
+        assert!(
+            rows[1].contains("↑↓ / PgUp PgDn scroll · Home/End"),
+            "{help}"
+        );
+        assert!(has_scrollbar(&help), "{help}");
+        key(&mut app, K::End);
+        let help_end = screen_text(&mut app, "scroll-help-end", width, height);
+        assert_ne!(help, help_end);
+        for (name, text) in [("processes", &top), ("details", &details), ("help", &help)] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+                "tests/snapshots/scroll-{name}-{width}x{height}-en.txt"
+            ));
+            if std::env::var_os("OFLH_UPDATE_SNAPSHOTS").is_some() {
+                std::fs::write(&path, text).unwrap();
+            }
+            assert_eq!(&std::fs::read_to_string(path).unwrap(), text, "{name}");
+        }
+    }
+}
+
+#[test]
+fn fitting_regions_show_no_scroll_affordance() {
+    for (width, height) in [(80u16, 24u16), (60, 20)] {
+        let mut app = crowded(3, 2);
+        let main = screen_text(&mut app, "scroll-none-main", width, height);
+        assert!(!main.contains('↕') && !main.contains('█'), "{main}");
+        key(&mut app, K::Enter);
+        let details = screen_text(&mut app, "scroll-none-details", width, height);
+        assert!(
+            !details.contains('↕') && !details.contains('█'),
+            "{details}"
+        );
+        assert!(!details.contains("PgUp PgDn scroll"), "{details}");
+    }
+}
+
+#[test]
+fn confirmation_warns_about_services_and_critical_processes() {
+    let mut app = self::app();
+    app.snapshot.processes[0].usages.truncate(1);
+    let id = app.snapshot.processes[0].identity;
+    key(&mut app, K::Char('k'));
+    app.accept_impact(
+        &[id],
+        vec![oflh_core::impact::Impact {
+            service: Some("dotnet-worker.service".into()),
+            critical: true,
+            ..Default::default()
+        }],
+    );
+    let flat = |text: String| text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let text = flat(render_confirm(&mut app, "impact-service-en"));
+    assert!(
+        text.contains(
+            "Windows needs this process. Ending it can crash your PC. A service will probably restart it right away."
+        ),
+        "{text}"
+    );
+    key(&mut app, K::Char('d'));
+    let text = flat(render_confirm(&mut app, "impact-service-details-en"));
+    assert!(
+        text.contains("Service dotnet-worker.service may restart it"),
+        "{text}"
+    );
+    app.language = Language::German;
+    let text = flat(render_confirm(&mut app, "impact-service-de"));
+    assert!(
+        text.contains("Ein Dienst startet es wahrscheinlich sofort neu."),
+        "{text}"
+    );
+}
+
+#[test]
+fn service_line_fits_and_scrolls_in_small_terminals() {
+    for (width, height) in [(80u16, 24u16), (60, 20)] {
+        let mut app = crowded_confirmation();
+        let mut impact = blender_impact();
+        impact.service = Some("blender-render.service".into());
+        let ids: Vec<_> = app.pending.iter().map(|target| target.identity).collect();
+        app.accept_impact(&ids, ids.iter().map(|_| impact.clone()).collect());
+        let top = render_confirm_at(
+            &mut app,
+            &format!("impact-service-{width}x{height}"),
+            width,
+            height,
+        );
+        assert!(top.contains("A service will probably"), "{top}");
+        assert!(
+            top.lines()
+                .all(|row| unicode_width::UnicodeWidthStr::width(row) <= width as usize)
+        );
+        assert!(top.contains("Cancel") && top.contains("Close"));
+        let mut seen = false;
+        for _ in 0..80 {
+            key(&mut app, K::Char('j'));
+            let now = render_confirm_at(&mut app, "impact-service-scroll", width, height);
+            assert!(now.contains("Cancel") && now.contains("Close"));
+            seen |= now.contains("blender-render.service");
+        }
+        assert!(seen, "service row is reachable by scrolling");
+    }
+}
+
+mod sessions {
+    use super::*;
+    use oflh_sessions::{Fake, Os, Session, SessionKind, SessionState};
+    use std::sync::Arc;
+
+    fn rdp() -> Session {
+        Session {
+            id: "3".into(),
+            user: "alice".into(),
+            domain: Some("CORP".into()),
+            kind: SessionKind::Rdp,
+            state: SessionState::Active,
+            client: Some("LAPTOP-7".into()),
+            tty: None,
+            since: Some(1_000),
+        }
+    }
+
+    fn multi(os: Os, elevated: bool) -> (App, Arc<Fake>) {
+        let fake = Arc::new(Fake {
+            own: Some("1".into()),
+            ..Fake::default()
+        });
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        fake.sessions.lock().unwrap().push(Session {
+            since: Some(now - 7_500),
+            ..rdp()
+        });
+        fake.processes.lock().unwrap().insert(424242, "3".into());
+        let mut a = app();
+        a.sessions = session::Sessions::new(fake.clone(), os, elevated);
+        key(&mut a, K::Enter);
+        assert_eq!(a.screen, Screen::Details);
+        (a, fake)
+    }
+
+    #[test]
+    fn owner_line_names_user_session_state_and_client() {
+        let line = session::owner_line_at(
+            Language::English,
+            "alice",
+            Some(&rdp()),
+            false,
+            1_000 + 7_500,
+        );
+        assert_eq!(
+            line,
+            "alice · Session 3 (RDP) · active for 2 h 05 min · from LAPTOP-7"
+        );
+        let ssh = Session {
+            kind: SessionKind::Ssh,
+            tty: Some("pts/2".into()),
+            client: Some("10.0.0.7".into()),
+            state: SessionState::Idle,
+            ..rdp()
+        };
+        assert_eq!(
+            session::owner_line_at(Language::German, "alice", Some(&ssh), true, 0),
+            "alice · SSH pts/2 · inaktiv · von 10.0.0.7 · deine Sitzung"
+        );
+        assert_eq!(
+            session::owner_line_at(Language::English, "SYSTEM", None, false, 0),
+            "SYSTEM · Service account"
+        );
+        // Control characters from the OS never reach the terminal.
+        assert!(
+            !session::owner_line_at(Language::English, "a\u{1b}[2J", None, false, 0)
+                .contains('\u{1b}')
+        );
+    }
+
+    #[test]
+    fn without_admin_rights_sign_out_is_explained_and_never_prompts() {
+        let (mut a, fake) = multi(Os::Windows, false);
+        let screen = render_confirm_at(&mut a, "sessions-nonadmin", 80, 24);
+        assert!(
+            screen.contains("SESSION Session 3 (RDP) · active for 2 h 05 min · from LAPTOP-7"),
+            "{screen}"
+        );
+        assert!(
+            screen.contains("L · Requires administrator rights"),
+            "{screen}"
+        );
+        assert!(matches!(key(&mut a, K::Char('L')), Effect::None));
+        assert!(a.sign_out.is_none() && a.error);
+        assert!(a.status.starts_with("Requires administrator rights"));
+        assert!(fake.actions().is_empty());
+    }
+
+    #[test]
+    fn sign_out_prompt_lists_programs_starts_on_cancel_and_revalidates() {
+        let (mut a, fake) = multi(Os::Windows, true);
+        key(&mut a, K::Char('L'));
+        let screen = render_confirm_at(&mut a, "sessions-tui-80x24", 80, 24);
+        for text in [
+            "Sign out alice?",
+            "Unsaved work of alice will be lost.",
+            "Programs that will close (1):",
+            "dotnet (PID 424242)",
+            "▶ Cancel",
+        ] {
+            assert!(screen.contains(text), "{text}\n{screen}");
+        }
+        // Enter on the default button cancels.
+        assert!(matches!(key(&mut a, K::Enter), Effect::None));
+        assert!(a.sign_out.is_none());
+        key(&mut a, K::Char('L'));
+        key(&mut a, K::Tab);
+        let Effect::SignOut(confirmed) = key(&mut a, K::Enter) else {
+            panic!("expected a sign-out")
+        };
+        a.finish_sign_out(&confirmed);
+        assert_eq!(fake.actions(), ["sign_out 3"]);
+        assert_eq!(a.status, "alice is being signed out.");
+        // The ticket is single use.
+        a.finish_sign_out(&confirmed);
+        assert_eq!(fake.actions().len(), 1);
+    }
+
+    #[test]
+    fn a_session_that_changed_after_confirming_is_left_alone() {
+        let (mut a, fake) = multi(Os::Windows, true);
+        key(&mut a, K::Char('L'));
+        key(&mut a, K::Tab);
+        let Effect::SignOut(confirmed) = key(&mut a, K::Enter) else {
+            panic!("expected a sign-out")
+        };
+        // Someone else signed in to session 3 in the meantime.
+        fake.sessions.lock().unwrap()[0].since = Some(2_000);
+        a.sessions.invalidate();
+        a.finish_sign_out(&confirmed);
+        assert!(fake.actions().is_empty());
+        assert!(a.error && a.status.contains("changed"));
+    }
+
+    #[test]
+    fn linux_needs_root_and_macos_shows_the_user_only() {
+        let (mut a, _) = multi(Os::Linux, false);
+        a.language = Language::German;
+        key(&mut a, K::Char('L'));
+        assert_eq!(a.status, "Erfordert root (starte OFLH mit sudo)");
+        let (mut a, _) = multi(Os::MacOs, true);
+        let screen = render_confirm_at(&mut a, "sessions-macos", 80, 24);
+        assert!(
+            screen.contains("SESSION") && !screen.contains("L sign out"),
+            "{screen}"
+        );
+        key(&mut a, K::Char('L'));
+        assert!(a.sign_out.is_none());
     }
 }

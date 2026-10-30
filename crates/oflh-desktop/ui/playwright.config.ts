@@ -9,7 +9,11 @@ export default defineConfig({
     screenshot: "only-on-failure",
     baseURL: "http://127.0.0.1:1420",
     viewport: { width: 1280, height: 800 },
-    launchOptions: { channel: "chrome" },
+    // Show real scrollbars (headless hides them) so the slim thumb is tested.
+    launchOptions: {
+      channel: "chrome",
+      ignoreDefaultArgs: ["--hide-scrollbars"],
+    },
   },
   webServer: {
     command: "npm run dev",

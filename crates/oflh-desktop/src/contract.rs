@@ -253,6 +253,12 @@ pub struct Row {
     pub path: String,
     /// Opaque snapshot path reference for native actions.
     pub path_ref: String,
+    /// Opaque reference to the executable, used only to look up its icon.
+    pub icon_ref: String,
+    /// Login session id the process runs in, filled per page; `None` when unknown.
+    pub session: Option<String>,
+    /// Session kind name, see [`SessionView::kind`].
+    pub session_kind: Option<&'static str>,
     /// Observed association with the target file.
     pub relation: String,
     /// Observed access mode; unknown remains explicit.
@@ -319,6 +325,53 @@ pub struct Details {
     pub ports: usize,
     /// Whether an identity-checked owner-folder inspection can be requested.
     pub can_inspect_folder: bool,
+    /// Owning user and session.
+    pub owner: OwnerView,
+    /// Session actions and whether they need elevation; `None` without a session.
+    pub session_actions: Option<SessionActions>,
+}
+/// Why a process is listed in a confirmation.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetRole {
+    /// The process the scan attributed the file or port to.
+    #[default]
+    Holder,
+    /// An ancestor chosen from the holder's process tree.
+    Ancestor,
+}
+/// A display list capped in Rust; `more` counts entries left out.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct CappedList {
+    /// Sanitized entries, in display order.
+    pub items: Vec<String>,
+    /// Entries not included in `items`.
+    pub more: usize,
+}
+impl From<oflh_core::impact::Capped> for CappedList {
+    fn from(capped: oflh_core::impact::Capped) -> Self {
+        Self {
+            items: capped.items,
+            more: capped.more,
+        }
+    }
+}
+/// What else terminating one process may affect, read when the confirmation
+/// was prepared. Termination still targets only this process.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct TargetImpact {
+    /// Visible top-level window titles; `None` when the platform cannot list them.
+    pub windows: Option<CappedList>,
+    /// Running direct children as `name (PID n)`; `None` when unreadable.
+    pub children: Option<CappedList>,
+    /// Files the latest scan attributed to this process.
+    pub files: CappedList,
+    /// Local ports the latest scan attributed to this process.
+    pub ports: CappedList,
+    /// Service manager unit that may restart the process; best effort.
+    pub service: Option<String>,
+    /// Windows critical process: ending it stops the system.
+    pub critical: bool,
 }
 /// A process displayed in a destructive-action confirmation.
 #[derive(Clone, Debug, Serialize)]
@@ -329,6 +382,12 @@ pub struct ActionTarget {
     pub name: String,
     /// Observed PID; never sufficient on its own for an action.
     pub pid: u32,
+    /// Holder or selected ancestor.
+    pub role: TargetRole,
+    /// Best-effort side effects, collected before the confirmation is shown.
+    pub impact: TargetImpact,
+    /// Owning user and session, read when the confirmation was prepared.
+    pub owner: OwnerView,
 }
 /// Single-use confirmation receipt. The Rust service retains the actual identities.
 #[derive(Clone, Debug, Serialize)]
@@ -436,4 +495,105 @@ pub struct PortView {
     pub endpoint: String,
     /// Opaque snapshot reference for copying the exact binding.
     pub reference: String,
+}
+
+/// A login session, as shown next to a process.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct SessionView {
+    /// Native session id (WTS number or logind name).
+    pub id: String,
+    /// Signed-in account, sanitized.
+    pub user: String,
+    /// Windows domain, sanitized.
+    pub domain: Option<String>,
+    /// `console`, `rdp`, `ssh`, `tty`, `x11`, `wayland`, `services` or `other`.
+    pub kind: &'static str,
+    /// `active`, `idle`, `disconnected`, `closing` or `other`.
+    pub state: &'static str,
+    /// Remote client computer, sanitized.
+    pub client: Option<String>,
+    /// Terminal such as `pts/2`.
+    pub tty: Option<String>,
+    /// Logon time, Unix seconds.
+    pub since: Option<u64>,
+    /// Whether OFLH itself runs in this session.
+    pub own: bool,
+}
+impl SessionView {
+    pub(crate) fn new(session: &oflh_sessions::Session, own: Option<&str>) -> Self {
+        let text = |value: &Option<String>| value.as_deref().map(oflh_core::safe);
+        Self {
+            id: oflh_core::safe(&session.id),
+            user: oflh_core::safe(&session.user),
+            domain: text(&session.domain),
+            kind: session.kind.as_str(),
+            state: session.state.as_str(),
+            client: text(&session.client),
+            tty: text(&session.tty),
+            since: session.since,
+            own: own == Some(session.id.as_str()),
+        }
+    }
+}
+/// Who runs a process, and in which session.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct OwnerView {
+    /// Account name from the process token or credentials, sanitized.
+    pub user: String,
+    /// SYSTEM, LocalService, root and similar accounts.
+    pub service: bool,
+    /// The session, when the platform reports one.
+    pub session: Option<SessionView>,
+}
+/// Whether each session action can run, using `oflh_sessions::Availability` names.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionActions {
+    /// Send a message box to the session.
+    pub send_message: &'static str,
+    /// Sign the session's user out.
+    pub sign_out: &'static str,
+}
+/// Confirmation for signing a user out; the service keeps the captured session key.
+#[derive(Clone, Debug, Serialize)]
+pub struct SignOutConfirmation {
+    /// Single-use receipt.
+    pub ticket: String,
+    /// The session that will be signed out.
+    pub session: SessionView,
+    /// Processes from the latest scan that run in it, as `name (PID n)`.
+    pub processes: CappedList,
+}
+/// A file on this computer opened over an SMB share.
+#[derive(Clone, Debug, Serialize)]
+pub struct ShareFileView {
+    /// Server open-file id.
+    pub id: u32,
+    /// Local path, sanitized.
+    pub path: String,
+    /// Account that opened it, sanitized.
+    pub user: String,
+    /// Client computers, sanitized.
+    pub client: Option<String>,
+    /// Byte-range locks held.
+    pub locks: u32,
+    /// Opened for writing.
+    pub write: bool,
+}
+/// Share opens matching the current target.
+#[derive(Clone, Debug, Serialize)]
+pub struct ShareFiles {
+    /// `available`, `requires_admin` or `unsupported` for "Close open file".
+    pub close: &'static str,
+    /// Matching opens; empty when none or unreadable.
+    pub files: Vec<ShareFileView>,
+    /// Why the list could not be read (for example missing rights).
+    pub error: Option<String>,
+}
+/// Confirmation for closing a share open; the service keeps the captured key.
+#[derive(Clone, Debug, Serialize)]
+pub struct CloseFileConfirmation {
+    /// Single-use receipt.
+    pub ticket: String,
+    /// The open that will be closed.
+    pub file: ShareFileView,
 }
