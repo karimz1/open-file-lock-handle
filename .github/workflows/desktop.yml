@@ -331,7 +331,8 @@ jobs:
             darwin) source=desktop-dist/oflh-desktop.darwin.arm64.dmg; suffix=macos-apple-silicon.dmg ;;
           esac
           test -s "$source"
-          version=$(printf '%s' "$OFLH_VERSION" | tr -c 'A-Za-z0-9._-' '-')
+          # OFLH_VERSION already carries PR, run and SHA; keep only the base version.
+          version=${OFLH_VERSION%%-*}
           name="oflh-${version}-${BUILD_COMMIT::7}-${suffix}"
           mkdir -p release-download
           cp "$source" "release-download/$name"
