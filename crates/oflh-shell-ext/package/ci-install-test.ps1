@@ -3,7 +3,7 @@
   the context menu option on (the default), check the classic registry verbs
   and the Windows 11 identity package, then uninstall and check both are gone.
 #>
-param([Parameter(Mandatory)] [string] $Setup)
+param([Parameter(Mandatory)] [string] $Setup, [string] $ScreenshotDir)
 $ErrorActionPreference = 'Stop'
 $name = 'KarimZouine.OFLHDesktop.ContextMenu'
 $verb = 'oflh-desktop.inspect'
@@ -51,6 +51,12 @@ if (-not $package) {
   } catch {
     $failures += "handler COM activation failed: $($_.Exception.Message)"
   }
+}
+
+if ($ScreenshotDir) {
+  # Non-blocking: the UI probe depends on the runner's desktop session.
+  try { & (Join-Path $PSScriptRoot 'ci-menu-screenshot.ps1') -OutDir $ScreenshotDir }
+  catch { Write-Host "::warning title=Context menu screenshot::$($_.Exception.Message)" }
 }
 
 Write-Host 'Uninstalling silently'

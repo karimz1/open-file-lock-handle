@@ -267,7 +267,15 @@ jobs:
       - name: Windows context menus survive a silent install and uninstall
         if: matrix.os == 'windows'
         shell: pwsh
-        run: ./crates/oflh-shell-ext/package/ci-install-test.ps1 -Setup (Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1).FullName
+        run: ./crates/oflh-shell-ext/package/ci-install-test.ps1 -Setup (Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1).FullName -ScreenshotDir "$env:RUNNER_TEMP/context-menu"
+      - name: Upload context menu screenshots
+        if: always() && matrix.os == 'windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: context-menu-screenshots-${{ matrix.arch }}
+          path: ${{ runner.temp }}/context-menu/
+          retention-days: 1
+          if-no-files-found: ignore
       - name: Collect desktop packages separately from CLI artifacts
         env:
           RELEASE_TAG: ${{ inputs.version || 'dev' }}
