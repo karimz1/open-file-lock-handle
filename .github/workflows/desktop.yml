@@ -132,9 +132,9 @@ jobs:
       RELEASE_TAG: ${{ inputs.version || 'dev' }}
       BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
       PR_NUMBER: ${{ github.event.pull_request.number || '' }}
-      # Release-branch pushes and PRs into release/** always publish one
+      # Release-branch pushes, PRs into release/** and PRs from release/** (e.g. into main) always publish one
       # downloadable build per main platform (Linux RPM, Windows x64, macOS ARM).
-      RELEASE_BRANCH_DOWNLOAD: ${{ ((github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) || (github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/'))) && ((matrix.os == 'linux' && matrix.arch == 'amd64') || (matrix.os == 'windows' && matrix.arch == 'amd64') || (matrix.os == 'darwin' && matrix.arch == 'arm64')) }}
+      RELEASE_BRANCH_DOWNLOAD: ${{ ((github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) || (github.event_name == 'pull_request' && (startsWith(github.base_ref, 'release/') || startsWith(github.head_ref, 'release/')))) && ((matrix.os == 'linux' && matrix.arch == 'amd64') || (matrix.os == 'windows' && matrix.arch == 'amd64') || (matrix.os == 'darwin' && matrix.arch == 'arm64')) }}
     defaults:
       run:
         shell: bash
@@ -359,7 +359,7 @@ jobs:
     # Fork PRs get a read-only token, so they skip instead of failing.
     if: >-
       ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) ||
-          (github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') &&
+          (github.event_name == 'pull_request' && (startsWith(github.base_ref, 'release/') || startsWith(github.head_ref, 'release/')) &&
            github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
