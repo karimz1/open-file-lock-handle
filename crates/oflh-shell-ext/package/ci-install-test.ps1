@@ -43,7 +43,7 @@ function Assert-Modern([string] $Stage) {
   $package = Find-Package
   if (-not $package) { Fail "${Stage}: identity package not registered"; Show-Diagnostics; return }
   $status = & $helper status
-  if ($LASTEXITCODE -ne 0) { Fail "${Stage}: package not recorded for $installDir (status $LASTEXITCODE: $status)" }
+  if ($LASTEXITCODE -ne 0) { Fail "${Stage}: package not recorded for $installDir (status ${LASTEXITCODE}: $status)" }
   foreach ($class in $covered) { if (Verb-Exists $class) { Fail "${Stage}: classic verb duplicates the package: $class" } }
   if (-not (Verb-Exists 'Drive')) { Fail "${Stage}: drive verb missing" }
   if (-not (Test-Path $dll)) { Fail "${Stage}: $dll missing" }
