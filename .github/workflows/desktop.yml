@@ -168,7 +168,7 @@ jobs:
         shell: pwsh
         env:
           # Optional. Without them the identity package is unsigned and the
-          # installer registers it with Add-AppxPackage -AllowUnsigned.
+          # installer registers it through PackageManager with AllowUnsigned.
           OFLH_MSIX_PFX_BASE64: ${{ secrets.OFLH_MSIX_PFX_BASE64 }}
           OFLH_MSIX_PFX_PASSWORD: ${{ secrets.OFLH_MSIX_PFX_PASSWORD }}
           OFLH_MSIX_TIMESTAMP_URL: ${{ vars.OFLH_MSIX_TIMESTAMP_URL }}

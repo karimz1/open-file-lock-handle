@@ -159,36 +159,36 @@ FunctionEnd
 
 ;;; Windows 11 identity package ;;;
 
-!define OFLH_SHELL_EXT_SCRIPT "$INSTDIR\shell-ext\register.ps1"
-!define OFLH_POWERSHELL "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe"
-!define OFLH_POWERSHELL_ARGS "-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File"
+; Native helper (crates/oflh-shell-ext/src/bin/oflh-shell-reg.rs) that calls the
+; Windows PackageManager API: no scripts, execution policy or Developer Mode.
+!define OFLH_SHELL_EXT_HELPER "$INSTDIR\shell-ext\oflh-shell-reg.exe"
 
-; Leaves register.ps1's exit code in $0: see the script for its meaning.
+; Leaves the helper's exit code in $0: see the helper for its meaning.
 !macro OFLH_SHELL_EXT_STATUS
-  nsExec::Exec '"${OFLH_POWERSHELL}" ${OFLH_POWERSHELL_ARGS} "${OFLH_SHELL_EXT_SCRIPT}" -Action Status'
+  nsExec::Exec '"${OFLH_SHELL_EXT_HELPER}" status'
   Pop $0
 !macroend
 
-; Runs register.ps1 with administrator rights: directly when the installer is
+; Runs the helper with administrator rights: directly when the installer is
 ; already elevated, otherwise through one UAC prompt, but never in silent or
 ; passive installs, which must not show dialogs.
 !macro OFLH_SHELL_EXT_ELEVATED ACTION
   System::Call 'shell32::IsUserAnAdmin() i .r0'
   ${If} $0 <> 0
-    nsExec::Exec '"${OFLH_POWERSHELL}" ${OFLH_POWERSHELL_ARGS} "${OFLH_SHELL_EXT_SCRIPT}" -Action ${ACTION}'
+    nsExec::Exec '"${OFLH_SHELL_EXT_HELPER}" ${ACTION}'
     Pop $0
   ${ElseIfNot} ${Silent}
   ${AndIf} $PassiveMode <> 1
-    ExecShellWait "runas" "${OFLH_POWERSHELL}" '${OFLH_POWERSHELL_ARGS} "${OFLH_SHELL_EXT_SCRIPT}" -Action ${ACTION}' SW_HIDE
+    ExecShellWait "runas" "${OFLH_SHELL_EXT_HELPER}" "${ACTION}" SW_HIDE
   ${EndIf}
 !macroend
 
 !macro OFLH_REGISTER_MODERN_CONTEXT_MENU
-  ${If} ${FileExists} "${OFLH_SHELL_EXT_SCRIPT}"
+  ${If} ${FileExists} "${OFLH_SHELL_EXT_HELPER}"
     !insertmacro OFLH_SHELL_EXT_STATUS
     ; Already registered for this folder (updates, repairs): nothing to do.
     ${If} $0 <> 0
-      !insertmacro OFLH_SHELL_EXT_ELEVATED Register
+      !insertmacro OFLH_SHELL_EXT_ELEVATED register
       !insertmacro OFLH_SHELL_EXT_STATUS
     ${EndIf}
     ; Windows lists the packaged handler in the classic menu too, so the
@@ -205,12 +205,12 @@ FunctionEnd
 !macroend
 
 !macro OFLH_UNREGISTER_MODERN_CONTEXT_MENU
-  ${If} ${FileExists} "${OFLH_SHELL_EXT_SCRIPT}"
+  ${If} ${FileExists} "${OFLH_SHELL_EXT_HELPER}"
     !insertmacro OFLH_SHELL_EXT_STATUS
     ; Only ask for rights when there is something to remove.
     ${If} $0 = 0
     ${OrIf} $0 = 3
-      !insertmacro OFLH_SHELL_EXT_ELEVATED Unregister
+      !insertmacro OFLH_SHELL_EXT_ELEVATED unregister
     ${EndIf}
   ${EndIf}
 !macroend
@@ -267,7 +267,7 @@ FunctionEnd
   ${EndIf}
 !macroend
 
-; The identity package must be removed while register.ps1 still exists, so
+; The identity package must be removed while oflh-shell-reg.exe still exists, so
 ; before the template deletes the files. Updates keep it: the install folder,
 ; and with it the package's external location, stays the same.
 !macro NSIS_HOOK_PREUNINSTALL

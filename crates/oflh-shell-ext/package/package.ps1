@@ -3,7 +3,7 @@
   Builds the Windows 11 context menu identity package for OFLH Desktop.
 
 .DESCRIPTION
-  Copies the handler DLL, the identity package (MSIX) and register.ps1 into
+  Copies the handler DLL, the identity package (MSIX) and oflh-shell-reg.exe into
   -OutDir, which the NSIS installer bundles as <install dir>\shell-ext\.
 
   Without signing secrets the package is unsigned and keeps the publisher with
@@ -77,6 +77,7 @@ if ($pfx) {
 $marker = Join-Path $OutDir 'unsigned'
 if ($pfx) { Remove-Item -Force $marker -ErrorAction SilentlyContinue } else { Set-Content $marker 'identity package is unsigned' }
 Copy-Item $DllPath (Join-Path $OutDir 'oflh_shell_ext.dll')
-Copy-Item (Join-Path $here 'register.ps1') (Join-Path $OutDir 'register.ps1')
+Copy-Item (Join-Path (Split-Path -Parent $DllPath) 'oflh-shell-reg.exe') (Join-Path $OutDir 'oflh-shell-reg.exe')
+Remove-Item -Force (Join-Path $OutDir 'register.ps1') -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force $stage
 Write-Host "Identity package $msixVersion written to $OutDir"

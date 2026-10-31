@@ -34,7 +34,7 @@ function Show-Diagnostics {
 function Assert-Modern([string] $Stage) {
   $package = Get-AppxPackage -AllUsers -Name $name
   if (-not $package) { Fail "${Stage}: identity package not registered"; Show-Diagnostics; return }
-  $status = & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installDir 'shell-ext\register.ps1') -Action Status
+  $status = & (Join-Path $installDir 'shell-ext\oflh-shell-reg.exe') status
   if ($LASTEXITCODE -ne 0) { Fail "${Stage}: package not recorded for $installDir ($status)" }
   foreach ($class in $covered) { if (Verb-Exists $class) { Fail "${Stage}: classic verb duplicates the package: $class" } }
   if (-not (Verb-Exists 'Drive')) { Fail "${Stage}: drive verb missing" }
@@ -46,6 +46,22 @@ function Assert-Nothing([string] $Stage) {
   foreach ($class in $covered + 'Drive') { if (Verb-Exists $class) { Fail "${Stage}: classic verb left: $class" } }
   if (Get-AppxPackage -AllUsers -Name $name) { Fail "${Stage}: identity package left" }
 }
+
+# Scripts blocked for Windows PowerShell, as on many machines: the installer
+# must not need them. (This CI script runs in PowerShell 7, whose policy is
+# separate, so it can still call its helper script.)
+$ps51 = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+function Set-Policy([string] $Policy) {
+  foreach ($scope in 'LocalMachine', 'CurrentUser') {
+    & $ps51 -NoProfile -Command "Set-ExecutionPolicy -ExecutionPolicy $Policy -Scope $scope -Force"
+  }
+}
+$savedPolicy = @{}
+foreach ($scope in 'LocalMachine', 'CurrentUser') { $savedPolicy[$scope] = (& $ps51 -NoProfile -Command "Get-ExecutionPolicy -Scope $scope").Trim() }
+Set-Policy 'Restricted'
+$effective = (& $ps51 -NoProfile -Command 'Get-ExecutionPolicy -List | ForEach-Object { \"$($_.Scope)=$($_.ExecutionPolicy)\" }') -join ', '
+Write-Host "Windows PowerShell execution policies: $effective"
+if ($effective -notmatch 'LocalMachine=Restricted' -or $effective -notmatch 'CurrentUser=Restricted') { Fail "could not set execution policy Restricted ($effective)" }
 
 Write-Host "1. Fresh silent install: $Setup"
 Run-Installer $Setup @('/S')
@@ -98,8 +114,10 @@ Run-Installer (Join-Path $installDir 'uninstall.exe') @('/S')
 Assert-Nothing 'uninstall'
 if (Test-Path 'HKLM:\SOFTWARE\KarimZouine\OFLH Desktop') { Fail 'registration state left after uninstall' }
 
+foreach ($scope in 'LocalMachine', 'CurrentUser') { & $ps51 -NoProfile -Command "Set-ExecutionPolicy -ExecutionPolicy $($savedPolicy[$scope]) -Scope $scope -Force" }
+
 if ($script:failures) {
   $script:failures | ForEach-Object { Write-Host "::error::$_" }
   exit 1
 }
-Write-Host 'Context menus installed, updated, toggled and removed cleanly.'
+Write-Host 'Context menus installed, updated, toggled and removed cleanly with scripts blocked.'

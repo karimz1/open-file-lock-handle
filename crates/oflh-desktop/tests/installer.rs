@@ -437,7 +437,7 @@ fn windows_11_identity_package_is_bundled_and_follows_the_checkbox() {
     assert!(!register.contains("Classes\\Drive"));
     assert!(block("!macro NSIS_HOOK_PREINSTALL").contains("Rename"));
 
-    // Removed while register.ps1 still exists, and kept across updates.
+    // Removed while oflh-shell-reg.exe still exists, and kept across updates.
     let pre_uninstall = block("!macro NSIS_HOOK_PREUNINSTALL");
     assert!(pre_uninstall.contains("$UpdateMode <> 1"));
     assert!(pre_uninstall.contains("OFLH_UNREGISTER_MODERN_CONTEXT_MENU"));
@@ -446,8 +446,12 @@ fn windows_11_identity_package_is_bundled_and_follows_the_checkbox() {
     let elevated = block("!macro OFLH_SHELL_EXT_ELEVATED");
     assert!(elevated.contains("${ElseIfNot} ${Silent}"));
     assert!(elevated.contains("$PassiveMode <> 1"));
-    let script = include_str!("../../oflh-shell-ext/package/register.ps1");
-    assert!(script.contains("-ExternalLocation $installDir -AllowUnsigned"));
+    // Registration never goes through PowerShell or script execution policy.
+    assert!(!HOOKS.to_ascii_lowercase().contains("powershell"));
+    assert!(!HOOKS.contains(".ps1"));
+    let script = include_str!("../../oflh-shell-ext/src/bin/oflh-shell-reg.rs");
+    assert!(script.contains("SetAllowUnsigned"));
+    assert!(script.contains("SetExternalLocationUri"));
     for forbidden in ["Import-Certificate", "TrustedPeople", "certutil"] {
         assert!(!script.contains(forbidden) && !HOOKS.contains(forbidden));
     }

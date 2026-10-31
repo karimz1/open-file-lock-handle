@@ -3199,6 +3199,7 @@ version = "0.8.0"
 dependencies = [
  "windows",
  "windows-core 0.61.2",
+ "windows-future",
 ]
 
 [[package]]
