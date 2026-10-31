@@ -88,20 +88,21 @@ function Open-Menu($r, [bool] $classic) {
 }
 $cases = [ordered]@{}
 $n = 1
-foreach ($t in @(@{ name = 'file'; rect = $file; label = 'Inspect file' }, @{ name = 'folder'; rect = $folder; label = 'Inspect folder' }, @{ name = 'background'; rect = $bg; label = 'Inspect folder' })) {
-  Open-Menu $t.rect $false
-  Shot ("{0}-modern-{1}" -f $n++, $t.name)
+# Not $t: PowerShell names are case-insensitive and $T is TreeScope.
+foreach ($case in @(@{ name = 'file'; rect = $file; label = 'Inspect file' }, @{ name = 'folder'; rect = $folder; label = 'Inspect folder' }, @{ name = 'background'; rect = $bg; label = 'Inspect folder' })) {
+  Open-Menu $case.rect $false
+  Shot ("{0}-modern-{1}" -f $n++, $case.name)
   $names = Menu-Names
-  Write-Host "Windows 11 menu ($($t.name)): $($names -join ' | ')"
-  $modern = @($names | Where-Object { $_ -like "$($t.label)*" }).Count -gt 0
-  Open-Menu $t.rect $true
-  Shot ("{0}-classic-{1}" -f $n++, $t.name)
+  Write-Host "Windows 11 menu ($($case.name)): $($names -join ' | ')"
+  $modern = @($names | Where-Object { $_ -like "$($case.label)*" }).Count -gt 0
+  Open-Menu $case.rect $true
+  Shot ("{0}-classic-{1}" -f $n++, $case.name)
   # The classic menu is a Win32 popup (#32768); read its HMENU.
   $classic = [OflhInput]::ClassicMenu()
-  Write-Host "Classic menu ($($t.name)): $($classic -join ' | ')"
+  Write-Host "Classic menu ($($case.name)): $($classic -join ' | ')"
   $count = if ($null -eq $classic) { $null } else { @($classic | Where-Object { $_ -like 'Inspect*' }).Count }
-  $cases[$t.name] = [pscustomobject]@{ label = $t.label; modern = $modern; classicCount = $count; classicItems = $classic }
-  Write-Host "$($t.name): '$($t.label)' in Windows 11 menu: $modern; OFLH entries in classic menu: $count"
+  $cases[$case.name] = [pscustomobject]@{ label = $case.label; modern = $modern; classicCount = $count; classicItems = $classic }
+  Write-Host "$($case.name): '$($case.label)' in Windows 11 menu: $modern; OFLH entries in classic menu: $count"
 }
 [Windows.Forms.SendKeys]::SendWait('{ESC}{ESC}'); Start-Sleep 1
 

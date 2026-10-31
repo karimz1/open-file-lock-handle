@@ -59,7 +59,7 @@ function Set-Policy([string] $Policy) {
 $savedPolicy = @{}
 foreach ($scope in 'LocalMachine', 'CurrentUser') { $savedPolicy[$scope] = (& $ps51 -NoProfile -Command "Get-ExecutionPolicy -Scope $scope").Trim() }
 Set-Policy 'Restricted'
-$effective = (& $ps51 -NoProfile -Command 'Get-ExecutionPolicy -List | ForEach-Object { \"$($_.Scope)=$($_.ExecutionPolicy)\" }') -join ', '
+$effective = (@('LocalMachine', 'CurrentUser') | ForEach-Object { "$_=$((& $ps51 -NoProfile -Command "Get-ExecutionPolicy -Scope $_").Trim())" }) -join ', '
 Write-Host "Windows PowerShell execution policies: $effective"
 if ($effective -notmatch 'LocalMachine=Restricted' -or $effective -notmatch 'CurrentUser=Restricted') { Fail "could not set execution policy Restricted ($effective)" }
 
@@ -114,7 +114,8 @@ Run-Installer (Join-Path $installDir 'uninstall.exe') @('/S')
 Assert-Nothing 'uninstall'
 if (Test-Path 'HKLM:\SOFTWARE\KarimZouine\OFLH Desktop') { Fail 'registration state left after uninstall' }
 
-foreach ($scope in 'LocalMachine', 'CurrentUser') { & $ps51 -NoProfile -Command "Set-ExecutionPolicy -ExecutionPolicy $($savedPolicy[$scope]) -Scope $scope -Force" }
+# CurrentUser first: it overrides LocalMachine, which would warn otherwise.
+foreach ($scope in 'CurrentUser', 'LocalMachine') { & $ps51 -NoProfile -Command "Set-ExecutionPolicy -ExecutionPolicy $($savedPolicy[$scope]) -Scope $scope -Force" }
 
 if ($script:failures) {
   $script:failures | ForEach-Object { Write-Host "::error::$_" }
