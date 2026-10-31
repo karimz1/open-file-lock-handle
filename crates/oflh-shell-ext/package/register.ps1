@@ -16,8 +16,18 @@ $name = 'KarimZouine.OFLHDesktop.ContextMenu'
 # InstallLocation of a package with external location is its WindowsApps
 # folder, so remember the external location here (machine-wide, like the
 # unsigned package itself; readable without admin rights).
-$stateKey = 'HKLM:\SOFTWARE\KarimZouine\OFLH Desktop'
+# The 32-bit installer may start 32-bit PowerShell; always use the 64-bit view.
+$stateKey = 'SOFTWARE\KarimZouine\OFLH Desktop'
 $stateValue = 'ContextMenuExternalLocation'
+function Open-Machine { [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', 'Registry64') }
+function Get-State { $k = (Open-Machine).OpenSubKey($stateKey); if ($k) { $k.GetValue($stateValue) } }
+function Set-State([string] $value) { $k = (Open-Machine).CreateSubKey($stateKey); $k.SetValue($stateValue, $value) }
+function Clear-State {
+  $m = Open-Machine
+  $m.DeleteSubKeyTree($stateKey, $false)
+  $parent = $m.OpenSubKey('SOFTWARE\KarimZouine')
+  if ($parent -and $parent.SubKeyCount -eq 0 -and $parent.ValueCount -eq 0) { $m.DeleteSubKey('SOFTWARE\KarimZouine', $false) }
+}
 $log = Join-Path $env:TEMP 'oflh-context-menu.log'
 function Log([string] $text) { Add-Content -Path $log -Value "$(Get-Date -Format s) [$Action] $text" }
 
@@ -35,7 +45,7 @@ try {
       $packages = Get-Registered
       if ($packages.Count -eq 0) { exit 2 }
       $packages | ForEach-Object { Write-Output "$($_.PackageFullName) $($_.InstallLocation)" }
-      $location = (Get-ItemProperty -Path $stateKey -Name $stateValue -ErrorAction SilentlyContinue).$stateValue
+      $location = Get-State
       Write-Output "External location: $location"
       if ($location -and $location.TrimEnd('\') -eq $installDir.TrimEnd('\')) { exit 0 } else { exit 3 }
     }
@@ -57,8 +67,7 @@ try {
         # unsigned-package OID, only from an elevated process.
         Add-AppxPackage -Path $msix -ExternalLocation $installDir -AllowUnsigned
       }
-      New-Item -Path $stateKey -Force | Out-Null
-      Set-ItemProperty -Path $stateKey -Name $stateValue -Value $installDir
+      Set-State $installDir
       Log "Registered (signed: $signed) for $installDir"
       exit 0
     }
@@ -67,9 +76,7 @@ try {
         Log "Removing $($old.PackageFullName)"
         try { Remove-AppxPackage -Package $old.PackageFullName -AllUsers } catch { Remove-AppxPackage -Package $old.PackageFullName }
       }
-      Remove-Item -Path $stateKey -Recurse -ErrorAction SilentlyContinue
-      $parent = Split-Path -Parent $stateKey
-      if ((Test-Path $parent) -and -not (Get-ChildItem $parent)) { Remove-Item $parent -ErrorAction SilentlyContinue }
+      Clear-State
       exit 0
     }
   }
