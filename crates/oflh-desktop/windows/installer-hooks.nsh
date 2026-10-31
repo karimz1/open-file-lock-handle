@@ -189,6 +189,17 @@ FunctionEnd
     ; Already registered for this folder (updates, repairs): nothing to do.
     ${If} $0 <> 0
       !insertmacro OFLH_SHELL_EXT_ELEVATED Register
+      !insertmacro OFLH_SHELL_EXT_STATUS
+    ${EndIf}
+    ; Windows lists the packaged handler in the classic menu too, so the
+    ; registry verbs it covers would show up twice there. Keep them only as
+    ; the fallback when registration did not happen (Windows 10, declined
+    ; UAC, silent install without admin rights, errors). Drive roots are not
+    ; covered by the package and keep their verb.
+    ${If} $0 = 0
+      DeleteRegKey SHCTX "Software\Classes\*\shell\${OFLH_CONTEXT_MENU_VERB}"
+      DeleteRegKey SHCTX "Software\Classes\Directory\shell\${OFLH_CONTEXT_MENU_VERB}"
+      DeleteRegKey SHCTX "Software\Classes\Directory\Background\shell\${OFLH_CONTEXT_MENU_VERB}"
     ${EndIf}
   ${EndIf}
 !macroend
@@ -245,6 +256,17 @@ FunctionEnd
   Pop $0
 !macroend
 
+; Explorer's COM surrogate (dllhost) may still have the handler loaded from
+; an earlier install, which blocks overwriting it. A loaded DLL can still be
+; renamed, so move it aside; the leftover is deleted now or after a reboot.
+!macro NSIS_HOOK_PREINSTALL
+  Delete "$INSTDIR\shell-ext\oflh_shell_ext.dll.old"
+  ${If} ${FileExists} "$INSTDIR\shell-ext\oflh_shell_ext.dll"
+    Rename "$INSTDIR\shell-ext\oflh_shell_ext.dll" "$INSTDIR\shell-ext\oflh_shell_ext.dll.old"
+    Delete /REBOOTOK "$INSTDIR\shell-ext\oflh_shell_ext.dll.old"
+  ${EndIf}
+!macroend
+
 ; The identity package must be removed while register.ps1 still exists, so
 ; before the template deletes the files. Updates keep it: the install folder,
 ; and with it the package's external location, stays the same.
@@ -262,6 +284,8 @@ FunctionEnd
   ; Updates keep the entries; the new installer rewrites them afterwards.
   ${If} $UpdateMode <> 1
     !insertmacro OFLH_DELETE_CONTEXT_MENU
+    Delete /REBOOTOK "$INSTDIR\shell-ext\oflh_shell_ext.dll.old"
+    RMDir "$INSTDIR\shell-ext"
     DeleteRegValue SHCTX "${MANUPRODUCTKEY}" "${OFLH_CONTEXT_MENU_PREFERENCE}"
     !insertmacro OFLH_REFRESH_SHELL
   ${EndIf}

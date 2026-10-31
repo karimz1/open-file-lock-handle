@@ -14,6 +14,24 @@ public static class OflhInput {
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, UIntPtr e);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern IntPtr FindWindow(string c, string n);
+  [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr m);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetMenuString(IntPtr m, uint id, System.Text.StringBuilder s, int max, uint flags);
+  // Item labels of the open classic popup menu (#32768), via MN_GETHMENU.
+  public static string[] ClassicMenu() {
+    IntPtr w = FindWindow("#32768", null);
+    if (w == IntPtr.Zero) return null;
+    IntPtr m = SendMessage(w, 0x01E1, IntPtr.Zero, IntPtr.Zero);
+    if (m == IntPtr.Zero) return null;
+    int n = GetMenuItemCount(m);
+    var names = new System.Collections.Generic.List<string>();
+    for (int i = 0; i < n; i++) {
+      var b = new System.Text.StringBuilder(256);
+      GetMenuString(m, (uint)i, b, 256, 0x400);
+      names.Add(b.ToString().Replace("&", ""));
+    }
+    return names.ToArray();
+  }
   public static void Click(int x, int y, bool right) {
     SetCursorPos(x, y);
     if (right) { mouse_event(0x0008, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0010, 0, 0, 0, UIntPtr.Zero); }
@@ -57,7 +75,9 @@ Start-Sleep 3
 Shot '1-windows11-menu'
 $modern = Menu-Names
 Write-Host "Top-level menu items: $($modern -join ' | ')"
-$result = [ordered]@{ modern = [bool]($modern -like '*Inspect file*'); classic = $false; modernItems = $modern }
+# The top-level menu appears twice in the UIA tree; count one copy.
+$modernCount = @($modern | Where-Object { $_ -like 'Inspect file*' }).Count
+$result = [ordered]@{ modern = $modernCount -gt 0; classic = $false; classicInspectCount = $null; launched = $false; modernItems = $modern }
 
 $more = Find-Named 'Show more options*' | Select-Object -First 1
 if ($more) {
@@ -65,15 +85,11 @@ if ($more) {
   [OflhInput]::Click([int]($m.X + $m.Width / 2), [int]($m.Y + $m.Height / 2), $false)
   Start-Sleep 3
   Shot '2-classic-menu'
-  # The classic menu is a Win32 popup (#32768); read it from its window.
-  $classic = @()
-  $popup = [OflhInput]::FindWindow('#32768', $null)
-  if ($popup -ne [IntPtr]::Zero) {
-    $cond = [Windows.Automation.PropertyCondition]::new($A::ControlTypeProperty, [Windows.Automation.ControlType]::MenuItem)
-    $classic = @($A::FromHandle($popup).FindAll($T::Descendants, $cond) | ForEach-Object { $_.Current.Name })
-  }
+  # The classic menu is a Win32 popup (#32768); read its HMENU.
+  $classic = [OflhInput]::ClassicMenu()
   Write-Host "Classic menu items: $($classic -join ' | ')"
   $result.classic = [bool]($classic -like '*Inspect file*')
+  $result.classicInspectCount = if ($null -eq $classic) { $null } else { @($classic | Where-Object { $_ -like 'Inspect file*' }).Count }
   $result.classicItems = $classic
 }
 [Windows.Forms.SendKeys]::SendWait('{ESC}{ESC}')
@@ -83,7 +99,6 @@ Start-Sleep 1
 [OflhInput]::Click([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2), $true)
 Start-Sleep 3
 $entry = Find-Named 'Inspect file' | Select-Object -First 1
-$result.launched = $false
 if ($entry) {
   $e = $entry.Current.BoundingRectangle
   [OflhInput]::Click([int]($e.X + $e.Width / 2), [int]($e.Y + $e.Height / 2), $false)
@@ -99,4 +114,5 @@ if ($entry) {
 Write-Host "Inspect file started OFLH: $($result.launched)"
 $result | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $OutDir 'result.json')
 Write-Host "Inspect file in Windows 11 menu: $($result.modern); in classic menu: $($result.classic)"
-if (-not $result.modern) { Write-Host '::warning title=Windows 11 menu::"Inspect file" was not found in the top-level context menu (see screenshots).' }
+Write-Host "Inspect file entries in the classic menu: $($result.classicInspectCount)"
+return [pscustomobject]$result

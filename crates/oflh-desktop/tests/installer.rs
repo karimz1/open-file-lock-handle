@@ -426,6 +426,17 @@ fn windows_11_identity_package_is_bundled_and_follows_the_checkbox() {
     // Classic entries are still written next to the modern one.
     assert!(post_install.find("OFLH_WRITE_CONTEXT_MENU_VERB").unwrap() < checked);
 
+    // Once the package is registered it also appears in the classic menu, so
+    // the verbs it covers are removed; the Drive verb stays.
+    let register = block("!macro OFLH_REGISTER_MODERN_CONTEXT_MENU");
+    let registered = register.rfind("${If} $0 = 0").unwrap();
+    for class in ["*", "Directory", "Directory\\Background"] {
+        let key = format!("Software\\Classes\\{class}\\shell\\");
+        assert!(register[registered..].contains(&key), "{class} kept twice");
+    }
+    assert!(!register.contains("Classes\\Drive"));
+    assert!(block("!macro NSIS_HOOK_PREINSTALL").contains("Rename"));
+
     // Removed while register.ps1 still exists, and kept across updates.
     let pre_uninstall = block("!macro NSIS_HOOK_PREUNINSTALL");
     assert!(pre_uninstall.contains("$UpdateMode <> 1"));
