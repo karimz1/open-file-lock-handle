@@ -2,7 +2,8 @@
   CI probe (non-blocking): with OFLH installed, right-click a test file in File
   Explorer on the runner's interactive desktop, screenshot the Windows 11
   top-level menu and the classic "Show more options" menu, and report whether
-  "Inspect file" appears in each (UI Automation).
+  the OFLH entry appears in each, for a file, a folder and the folder
+  background. The classic menu is opened with Shift+right-click.
 #>
 param([Parameter(Mandatory)] [string] $OutDir)
 $ErrorActionPreference = 'Stop'
@@ -32,6 +33,8 @@ public static class OflhInput {
     }
     return names.ToArray();
   }
+  [DllImport("user32.dll")] static extern void keybd_event(byte k, byte s, uint f, UIntPtr e);
+  public static void Shift(bool down) { keybd_event(0x10, 0, down ? 0u : 2u, UIntPtr.Zero); }
   public static void Click(int x, int y, bool right) {
     SetCursorPos(x, y);
     if (right) { mouse_event(0x0008, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0010, 0, 0, 0, UIntPtr.Zero); }
@@ -57,62 +60,68 @@ function Menu-Names {
   @($A::RootElement.FindAll($T::Descendants, $cond) | ForEach-Object { $_.Current.Name })
 }
 
-$dir = 'C:\oflh-menu-test'; New-Item -ItemType Directory -Force $dir | Out-Null
+$dir = 'C:\oflh-menu-test'; New-Item -ItemType Directory -Force "$dir\oflh-folder" | Out-Null
 Set-Content "$dir\oflh-test.txt" 'OFLH context menu probe'
 Start-Process explorer.exe $dir
 Start-Sleep 6
-$item = $null
-for ($i = 0; $i -lt 10 -and -not $item; $i++) {
-  $item = Find-Named 'oflh-test*' | Where-Object { $_.Current.ControlType.ProgrammaticName -eq 'ControlType.ListItem' } | Select-Object -First 1
-  if (-not $item) { Start-Sleep 2 }
+function Find-Item([string] $Name) {
+  for ($i = 0; $i -lt 10; $i++) {
+    $it = Find-Named "$Name*" | Where-Object { $_.Current.ControlType.ProgrammaticName -eq 'ControlType.ListItem' } | Select-Object -First 1
+    if ($it) { return $it.Current.BoundingRectangle }
+    Start-Sleep 2
+  }
+  Shot '0-explorer'; throw "$Name not found in Explorer"
 }
-if (-not $item) { Shot '0-explorer'; throw 'test file not found in Explorer' }
-$r = $item.Current.BoundingRectangle
-[OflhInput]::Click([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2), $false)
-Start-Sleep 1
-[OflhInput]::Click([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2), $true)
-Start-Sleep 3
-Shot '1-windows11-menu'
-$modern = Menu-Names
-Write-Host "Top-level menu items: $($modern -join ' | ')"
-# The top-level menu appears twice in the UIA tree; count one copy.
-$modernCount = @($modern | Where-Object { $_ -like 'Inspect file*' }).Count
-$result = [ordered]@{ modern = $modernCount -gt 0; classic = $false; classicInspectCount = $null; launched = $false; modernItems = $modern }
-
-$more = Find-Named 'Show more options*' | Select-Object -First 1
-if ($more) {
-  $m = $more.Current.BoundingRectangle
-  [OflhInput]::Click([int]($m.X + $m.Width / 2), [int]($m.Y + $m.Height / 2), $false)
+$file = Find-Item 'oflh-test'
+$folder = Find-Item 'oflh-folder'
+# Empty space well below the two items, for the folder background.
+$bg = [pscustomobject]@{ X = $file.X; Y = [Math]::Max($file.Bottom, $folder.Bottom) + 150; Width = $file.Width; Height = 1 }
+function Center($r) { @([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) }
+function Open-Menu($r, [bool] $classic) {
+  [Windows.Forms.SendKeys]::SendWait('{ESC}{ESC}'); Start-Sleep 1
+  $x, $y = Center $r
+  [OflhInput]::Click($x, $y, $false); Start-Sleep 1
+  if ($classic) { [OflhInput]::Shift($true) }
+  [OflhInput]::Click($x, $y, $true)
+  if ($classic) { Start-Sleep -Milliseconds 300; [OflhInput]::Shift($false) }
   Start-Sleep 3
-  Shot '2-classic-menu'
+}
+$cases = [ordered]@{}
+$n = 1
+foreach ($t in @(@{ name = 'file'; rect = $file; label = 'Inspect file' }, @{ name = 'folder'; rect = $folder; label = 'Inspect folder' }, @{ name = 'background'; rect = $bg; label = 'Inspect folder' })) {
+  Open-Menu $t.rect $false
+  Shot ("{0}-modern-{1}" -f $n++, $t.name)
+  $names = Menu-Names
+  Write-Host "Windows 11 menu ($($t.name)): $($names -join ' | ')"
+  $modern = @($names | Where-Object { $_ -like "$($t.label)*" }).Count -gt 0
+  Open-Menu $t.rect $true
+  Shot ("{0}-classic-{1}" -f $n++, $t.name)
   # The classic menu is a Win32 popup (#32768); read its HMENU.
   $classic = [OflhInput]::ClassicMenu()
-  Write-Host "Classic menu items: $($classic -join ' | ')"
-  $result.classic = [bool]($classic -like '*Inspect file*')
-  $result.classicInspectCount = if ($null -eq $classic) { $null } else { @($classic | Where-Object { $_ -like 'Inspect file*' }).Count }
-  $result.classicItems = $classic
+  Write-Host "Classic menu ($($t.name)): $($classic -join ' | ')"
+  $count = if ($null -eq $classic) { $null } else { @($classic | Where-Object { $_ -like 'Inspect*' }).Count }
+  $cases[$t.name] = [pscustomobject]@{ label = $t.label; modern = $modern; classicCount = $count; classicItems = $classic }
+  Write-Host "$($t.name): '$($t.label)' in Windows 11 menu: $modern; OFLH entries in classic menu: $count"
 }
-[Windows.Forms.SendKeys]::SendWait('{ESC}{ESC}')
-Start-Sleep 1
+[Windows.Forms.SendKeys]::SendWait('{ESC}{ESC}'); Start-Sleep 1
 
-# Click the top-level entry and check that it starts OFLH with the file.
-[OflhInput]::Click([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2), $true)
-Start-Sleep 3
+# Click the top-level file entry and check that it starts OFLH with the file.
+$launched = $false
+Open-Menu $file $false
 $entry = Find-Named 'Inspect file' | Select-Object -First 1
 if ($entry) {
-  $e = $entry.Current.BoundingRectangle
-  [OflhInput]::Click([int]($e.X + $e.Width / 2), [int]($e.Y + $e.Height / 2), $false)
-  for ($i = 0; $i -lt 15 -and -not $result.launched; $i++) {
+  $x, $y = Center $entry.Current.BoundingRectangle
+  [OflhInput]::Click($x, $y, $false)
+  for ($i = 0; $i -lt 15 -and -not $launched; $i++) {
     Start-Sleep 1
     $app = Get-CimInstance Win32_Process -Filter "Name='oflh-desktop.exe'" | Where-Object CommandLine -like '*--inspect*oflh-test.txt*'
-    if ($app) { $result.launched = $true; Write-Host "Started: $($app.CommandLine)" }
+    if ($app) { $launched = $true; Write-Host "Started: $($app.CommandLine)" }
   }
   Start-Sleep 3
-  Shot '3-after-inspect-file'
+  Shot ("{0}-after-inspect-file" -f $n)
   Get-Process oflh-desktop -ErrorAction SilentlyContinue | Stop-Process -Force
 }
-Write-Host "Inspect file started OFLH: $($result.launched)"
-$result | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $OutDir 'result.json')
-Write-Host "Inspect file in Windows 11 menu: $($result.modern); in classic menu: $($result.classic)"
-Write-Host "Inspect file entries in the classic menu: $($result.classicInspectCount)"
-return [pscustomobject]$result
+Write-Host "Inspect file started OFLH: $launched"
+$result = [pscustomobject]@{ cases = $cases; launched = $launched }
+$result | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $OutDir 'result.json')
+return $result

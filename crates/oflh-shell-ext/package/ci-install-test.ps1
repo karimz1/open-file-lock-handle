@@ -66,9 +66,12 @@ if ($ScreenshotDir) {
   Write-Host '2. Explorer menus'
   try {
     $menu = & (Join-Path $PSScriptRoot 'ci-menu-screenshot.ps1') -OutDir $ScreenshotDir
-    if (-not $menu.modern) { Fail 'Inspect file missing from the Windows 11 menu' }
-    if ($null -eq $menu.classicInspectCount) { Write-Host '::warning title=Classic menu::could not read the classic menu; see 2-classic-menu.png' }
-    elseif ($menu.classicInspectCount -ne 1) { Fail "classic menu lists Inspect file $($menu.classicInspectCount) times" }
+    foreach ($name in $menu.cases.Keys) {
+      $c = $menu.cases[$name]
+      if (-not $c.modern) { Fail "$($c.label) missing from the Windows 11 menu ($name)" }
+      if ($null -eq $c.classicCount) { Fail "could not read the classic menu ($name)" }
+      elseif ($c.classicCount -ne 1) { Fail "classic menu ($name) lists $($c.classicCount) OFLH entries, expected 1" }
+    }
     if (-not $menu.launched) { Write-Host '::warning title=Inspect file::clicking the entry did not visibly start OFLH' }
   } catch { Write-Host "::warning title=Context menu probe::$($_.Exception.Message)" }
 }
