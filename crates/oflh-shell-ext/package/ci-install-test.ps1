@@ -31,20 +31,28 @@ function Show-Diagnostics {
 }
 
 # Expect the package registered for $installDir and only the Drive verb.
+$helper = Join-Path $installDir 'shell-ext\oflh-shell-reg.exe'
+# Package queries through Windows PowerShell commands (allowed when scripts are
+# blocked); the Appx module does not load reliably in PowerShell 7.
+function Find-Package {
+  & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command "Get-AppxPackage -AllUsers -Name $name | ForEach-Object { `$_.PackageFullName + ' ' + `$_.SignatureKind + ' ' + `$_.Status }"
+}
+
+# Expect the package registered for $installDir and only the Drive verb.
 function Assert-Modern([string] $Stage) {
-  $package = Get-AppxPackage -AllUsers -Name $name
+  $package = Find-Package
   if (-not $package) { Fail "${Stage}: identity package not registered"; Show-Diagnostics; return }
-  $status = & (Join-Path $installDir 'shell-ext\oflh-shell-reg.exe') status
-  if ($LASTEXITCODE -ne 0) { Fail "${Stage}: package not recorded for $installDir ($status)" }
+  $status = & $helper status
+  if ($LASTEXITCODE -ne 0) { Fail "${Stage}: package not recorded for $installDir (status $LASTEXITCODE: $status)" }
   foreach ($class in $covered) { if (Verb-Exists $class) { Fail "${Stage}: classic verb duplicates the package: $class" } }
   if (-not (Verb-Exists 'Drive')) { Fail "${Stage}: drive verb missing" }
   if (-not (Test-Path $dll)) { Fail "${Stage}: $dll missing" }
-  Write-Host "${Stage}: package $($package.PackageFullName), $($package.SignatureKind), $($package.Status)"
+  Write-Host "${Stage}: package $package"
 }
 
 function Assert-Nothing([string] $Stage) {
   foreach ($class in $covered + 'Drive') { if (Verb-Exists $class) { Fail "${Stage}: classic verb left: $class" } }
-  if (Get-AppxPackage -AllUsers -Name $name) { Fail "${Stage}: identity package left" }
+  if (Find-Package) { Fail "${Stage}: identity package left" }
 }
 
 # Scripts blocked for Windows PowerShell, as on many machines: the installer
@@ -66,7 +74,7 @@ if ($effective -notmatch 'LocalMachine=Restricted' -or $effective -notmatch 'Cur
 Write-Host "1. Fresh silent install: $Setup"
 Run-Installer $Setup @('/S')
 Assert-Modern 'install'
-$package = Get-AppxPackage -AllUsers -Name $name
+$package = Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue
 if ($package) {
   $manifest = (Get-AppxPackageManifest -Package $package.PackageFullName).Package
   $menus = $manifest.Applications.Application.Extensions.Extension | Where-Object Category -eq 'windows.fileExplorerContextMenus'
@@ -82,12 +90,15 @@ if ($ScreenshotDir) {
   Write-Host '2. Explorer menus'
   try {
     $menu = & (Join-Path $PSScriptRoot 'ci-menu-screenshot.ps1') -OutDir $ScreenshotDir
-    foreach ($name in $menu.cases.Keys) {
-      $c = $menu.cases[$name]
-      if (-not $c.modern) { Fail "$($c.label) missing from the Windows 11 menu ($name)" }
-      if ($null -eq $c.classicCount) { Fail "could not read the classic menu ($name)" }
-      elseif ($c.classicCount -ne 1) { Fail "classic menu ($name) lists $($c.classicCount) OFLH entries, expected 1" }
-    }
+    $seen = @($menu.cases.Values | Where-Object { $_.menuItems -gt 0 }).Count
+    # Some runners (ARM64) have no interactive Explorer to right-click in.
+    if ($seen -eq 0) { Write-Host '::warning title=Explorer menus::no context menu could be opened on this runner; menus not checked' }
+    else { foreach ($case in $menu.cases.Keys) {
+      $c = $menu.cases[$case]; $name2 = $case
+      if (-not $c.modern) { Fail "$($c.label) missing from the Windows 11 menu ($name2)" }
+      if ($null -eq $c.classicCount) { Fail "could not read the classic menu ($name2)" }
+      elseif ($c.classicCount -ne 1) { Fail "classic menu ($name2) lists $($c.classicCount) OFLH entries, expected 1" }
+    } }
     if (-not $menu.launched) { Write-Host '::warning title=Inspect file::clicking the entry did not visibly start OFLH' }
   } catch { Write-Host "::warning title=Context menu probe::$($_.Exception.Message)" }
 }

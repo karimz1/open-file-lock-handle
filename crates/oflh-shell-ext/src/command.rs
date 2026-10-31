@@ -59,9 +59,10 @@ pub fn inspect_args(target: &Path) -> Vec<OsString> {
 }
 
 /// The entry handles one target at a time, like the classic verbs
-/// (`MultiSelectModel=Single`): it is hidden for anything but one item.
-pub fn visible_for(selected_items: usize) -> bool {
-    selected_items == 1
+/// (`MultiSelectModel=Single`): it is shown for one item, or for a folder
+/// background (no items, but the folder is known), and hidden otherwise.
+pub fn visible_for(selected_items: usize, background_folder: bool) -> bool {
+    selected_items == 1 || (selected_items == 0 && background_folder)
 }
 
 #[cfg(test)]
@@ -125,9 +126,11 @@ mod tests {
 
     #[test]
     fn entry_is_shown_for_exactly_one_item() {
-        assert!(!visible_for(0));
-        assert!(visible_for(1));
-        assert!(!visible_for(2));
+        assert!(!visible_for(0, false));
+        assert!(visible_for(0, true));
+        assert!(visible_for(1, false));
+        assert!(!visible_for(2, false));
+        assert!(!visible_for(2, true));
     }
 
     #[test]

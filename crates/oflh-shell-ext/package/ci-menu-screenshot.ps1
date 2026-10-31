@@ -101,7 +101,7 @@ foreach ($case in @(@{ name = 'file'; rect = $file; label = 'Inspect file' }, @{
   $classic = [OflhInput]::ClassicMenu()
   Write-Host "Classic menu ($($case.name)): $($classic -join ' | ')"
   $count = if ($null -eq $classic) { $null } else { @($classic | Where-Object { $_ -like 'Inspect*' }).Count }
-  $cases[$case.name] = [pscustomobject]@{ label = $case.label; modern = $modern; classicCount = $count; classicItems = $classic }
+  $cases[$case.name] = [pscustomobject]@{ label = $case.label; modern = $modern; menuItems = @($names | Where-Object { $_ }).Count + @($classic | Where-Object { $_ }).Count; classicCount = $count; classicItems = $classic }
   Write-Host "$($case.name): '$($case.label)' in Windows 11 menu: $modern; OFLH entries in classic menu: $count"
 }
 [Windows.Forms.SendKeys]::SendWait('{ESC}{ESC}'); Start-Sleep 1

@@ -4,6 +4,7 @@
 use std::ffi::{OsString, c_void};
 use std::os::windows::ffi::OsStringExt;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use windows::Win32::Foundation::{
@@ -11,15 +12,19 @@ use windows::Win32::Foundation::{
     S_FALSE, S_OK,
 };
 use windows::Win32::Globalization::GetUserDefaultUILanguage;
-use windows::Win32::System::Com::{CoTaskMemFree, IBindCtx, IClassFactory, IClassFactory_Impl};
+use windows::Win32::System::Com::{
+    CoTaskMemFree, IBindCtx, IClassFactory, IClassFactory_Impl, IServiceProvider,
+};
 use windows::Win32::System::LibraryLoader::{
     GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
     GetModuleFileNameW, GetModuleHandleExW,
 };
+use windows::Win32::System::Ole::{IObjectWithSite, IObjectWithSite_Impl};
 use windows::Win32::System::SystemServices::SFGAO_FOLDER;
 use windows::Win32::UI::Shell::{
-    IEnumExplorerCommand, IExplorerCommand, IExplorerCommand_Impl, IShellItemArray, SHStrDupW,
-    SIATTRIBFLAGS_AND, SIGDN_FILESYSPATH,
+    IEnumExplorerCommand, IExplorerCommand, IExplorerCommand_Impl, IFolderView, IShellBrowser,
+    IShellItem, IShellItemArray, SHStrDupW, SIATTRIBFLAGS_AND, SID_STopLevelBrowser,
+    SIGDN_FILESYSPATH,
 };
 use windows_core::{BOOL, GUID, HRESULT, IUnknown, Interface, PCWSTR, PWSTR, Ref, implement};
 
@@ -78,14 +83,35 @@ fn target_kind(items: &Ref<'_, IShellItemArray>) -> TargetKind {
 
 fn first_path(items: &Ref<'_, IShellItemArray>) -> windows_core::Result<PathBuf> {
     let items = items.as_ref().ok_or(windows_core::Error::from(E_POINTER))?;
-    // SAFETY: `items` is live; the returned string is CoTaskMem-allocated and
+    // SAFETY: `items` is live for the call's duration.
+    item_path(&unsafe { items.GetItemAt(0) }?)
+}
+
+fn item_path(item: &IShellItem) -> windows_core::Result<PathBuf> {
+    // SAFETY: `item` is live; the returned string is CoTaskMem-allocated and
     // freed right after it is copied.
     unsafe {
-        let item = items.GetItemAt(0)?;
         let name = item.GetDisplayName(SIGDN_FILESYSPATH)?;
         let path = PathBuf::from(OsString::from_wide(name.as_wide()));
         CoTaskMemFree(Some(name.0.cast()));
         Ok(path)
+    }
+}
+
+/// The folder whose background was right-clicked: Explorer passes no items
+/// then, so ask the window hosting the menu (the command's site).
+fn site_folder(site: &Mutex<Option<IUnknown>>) -> windows_core::Result<PathBuf> {
+    let site = site
+        .lock()
+        .map_err(|_| windows_core::Error::from(E_FAIL))?
+        .clone();
+    let site = site.ok_or(windows_core::Error::from(E_FAIL))?;
+    // SAFETY: COM calls on live interfaces owned by this function.
+    unsafe {
+        let provider: IServiceProvider = site.cast()?;
+        let browser: IShellBrowser = provider.QueryService(&SID_STopLevelBrowser)?;
+        let view: IFolderView = browser.QueryActiveShellView()?.cast()?;
+        item_path(&view.GetFolder::<IShellItem>()?)
     }
 }
 
@@ -96,13 +122,47 @@ fn co_task_string(text: &str) -> windows_core::Result<PWSTR> {
     unsafe { SHStrDupW(PCWSTR(wide.as_ptr())) }
 }
 
-#[implement(IExplorerCommand)]
-struct InspectCommand;
+#[implement(IExplorerCommand, IObjectWithSite)]
+struct InspectCommand {
+    site: Mutex<Option<IUnknown>>,
+}
 
 impl InspectCommand {
     fn new() -> Self {
         LIVE_OBJECTS.fetch_add(1, Ordering::SeqCst);
-        Self
+        Self {
+            site: Mutex::new(None),
+        }
+    }
+}
+
+impl IObjectWithSite_Impl for InspectCommand_Impl {
+    fn SetSite(&self, site: Ref<'_, IUnknown>) -> windows_core::Result<()> {
+        *self
+            .site
+            .lock()
+            .map_err(|_| windows_core::Error::from(E_FAIL))? = site.cloned();
+        Ok(())
+    }
+
+    fn GetSite(&self, iid: *const GUID, site: *mut *mut c_void) -> windows_core::Result<()> {
+        if site.is_null() || iid.is_null() {
+            return Err(E_POINTER.into());
+        }
+        let current = self
+            .site
+            .lock()
+            .map_err(|_| windows_core::Error::from(E_FAIL))?
+            .clone();
+        match current {
+            // SAFETY: `iid` and `site` were checked for null; query writes `site`.
+            Some(unknown) => unsafe { unknown.query(iid, site).ok() },
+            None => {
+                // SAFETY: `site` was checked for null.
+                unsafe { *site = std::ptr::null_mut() };
+                Err(E_FAIL.into())
+            }
+        }
     }
 }
 
@@ -139,7 +199,9 @@ impl IExplorerCommand_Impl for InspectCommand_Impl {
         items: Ref<'_, IShellItemArray>,
         _ok_to_be_slow: BOOL,
     ) -> windows_core::Result<u32> {
-        Ok(if command::visible_for(item_count(&items)) {
+        let count = item_count(&items);
+        let background = count == 0 && site_folder(&self.site).is_ok();
+        Ok(if command::visible_for(count, background) {
             ECS_ENABLED
         } else {
             ECS_HIDDEN
@@ -151,7 +213,11 @@ impl IExplorerCommand_Impl for InspectCommand_Impl {
         items: Ref<'_, IShellItemArray>,
         _bind: Ref<'_, IBindCtx>,
     ) -> windows_core::Result<()> {
-        let target = first_path(&items)?;
+        let target = if item_count(&items) == 0 {
+            site_folder(&self.site)?
+        } else {
+            first_path(&items)?
+        };
         let app = this_dll()
             .and_then(|dll| command::app_path(&dll))
             .ok_or(windows_core::Error::from(E_FAIL))?;
