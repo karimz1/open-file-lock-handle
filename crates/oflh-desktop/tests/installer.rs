@@ -394,3 +394,65 @@ fn installer_language_follows_windows_with_english_as_the_fallback() {
         );
     }
 }
+
+#[test]
+fn windows_11_identity_package_is_bundled_and_follows_the_checkbox() {
+    let windows: serde_json::Value =
+        serde_json::from_str(include_str!("../tauri.windows.conf.json")).unwrap();
+    assert_eq!(
+        windows["bundle"]["resources"]["windows/shell-ext/"],
+        "shell-ext/"
+    );
+
+    let block = |start: &str| {
+        let begin = HOOKS
+            .find(start)
+            .unwrap_or_else(|| panic!("{start} missing"));
+        let end = HOOKS[begin..].find("!macroend").unwrap() + begin;
+        &HOOKS[begin..end]
+    };
+    let post_install = block("!macro NSIS_HOOK_POSTINSTALL");
+    let checked = post_install
+        .find("OFLH_REGISTER_MODERN_CONTEXT_MENU")
+        .unwrap();
+    let unchecked = post_install
+        .find("OFLH_UNREGISTER_MODERN_CONTEXT_MENU")
+        .unwrap();
+    let branch = checked + post_install[checked..].find("${Else}").unwrap();
+    assert!(
+        checked < branch && branch < unchecked,
+        "register only when checked"
+    );
+    // Classic entries are still written next to the modern one.
+    assert!(post_install.find("OFLH_WRITE_CONTEXT_MENU_VERB").unwrap() < checked);
+
+    // Once the package is registered it also appears in the classic menu, so
+    // the verbs it covers are removed; the Drive verb stays.
+    let register = block("!macro OFLH_REGISTER_MODERN_CONTEXT_MENU");
+    let registered = register.rfind("${If} $0 = 0").unwrap();
+    for class in ["*", "Directory", "Directory\\Background"] {
+        let key = format!("Software\\Classes\\{class}\\shell\\");
+        assert!(register[registered..].contains(&key), "{class} kept twice");
+    }
+    assert!(!register.contains("Classes\\Drive"));
+    assert!(block("!macro NSIS_HOOK_PREINSTALL").contains("Rename"));
+
+    // Removed while oflh-shell-reg.exe still exists, and kept across updates.
+    let pre_uninstall = block("!macro NSIS_HOOK_PREUNINSTALL");
+    assert!(pre_uninstall.contains("$UpdateMode <> 1"));
+    assert!(pre_uninstall.contains("OFLH_UNREGISTER_MODERN_CONTEXT_MENU"));
+
+    // No dialogs in silent or passive installs; no certificates are touched.
+    let elevated = block("!macro OFLH_SHELL_EXT_ELEVATED");
+    assert!(elevated.contains("${ElseIfNot} ${Silent}"));
+    assert!(elevated.contains("$PassiveMode <> 1"));
+    // Registration never goes through PowerShell or script execution policy.
+    assert!(!HOOKS.to_ascii_lowercase().contains("powershell"));
+    assert!(!HOOKS.contains(".ps1"));
+    let script = include_str!("../../oflh-shell-ext/src/bin/oflh-shell-reg.rs");
+    assert!(script.contains("SetAllowUnsigned"));
+    assert!(script.contains("SetExternalLocationUri"));
+    for forbidden in ["Import-Certificate", "TrustedPeople", "certutil"] {
+        assert!(!script.contains(forbidden) && !HOOKS.contains(forbidden));
+    }
+}

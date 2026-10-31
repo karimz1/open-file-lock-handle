@@ -15,6 +15,15 @@
 ; that page and keep the stored choice (on when never chosen). `/NOCONTEXTMENU`
 ; on the installer command line turns the entries off.
 ;
+; Windows 11 shows these registry verbs only under "Show more options" (or
+; Shift+right-click). Its top-level menu lists only IExplorerCommand handlers
+; from a package with identity, so when the option is checked the installer
+; also registers the identity package in <install dir>\shell-ext\ (built by
+; crates/oflh-shell-ext). Unsigned builds can register it only from an elevated
+; process (Add-AppxPackage -AllowUnsigned), so a per-user install asks for
+; administrator rights once; when that is declined, or in silent and passive
+; installs without admin rights, only the classic entries are written.
+;
 ; Entries are written to SHCTX\Software\Classes, which follows the install
 ; mode: HKCU for the default per-user install, HKLM for a per-machine install.
 ; Explorer resolves HKCU over HKLM for the current user.
@@ -148,6 +157,64 @@ FunctionEnd
   WriteRegStr SHCTX "Software\Classes\${CLASS}\shell\${OFLH_CONTEXT_MENU_VERB}\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" --inspect $\"${PLACEHOLDER}$\""
 !macroend
 
+;;; Windows 11 identity package ;;;
+
+; Native helper (crates/oflh-shell-ext/src/bin/oflh-shell-reg.rs) that calls the
+; Windows PackageManager API: no scripts, execution policy or Developer Mode.
+!define OFLH_SHELL_EXT_HELPER "$INSTDIR\shell-ext\oflh-shell-reg.exe"
+
+; Leaves the helper's exit code in $0: see the helper for its meaning.
+!macro OFLH_SHELL_EXT_STATUS
+  nsExec::Exec '"${OFLH_SHELL_EXT_HELPER}" status'
+  Pop $0
+!macroend
+
+; Runs the helper with administrator rights: directly when the installer is
+; already elevated, otherwise through one UAC prompt, but never in silent or
+; passive installs, which must not show dialogs.
+!macro OFLH_SHELL_EXT_ELEVATED ACTION
+  System::Call 'shell32::IsUserAnAdmin() i .r0'
+  ${If} $0 <> 0
+    nsExec::Exec '"${OFLH_SHELL_EXT_HELPER}" ${ACTION}'
+    Pop $0
+  ${ElseIfNot} ${Silent}
+  ${AndIf} $PassiveMode <> 1
+    ExecShellWait "runas" "${OFLH_SHELL_EXT_HELPER}" "${ACTION}" SW_HIDE
+  ${EndIf}
+!macroend
+
+!macro OFLH_REGISTER_MODERN_CONTEXT_MENU
+  ${If} ${FileExists} "${OFLH_SHELL_EXT_HELPER}"
+    !insertmacro OFLH_SHELL_EXT_STATUS
+    ; Already registered for this folder (updates, repairs): nothing to do.
+    ${If} $0 <> 0
+      !insertmacro OFLH_SHELL_EXT_ELEVATED register
+      !insertmacro OFLH_SHELL_EXT_STATUS
+    ${EndIf}
+    ; Windows lists the packaged handler in the classic menu too, so the
+    ; registry verbs it covers would show up twice there. Keep them only as
+    ; the fallback when registration did not happen (Windows 10, declined
+    ; UAC, silent install without admin rights, errors). Drive roots are not
+    ; covered by the package and keep their verb.
+    ${If} $0 = 0
+      DeleteRegKey SHCTX "Software\Classes\*\shell\${OFLH_CONTEXT_MENU_VERB}"
+      DeleteRegKey SHCTX "Software\Classes\Directory\shell\${OFLH_CONTEXT_MENU_VERB}"
+      DeleteRegKey SHCTX "Software\Classes\Directory\Background\shell\${OFLH_CONTEXT_MENU_VERB}"
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+!macro OFLH_UNREGISTER_MODERN_CONTEXT_MENU
+  ${If} ${FileExists} "${OFLH_SHELL_EXT_HELPER}"
+    !insertmacro OFLH_SHELL_EXT_STATUS
+    ; Only ask for rights when there is something to remove.
+    ${If} $0 = 0
+    ${OrIf} $0 = 3
+      !insertmacro OFLH_SHELL_EXT_ELEVATED unregister
+    ${EndIf}
+  ${EndIf}
+!macroend
+
 !macro OFLH_REFRESH_SHELL
   System::Call 'shell32::SHChangeNotify(i ${OFLH_SHCNE_ASSOCCHANGED}, i ${OFLH_SHCNF_IDLIST}, p 0, p 0)'
 !macroend
@@ -180,10 +247,34 @@ FunctionEnd
     !insertmacro OFLH_WRITE_CONTEXT_MENU_VERB "Directory\Background" "$(oflhInspectFolder)" "%V"
     !insertmacro OFLH_WRITE_CONTEXT_MENU_VERB "Drive" "$(oflhInspectFolder)" "%1"
     WriteRegDWORD SHCTX "${MANUPRODUCTKEY}" "${OFLH_CONTEXT_MENU_PREFERENCE}" 1
+    !insertmacro OFLH_REGISTER_MODERN_CONTEXT_MENU
   ${Else}
     WriteRegDWORD SHCTX "${MANUPRODUCTKEY}" "${OFLH_CONTEXT_MENU_PREFERENCE}" 0
+    !insertmacro OFLH_UNREGISTER_MODERN_CONTEXT_MENU
   ${EndIf}
   !insertmacro OFLH_REFRESH_SHELL
+  Pop $0
+!macroend
+
+; Explorer's COM surrogate (dllhost) may still have the handler loaded from
+; an earlier install, which blocks overwriting it. A loaded DLL can still be
+; renamed, so move it aside; the leftover is deleted now or after a reboot.
+!macro NSIS_HOOK_PREINSTALL
+  Delete "$INSTDIR\shell-ext\oflh_shell_ext.dll.old"
+  ${If} ${FileExists} "$INSTDIR\shell-ext\oflh_shell_ext.dll"
+    Rename "$INSTDIR\shell-ext\oflh_shell_ext.dll" "$INSTDIR\shell-ext\oflh_shell_ext.dll.old"
+    Delete /REBOOTOK "$INSTDIR\shell-ext\oflh_shell_ext.dll.old"
+  ${EndIf}
+!macroend
+
+; The identity package must be removed while oflh-shell-reg.exe still exists, so
+; before the template deletes the files. Updates keep it: the install folder,
+; and with it the package's external location, stays the same.
+!macro NSIS_HOOK_PREUNINSTALL
+  Push $0
+  ${If} $UpdateMode <> 1
+    !insertmacro OFLH_UNREGISTER_MODERN_CONTEXT_MENU
+  ${EndIf}
   Pop $0
 !macroend
 
@@ -193,6 +284,8 @@ FunctionEnd
   ; Updates keep the entries; the new installer rewrites them afterwards.
   ${If} $UpdateMode <> 1
     !insertmacro OFLH_DELETE_CONTEXT_MENU
+    Delete /REBOOTOK "$INSTDIR\shell-ext\oflh_shell_ext.dll.old"
+    RMDir "$INSTDIR\shell-ext"
     DeleteRegValue SHCTX "${MANUPRODUCTKEY}" "${OFLH_CONTEXT_MENU_PREFERENCE}"
     !insertmacro OFLH_REFRESH_SHELL
   ${EndIf}

@@ -163,6 +163,19 @@ jobs:
       - name: Build desktop release executable
         run: npm run tauri -- build --config "$RUNNER_TEMP/desktop-version.json" --no-bundle -- --locked
         working-directory: crates/oflh-desktop/ui
+      - name: Build the Windows 11 context menu handler and identity package
+        if: matrix.os == 'windows'
+        shell: pwsh
+        env:
+          # Optional. Without them the identity package is unsigned and the
+          # installer registers it through PackageManager with AllowUnsigned.
+          OFLH_MSIX_PFX_BASE64: ${{ secrets.OFLH_MSIX_PFX_BASE64 }}
+          OFLH_MSIX_PFX_PASSWORD: ${{ secrets.OFLH_MSIX_PFX_PASSWORD }}
+          OFLH_MSIX_TIMESTAMP_URL: ${{ vars.OFLH_MSIX_TIMESTAMP_URL }}
+        run: |
+          cargo build -p oflh-shell-ext --release --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./crates/oflh-shell-ext/package/package.ps1 -Version $env:OFLH_VERSION -DllPath target/release/oflh_shell_ext.dll -OutDir crates/oflh-desktop/windows/shell-ext
       - name: Verify built desktop version
         run: test "$(./target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }} --version | head -n 1)" = "oflh-desktop $OFLH_VERSION"
       - name: Test packaged administrator helper on the native target
@@ -251,6 +264,18 @@ jobs:
                   raise SystemExit(f"{define} is empty")
           print(f"{scripts[0]}: languages {languages}, hooks, language files and artwork present")
           PY
+      - name: Windows context menus survive a silent install and uninstall
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: ./crates/oflh-shell-ext/package/ci-install-test.ps1 -Setup (Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1).FullName -ScreenshotDir "$env:RUNNER_TEMP/context-menu"
+      - name: Upload context menu screenshots
+        if: always() && matrix.os == 'windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: context-menu-screenshots-${{ matrix.arch }}
+          path: ${{ runner.temp }}/context-menu/
+          retention-days: 1
+          if-no-files-found: ignore
       - name: Collect desktop packages separately from CLI artifacts
         env:
           RELEASE_TAG: ${{ inputs.version || 'dev' }}
