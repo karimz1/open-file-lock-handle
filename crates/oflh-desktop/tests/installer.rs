@@ -402,6 +402,9 @@ fn running_app_dialog_is_owned_centered_and_cancelled_by_default() {
     assert!(HOOKS.contains("comctl32::TaskDialogIndirect"));
     assert!(HOOKS.contains("p $HWNDPARENT, p 0, i 0x1008, i 9"));
     assert!(HOOKS.contains("p r3, i 0, p 0, i 2"));
+    // MAKEINTRESOURCEW(-1) zero-extends a WORD. A sign-extended pointer is
+    // interpreted as an invalid string address instead of a stock icon.
+    assert!(HOOKS.contains("i 9, p r1, p 65535, p r2"));
     assert!(HOOKS.contains("StrCpy $R4 2"));
     assert!(HOOKS.contains("IfSilent kill_${UniqueID} 0"));
     assert!(HOOKS.contains("$PassiveMode != 1"));

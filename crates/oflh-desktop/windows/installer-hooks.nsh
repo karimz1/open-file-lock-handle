@@ -217,8 +217,10 @@ FunctionEnd
     !define OFLH_TASKDIALOG_SIZE 96
   !endif
   ; TDF_POSITION_RELATIVE_TO_WINDOW | TDF_ALLOW_DIALOG_CANCELLATION = 0x1008;
-  ; OK | Cancel = 9; default button IDCANCEL = 2. Warning system icon = -1.
-  System::Call '*(i ${OFLH_TASKDIALOG_SIZE}, p $HWNDPARENT, p 0, i 0x1008, i 9, p r1, p -1, p r2, p r3, i 0, p 0, i 2, i 0, p 0, i 0, p 0, p 0, p 0, p 0, p 0, p 0, p 0, p 0, i 0) p.r4'
+  ; OK | Cancel = 9; default button IDCANCEL = 2. TD_WARNING_ICON is
+  ; MAKEINTRESOURCEW(-1): the zero-extended 16-bit resource ID 65535, not
+  ; a sign-extended pointer (-1).
+  System::Call '*(i ${OFLH_TASKDIALOG_SIZE}, p $HWNDPARENT, p 0, i 0x1008, i 9, p r1, p 65535, p r2, p r3, i 0, p 0, i 2, i 0, p 0, i 0, p 0, p 0, p 0, p 0, p 0, p 0, p 0, p 0, i 0) p.r4'
   !undef OFLH_TASKDIALOG_SIZE
   StrCpy $R4 2
   System::Call 'comctl32::TaskDialogIndirect(p r4, *i .R4, p 0, p 0) i.r0'
