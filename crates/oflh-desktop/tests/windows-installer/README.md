@@ -29,3 +29,12 @@ dotnet test crates/oflh-desktop/tests/windows-installer/Installer.Tests.csproj -
 The CI smoke-test script builds the small NSIS fixture and runs `DialogSmoke`.
 It requires a standard NSIS installation and the .NET 8 SDK.
 
+
+## Official references
+
+- [FlaUI project and documentation](https://github.com/FlaUI/FlaUI)
+- [Microsoft UI Automation](https://learn.microsoft.com/en-us/windows/win32/winauto/entry-uiauto-win32)
+- [NUnit documentation](https://docs.nunit.org/articles/nunit/intro.html)
+- [NSIS Modern UI 2](https://nsis.sourceforge.io/Docs/Modern%20UI%202/Readme.html)
+- [Desktop development guide](../../../../docs/development.md#windows-installer-ui-automation)
+- [Repository documentation index](../../../../llms.txt)

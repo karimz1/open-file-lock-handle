@@ -1,11 +1,11 @@
 # oflh (Open File Lock Handle)
 
-> Cross-platform tool that shows which processes are using a file, folder, or local port, and lets you close or terminate them safely. Interactive terminal app (`oflh`) and desktop app (OFLH Desktop) for Windows, Linux, and macOS on x86-64 and ARM64. Written in Rust, MIT licensed.
+> Cross-platform tool that shows which processes are using a file, folder, or local port, with confirmed process-close and termination actions. Interactive terminal app (`oflh`) and desktop app (OFLH Desktop) for Windows, Linux, and macOS on x86-64 and ARM64. Written in Rust, MIT licensed.
 
 Key facts:
 
 - The desktop app is available since [v0.2.0](https://github.com/karimz1/open-file-lock-handle/releases/tag/v0.2.0).
-- Finds file users by enumerating process references (open descriptors/handles, memory mappings, loaded modules, executables, working directories), not by walking directories, so whole-drive scans (`oflh 'C:\'`, `oflh /`) take well under a second on the recorded machines.
+- Finds file users by enumerating process references (open descriptors/handles, memory mappings, loaded modules, executables, working directories), not by walking directories.
 - Usage: `oflh [OPTIONS] [PATH]`. Options: `--ports`, `--port PORT`, `--language en|de|zh|system`, `--no-update-check`, `--version`, `--help`. Options go before PATH.
 - The CLI is interactive only: it requires a TTY and has no JSON or script output mode.
 - "Open" is not "locked": lock evidence is reported separately (Linux flock/POSIX/OFD locks, macOS F_GETLK conflicts, Windows sharing violations with the owner marked unverified).
@@ -25,6 +25,7 @@ Key facts:
 - [Development](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/development.md): build, test, project layout, snapshots, profiling
 - [Architecture](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/architecture.md): crates, Backend trait, threading, process identity, desktop IPC
 - [Regression coverage](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/inspection-regressions.md): contracts and the tests that enforce them
+- [Windows installer UI tests](crates/oflh-desktop/tests/windows-installer/README.md): FlaUI/UIA3 and NUnit coverage of native installer dialogs, installation, reinstallation, and uninstallation; Windows-only CI screenshots and TRX reports
 - [Contributing](https://github.com/karimz1/open-file-lock-handle/blob/main/CONTRIBUTING.md): bug reports and pull requests
 
 ## Featured & listed on
@@ -38,3 +39,12 @@ Key facts:
 - [Releasing](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/releasing.md): release workflow, updater manifest, signing keys
 - [Releases](https://github.com/karimz1/open-file-lock-handle/releases): downloads and checksums
 - [Website](https://oflh.karimzouine.com/)
+
+
+## Official development references
+
+- [FlaUI](https://github.com/FlaUI/FlaUI): MIT-licensed Windows UI Automation library used by installer tests
+- [NUnit](https://docs.nunit.org/articles/nunit/intro.html): .NET test framework used by the Windows installer suite
+- [Microsoft UI Automation](https://learn.microsoft.com/en-us/windows/win32/winauto/entry-uiauto-win32): the native accessibility and automation API used by FlaUI
+- [NSIS Modern UI 2](https://nsis.sourceforge.io/Docs/Modern%20UI%202/Readme.html): the Windows installer UI framework and page customization reference
+- [Website documentation index](https://oflh.karimzouine.com/llms.txt): public download, usage, and documentation links maintained by the project website
