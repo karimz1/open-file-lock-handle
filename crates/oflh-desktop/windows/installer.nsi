@@ -22,7 +22,7 @@ ManifestDPIAwareness PerMonitorV2
 {{/if}}
 
 !include MUI2.nsh
-Font "Segoe UI" 10
+SetFont "Segoe UI" 9
 !include FileFunc.nsh
 !include x64.nsh
 !include WordFunc.nsh

@@ -122,6 +122,17 @@ jobs:
           cache-dependency-path: crates/oflh-desktop/ui/package-lock.json
       - run: npm ci
         working-directory: crates/oflh-desktop/ui
+      - name: Compile the rendered NSIS installer template early
+        # Renders the real Tauri template and hooks with makensis against a stub
+        # executable, so script errors fail here in minutes instead of after the
+        # full Windows build.
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq nsis
+          mkdir -p ../../../target/x86_64-pc-windows-msvc/release
+          printf 'MZ' > ../../../target/x86_64-pc-windows-msvc/release/oflh-desktop.exe
+          (cd .. && ui/node_modules/.bin/tauri bundle --bundles nsis --target x86_64-pc-windows-msvc --no-binary-patching -c '{"bundle":{"createUpdaterArtifacts":false}}')
+          rm -rf ../../../target/x86_64-pc-windows-msvc
+        working-directory: crates/oflh-desktop/ui
       - name: Verify updater signing key against the app public key
         env:
           UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

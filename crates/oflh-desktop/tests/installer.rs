@@ -425,7 +425,9 @@ fn presentation_template_tracks_the_pinned_tauri_cli_and_native_branding() {
         template.contains(&format!("Based on Tauri CLI {cli},")),
         "review the upstream template after a Tauri CLI upgrade"
     );
-    assert!(template.contains("Font \"Segoe UI\" 10"));
+    // `SetFont` is the NSIS attribute; a bare `Font` line aborts makensis.
+    assert!(template.contains("\nSetFont \"Segoe UI\" 9\n"));
+    assert!(!template.lines().any(|line| line.trim_start().starts_with("Font ")));
     assert!(template.contains("MUI_PAGE_CUSTOMFUNCTION_SHOW OflhDirectoryShow"));
     assert!(HOOKS.contains("CreateFont $OflhBrandTitleFont \"Segoe UI\" 24 700"));
     assert!(
