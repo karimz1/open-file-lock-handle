@@ -103,16 +103,22 @@ Function OflhBrandSidebar
     CreateFont $OflhBrandTitleFont "Segoe UI" 24 700
     CreateFont $OflhBrandSubtitleFont "Segoe UI" 8 500
   ${EndIf}
-  ${NSD_CreateLabel} 0u 80u 109u 26u "OFLH"
+  ${NSD_CreateLabel} 0u 98u 109u 26u "OFLH"
   Pop $OflhBrandLabel
   ${NSD_AddStyle} $OflhBrandLabel 0x201
   SendMessage $OflhBrandLabel ${WM_SETFONT} $OflhBrandTitleFont 1
   SetCtlColors $OflhBrandLabel "FFFFFF" "4264DB"
-  ${NSD_CreateLabel} 0u 106u 109u 14u "Open File Lock Handle"
+  ${NSD_CreateLabel} 0u 124u 109u 14u "Open File Lock Handle"
   Pop $OflhBrandLabel
   ${NSD_AddStyle} $OflhBrandLabel 0x201
   SendMessage $OflhBrandLabel ${WM_SETFONT} $OflhBrandSubtitleFont 1
   SetCtlColors $OflhBrandLabel "FFFFFF" "4264DB"
+  ; The sidebar bitmap is the page's first STATIC control. Without
+  ; WS_CLIPSIBLINGS it repaints over the wordmark labels created after it.
+  FindWindow $0 "#32770" "" $HWNDPARENT
+  FindWindow $1 "STATIC" "" $0
+  ${NSD_AddStyle} $1 ${WS_CLIPSIBLINGS}
+  System::Call "user32::SetWindowPos(p r1, p 1, i 0, i 0, i 0, i 0, i 0x13)"
 FunctionEnd
 
 !macro OFLH_HEADER_WORDMARK
@@ -162,26 +168,33 @@ Function OflhWelcomeShow
   GetDlgItem $0 $HWNDPARENT 1028
   SendMessage $0 ${WM_SETTEXT} 0 "STR:$(^Name) $3.$4.$5  ·  ${OFLH_WEBSITE_LABEL}"
 
-  ; $mui.WelcomePage.* are declared after this file is included, so find the
-  ; welcome text at runtime: the page's third static control, after the
-  ; sidebar bitmap and the title.
+  ; $mui.WelcomePage.* are declared after this file is included, so find
+  ; MUI's welcome text by its content, hide it, and draw our own copy inside
+  ; a padded white card. Moving MUI's control in place left it painted under
+  ; the card, because sibling STATIC controls do not clip each other.
   FindWindow $0 "#32770" "" $HWNDPARENT
-  FindWindow $6 "STATIC" "" $0
-  FindWindow $6 "STATIC" "" $0 $6
-  FindWindow $6 "STATIC" "" $0 $6
-  ; Shorten it: map dialog units to pixels for SetWindowPos.
+  StrCpy $6 0
+  ${Do}
+    FindWindow $6 "STATIC" "" $0 $6
+    ${If} $6 P= 0
+      ${Break}
+    ${EndIf}
+    System::Call 'user32::GetWindowTextW(p r6, w .r7, i ${NSIS_MAX_STRLEN})'
+    ${If} $7 == "$(oflhWelcomeText)"
+      ShowWindow $6 ${SW_HIDE}
+    ${EndIf}
+  ${Loop}
   ${NSD_CreateLabel} 120u 45u 183u 68u ""
   Pop $OflhTextCard
+  ; WS_CLIPSIBLINGS keeps the card from painting over the text above it.
+  ${NSD_AddStyle} $OflhTextCard ${WS_CLIPSIBLINGS}
   SetCtlColors $OflhTextCard "1F2937" "FFFFFF"
-  ; Keep the native label above its panel background.
-  System::Call "user32::SetWindowPos(p $OflhTextCard, p 1, i 0, i 0, i 0, i 0, i 0x13)"
+  ${NSD_CreateLabel} 128u 53u 167u ${OFLH_WELCOME_TEXT_HEIGHT}u "$(oflhWelcomeText)"
+  Pop $6
   SetCtlColors $6 "1F2937" "FFFFFF"
-  System::Call "*(i 128, i 53, i 167, i ${OFLH_WELCOME_TEXT_HEIGHT}) p .r1"
-  System::Call "user32::MapDialogRect(p r0, p r1)"
-  System::Call "*$1(i .r2, i .r3, i .r4, i .r5)"
-  System::Free $1
-  ; SWP_NOZORDER | SWP_NOACTIVATE
-  System::Call "user32::SetWindowPos(p r6, p 0, i r2, i r3, i r4, i r5, i 0x14)"
+  ; HWND_TOP for the text, HWND_BOTTOM for the card; SWP_NOSIZE|NOMOVE|NOACTIVATE.
+  System::Call "user32::SetWindowPos(p r6, p 0, i 0, i 0, i 0, i 0, i 0x13)"
+  System::Call "user32::SetWindowPos(p $OflhTextCard, p 1, i 0, i 0, i 0, i 0, i 0x13)"
 
   Call OflhBrandSidebar
   ; nsDialogs checkboxes wrap (BS_MULTILINE); German takes two lines.

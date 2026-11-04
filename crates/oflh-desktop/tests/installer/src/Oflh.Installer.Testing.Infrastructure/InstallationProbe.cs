@@ -1,3 +1,4 @@
+using FlaUI.Core.Tools;
 using Microsoft.Win32;
 using Oflh.Installer.Testing.Core;
 
@@ -10,6 +11,12 @@ public sealed class InstallationProbe(string installDirectory)
     public string UninstallerPath => Path.Combine(installDirectory, InstallerProduct.UninstallerName);
 
     public bool ExecutableExists => File.Exists(ExecutablePath);
+
+    /// <summary>Deletes a test install directory, waiting while the uninstaller still holds its own file.</summary>
+    public static void DeleteDirectory(string directory) => Retry.WhileException(() =>
+    {
+        if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+    }, Timeouts.DialogClose, Timeouts.PollInterval, throwOnTimeout: true);
 }
 
 /// <summary>Reads the shell and registry integration the installer registers for the current user or machine.</summary>

@@ -60,6 +60,7 @@ public sealed class WizardReinstallTests : InstallerTestBase
         {
             if (File.Exists(probe.UninstallerPath))
                 await Processes.RunAsync(probe.UninstallerPath, $"/S _?={InstallDirectory}", Timeouts.Uninstall);
+            InstallationProbe.DeleteDirectory(InstallDirectory);
         }
     }
 

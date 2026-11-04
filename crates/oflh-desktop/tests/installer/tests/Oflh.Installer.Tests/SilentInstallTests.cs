@@ -73,8 +73,5 @@ public sealed class SilentInstallTests : InstallerTestBase
         : Task.FromResult(0);
 
     [TearDown]
-    public void RemoveInstallDirectory()
-    {
-        if (Directory.Exists(InstallDirectory)) Directory.Delete(InstallDirectory, recursive: true);
-    }
+    public void RemoveInstallDirectory() => InstallationProbe.DeleteDirectory(InstallDirectory);
 }
