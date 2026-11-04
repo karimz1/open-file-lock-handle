@@ -65,6 +65,18 @@ LangString oflhInspectFolder 2052 "检查文件夹"
 Var OflhContextMenuChoice
 Var OflhContextMenuCheckbox
 
+; Modern UI 2 retains native controls, focus, keyboard access and DPI scaling.
+!define MUI_BGCOLOR "F8FAFD"
+!define MUI_TEXTCOLOR "1F2937"
+Var OflhTextCard
+Var OflhBrandLabel
+Var OflhBrandTitleFont
+Var OflhBrandSubtitleFont
+Var OflhHeaderWordmark
+Var OflhHeaderFont
+!define MUI_CUSTOMFUNCTION_GUIINIT OflhGuiInit
+!define MUI_CUSTOMFUNCTION_UNGUIINIT un.OflhGuiInit
+
 !define MUI_WELCOMEPAGE_TEXT "$(oflhWelcomeText)"
 ; Consumed later by the template's finish page; it sets MUI_FINISHPAGE_RUN.
 ; Consumed by the directory and uninstall confirm pages; replace NSIS's
@@ -78,14 +90,67 @@ Var OflhContextMenuCheckbox
 
 ; MUI2 welcome page layout in dialog units: the page is 193u high, the text
 ; (one 28u title above it) sits at 120u 45u 195u 130u. The text is shortened
-; to 60u (the longest welcome text, German, needs about 40u) and the checkbox
+; into a padded white panel and the checkbox
 ; gets a 30u, three-line slot below it, well above the bottom edge.
 ; Dialog units scale with the font and DPI, so nothing is clipped at 100-200%.
-!define OFLH_WELCOME_TEXT_HEIGHT 60
-!define OFLH_CHECKBOX_TOP 115
+!define OFLH_WELCOME_TEXT_HEIGHT 54
+!define OFLH_CHECKBOX_TOP 123
 !define OFLH_CHECKBOX_HEIGHT 30
 
+; Render wordmarks as native text: sharp at the actual DPI, exposed to UIA.
+Function OflhBrandSidebar
+  ${If} $OflhBrandTitleFont == ""
+    CreateFont $OflhBrandTitleFont "Segoe UI" 24 700
+    CreateFont $OflhBrandSubtitleFont "Segoe UI" 8 500
+  ${EndIf}
+  ${NSD_CreateLabel} 0u 80u 109u 26u "OFLH"
+  Pop $OflhBrandLabel
+  ${NSD_AddStyle} $OflhBrandLabel 0x201
+  SendMessage $OflhBrandLabel ${WM_SETFONT} $OflhBrandTitleFont 1
+  SetCtlColors $OflhBrandLabel "FFFFFF" "4264DB"
+  ${NSD_CreateLabel} 0u 106u 109u 14u "Open File Lock Handle"
+  Pop $OflhBrandLabel
+  ${NSD_AddStyle} $OflhBrandLabel 0x201
+  SendMessage $OflhBrandLabel ${WM_SETFONT} $OflhBrandSubtitleFont 1
+  SetCtlColors $OflhBrandLabel "FFFFFF" "4264DB"
+FunctionEnd
+
+!macro OFLH_HEADER_WORDMARK
+  GetDlgItem $0 $HWNDPARENT 1046
+  ${If} $0 P<> 0
+    System::Call '*(i 0, i 0, i 0, i 0) p.r1'
+    System::Call 'user32::GetWindowRect(p r0, p r1)'
+    System::Call 'user32::MapWindowPoints(p 0, p $HWNDPARENT, p r1, i 2)'
+    System::Call '*$1(i.r2, i.r3, i.r4, i.r5)'
+    System::Free $1
+    IntOp $4 $4 - $2
+    IntOp $5 $5 - $3
+    IntOp $6 $5 / 4
+    IntOp $3 $3 + $6
+    IntOp $4 $4 * 65
+    IntOp $4 $4 / 100
+    IntOp $5 $5 / 2
+    System::Call 'user32::CreateWindowExW(i 0, w "STATIC", w "OFLH", i 0x50000201, i r2, i r3, i r4, i r5, p $HWNDPARENT, p 0, p 0, p 0) p.s'
+    Pop $OflhHeaderWordmark
+    CreateFont $OflhHeaderFont "Segoe UI" 13 700
+    SendMessage $OflhHeaderWordmark ${WM_SETFONT} $OflhHeaderFont 1
+    SetCtlColors $OflhHeaderWordmark "4264DB" "FFFFFF"
+  ${EndIf}
+!macroend
+Function OflhGuiInit
+  !insertmacro OFLH_HEADER_WORDMARK
+FunctionEnd
+Function un.OflhGuiInit
+  !insertmacro OFLH_HEADER_WORDMARK
+FunctionEnd
+
+Function OflhFinishShow
+  ShowWindow $OflhHeaderWordmark ${SW_HIDE}
+  Call OflhBrandSidebar
+FunctionEnd
+
 Function OflhWelcomeShow
+  ShowWindow $OflhHeaderWordmark ${SW_HIDE}
   ; Branding line at the bottom of every page: "OFLH Desktop <version> ·
   ; oflh.karimzouine.com". The template's defines, VERSION included, do not
   ; exist yet here, so read the version Tauri stamps on this setup exe.
@@ -105,20 +170,77 @@ Function OflhWelcomeShow
   FindWindow $6 "STATIC" "" $0 $6
   FindWindow $6 "STATIC" "" $0 $6
   ; Shorten it: map dialog units to pixels for SetWindowPos.
-  System::Call "*(i 120, i 45, i 195, i ${OFLH_WELCOME_TEXT_HEIGHT}) p .r1"
+  ${NSD_CreateLabel} 120u 45u 183u 68u ""
+  Pop $OflhTextCard
+  SetCtlColors $OflhTextCard "1F2937" "FFFFFF"
+  ; Keep the native label above its panel background.
+  System::Call "user32::SetWindowPos(p $OflhTextCard, p 1, i 0, i 0, i 0, i 0, i 0x13)"
+  SetCtlColors $6 "1F2937" "FFFFFF"
+  System::Call "*(i 128, i 53, i 167, i ${OFLH_WELCOME_TEXT_HEIGHT}) p .r1"
   System::Call "user32::MapDialogRect(p r0, p r1)"
   System::Call "*$1(i .r2, i .r3, i .r4, i .r5)"
   System::Free $1
   ; SWP_NOZORDER | SWP_NOACTIVATE
   System::Call "user32::SetWindowPos(p r6, p 0, i r2, i r3, i r4, i r5, i 0x14)"
 
+  Call OflhBrandSidebar
   ; nsDialogs checkboxes wrap (BS_MULTILINE); German takes two lines.
-  ${NSD_CreateCheckbox} 120u ${OFLH_CHECKBOX_TOP}u 195u ${OFLH_CHECKBOX_HEIGHT}u "$(oflhContextMenuOption)"
+  ${NSD_CreateCheckbox} 120u ${OFLH_CHECKBOX_TOP}u 183u ${OFLH_CHECKBOX_HEIGHT}u "$(oflhContextMenuOption)"
   Pop $OflhContextMenuCheckbox
-  SetCtlColors $OflhContextMenuCheckbox "" "FFFFFF"
+  SetCtlColors $OflhContextMenuCheckbox "1F2937" "F8FAFD"
   ${If} $OflhContextMenuChoice != "0"
     ${NSD_Check} $OflhContextMenuCheckbox
   ${EndIf}
+FunctionEnd
+
+; Style MUI2's existing directory description; do not replace its path controls.
+!macro OFLH_OFFSET_DIRECTORY_CONTROL ID
+  GetDlgItem $6 $0 ${ID}
+  System::Call '*(i 0, i 0, i 0, i 0) p.R9'
+  System::Call 'user32::GetWindowRect(p r6, p R9)'
+  System::Call 'user32::MapWindowPoints(p 0, p r0, p R9, i 2)'
+  System::Call '*$R9(i.r2, i.r3, i.r4, i.r5)'
+  System::Free $R9
+  IntOp $3 $3 + $R8
+  System::Call 'user32::SetWindowPos(p r6, p 0, i r2, i r3, i 0, i 0, i 0x15)'
+!macroend
+Function OflhDirectoryShow
+  Push $R7
+  Push $R8
+  Push $R9
+  ShowWindow $OflhHeaderWordmark ${SW_SHOW}
+  FindWindow $0 "#32770" "" $HWNDPARENT
+  GetDlgItem $R7 $0 1006
+  System::Call '*(i 0, i 0, i 0, i 0) p.r1'
+  System::Call 'user32::GetWindowRect(p R7, p r1)'
+  System::Call 'user32::MapWindowPoints(p 0, p r0, p r1, i 2)'
+  System::Call '*$1(i.r2, i.r3, i.r4, i.r5)'
+  System::Free $1
+  IntOp $4 $4 - $2
+  IntOp $5 $5 - $3
+  System::Call '*(i 8, i 6, i 16, i 12) p.R9'
+  System::Call 'user32::MapDialogRect(p r0, p R9)'
+  System::Call '*$R9(i.r7, i.r8, i.r9, i.r1)'
+  System::Free $R9
+  StrCpy $R8 $1
+  ; Grow the panel, preserving the original text height and native path controls.
+  IntOp $5 $5 + $R8
+  System::Call 'user32::CreateWindowExW(i 0, w "STATIC", w "", i 0x50000000, i r2, i r3, i r4, i r5, p r0, p 0, p 0, p 0) p.s'
+  Pop $OflhTextCard
+  SetCtlColors $OflhTextCard "1F2937" "FFFFFF"
+  System::Call 'user32::SetWindowPos(p $OflhTextCard, p 1, i 0, i 0, i 0, i 0, i 0x13)'
+  IntOp $5 $5 - $R8
+  IntOp $2 $2 + $7
+  IntOp $3 $3 + $8
+  IntOp $4 $4 - $9
+  SetCtlColors $R7 "1F2937" "FFFFFF"
+  System::Call 'user32::SetWindowPos(p R7, p 0, i r2, i r3, i r4, i r5, i 0x14)'
+  !insertmacro OFLH_OFFSET_DIRECTORY_CONTROL 1020
+  !insertmacro OFLH_OFFSET_DIRECTORY_CONTROL 1019
+  !insertmacro OFLH_OFFSET_DIRECTORY_CONTROL 1001
+  Pop $R9
+  Pop $R8
+  Pop $R7
 FunctionEnd
 
 Function OflhWelcomeLeave

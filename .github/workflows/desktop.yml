@@ -45,7 +45,16 @@ jobs:
         run: |
           $compiler = "${env:ProgramFiles(x86)}/NSIS/makensis.exe"
           if (!(Test-Path $compiler)) { choco install nsis --yes --no-progress }
-          ./.github/scripts/installer/dialog-smoke.ps1 -Compiler $compiler
+          $env:OFLH_DIALOG_SMOKE_EXE = Join-Path $env:RUNNER_TEMP 'oflh-dialog-smoke.exe'
+          $env:OFLH_DIALOG_SMOKE_RESULT = Join-Path $env:RUNNER_TEMP 'oflh-dialog-result.txt'
+          $env:OFLH_INSTALLER_REPORT = Join-Path $PWD 'installer-e2e-report'
+          $hooks = (Resolve-Path 'crates/oflh-desktop/windows/installer-hooks.nsh').Path
+          & $compiler "/DOUTPUT_EXE=$env:OFLH_DIALOG_SMOKE_EXE" "/DRESULT_OUTPUT=$env:OFLH_DIALOG_SMOKE_RESULT" "/DHOOKS=$hooks" crates/oflh-desktop/tests/windows-installer/fixtures/dialog-smoke.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS fixture compilation failed' }
+          dotnet restore crates/oflh-desktop/tests/windows-installer/Installer.Tests.csproj --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Test dependency restore failed' }
+          dotnet test crates/oflh-desktop/tests/windows-installer/Installer.Tests.csproj --no-restore --filter 'TestCategory=DialogSmoke' --logger 'trx;LogFileName=dialog-smoke.trx' --results-directory installer-e2e-report
+          if ($LASTEXITCODE -ne 0) { throw 'FlaUI dialog test failed' }
       - uses: actions/upload-artifact@v7
         if: always()
         with:

@@ -154,7 +154,7 @@ fn context_menu_checkbox_fits_the_welcome_page_and_starts_checked() {
     assert!(top + height <= 193 - 10, "too close to the page bottom");
     // Positioned in dialog units, which scale with DPI, never in pixels.
     assert!(HOOKS.contains(
-        "${NSD_CreateCheckbox} 120u ${OFLH_CHECKBOX_TOP}u 195u ${OFLH_CHECKBOX_HEIGHT}u"
+        "${NSD_CreateCheckbox} 120u ${OFLH_CHECKBOX_TOP}u 183u ${OFLH_CHECKBOX_HEIGHT}u"
     ));
     assert!(HOOKS.contains("user32::MapDialogRect"));
     // Checked unless the user unchecked it earlier in this run.
@@ -409,4 +409,26 @@ fn running_app_dialog_is_owned_centered_and_cancelled_by_default() {
     assert!(HOOKS.contains("IfSilent kill_${UniqueID} 0"));
     assert!(HOOKS.contains("$PassiveMode != 1"));
     assert!(HOOKS.contains("RestartManager_EndSession $R0"));
+}
+
+#[test]
+fn presentation_template_tracks_the_pinned_tauri_cli_and_native_branding() {
+    let nsis = nsis_config();
+    assert_eq!(nsis["template"], "windows/installer.nsi");
+    let template = include_str!("../windows/installer.nsi");
+    let lock: serde_json::Value =
+        serde_json::from_str(include_str!("../ui/package-lock.json")).unwrap();
+    let cli = lock["packages"]["node_modules/@tauri-apps/cli"]["version"]
+        .as_str()
+        .unwrap();
+    assert!(
+        template.contains(&format!("Based on Tauri CLI {cli},")),
+        "review the upstream template after a Tauri CLI upgrade"
+    );
+    assert!(template.contains("Font \"Segoe UI\" 10"));
+    assert!(template.contains("MUI_PAGE_CUSTOMFUNCTION_SHOW OflhDirectoryShow"));
+    assert!(HOOKS.contains("CreateFont $OflhBrandTitleFont \"Segoe UI\" 24 700"));
+    assert!(
+        include_str!("../windows/TAURI_TEMPLATE_LICENSE").contains("Permission is hereby granted")
+    );
 }

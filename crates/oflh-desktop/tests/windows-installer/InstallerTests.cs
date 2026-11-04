@@ -55,6 +55,26 @@ public sealed class InstallerTests
         Capture.Element(window).ToFile(Path.Combine(Reports, name + ".png"));
     }
 
+    private void InspectPage(Window main, string name)
+    {
+        Assert.That(main.FindAllDescendants(cf => cf.ByName("OFLH")).Any(element => !element.IsOffscreen),
+            Is.True, "Branding should be native, accessible text at the current display DPI.");
+        foreach (var paragraph in main.FindAllDescendants(cf => cf.ByControlType(ControlType.Text)))
+        {
+            if (paragraph.IsOffscreen || !(paragraph.Name.StartsWith("This wizard installs") ||
+                paragraph.Name.StartsWith("Setup installs") || paragraph.Name.Contains("is already installed"))) continue;
+            var bounds = paragraph.BoundingRectangle;
+            Assert.That(main.BoundingRectangle.Right - bounds.Right, Is.GreaterThanOrEqualTo(16),
+                "Installer descriptions need a padded right margin.");
+            using var font = new Font("Segoe UI", 10);
+            var measured = System.Windows.Forms.TextRenderer.MeasureText(paragraph.Name, font, bounds.Size,
+                System.Windows.Forms.TextFormatFlags.WordBreak | System.Windows.Forms.TextFormatFlags.NoPadding |
+                System.Windows.Forms.TextFormatFlags.NoPrefix);
+            Assert.That(measured.Height, Is.LessThanOrEqualTo(bounds.Height + 2), "Description text is clipped.");
+        }
+        Screenshot(main, name);
+    }
+
     private static void Kill(Process process)
     {
         if (!process.HasExited) { process.Kill(entireProcessTree: true); process.WaitForExit(10000); }
@@ -100,7 +120,7 @@ public sealed class InstallerTests
             first = placement;
             Screenshot(prompt, $"dialog-{position.X}");
             prompt.Focus();
-            Keyboard.Press(VirtualKeyShort.RETURN);
+            Keyboard.Type(VirtualKeyShort.RETURN);
             Assert.That(process.WaitForExit(10000), Is.True, "Enter did not dismiss the default Cancel action.");
             Assert.That(process.ExitCode, Is.Zero);
             Assert.That(File.ReadAllText(Required("OFLH_DIALOG_SMOKE_RESULT")), Is.EqualTo("2"));
@@ -118,7 +138,7 @@ public sealed class InstallerTests
             if (process.HasExited) throw new InvalidOperationException($"Installer exited early ({process.ExitCode}).");
             var modal = main.ModalWindows.FirstOrDefault();
             if (modal is not null) return modal;
-            if (page < 8) Screenshot(main, $"{prefix}-wizard-{page++}");
+            if (page < 8) InspectPage(main, $"{prefix}-wizard-{page++}");
             var next = Primary(main);
             if (next.IsEnabled) next.Click();
             return null;
@@ -146,7 +166,7 @@ public sealed class InstallerTests
 
             var cancel = RunningPrompt(installer, installDirectory, automation, new Point(70, 60), "cancel");
             cancel.Prompt.Focus();
-            Keyboard.Press(VirtualKeyShort.RETURN);
+            Keyboard.Type(VirtualKeyShort.RETURN);
             Retry.WhileTrue(() => cancel.Main.ModalWindows.Any(), timeout: TimeSpan.FromSeconds(10), throwOnTimeout: true);
             Assert.That(app.HasExited, Is.False, "Default Cancel must leave the installed application running.");
             Kill(cancel.Process);
@@ -164,7 +184,7 @@ public sealed class InstallerTests
                 if (button.IsEnabled) button.Click();
                 return null;
             }, "Reinstallation did not reach the finish page.", 120);
-            Screenshot(accept.Main, "reinstalled");
+            InspectPage(accept.Main, "reinstalled");
             Assert.That(File.Exists(executable), Is.True);
             Kill(accept.Process);
 

@@ -46,6 +46,7 @@
     "createUpdaterArtifacts": true,
     "windows": {
       "nsis": {
+        "template": "windows/installer.nsi",
         "installerHooks": "windows/installer-hooks.nsh",
         "installerIcon": "icons/icon.ico",
         "headerImage": "windows/branding/header.bmp",

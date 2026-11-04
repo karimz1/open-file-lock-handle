@@ -9,7 +9,7 @@ InstallDir "$TEMP\oflh-dialog-smoke"
 !include MUI2.nsh
 !macro CheckIfAppIsRunning executablePath productName
 !macroend
-!include "${HOOKS}"
+!include /CHARSET=UTF8 "${HOOKS}"
 Page directory
 Page instfiles
 Section

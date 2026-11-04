@@ -26,7 +26,7 @@ $env:OFLH_INSTALLER_REPORT = Join-Path $PWD 'installer-e2e-report'
 dotnet test crates/oflh-desktop/tests/windows-installer/Installer.Tests.csproj --no-restore --filter 'TestCategory=Installer' --logger trx --results-directory installer-e2e-report
 ```
 
-The CI smoke-test script builds the small NSIS fixture and runs `DialogSmoke`.
+The CI smoke-test step compiles the small NSIS fixture and runs `DialogSmoke`.
 It requires a standard NSIS installation and the .NET 8 SDK.
 
 
@@ -38,3 +38,17 @@ It requires a standard NSIS installation and the .NET 8 SDK.
 - [NSIS Modern UI 2](https://nsis.sourceforge.io/Docs/Modern%20UI%202/Readme.html)
 - [Desktop development guide](../../../../docs/development.md#windows-installer-ui-automation)
 - [Repository documentation index](../../../../llms.txt)
+
+## Installer presentation
+
+`../../windows/installer.nsi` is the Tauri CLI 2.12.0 NSIS template with small
+presentation changes: Segoe UI, padded information panels, and page callbacks.
+Its original MIT license is retained in `../../windows/TAURI_TEMPLATE_LICENSE`.
+Compare the upstream template when upgrading the pinned Tauri CLI; the Rust
+installer tests enforce that version relationship.
+
+Branding words use native font controls so Windows renders them at display DPI.
+Only the logo artwork is rasterized into the required high-resolution BMPs.
+FlaUI checks accessible branding text, description margins/text fit, and saves
+wizard-page screenshots for visual review. Generated screenshots and test/build
+output are ignored by Git.
