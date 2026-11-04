@@ -37,12 +37,21 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
       - name: Compile and exercise the actual installer dialog macro
         shell: pwsh
         run: |
           $compiler = "${env:ProgramFiles(x86)}/NSIS/makensis.exe"
           if (!(Test-Path $compiler)) { choco install nsis --yes --no-progress }
           ./.github/scripts/installer/dialog-smoke.ps1 -Compiler $compiler
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: installer-dialog-flaui
+          path: installer-e2e-report/
+          retention-days: 1
   administrator-recovery:
     name: Administrator recovery / ${{ matrix.label }}
     runs-on: ${{ matrix.runner }}
@@ -288,13 +297,22 @@ jobs:
           $env:OFLH_ICON_SMOKE_EXECUTABLE = $chrome
           cargo test -p oflh-icons --test native --locked native_application_icon_is_renderable -- --ignored
           if ($LASTEXITCODE -ne 0) { throw 'Chrome native icon validation failed' }
+      - uses: actions/setup-dotnet@v5
+        if: matrix.os == 'windows'
+        with:
+          dotnet-version: '8.0.x'
       - name: Windows installer end-to-end workflow
         if: matrix.os == 'windows'
         shell: pwsh
         run: |
           $installer = Get-ChildItem target/release/bundle/nsis/*-setup.exe
           if (@($installer).Count -ne 1) { throw 'Expected exactly one Windows installer' }
-          ./.github/scripts/installer/windows-e2e.ps1 -Installer $installer.FullName -ReportDirectory installer-e2e-report
+          $env:OFLH_INSTALLER_EXE = $installer.FullName
+          $env:OFLH_INSTALLER_REPORT = Join-Path $PWD 'installer-e2e-report'
+          dotnet restore crates/oflh-desktop/tests/windows-installer/Installer.Tests.csproj --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Test dependency restore failed' }
+          dotnet test crates/oflh-desktop/tests/windows-installer/Installer.Tests.csproj --no-restore --filter 'TestCategory=Installer' --logger 'trx;LogFileName=installer.trx' --results-directory installer-e2e-report
+          if ($LASTEXITCODE -ne 0) { throw 'FlaUI installer E2E failed' }
       - name: Upload Windows installer end-to-end evidence
         if: ${{ always() && matrix.os == 'windows' }}
         uses: actions/upload-artifact@v7
