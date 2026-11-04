@@ -108,6 +108,11 @@ windows do not receive Explorer launches.
   `oflh-desktop.exe --inspect "<path>"`. A relative path is resolved against
   the directory you run it from.
 
+Drag the sidebar's right edge to resize it. You can also focus the divider
+with Tab and use Left/Right to change its width. Double-click the divider or
+press Home while it is focused to restore the default width. A chosen width
+is remembered separately from the collapsed state.
+
 ## Follow the parent process tree
 
 A helper such as `node`, `dotnet`, or `python` rarely tells you which app to
@@ -168,6 +173,9 @@ filter hides; the action bar and confirmation say so.
 `Ctrl+C` copies the selected rows. The context menu and details panel copy a
 path, file name, process name, or PID, and **Reveal** opens the file manager at
 the native path.
+
+The toolbar button changes to **Deselect all** when all matching processes
+are selected. Clicking it clears those matches and keeps any hidden selections.
 
 ## Process actions
 

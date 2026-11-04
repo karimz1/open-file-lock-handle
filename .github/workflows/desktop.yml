@@ -103,7 +103,17 @@ jobs:
           npm run tauri -- signer sign -f "$RUNNER_TEMP/updater-preflight.key" "$RUNNER_TEMP/updater-preflight"
           cargo xtask verify-updater-signature --config ../tauri.conf.json --payload "$RUNNER_TEMP/updater-preflight" --signature "$RUNNER_TEMP/updater-preflight.sig"
         working-directory: crates/oflh-desktop/ui
-      - run: npm run format:check && npm run build && npm test && npx playwright install --with-deps chrome && npm run test:ui
+      - run: npm run format:check && npm run build && npm test && npx playwright install --with-deps chrome
+        working-directory: crates/oflh-desktop/ui
+      - name: Load the installed Chrome executable's real native icon
+        env:
+          OFLH_ICON_SMOKE_EXECUTABLE: /opt/google/chrome/chrome
+          OFLH_ICON_DATA_URL_FILE: ${{ runner.temp }}/oflh-native-icon.txt
+        run: cargo test -p oflh-icons --test native --locked native_application_icon_is_renderable -- --ignored
+      - name: Browser end-to-end tests with a native application icon
+        env:
+          OFLH_NATIVE_ICON_PATH: ${{ runner.temp }}/oflh-native-icon.txt
+        run: npm run test:ui
         working-directory: crates/oflh-desktop/ui
       - uses: actions/upload-artifact@v7
         if: ${{ always() && inputs.upload_artifacts }}
@@ -156,6 +166,8 @@ jobs:
           cargo fmt --all --check
           cargo clippy -p oflh-desktop --all-targets --features desktop --locked -- -D warnings
           cargo test -p oflh-desktop --features updater-tests --locked
+          cargo test -p oflh-icons --locked
+          cargo test -p oflh-platform --test native --locked native_graceful
       - name: Set traceable build identity and matching installer version
         run: |
           OFLH_VERSION=$(cargo xtask ci-version --version "$RELEASE_TAG" --commit "$BUILD_COMMIT" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" --repository "$GITHUB_REPOSITORY" --server-url "$GITHUB_SERVER_URL" --pr-number "$PR_NUMBER" --github-env "$GITHUB_ENV")
@@ -227,6 +239,43 @@ jobs:
       - name: Bundle the built executable without rebuilding
         run: npm run tauri -- bundle --config "$RUNNER_TEMP/desktop-version.json" --no-binary-patching --bundles '${{ matrix.bundles }}'
         working-directory: crates/oflh-desktop/ui
+      - name: Validate the built application's native icon
+        env:
+          ICON_SMOKE_OS: ${{ matrix.os }}
+        run: |
+          python - <<'PYCODE'
+          import os, pathlib, shutil
+          root = pathlib.Path.cwd()
+          platform = os.environ["ICON_SMOKE_OS"]
+          executable = root / "target/release" / ("oflh-desktop.exe" if platform == "windows" else "oflh-desktop")
+          if platform == "darwin":
+              executable = root / "target/release/bundle/macos/OFLH Desktop.app/Contents/MacOS/oflh-desktop"
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write(f"OFLH_ICON_SMOKE_EXECUTABLE={executable}\n")
+              if platform == "linux":
+                  data = pathlib.Path(os.environ["RUNNER_TEMP"]) / "oflh-icon-data"
+                  (data / "applications").mkdir(parents=True, exist_ok=True)
+                  (data / "icons/hicolor/128x128/apps").mkdir(parents=True, exist_ok=True)
+                  (data / "applications/oflh.desktop").write_text(f'[Desktop Entry]\nType=Application\nExec="{executable}"\nIcon=oflh\n')
+                  shutil.copy(root / "crates/oflh-desktop/icons/128x128.png", data / "icons/hicolor/128x128/apps/oflh.png")
+                  output.write(f"XDG_DATA_HOME={data}\n")
+          PYCODE
+      - name: Exercise native icon lookup against the built application
+        run: cargo test -p oflh-icons --test native --locked native_application_icon_is_renderable -- --ignored
+      - name: Windows installer end-to-end workflow
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem target/release/bundle/nsis/*-setup.exe
+          if (@($installer).Count -ne 1) { throw 'Expected exactly one Windows installer' }
+          ./.github/scripts/installer/windows-e2e.ps1 -Installer $installer.FullName -ReportDirectory installer-e2e-report
+      - name: Upload Windows installer end-to-end evidence
+        if: ${{ always() && matrix.os == 'windows' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-e2e-${{ matrix.arch }}
+          path: installer-e2e-report/
+          retention-days: 1
       - name: Check the generated NSIS script
         if: matrix.os == 'windows'
         run: |

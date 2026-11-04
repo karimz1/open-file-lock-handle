@@ -4,12 +4,12 @@
     python3 crates/oflh-desktop/windows/branding/generate.py [--font PATH]
 
 Needs Pillow and a bold sans font (DejaVu Sans Bold by default). Writes
-sidebar.bmp (164x314, welcome and finish pages) and header.bmp (150x57, other
+sidebar.bmp (492x942, welcome and finish pages) and header.bmp (450x171, other
 pages) next to this script as 24-bit BMPs, the format NSIS expects.
 
-The bitmaps are drawn at the 100% sizes MUI2 reserves. NSIS stretches them at
-higher DPI; flat colour fields and thick strokes keep that stretch soft rather
-than blurry. Larger source bitmaps would be squeezed at 100% instead.
+The bitmaps are rendered at 300% resolution, including text and glyphs.
+MUI2 FitControl scales them down to its DPI-scaled control, retaining detail
+at 100%, 150%, 200% and 300% rather than enlarging a 96-DPI raster.
 """
 import argparse
 from pathlib import Path
@@ -21,6 +21,7 @@ PRIMARY = (0x42, 0x64, 0xDB)  # --primary in ui/src/style.css and app-icon.svg
 PRIMARY_DARK = (0x2B, 0x45, 0xA8)
 WHITE = (255, 255, 255)
 SS = 4  # supersampling factor
+DPI = 3  # source pixels per logical 96-DPI pixel
 
 
 def draw_glyph(draw, ox, oy, scale, colour, width=25):
@@ -66,27 +67,27 @@ def sidebar(font_path):
     wm = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw_glyph(ImageDraw.Draw(wm), -40 * SS, 150 * SS, 260 * SS / 512, (255, 255, 255, 28))
     img.paste(wm, (0, 0), wm)
-    small = img.resize((164, 314), Image.LANCZOS)
-    icon = tile(64)
-    white_tile = Image.new("RGBA", (72, 72), (0, 0, 0, 0))
-    ImageDraw.Draw(white_tile).rounded_rectangle([0, 0, 71, 71], radius=17, fill=WHITE)
-    small.paste(white_tile, (46, 36), white_tile)
-    small.paste(icon, (50, 40), icon)
+    small = img.resize((164 * DPI, 314 * DPI), Image.LANCZOS)
+    icon = tile(64 * DPI)
+    white_tile = Image.new("RGBA", (72 * DPI, 72 * DPI), (0, 0, 0, 0))
+    ImageDraw.Draw(white_tile).rounded_rectangle([0, 0, 71 * DPI, 71 * DPI], radius=17 * DPI, fill=WHITE)
+    small.paste(white_tile, (46 * DPI, 36 * DPI), white_tile)
+    small.paste(icon, (50 * DPI, 40 * DPI), icon)
     d = ImageDraw.Draw(small)
-    title = ImageFont.truetype(font_path, 30)
-    sub = ImageFont.truetype(font_path, 11)
-    d.text((82, 128), "OFLH", font=title, fill=WHITE, anchor="mt")
-    d.text((82, 166), "Open File Lock Handle", font=sub, fill=(220, 228, 250), anchor="mt")
-    d.line([(62, 186), (102, 186)], fill=(160, 178, 238), width=1)
+    title = ImageFont.truetype(font_path, 30 * DPI)
+    sub = ImageFont.truetype(font_path, 11 * DPI)
+    d.text((82 * DPI, 128 * DPI), "OFLH", font=title, fill=WHITE, anchor="mt")
+    d.text((82 * DPI, 166 * DPI), "Open File Lock Handle", font=sub, fill=(220, 228, 250), anchor="mt")
+    d.line([(62 * DPI, 186 * DPI), (102 * DPI, 186 * DPI)], fill=(160, 178, 238), width=DPI)
     return small
 
 
 def header(font_path):
-    img = Image.new("RGB", (150, 57), WHITE)  # MUI header background is white
-    icon = tile(40)
-    img.paste(icon, (104, 8), icon)
+    img = Image.new("RGB", (150 * DPI, 57 * DPI), WHITE)  # MUI header background is white
+    icon = tile(40 * DPI)
+    img.paste(icon, (104 * DPI, 8 * DPI), icon)
     d = ImageDraw.Draw(img)
-    d.text((98, 19), "OFLH", font=ImageFont.truetype(font_path, 17), fill=PRIMARY, anchor="rt")
+    d.text((98 * DPI, 19 * DPI), "OFLH", font=ImageFont.truetype(font_path, 17 * DPI), fill=PRIMARY, anchor="rt")
     return img
 
 

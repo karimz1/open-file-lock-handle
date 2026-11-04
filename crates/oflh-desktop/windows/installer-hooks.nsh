@@ -197,3 +197,101 @@ FunctionEnd
     !insertmacro OFLH_REFRESH_SHELL
   ${EndIf}
 !macroend
+
+; Override the running-app prompt from tauri-cli 2.12.0 utils.nsh. Keep its
+; Restart Manager, silent/passive and cancellation behavior. The task dialog
+; has an explicit owner and centers on the installer, including other monitors.
+; TASKDIALOGCONFIG is packed to one byte (commctrl.h), in both NSIS hosts.
+!macro OFLH_RUNNING_DIALOG PRODUCT
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  System::Call '*(&w${NSIS_MAX_STRLEN} "${PRODUCT}") p.r1'
+  System::Call '*(&w${NSIS_MAX_STRLEN} "$R1") p.r2'
+  System::Call '*(&w${NSIS_MAX_STRLEN} "$R2") p.r3'
+  !if ${NSIS_PTR_SIZE} = 8
+    !define OFLH_TASKDIALOG_SIZE 160
+  !else
+    !define OFLH_TASKDIALOG_SIZE 96
+  !endif
+  ; TDF_POSITION_RELATIVE_TO_WINDOW | TDF_ALLOW_DIALOG_CANCELLATION = 0x1008;
+  ; OK | Cancel = 9; default button IDCANCEL = 2. Warning system icon = -1.
+  System::Call '*(i ${OFLH_TASKDIALOG_SIZE}, p $HWNDPARENT, p 0, i 0x1008, i 9, p r1, p -1, p r2, p r3, i 0, p 0, i 2, i 0, p 0, i 0, p 0, p 0, p 0, p 0, p 0, p 0, p 0, p 0, i 0) p.r4'
+  !undef OFLH_TASKDIALOG_SIZE
+  StrCpy $R4 2
+  System::Call 'comctl32::TaskDialogIndirect(p r4, *i .R4, p 0, p 0) i.r0'
+  System::Free $4
+  System::Free $3
+  System::Free $2
+  System::Free $1
+  ${If} $0 < 0
+    ; An unavailable task dialog must never silently authorize shutdown.
+    StrCpy $R4 2
+  ${EndIf}
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+!macroend
+
+!macroundef CheckIfAppIsRunning
+!macro CheckIfAppIsRunning executablePath productName
+  !define UniqueID ${__LINE__}
+
+  ; Replace {{product_name}} placeholder in the messages with the passed product name
+  nsis_tauri_utils::StrReplace "$(appRunning)" "{{product_name}}" "${productName}"
+  Pop $R1
+  nsis_tauri_utils::StrReplace "$(appRunningOkKill)" "{{product_name}}" "${productName}"
+  Pop $R2
+  nsis_tauri_utils::StrReplace "$(failedToKillApp)" "{{product_name}}" "${productName}"
+  Pop $R3
+
+  !insertmacro RestartManager_StartSession $R0
+  ${If} $R0 != ""
+    !insertmacro RestartManager_RegisterFile $R0 "${executablePath}"
+    ${If} $0 = 0
+      System::Call 'RSTRTMGR::RmGetList(p R0, *i .r1, *i .r2, p 0, *i .r3) i .r0'
+      ; ERROR_SUCCESS means no running processes, ERROR_MORE_DATA means there're some
+      ${If} $0 = ${ERROR_MORE_DATA}
+        IfSilent kill_${UniqueID} 0
+        ${If} $PassiveMode != 1
+          !insertmacro OFLH_RUNNING_DIALOG "${productName}"
+          ${If} $R4 != 1
+            Goto cancel_${UniqueID}
+          ${EndIf}
+        ${EndIf}
+        kill_${UniqueID}:
+          ; Call manually here to get the result
+          ; !insertmacro RestartManager_Shutdown $R0
+          System::Call 'RSTRTMGR::RmShutdown(p R0, i ${RmForceShutdown}, p 0) i .r0'
+          ${If} $0 = 0
+            Goto app_check_done_${UniqueID}
+          ${Else}
+            IfSilent silent_${UniqueID} ui_${UniqueID}
+            silent_${UniqueID}:
+              System::Call 'kernel32::AttachConsole(i -1)i.r0'
+              ${If} $0 != 0
+                System::Call 'kernel32::GetStdHandle(i -11)i.r0'
+                System::call 'kernel32::SetConsoleTextAttribute(i r0, i 0x0004)' ; set red color
+                FileWrite $0 "$R1$\n"
+              ${EndIf}
+              !insertmacro RestartManager_EndSession $R0
+              Abort
+            ui_${UniqueID}:
+              !insertmacro RestartManager_EndSession $R0
+              Abort $R3
+          ${EndIf}
+        cancel_${UniqueID}:
+          !insertmacro RestartManager_EndSession $R0
+          Abort $R1
+        app_check_done_${UniqueID}:
+      ${EndIf}
+    ${EndIf}
+    !insertmacro RestartManager_EndSession $R0
+  ${EndIf}
+
+  !undef UniqueID
+!macroend

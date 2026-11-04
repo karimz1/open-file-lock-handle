@@ -45,6 +45,7 @@ impl From<Error> for Failure {
             Error::Changed => ("identity_changed", None),
             Error::Protected => ("protected", None),
             Error::Cancelled => ("cancelled", None),
+            Error::CloseUnavailable => ("close_unavailable", None),
             Error::Unavailable(_) => ("unavailable", None),
             Error::Io { source, .. } => (
                 match source.kind() {

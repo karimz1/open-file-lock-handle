@@ -407,6 +407,7 @@ const de: TranslationSchema<typeof en> = {
     k_system_default: "Systemstandard",
   },
   navigation: {
+    k_resize_sidebar: "Seitenleiste verbreitern oder verkleinern",
     k_collapse_sidebar: "Seitenleiste einklappen",
     k_expand_sidebar: "Seitenleiste ausklappen",
     k_next_previous_workspace: "Nächster / vorheriger Arbeitsbereich",
@@ -549,6 +550,8 @@ const de: TranslationSchema<typeof en> = {
     k_visible_columns: "Sichtbare Spalten",
   },
   termination: {
+    k_close_unavailable:
+      "Kein Fenster hat die Anfrage zum Schließen angenommen. Du kannst jetzt das sofortige Beenden prüfen.",
     k_impact_critical:
       "Windows braucht diesen Prozess. Wenn du ihn beendest, kann dein PC abstürzen.",
     k_impact_service: "Ein Dienst startet es wahrscheinlich sofort neu.",

@@ -88,6 +88,9 @@ pub enum Error {
     /// A newer operation or shutdown cancelled this operation cooperatively.
     #[error("operation cancelled")]
     Cancelled,
+    /// The process has no window that accepts a graceful close request.
+    #[error("No window accepted a close request. You can review force quit next.")]
+    CloseUnavailable,
     /// A platform capability is unavailable or returned an invalid observation.
     #[error("{0}")]
     Unavailable(String),

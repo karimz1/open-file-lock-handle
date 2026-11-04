@@ -108,7 +108,7 @@ fn bmp_info(path: &str) -> (i32, i32, u16, u32) {
 }
 
 #[test]
-fn installer_uses_the_oflh_icon_and_branded_bitmaps_at_mui_sizes() {
+fn installer_uses_the_oflh_icon_and_branded_bitmaps_at_three_times_mui_sizes() {
     let nsis = nsis_config();
     let icon = nsis["installerIcon"].as_str().unwrap();
     assert!(
@@ -117,7 +117,8 @@ fn installer_uses_the_oflh_icon_and_branded_bitmaps_at_mui_sizes() {
             .is_file()
     );
     // MUI2 reserves 150x57 for the header and 164x314 for the sidebar; NSIS
-    // loads 24-bit uncompressed bitmaps reliably.
+    // scales 300% source art down rather than magnifying a 96-DPI raster.
+    // Keep the aspect ratio and use reliable 24-bit uncompressed BMPs.
     for (key, size) in [
         ("headerImage", (150, 57)),
         ("uninstallerHeaderImage", (150, 57)),
@@ -126,7 +127,7 @@ fn installer_uses_the_oflh_icon_and_branded_bitmaps_at_mui_sizes() {
         let path = nsis[key]
             .as_str()
             .unwrap_or_else(|| panic!("{key} is not set"));
-        assert_eq!(bmp_info(path), (size.0, size.1, 24, 0), "{path}");
+        assert_eq!(bmp_info(path), (size.0 * 3, size.1 * 3, 24, 0), "{path}");
     }
 }
 
@@ -393,4 +394,16 @@ fn installer_language_follows_windows_with_english_as_the_fallback() {
             "{display_language:#06x}"
         );
     }
+}
+
+#[test]
+fn running_app_dialog_is_owned_centered_and_cancelled_by_default() {
+    assert!(HOOKS.contains("!macroundef CheckIfAppIsRunning"));
+    assert!(HOOKS.contains("comctl32::TaskDialogIndirect"));
+    assert!(HOOKS.contains("p $HWNDPARENT, p 0, i 0x1008, i 9"));
+    assert!(HOOKS.contains("p r3, i 0, p 0, i 2"));
+    assert!(HOOKS.contains("StrCpy $R4 2"));
+    assert!(HOOKS.contains("IfSilent kill_${UniqueID} 0"));
+    assert!(HOOKS.contains("$PassiveMode != 1"));
+    assert!(HOOKS.contains("RestartManager_EndSession $R0"));
 }
