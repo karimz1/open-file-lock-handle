@@ -18,8 +18,8 @@ rec/
 /desktop-dist/
 
 # Native installer UI tests (FlaUI / NUnit)
-/crates/oflh-desktop/tests/windows-installer/bin/
-/crates/oflh-desktop/tests/windows-installer/obj/
+/crates/oflh-desktop/tests/installer/**/bin/
+/crates/oflh-desktop/tests/installer/**/obj/
 /installer-e2e-report/
 
 # Generated installer review screenshots are CI artifacts, not source assets.

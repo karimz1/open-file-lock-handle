@@ -151,7 +151,7 @@ behavior.
 
 ### Windows installer UI automation
 
-The desktop crate owns the [Windows installer test guide](../crates/oflh-desktop/tests/windows-installer/README.md).
+The desktop crate owns the [Windows installer test guide](../crates/oflh-desktop/tests/installer/README.md).
 The suite uses FlaUI.UIA3 and NUnit against real NSIS dialogs and built packages;
 it runs on interactive Windows CI runners. It checks owner-relative dialog
 placement, default cancellation, installation, reinstallation and uninstallation.

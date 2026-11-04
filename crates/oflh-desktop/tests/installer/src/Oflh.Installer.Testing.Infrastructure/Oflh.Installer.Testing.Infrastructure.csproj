@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="FlaUI.UIA3" />
+    <ProjectReference Include="..\Oflh.Installer.Testing.Core\Oflh.Installer.Testing.Core.csproj" />
+  </ItemGroup>
+</Project>
