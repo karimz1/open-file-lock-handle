@@ -3,6 +3,8 @@ Unicode true
 Name "OFLH dialog smoke test"
 OutFile "${OUTPUT_EXE}"
 RequestExecutionLevel user
+; TaskDialogIndirect requires the Common Controls v6 activation context.
+XPStyle on
 InstallDir "$TEMP\oflh-dialog-smoke"
 !include MUI2.nsh
 !macro CheckIfAppIsRunning executablePath productName
