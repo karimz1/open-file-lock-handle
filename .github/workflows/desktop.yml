@@ -30,6 +30,19 @@ on:
 permissions:
   contents: read
 jobs:
+  installer-dialog:
+    if: ${{ !inputs.administrator_only }}
+    name: Native NSIS dialog smoke test
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compile and exercise the actual installer dialog macro
+        shell: pwsh
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}/NSIS/makensis.exe"
+          if (!(Test-Path $compiler)) { choco install nsis --yes --no-progress }
+          ./.github/scripts/installer/dialog-smoke.ps1 -Compiler $compiler
   administrator-recovery:
     name: Administrator recovery / ${{ matrix.label }}
     runs-on: ${{ matrix.runner }}
@@ -262,6 +275,19 @@ jobs:
           PYCODE
       - name: Exercise native icon lookup against the built application
         run: cargo test -p oflh-icons --test native --locked native_application_icon_is_renderable -- --ignored
+      - name: Install Chrome for native Windows icon validation
+        if: matrix.os == 'windows' && matrix.arch == 'amd64'
+        run: npx playwright install chrome
+        working-directory: crates/oflh-desktop/ui
+      - name: Validate the actual Chrome executable icon on Windows
+        if: matrix.os == 'windows' && matrix.arch == 'amd64'
+        shell: pwsh
+        run: |
+          $chrome = @("$env:ProgramFiles/Google/Chrome/Application/chrome.exe", "${env:ProgramFiles(x86)}/Google/Chrome/Application/chrome.exe", "$env:LOCALAPPDATA/Google/Chrome/Application/chrome.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (!$chrome) { throw 'Installed Chrome executable is missing' }
+          $env:OFLH_ICON_SMOKE_EXECUTABLE = $chrome
+          cargo test -p oflh-icons --test native --locked native_application_icon_is_renderable -- --ignored
+          if ($LASTEXITCODE -ne 0) { throw 'Chrome native icon validation failed' }
       - name: Windows installer end-to-end workflow
         if: matrix.os == 'windows'
         shell: pwsh

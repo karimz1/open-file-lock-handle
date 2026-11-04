@@ -73,6 +73,7 @@ function Open-RunningPrompt {
     [void][InstallerUI]::SetForegroundWindow($main)
     Save-Window $main 'welcome'
     $deadline = [DateTime]::UtcNow.AddSeconds(45)
+    $pageIndex = 0
     do {
         $prompt = [InstallerUI]::Windows($setup.Id) | Where-Object {
             $_ -ne $main -and [InstallerUI]::Class($_) -eq '#32770'
@@ -94,6 +95,7 @@ function Open-RunningPrompt {
         }
         if ($setup.HasExited) { throw "Installer exited before presenting the running-app dialog ($($setup.ExitCode))" }
         # Welcome -> maintenance (reinstall selected by default) -> directory -> install.
+        if ($pageIndex -lt 6) { Save-Window $main "wizard-page-$pageIndex"; $pageIndex++ }
         Click-Control $main 1
         Start-Sleep -Milliseconds 500
     } while ([DateTime]::UtcNow -lt $deadline)
