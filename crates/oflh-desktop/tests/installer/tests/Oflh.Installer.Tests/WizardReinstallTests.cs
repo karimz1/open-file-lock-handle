@@ -58,6 +58,8 @@ public sealed class WizardReinstallTests : InstallerTestBase
         }
         finally
         {
+            // A failed assertion can leave the app running and locking its folder.
+            ProcessRunner.Stop(app);
             if (File.Exists(probe.UninstallerPath))
                 await Processes.RunAsync(probe.UninstallerPath, $"/S _?={InstallDirectory}", Timeouts.Uninstall);
             InstallationProbe.DeleteDirectory(InstallDirectory);
