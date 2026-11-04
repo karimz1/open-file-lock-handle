@@ -19,9 +19,8 @@ public sealed class InstallerWindowDriver : IDisposable
     // NSIS assigns the Next/Install/Finish button the standard dialog ID 1.
     private const string PrimaryButtonId = "1";
 
-    // Wizard pages are child dialogs of this class; the outer frame also holds
-    // hidden header and branding texts that span the full width.
-    private const string InnerPageClassName = "#32770";
+    // Shorter texts are titles, labels and buttons rather than paragraphs.
+    private const int MinimumParagraphLength = 40;
 
     private readonly UIA3Automation automation = new();
     private readonly List<Window> windows = [];
@@ -67,12 +66,20 @@ public sealed class InstallerWindowDriver : IDisposable
         .Any(element => !element.IsOffscreen);
 
     /// <summary>Visible static-text paragraphs; used to check that text sits in a padded container.</summary>
-    public static IReadOnlyList<Rectangle> ParagraphBounds(Window window) =>
-        (window.FindFirstChild(condition => condition.ByClassName(InnerPageClassName)) ?? window)
+    /// <remarks>
+    /// UIA reports MUI's hidden header texts as on-screen, so visibility is
+    /// taken from the native window style instead.
+    /// </remarks>
+    public static IReadOnlyList<Rectangle> ParagraphBounds(Window window) => window
         .FindAllDescendants(condition => condition.ByControlType(ControlType.Text))
-        .Where(text => !text.IsOffscreen && text.Name.Length > 40)
+        .Where(text => text.Name.Length > MinimumParagraphLength && IsNativelyVisible(text))
         .Select(text => text.BoundingRectangle)
         .ToList();
+
+    private static bool IsNativelyVisible(AutomationElement element) =>
+        element.Properties.NativeWindowHandle.TryGetValue(out var handle) && handle != IntPtr.Zero
+            ? NativeMethods.IsWindowVisible(handle)
+            : !element.IsOffscreen;
 
     /// <summary>Clicks the primary button until <paramref name="stop"/> returns a value.</summary>
     public static T AdvanceUntil<T>(Window window, Func<T?> stop, Action<int> onPage, string failure, TimeSpan timeout)

@@ -113,12 +113,23 @@ Function OflhBrandSidebar
   ${NSD_AddStyle} $OflhBrandLabel 0x201
   SendMessage $OflhBrandLabel ${WM_SETFONT} $OflhBrandSubtitleFont 1
   SetCtlColors $OflhBrandLabel "FFFFFF" "4264DB"
-  ; The sidebar bitmap is the page's first STATIC control. Without
-  ; WS_CLIPSIBLINGS it repaints over the wordmark labels created after it.
+  ; Sibling STATIC controls do not clip each other, so the sidebar bitmap
+  ; repainted over the wordmark. Find every SS_BITMAP control on the page,
+  ; give it WS_CLIPSIBLINGS and move it to the bottom of the z-order.
   FindWindow $0 "#32770" "" $HWNDPARENT
-  FindWindow $1 "STATIC" "" $0
-  ${NSD_AddStyle} $1 ${WS_CLIPSIBLINGS}
-  System::Call "user32::SetWindowPos(p r1, p 1, i 0, i 0, i 0, i 0, i 0x13)"
+  StrCpy $1 0
+  ${Do}
+    FindWindow $1 "STATIC" "" $0 $1
+    ${If} $1 P= 0
+      ${Break}
+    ${EndIf}
+    System::Call 'user32::GetWindowLongW(p r1, i ${GWL_STYLE}) i.r2'
+    IntOp $2 $2 & 0x1F
+    ${If} $2 = 0x0E
+      ${NSD_AddStyle} $1 ${WS_CLIPSIBLINGS}
+      System::Call "user32::SetWindowPos(p r1, p 1, i 0, i 0, i 0, i 0, i 0x13)"
+    ${EndIf}
+  ${Loop}
 FunctionEnd
 
 !macro OFLH_HEADER_WORDMARK
