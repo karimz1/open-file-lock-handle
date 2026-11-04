@@ -1,4 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Required by the LibraryImport source generator for IsWindowVisible. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="FlaUI.UIA3" />
     <ProjectReference Include="..\Oflh.Installer.Testing.Core\Oflh.Installer.Testing.Core.csproj" />
