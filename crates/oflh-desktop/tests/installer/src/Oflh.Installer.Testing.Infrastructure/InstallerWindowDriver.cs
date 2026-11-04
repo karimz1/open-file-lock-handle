@@ -39,6 +39,9 @@ public sealed class InstallerWindowDriver : IDisposable
         var window = WaitFor(() => application.GetAllTopLevelWindows(automation).FirstOrDefault(),
             $"No main window appeared for {process.ProcessName}.", Timeouts.Window);
         windows.Add(window);
+        // Brings it above shell flyouts such as an open Start menu, which would
+        // otherwise cover the screenshots.
+        window.SetForeground();
         return window;
     }
 
