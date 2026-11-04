@@ -68,7 +68,7 @@ Var OflhContextMenuCheckbox
 ; Modern UI 2 retains native controls, focus, keyboard access and DPI scaling.
 !define MUI_BGCOLOR "F8FAFD"
 !define MUI_TEXTCOLOR "1F2937"
-Var OflhTextCard
+Var OflhPanelStrip
 Var OflhBrandLabel
 Var OflhBrandTitleFont
 Var OflhBrandSubtitleFont
@@ -96,6 +96,60 @@ Var OflhHeaderFont
 !define OFLH_WELCOME_TEXT_HEIGHT 54
 !define OFLH_CHECKBOX_TOP 123
 !define OFLH_CHECKBOX_HEIGHT 30
+
+Var OflhFrameTop
+Var OflhFrameWidth
+Var OflhFrameHeight
+!macro OFLH_FRAME_STRIP X Y W H
+  System::Call 'user32::CreateWindowExW(i 0, w "STATIC", w "", i 0x50000000, i ${X}, i ${Y}, i ${W}, i ${H}, p r0, p 0, p 0, p 0) p.s'
+  Pop $OflhPanelStrip
+  SetCtlColors $OflhPanelStrip "1F2937" "FFFFFF"
+!macroend
+
+; Draws a white panel around the control on top of the stack by adding four
+; padding strips beside it. Nothing overlaps: sibling STATIC controls do not
+; clip each other, so a card placed behind the text could paint over it.
+; Padding is 8u x 6u, in dialog units so it scales with font and DPI.
+Function OflhFramePanel
+  Exch $R0
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  Push $5
+  Push $6
+  Push $7
+  System::Call 'user32::GetParent(p R0) p.r0'
+  System::Call '*(i 0, i 0, i 0, i 0) p.r1'
+  System::Call 'user32::GetWindowRect(p R0, p r1)'
+  System::Call 'user32::MapWindowPoints(p 0, p r0, p r1, i 2)'
+  System::Call '*$1(i.r2, i.r3, i.r4, i.r5)'
+  System::Call '*$1(i 8, i 6, i 0, i 0)'
+  System::Call 'user32::MapDialogRect(p r0, p r1)'
+  System::Call '*$1(i.r6, i.r7)'
+  System::Free $1
+  ; $2..$5: left, top, right, bottom of the text; $6/$7: horizontal/vertical padding.
+  IntOp $1 $2 - $6
+  IntOp $OflhFrameWidth $4 - $2
+  IntOp $OflhFrameWidth $OflhFrameWidth + $6
+  IntOp $OflhFrameWidth $OflhFrameWidth + $6
+  IntOp $OflhFrameTop $3 - $7
+  !insertmacro OFLH_FRAME_STRIP $1 $OflhFrameTop $OflhFrameWidth $7
+  !insertmacro OFLH_FRAME_STRIP $1 $5 $OflhFrameWidth $7
+  IntOp $OflhFrameHeight $5 - $3
+  !insertmacro OFLH_FRAME_STRIP $1 $3 $6 $OflhFrameHeight
+  !insertmacro OFLH_FRAME_STRIP $4 $3 $6 $OflhFrameHeight
+  Pop $7
+  Pop $6
+  Pop $5
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+  Pop $R0
+FunctionEnd
 
 ; Render wordmarks as native text: sharp at the actual DPI, exposed to UIA.
 Function OflhBrandSidebar
@@ -195,17 +249,11 @@ Function OflhWelcomeShow
       ShowWindow $6 ${SW_HIDE}
     ${EndIf}
   ${Loop}
-  ${NSD_CreateLabel} 120u 45u 183u 68u ""
-  Pop $OflhTextCard
-  ; WS_CLIPSIBLINGS keeps the card from painting over the text above it.
-  ${NSD_AddStyle} $OflhTextCard ${WS_CLIPSIBLINGS}
-  SetCtlColors $OflhTextCard "1F2937" "FFFFFF"
   ${NSD_CreateLabel} 128u 53u 167u ${OFLH_WELCOME_TEXT_HEIGHT}u "$(oflhWelcomeText)"
   Pop $6
   SetCtlColors $6 "1F2937" "FFFFFF"
-  ; HWND_TOP for the text, HWND_BOTTOM for the card; SWP_NOSIZE|NOMOVE|NOACTIVATE.
-  System::Call "user32::SetWindowPos(p r6, p 0, i 0, i 0, i 0, i 0, i 0x13)"
-  System::Call "user32::SetWindowPos(p $OflhTextCard, p 1, i 0, i 0, i 0, i 0, i 0x13)"
+  Push $6
+  Call OflhFramePanel
 
   Call OflhBrandSidebar
   ; nsDialogs checkboxes wrap (BS_MULTILINE); German takes two lines.
@@ -247,18 +295,15 @@ Function OflhDirectoryShow
   System::Call '*$R9(i.r7, i.r8, i.r9, i.r1)'
   System::Free $R9
   StrCpy $R8 $1
-  ; Grow the panel, preserving the original text height and native path controls.
-  IntOp $5 $5 + $R8
-  System::Call 'user32::CreateWindowExW(i 0, w "STATIC", w "", i 0x50000000, i r2, i r3, i r4, i r5, p r0, p 0, p 0, p 0) p.s'
-  Pop $OflhTextCard
-  SetCtlColors $OflhTextCard "1F2937" "FFFFFF"
-  System::Call 'user32::SetWindowPos(p $OflhTextCard, p 1, i 0, i 0, i 0, i 0, i 0x13)'
-  IntOp $5 $5 - $R8
+  ; Inset the description by the frame's padding and push the path controls
+  ; down by the same amount, so the white panel keeps its original footprint.
   IntOp $2 $2 + $7
   IntOp $3 $3 + $8
   IntOp $4 $4 - $9
   SetCtlColors $R7 "1F2937" "FFFFFF"
   System::Call 'user32::SetWindowPos(p R7, p 0, i r2, i r3, i r4, i r5, i 0x14)'
+  Push $R7
+  Call OflhFramePanel
   !insertmacro OFLH_OFFSET_DIRECTORY_CONTROL 1020
   !insertmacro OFLH_OFFSET_DIRECTORY_CONTROL 1019
   !insertmacro OFLH_OFFSET_DIRECTORY_CONTROL 1001

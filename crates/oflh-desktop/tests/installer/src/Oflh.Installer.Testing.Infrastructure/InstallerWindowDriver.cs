@@ -22,6 +22,8 @@ public sealed class InstallerWindowDriver : IDisposable
     // Shorter texts are titles, labels and buttons rather than paragraphs.
     private const int MinimumParagraphLength = 40;
 
+    private const string PageDialogClass = "#32770";
+
     private readonly UIA3Automation automation = new();
     private readonly List<Window> windows = [];
 
@@ -70,11 +72,17 @@ public sealed class InstallerWindowDriver : IDisposable
     /// UIA reports MUI's hidden header texts as on-screen, so visibility is
     /// taken from the native window style instead.
     /// </remarks>
-    public static IReadOnlyList<Rectangle> ParagraphBounds(Window window) => window
+    public static IReadOnlyList<Rectangle> ParagraphBounds(Window window) => CurrentPage(window)
         .FindAllDescendants(condition => condition.ByControlType(ControlType.Text))
         .Where(text => text.Name.Length > MinimumParagraphLength && IsNativelyVisible(text))
         .Select(text => text.BoundingRectangle)
         .ToList();
+
+    // NSIS hosts each wizard page in a child dialog; the outer window keeps the
+    // header texts of other pages, merely covered by full-height pages.
+    private static AutomationElement CurrentPage(Window window) =>
+        window.FindAllChildren(condition => condition.ByClassName(PageDialogClass))
+            .FirstOrDefault(IsNativelyVisible) ?? window;
 
     private static bool IsNativelyVisible(AutomationElement element) =>
         element.Properties.NativeWindowHandle.TryGetValue(out var handle) && handle != IntPtr.Zero
@@ -96,8 +104,11 @@ public sealed class InstallerWindowDriver : IDisposable
         }, failure, timeout);
     }
 
-    public static bool IsFinishButton(Button button) =>
-        InstallerProduct.FinishButtonNames.Contains(button.Name.Replace("&", "", StringComparison.Ordinal));
+    public static bool IsFinishButton(Button button) => InstallerProduct.FinishButtonNames.Contains(Label(button));
+
+    public static bool IsInstallButton(Button button) => InstallerProduct.InstallButtonNames.Contains(Label(button));
+
+    private static string Label(Button button) => button.Name.Replace("&", "", StringComparison.Ordinal);
 
     public static void SaveScreenshot(AutomationElement element, string directory, string name)
     {

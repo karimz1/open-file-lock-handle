@@ -276,13 +276,12 @@ Function PageReinstall
     Pop $R4
     ${IfThen} $(^RTL) = 1 ${|} nsDialogs::SetRTL $(^RTL) ${|}
 
-    ; Padded information card; keep radio choices separate and easy to scan.
-    ${NSD_CreateLabel} 0 0 100% 64u ""
-    Pop $OflhTextCard
-    SetCtlColors $OflhTextCard "1F2937" "FFFFFF"
-    ${NSD_CreateLabel} 10u 8u -20u 48u $R1
+    ; Padded information panel; keep radio choices separate and easy to scan.
+    ${NSD_CreateLabel} 8u 6u -16u 52u $R1
     Pop $R1
     SetCtlColors $R1 "1F2937" "FFFFFF"
+    Push $R1
+    Call OflhFramePanel
 
     ${NSD_CreateRadioButton} 12u 78u -24u 18u $R2
     Pop $R2

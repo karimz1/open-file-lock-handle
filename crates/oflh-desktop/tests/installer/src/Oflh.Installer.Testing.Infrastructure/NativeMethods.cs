@@ -8,4 +8,11 @@ internal static partial class NativeMethods
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool IsWindowVisible(IntPtr window);
+
+    // Makes UI Automation coordinates and screenshots physical pixels at any display scale.
+    internal static readonly IntPtr PerMonitorAwareV2 = new(-4);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetProcessDpiAwarenessContext(IntPtr context);
 }
