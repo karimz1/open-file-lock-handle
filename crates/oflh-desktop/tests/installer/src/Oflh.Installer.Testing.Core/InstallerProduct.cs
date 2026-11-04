@@ -19,7 +19,4 @@ public static class InstallerProduct
     public static IReadOnlySet<string> FinishButtonNames { get; } =
         new HashSet<string>(StringComparer.Ordinal) { "Finish", "Fertig stellen", "完成" };
 
-    /// <summary>Accessible names of the button that starts copying files, in the shipped languages.</summary>
-    public static IReadOnlySet<string> InstallButtonNames { get; } =
-        new HashSet<string>(StringComparer.Ordinal) { "Install", "Installieren", "安装(I)" };
 }

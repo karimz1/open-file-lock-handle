@@ -27,9 +27,9 @@ public sealed class WizardScreenshotTests : InstallerTestBase
         var window = Driver.MainWindowOf(installer);
         var pages = new List<string>();
 
-        // Act: stop on the page whose primary button would start installing
-        InstallerWindowDriver.AdvanceUntil<Button>(window,
-            () => InstallerWindowDriver.PrimaryButton(window) is var button && InstallerWindowDriver.IsInstallButton(button) ? button : null,
+        // Act: stop on the directory page, the last one before files are copied
+        InstallerWindowDriver.AdvanceUntil(window,
+            () => InstallerWindowDriver.DirectoryField(window),
             page => pages.Add(Capture(window, $"wizard-page-{page}-{percent}")),
             "The wizard did not reach the install step.", Timeouts.Window);
         var lastPage = Capture(window, $"wizard-page-{pages.Count}-{percent}");

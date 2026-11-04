@@ -24,6 +24,9 @@ public sealed class InstallerWindowDriver : IDisposable
 
     private const string PageDialogClass = "#32770";
 
+    // MUI2's directory page path edit control.
+    private const string DirectoryFieldId = "1019";
+
     private readonly UIA3Automation automation = new();
     private readonly List<Window> windows = [];
 
@@ -72,10 +75,10 @@ public sealed class InstallerWindowDriver : IDisposable
     /// UIA reports MUI's hidden header texts as on-screen, so visibility is
     /// taken from the native window style instead.
     /// </remarks>
-    public static IReadOnlyList<Rectangle> ParagraphBounds(Window window) => CurrentPage(window)
+    public static IReadOnlyList<(string Text, Rectangle Bounds)> Paragraphs(Window window) => CurrentPage(window)
         .FindAllDescendants(condition => condition.ByControlType(ControlType.Text))
         .Where(text => text.Name.Length > MinimumParagraphLength && IsNativelyVisible(text))
-        .Select(text => text.BoundingRectangle)
+        .Select(text => (text.Name, text.BoundingRectangle))
         .ToList();
 
     // NSIS hosts each wizard page in a child dialog; the outer window keeps the
@@ -104,11 +107,12 @@ public sealed class InstallerWindowDriver : IDisposable
         }, failure, timeout);
     }
 
-    public static bool IsFinishButton(Button button) => InstallerProduct.FinishButtonNames.Contains(Label(button));
+    public static bool IsFinishButton(Button button) =>
+        InstallerProduct.FinishButtonNames.Contains(button.Name.Replace("&", "", StringComparison.Ordinal));
 
-    public static bool IsInstallButton(Button button) => InstallerProduct.InstallButtonNames.Contains(Label(button));
-
-    private static string Label(Button button) => button.Name.Replace("&", "", StringComparison.Ordinal);
+    /// <summary>The directory page's path box, present only on that page.</summary>
+    public static AutomationElement? DirectoryField(Window window) =>
+        CurrentPage(window).FindFirstDescendant(condition => condition.ByAutomationId(DirectoryFieldId));
 
     public static void SaveScreenshot(AutomationElement element, string directory, string name)
     {

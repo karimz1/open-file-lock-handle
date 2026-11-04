@@ -322,10 +322,21 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Use a 1920x1080 display so the screenshot tests can offer 150% scaling
-        if: matrix.os == 'windows'
-        continue-on-error: true
+        # Set-DisplayResolution exists on Windows Server only; the ARM64 Windows 11
+        # image keeps its resolution and the 150% case is skipped there.
+        if: matrix.os == 'windows' && matrix.arch == 'amd64'
         shell: pwsh
         run: Set-DisplayResolution -Width 1920 -Height 1080 -Force
+      - name: Dismiss the first-sign-in privacy screen on the ARM64 image
+        # The windows-11-arm image shows "Choose privacy settings" over the
+        # desktop, which would cover every installer screenshot.
+        if: matrix.os == 'windows' && matrix.arch == 'arm64'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          New-Item -Force 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\OOBE' | Out-Null
+          Set-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\OOBE' DisablePrivacyExperience 1 -Type DWord
+          Get-Process WWAHost, CloudExperienceHostBroker, CloudExperienceHost -ErrorAction SilentlyContinue | Stop-Process -Force
       - name: Windows installer end-to-end workflow
         if: matrix.os == 'windows'
         shell: pwsh

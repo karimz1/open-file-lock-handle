@@ -86,9 +86,9 @@ public sealed class WizardReinstallTests : InstallerTestBase
         Assert.Multiple(() =>
         {
             Assert.That(InstallerWindowDriver.ShowsBrandingText(window), Is.True, $"{screenshotName}: OFLH branding must be native text.");
-            foreach (var paragraph in InstallerWindowDriver.ParagraphBounds(window))
-                Assert.That(frame.Right - paragraph.Right, Is.GreaterThanOrEqualTo(MinimumTextInsetPixels),
-                    $"{screenshotName}: text runs to the window edge ({paragraph}).");
+            foreach (var (text, bounds) in InstallerWindowDriver.Paragraphs(window))
+                Assert.That(frame.Right - bounds.Right, Is.GreaterThanOrEqualTo(MinimumTextInsetPixels),
+                    $"{screenshotName}: \"{text}\" runs to the window edge ({bounds}).");
         });
     }
 }
