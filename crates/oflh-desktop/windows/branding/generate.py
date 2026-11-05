@@ -8,9 +8,11 @@ actual display DPI rather than rescaled bitmap text. Writes
 sidebar.bmp (492x942, welcome and finish pages) and header.bmp (450x171, other
 pages) next to this script as 24-bit BMPs, the format NSIS expects.
 
-The bitmaps are rendered at 300% resolution, for the logo glyphs.
-MUI2 FitControl scales them down to its DPI-scaled control, retaining detail
-at 100%, 150%, 200% and 300% rather than enlarging a 96-DPI raster.
+The bitmaps are rendered at 300% resolution, for the logo glyphs. MUI2 alone
+would shrink them to its DPI-scaled control with nearest-neighbour sampling,
+which leaves jagged edges; installer-hooks.nsh (OFLH_SMOOTH_IMAGE) reloads
+them and shrinks them with HALFTONE averaging instead, so the logo stays
+smooth at 100%, 150%, 200% and 300%.
 """
 from pathlib import Path
 

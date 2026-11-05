@@ -24,7 +24,8 @@ What is covered, and nothing more:
 | --- | --- | --- |
 | `DialogSmoke` | `RunningAppPromptTests` | The running-app prompt sits over the installer, follows it when moved, and Enter chooses Cancel. |
 | `Installer` | `SilentInstallTests` | Silent install creates the executable, Start menu shortcut, Apps & features entry and the context-menu entries for files, folders, folder background and drives; uninstall removes them. `/NOCONTEXTMENU` installs none. |
-| `Installer` | `WizardReinstallTests` | The interactive wizard over a running app: every page shows native OFLH branding and keeps text off the window edge, Cancel leaves the app running, confirming closes it and reaches Finish. Each page is saved as a PNG. |
+| `Installer` | `UninstallWizardTests` | The interactive uninstaller over a running app: the confirm page shows native OFLH branding and the OFLH branding line, the running-app prompt closes the app, and the app is removed. Saves the confirm page and prompt as PNGs. |
+| `Installer` | `WizardReinstallTests` | The interactive wizard over a running app: every page shows native OFLH branding and the OFLH branding line (never NSIS's default), and keeps text off the window edge, Cancel leaves the app running, confirming closes it and reaches Finish. Each page is saved as a PNG. |
 
 Restore and run from the repository root on Windows:
 

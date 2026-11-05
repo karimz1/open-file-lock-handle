@@ -8,6 +8,9 @@ public static class InstallerProduct
     public const string UninstallerName = "uninstall.exe";
     public const string ShortcutName = ProductName + ".lnk";
     public const string BrandingText = "OFLH";
+    public const string WebsiteLabel = "oflh.karimzouine.com";
+    /// <summary>NSIS's default branding line, shown when an installer sets none.</summary>
+    public const string StockNsisBranding = "Nullsoft";
     public const string UninstallRegistryKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + ProductName;
     public const string ContextMenuVerb = "oflh-desktop.inspect";
 

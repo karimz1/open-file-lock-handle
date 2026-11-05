@@ -27,6 +27,7 @@ public sealed class InstallerWindowDriver : IDisposable
     // The full-width branding line above the buttons, a direct child of the outer
     // window, is meant to span the frame.
     private const string BrandingLineId = "1028";
+    private const string BrandingLineTextId = "1256";
 
     // MUI2's directory page path edit control.
     private const string DirectoryFieldId = "1019";
@@ -82,6 +83,15 @@ public sealed class InstallerWindowDriver : IDisposable
     public static bool IsInside(Window prompt, Window owner) =>
         owner.BoundingRectangle.Contains(prompt.BoundingRectangle);
 
+    /// <summary>
+    /// The line above the buttons. MUI2 shows it in control 1256 over the 1028
+    /// branding control; NSIS's own default reads "Nullsoft Install System".
+    /// </summary>
+    public static string BrandingLine(Window window) =>
+        window.FindFirstChild(condition => condition.ByAutomationId(BrandingLineTextId))?.Name
+        ?? window.FindFirstChild(condition => condition.ByAutomationId(BrandingLineId))?.Name
+        ?? string.Empty;
+
     public static bool ShowsBrandingText(Window window) => window
         .FindAllDescendants(condition => condition.ByName(InstallerProduct.BrandingText))
         .Any(element => !element.IsOffscreen);
@@ -103,8 +113,11 @@ public sealed class InstallerWindowDriver : IDisposable
         window.FindAllChildren(condition => condition.ByClassName(PageDialogClass))
             .FirstOrDefault(IsNativelyVisible) ?? window;
 
+    private static IntPtr CurrentPageHandle(Window window) =>
+        CurrentPage(window).Properties.NativeWindowHandle.ValueOrDefault;
+
     private static bool IsBrandingLine(AutomationElement text, Window window) =>
-        text.AutomationId == BrandingLineId || text.Parent?.Equals(window) == true;
+        text.AutomationId is BrandingLineId or BrandingLineTextId || text.Parent?.Equals(window) == true;
 
     private static bool IsNativelyVisible(AutomationElement element) =>
         element.Properties.NativeWindowHandle.TryGetValue(out var handle) && handle != IntPtr.Zero
@@ -121,7 +134,12 @@ public sealed class InstallerWindowDriver : IDisposable
             if (stop() is { } done) return done;
             onPage(page++);
             var next = PrimaryButton(window);
-            if (next.IsEnabled) next.Invoke();
+            if (!next.IsEnabled) return null;
+            var shown = CurrentPageHandle(window);
+            next.Invoke();
+            // Wait for the next page, so each screenshot shows a different page.
+            Retry.WhileTrue(() => stop() is null && CurrentPageHandle(window) == shown,
+                Timeouts.DialogClose, Timeouts.PollInterval, throwOnTimeout: false, ignoreException: true);
             return null;
         }, failure, timeout);
     }

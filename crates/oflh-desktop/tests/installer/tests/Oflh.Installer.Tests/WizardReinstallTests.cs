@@ -13,8 +13,6 @@ namespace Oflh.Installer.Tests;
 [TestFixture, Category("Installer")]
 public sealed class WizardReinstallTests : InstallerTestBase
 {
-    // Text must sit in a padded content area rather than run to the window edge.
-    private const int MinimumTextInsetPixels = 16;
     private const int MaximumPagesBeforePrompt = 8;
 
     private static string Installer => TestEnvironment.Required(TestEnvironment.InstallerVariable);
@@ -86,18 +84,5 @@ public sealed class WizardReinstallTests : InstallerTestBase
         Assert.That(InstallerWindowDriver.IsInside(prompt, window), Is.True, "The prompt must sit over the installer.");
         InstallerWindowDriver.SaveScreenshot(prompt, Reports, $"{screenshotPrefix}-running-app-prompt");
         return ((process, window), prompt, InstallerWindowDriver.PlacementOf(prompt, window));
-    }
-
-    private static void InspectPage(Window window, string screenshotName)
-    {
-        InstallerWindowDriver.SaveScreenshot(window, Reports, screenshotName);
-        var frame = window.BoundingRectangle;
-        Assert.Multiple(() =>
-        {
-            Assert.That(InstallerWindowDriver.ShowsBrandingText(window), Is.True, $"{screenshotName}: OFLH branding must be native text.");
-            foreach (var (text, bounds) in InstallerWindowDriver.Paragraphs(window))
-                Assert.That(frame.Right - bounds.Right, Is.GreaterThanOrEqualTo(MinimumTextInsetPixels),
-                    $"{screenshotName}: \"{text}\" runs to the window edge ({bounds}).");
-        });
     }
 }

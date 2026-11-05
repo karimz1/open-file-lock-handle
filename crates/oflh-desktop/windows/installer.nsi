@@ -139,6 +139,9 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 ; Installer sidebar image
 !if "${SIDEBARIMAGE}" != ""
   !define MUI_WELCOMEFINISHPAGE_BITMAP "${SIDEBARIMAGE}"
+  ; Never fall back to NSIS's stock win.bmp should an uninstaller
+  ; welcome or finish page be added.
+  !define MUI_UNWELCOMEFINISHPAGE_BITMAP "${SIDEBARIMAGE}"
 !endif
 
 ; Enable header images for installer and uninstaller pages when either image is configured.
@@ -161,6 +164,9 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 ; Uninstaller icon
 !if "${UNINSTALLERICON}" != ""
   !define MUI_UNICON "${UNINSTALLERICON}"
+!else if "${INSTALLERICON}" != ""
+  ; Without this MUI2 gives the uninstaller NSIS's stock modern-uninstall.ico.
+  !define MUI_UNICON "${INSTALLERICON}"
 !endif
 
 ; Define registry key to store installer language
@@ -465,6 +471,10 @@ Function un.ConfirmShow ; Add add a `Delete app data` check box
   Pop $DeleteAppDataCheckbox
   SendMessage $HWNDPARENT ${WM_GETFONT} 0 0 $1
   SendMessage $DeleteAppDataCheckbox ${WM_SETFONT} $1 1
+  SetCtlColors $DeleteAppDataCheckbox "1F2937" "F8FAFD"
+  ; Same padded description panel as the installer's directory page.
+  Push $DeleteAppDataCheckbox
+  Call un.OflhConfirmShow
 FunctionEnd
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE un.ConfirmLeave
 Function un.ConfirmLeave

@@ -54,6 +54,10 @@ LangString oflhUninstallText 2052 "OFLH Desktop 将从下面的文件夹中删�
 LangString oflhRunApp 1033 "Start OFLH Desktop"
 LangString oflhRunApp 1031 "OFLH Desktop starten"
 LangString oflhRunApp 2052 "启动 OFLH Desktop"
+; Running-app prompt: this heading, then appRunningOkKill as its one-line body.
+LangString oflhAppRunningTitle 1033 "OFLH Desktop is still running."
+LangString oflhAppRunningTitle 1031 "OFLH Desktop läuft noch."
+LangString oflhAppRunningTitle 2052 "OFLH Desktop 仍在运行。"
 LangString oflhInspectFile 1033 "Inspect file"
 LangString oflhInspectFile 1031 "Datei untersuchen"
 LangString oflhInspectFile 2052 "检查文件"
@@ -110,7 +114,7 @@ Var OflhFrameHeight
 ; padding strips beside it. Nothing overlaps: sibling STATIC controls do not
 ; clip each other, so a card placed behind the text could paint over it.
 ; Padding is 8u x 6u, in dialog units so it scales with font and DPI.
-Function OflhFramePanel
+!macro OFLH_FRAME_PANEL
   Exch $R0
   Push $0
   Push $1
@@ -149,7 +153,83 @@ Function OflhFramePanel
   Pop $1
   Pop $0
   Pop $R0
+!macroend
+Function OflhFramePanel
+  !insertmacro OFLH_FRAME_PANEL
 FunctionEnd
+Function un.OflhFramePanel
+  !insertmacro OFLH_FRAME_PANEL
+FunctionEnd
+
+; NSIS loads bitmaps with LoadImage at the control size, which shrinks them
+; with nearest-neighbour sampling: the high-resolution logo comes out jagged.
+; Reload the full-size BMP and shrink it with HALFTONE StretchBlt, which
+; averages the source pixels, then hand the result to the control.
+; Leaves the previous image to its owner (MUI frees it on page leave).
+!macro OFLH_SMOOTH_IMAGE CONTROL PATH
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  Push $5
+  Push $6
+  Push $7
+  Push $8
+  Push $9
+  StrCpy $0 ${CONTROL}
+  System::Call '*(i 0, i 0, i 0, i 0) p.r1'
+  System::Call 'user32::GetClientRect(p r0, p r1)'
+  System::Call '*$1(i, i, i.r2, i.r3)'
+  System::Free $1
+  ; IMAGE_BITMAP, natural size, LR_LOADFROMFILE | LR_CREATEDIBSECTION
+  System::Call 'user32::LoadImageW(p 0, w "${PATH}", i 0, i 0, i 0, i 0x2010) p.r4'
+  ${If} $4 P<> 0
+  ${AndIf} $2 > 0
+  ${AndIf} $3 > 0
+    ; BITMAP: bmType, bmWidth, bmHeight, ...
+    ; BITMAP is 24 bytes in a 32-bit and 32 bytes in a 64-bit process.
+    System::Alloc 32
+    Pop $1
+    !if ${NSIS_PTR_SIZE} = 8
+      System::Call 'gdi32::GetObjectW(p r4, i 32, p r1)'
+    !else
+      System::Call 'gdi32::GetObjectW(p r4, i 24, p r1)'
+    !endif
+    System::Call '*$1(i, i.r5, i.r6)'
+    System::Free $1
+    System::Call 'user32::GetDC(p 0) p.r7'
+    System::Call 'gdi32::CreateCompatibleDC(p r7) p.r8'
+    System::Call 'gdi32::CreateCompatibleDC(p r7) p.r9'
+    System::Call 'gdi32::CreateCompatibleBitmap(p r7, i r2, i r3) p.r1'
+    System::Call 'user32::ReleaseDC(p 0, p r7)'
+    System::Call 'gdi32::SelectObject(p r8, p r4) p.s'
+    System::Call 'gdi32::SelectObject(p r9, p r1) p.s'
+    ; HALFTONE = 4; HALFTONE needs the brush origin reset; SRCCOPY = 0xCC0020
+    System::Call 'gdi32::SetStretchBltMode(p r9, i 4)'
+    System::Call 'gdi32::SetBrushOrgEx(p r9, i 0, i 0, p 0)'
+    System::Call 'gdi32::StretchBlt(p r9, i 0, i 0, i r2, i r3, p r8, i 0, i 0, i r5, i r6, i 0xCC0020)'
+    Pop $7
+    System::Call 'gdi32::SelectObject(p r9, p r7)'
+    Pop $7
+    System::Call 'gdi32::SelectObject(p r8, p r7)'
+    System::Call 'gdi32::DeleteDC(p r8)'
+    System::Call 'gdi32::DeleteDC(p r9)'
+    System::Call 'gdi32::DeleteObject(p r4)'
+    ; STM_SETIMAGE, IMAGE_BITMAP
+    SendMessage $0 0x172 0 $1
+  ${EndIf}
+  Pop $9
+  Pop $8
+  Pop $7
+  Pop $6
+  Pop $5
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+!macroend
 
 ; Render wordmarks as native text: sharp at the actual DPI, exposed to UIA.
 Function OflhBrandSidebar
@@ -180,6 +260,7 @@ Function OflhBrandSidebar
     System::Call 'user32::GetWindowLongW(p r1, i ${GWL_STYLE}) i.r2'
     IntOp $2 $2 & 0x1F
     ${If} $2 = 0x0E
+      !insertmacro OFLH_SMOOTH_IMAGE $1 "$PLUGINSDIR\modern-wizard.bmp"
       ${NSD_AddStyle} $1 ${WS_CLIPSIBLINGS}
       System::Call "user32::SetWindowPos(p r1, p 1, i 0, i 0, i 0, i 0, i 0x13)"
     ${EndIf}
@@ -208,11 +289,43 @@ FunctionEnd
     SetCtlColors $OflhHeaderWordmark "4264DB" "FFFFFF"
   ${EndIf}
 !macroend
-Function OflhGuiInit
+!macro OFLH_SMOOTH_HEADER_IMAGE
+  GetDlgItem $0 $HWNDPARENT 1046
+  ${If} $0 P<> 0
+    !insertmacro OFLH_SMOOTH_IMAGE $0 "$PLUGINSDIR\modern-header.bmp"
+  ${EndIf}
+!macroend
+; Branding line at the bottom of every page, installer and uninstaller alike:
+; "OFLH Desktop <version>  ·  oflh.karimzouine.com", never NSIS's own text.
+; The template's defines, VERSION included, do not exist yet here, so read the
+; version Tauri stamps on the setup exe (the uninstaller carries the same).
+!macro OFLH_BRANDING_LINE
+  GetDLLVersion "$EXEPATH" $1 $2
+  ${If} ${Errors}
+    StrCpy $3 "$(^Name)"
+  ${Else}
+    IntOp $3 $1 >> 16
+    IntOp $4 $1 & 0xFFFF
+    IntOp $5 $2 >> 16
+    StrCpy $3 "$(^Name) $3.$4.$5"
+  ${EndIf}
+  ; MUI2 shows the text in 1256 over the 1028 branding control; set both.
+  GetDlgItem $0 $HWNDPARENT 1028
+  SendMessage $0 ${WM_SETTEXT} 0 "STR:$3  ·  ${OFLH_WEBSITE_LABEL}"
+  GetDlgItem $0 $HWNDPARENT 1256
+  SendMessage $0 ${WM_SETTEXT} 0 "STR:$3  ·  ${OFLH_WEBSITE_LABEL} "
+!macroend
+!macro OFLH_GUI_INIT
+  ClearErrors
+  !insertmacro OFLH_SMOOTH_HEADER_IMAGE
   !insertmacro OFLH_HEADER_WORDMARK
+  !insertmacro OFLH_BRANDING_LINE
+!macroend
+Function OflhGuiInit
+  !insertmacro OFLH_GUI_INIT
 FunctionEnd
 Function un.OflhGuiInit
-  !insertmacro OFLH_HEADER_WORDMARK
+  !insertmacro OFLH_GUI_INIT
 FunctionEnd
 
 Function OflhFinishShow
@@ -222,17 +335,6 @@ FunctionEnd
 
 Function OflhWelcomeShow
   ShowWindow $OflhHeaderWordmark ${SW_HIDE}
-  ; Branding line at the bottom of every page: "OFLH Desktop <version> ·
-  ; oflh.karimzouine.com". The template's defines, VERSION included, do not
-  ; exist yet here, so read the version Tauri stamps on this setup exe.
-  GetDLLVersion "$EXEPATH" $1 $2
-  IntOp $3 $1 >> 16
-  IntOp $4 $1 & 0xFFFF
-  IntOp $5 $2 >> 16
-  ; 1028 is the branding text control of the outer installer window.
-  GetDlgItem $0 $HWNDPARENT 1028
-  SendMessage $0 ${WM_SETTEXT} 0 "STR:$(^Name) $3.$4.$5  ·  ${OFLH_WEBSITE_LABEL}"
-
   ; $mui.WelcomePage.* are declared after this file is included, so find
   ; MUI's welcome text by its content, hide it, and draw our own copy inside
   ; a padded white card. Moving MUI's control in place left it painted under
@@ -265,9 +367,13 @@ Function OflhWelcomeShow
   ${EndIf}
 FunctionEnd
 
-; Style MUI2's existing directory description; do not replace its path controls.
+; Style MUI2's existing page descriptions; do not replace their path controls.
 !macro OFLH_OFFSET_DIRECTORY_CONTROL ID
   GetDlgItem $6 $0 ${ID}
+  !insertmacro OFLH_OFFSET_CONTROL $6
+!macroend
+!macro OFLH_OFFSET_CONTROL HWND
+  StrCpy $6 ${HWND}
   System::Call '*(i 0, i 0, i 0, i 0) p.R9'
   System::Call 'user32::GetWindowRect(p r6, p R9)'
   System::Call 'user32::MapWindowPoints(p 0, p r0, p R9, i 2)'
@@ -276,11 +382,13 @@ FunctionEnd
   IntOp $3 $3 + $R8
   System::Call 'user32::SetWindowPos(p r6, p 0, i r2, i r3, i 0, i 0, i 0x15)'
 !macroend
-Function OflhDirectoryShow
+; Frames MUI2's page description (1006) in a white panel and moves the
+; controls below it down by the padding. Used by the directory page and the
+; uninstaller's confirm page.
+!macro OFLH_DESCRIPTION_PANEL UN
   Push $R7
   Push $R8
   Push $R9
-  ShowWindow $OflhHeaderWordmark ${SW_SHOW}
   FindWindow $0 "#32770" "" $HWNDPARENT
   GetDlgItem $R7 $0 1006
   System::Call '*(i 0, i 0, i 0, i 0) p.r1'
@@ -303,13 +411,31 @@ Function OflhDirectoryShow
   SetCtlColors $R7 "1F2937" "FFFFFF"
   System::Call 'user32::SetWindowPos(p R7, p 0, i r2, i r3, i r4, i r5, i 0x14)'
   Push $R7
-  Call OflhFramePanel
-  !insertmacro OFLH_OFFSET_DIRECTORY_CONTROL 1020
-  !insertmacro OFLH_OFFSET_DIRECTORY_CONTROL 1019
-  !insertmacro OFLH_OFFSET_DIRECTORY_CONTROL 1001
+  Call ${UN}OflhFramePanel
+  !if "${UN}" == "un."
+    ; Confirm page: "Uninstalling from" label, path, "Delete app data".
+    !insertmacro OFLH_OFFSET_DIRECTORY_CONTROL 1029
+    !insertmacro OFLH_OFFSET_DIRECTORY_CONTROL 1000
+    !insertmacro OFLH_OFFSET_CONTROL $R6
+  !else
+    ; Directory page: group box, path and Browse button.
+    !insertmacro OFLH_OFFSET_DIRECTORY_CONTROL 1020
+    !insertmacro OFLH_OFFSET_DIRECTORY_CONTROL 1019
+    !insertmacro OFLH_OFFSET_DIRECTORY_CONTROL 1001
+  !endif
   Pop $R9
   Pop $R8
   Pop $R7
+!macroend
+Function OflhDirectoryShow
+  ShowWindow $OflhHeaderWordmark ${SW_SHOW}
+  !insertmacro OFLH_DESCRIPTION_PANEL ""
+FunctionEnd
+; Takes the "Delete app data" check box on the stack and moves it with the path.
+Function un.OflhConfirmShow
+  Exch $R6
+  !insertmacro OFLH_DESCRIPTION_PANEL "un."
+  Pop $R6
 FunctionEnd
 
 Function OflhWelcomeLeave
@@ -393,15 +519,15 @@ FunctionEnd
 ; Restart Manager, silent/passive and cancellation behavior. The task dialog
 ; has an explicit owner and centers on the installer, including other monitors.
 ; TASKDIALOGCONFIG is packed to one byte (commctrl.h), in both NSIS hosts.
-!macro OFLH_RUNNING_DIALOG PRODUCT
+!macro OFLH_RUNNING_DIALOG PRODUCT TITLE TEXT
   Push $0
   Push $1
   Push $2
   Push $3
   Push $4
   System::Call '*(&w${NSIS_MAX_STRLEN} "${PRODUCT}") p.r1'
-  System::Call '*(&w${NSIS_MAX_STRLEN} "$R1") p.r2'
-  System::Call '*(&w${NSIS_MAX_STRLEN} "$R2") p.r3'
+  System::Call '*(&w${NSIS_MAX_STRLEN} "${TITLE}") p.r2'
+  System::Call '*(&w${NSIS_MAX_STRLEN} "${TEXT}") p.r3'
   !if ${NSIS_PTR_SIZE} = 8
     !define OFLH_TASKDIALOG_SIZE 160
   !else
@@ -451,7 +577,7 @@ FunctionEnd
       ${If} $0 = ${ERROR_MORE_DATA}
         IfSilent kill_${UniqueID} 0
         ${If} $PassiveMode != 1
-          !insertmacro OFLH_RUNNING_DIALOG "${productName}"
+          !insertmacro OFLH_RUNNING_DIALOG "${productName}" "$(oflhAppRunningTitle)" "$R2"
           ${If} $R4 != 1
             Goto cancel_${UniqueID}
           ${EndIf}

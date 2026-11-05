@@ -14,9 +14,7 @@ Page directory
 Page instfiles
 Section
   SetAutoClose true
-  StrCpy $R1 "OFLH Desktop is running"
-  StrCpy $R2 "Close the application to continue, or cancel to keep it running."
-  !insertmacro OFLH_RUNNING_DIALOG "OFLH Desktop"
+  !insertmacro OFLH_RUNNING_DIALOG "OFLH Desktop" "$(oflhAppRunningTitle)" "Click OK to close it and continue."
   FileOpen $0 "${RESULT_OUTPUT}" w
   FileWrite $0 "$R4"
   FileClose $0

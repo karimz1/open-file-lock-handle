@@ -129,6 +129,15 @@ fn installer_uses_the_oflh_icon_and_branded_bitmaps_at_three_times_mui_sizes() {
             .unwrap_or_else(|| panic!("{key} is not set"));
         assert_eq!(bmp_info(path), (size.0 * 3, size.1 * 3, 24, 0), "{path}");
     }
+    // NSIS's own LoadImage shrink is nearest-neighbour; both bitmaps are
+    // reshrunk with HALFTONE averaging so the logo edges stay smooth.
+    assert!(HOOKS.contains("gdi32::SetStretchBltMode(p r9, i 4)"));
+    assert!(HOOKS.contains("OFLH_SMOOTH_IMAGE $1 \"$PLUGINSDIR\\modern-wizard.bmp\""));
+    assert!(HOOKS.contains("OFLH_SMOOTH_IMAGE $0 \"$PLUGINSDIR\\modern-header.bmp\""));
+    // The uninstaller never falls back to NSIS's stock icon or wizard bitmap.
+    let template = include_str!("../windows/installer.nsi");
+    assert!(template.contains("!define MUI_UNICON \"${INSTALLERICON}\""));
+    assert!(template.contains("!define MUI_UNWELCOMEFINISHPAGE_BITMAP \"${SIDEBARIMAGE}\""));
 }
 
 fn define(name: &str) -> u32 {
