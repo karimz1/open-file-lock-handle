@@ -781,7 +781,13 @@ Function un.onInit
     !insertmacro MULTIUSER_UNINIT
   !endif
 
-  !insertmacro MUI_UNGETLANGUAGE
+  ; MUI_UNGETLANGUAGE shows NSIS's stock "Installer Language" dialog when no
+  ; language was stored, which the installer never does. Like the installer,
+  ; follow the Windows display language instead (NSIS picks it by default).
+  ReadRegStr $0 ${MUI_LANGDLL_REGISTRY_ROOT} "${MUI_LANGDLL_REGISTRY_KEY}" "${MUI_LANGDLL_REGISTRY_VALUENAME}"
+  ${If} $0 != ""
+    StrCpy $LANGUAGE $0
+  ${EndIf}
 
   ${GetOptions} $CMDLINE "/P" $PassiveMode
   ${IfNot} ${Errors}

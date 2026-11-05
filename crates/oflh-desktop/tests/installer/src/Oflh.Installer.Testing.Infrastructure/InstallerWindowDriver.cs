@@ -27,7 +27,6 @@ public sealed class InstallerWindowDriver : IDisposable
     // The full-width branding line above the buttons, a direct child of the outer
     // window, is meant to span the frame.
     private const string BrandingLineId = "1028";
-    private const string BrandingLineTextId = "1256";
 
     // MUI2's directory page path edit control.
     private const string DirectoryFieldId = "1019";
@@ -83,14 +82,17 @@ public sealed class InstallerWindowDriver : IDisposable
     public static bool IsInside(Window prompt, Window owner) =>
         owner.BoundingRectangle.Contains(prompt.BoundingRectangle);
 
-    /// <summary>
-    /// The line above the buttons. MUI2 shows it in control 1256 over the 1028
-    /// branding control; NSIS's own default reads "Nullsoft Install System".
-    /// </summary>
-    public static string BrandingLine(Window window) =>
-        window.FindFirstChild(condition => condition.ByAutomationId(BrandingLineTextId))?.Name
-        ?? window.FindFirstChild(condition => condition.ByAutomationId(BrandingLineId))?.Name
-        ?? string.Empty;
+    /// <summary>The OFLH branding line left of the buttons, or empty when none is visible.</summary>
+    public static string BrandingLine(Window window) => window
+        .FindAllChildren(condition => condition.ByControlType(ControlType.Text))
+        .Where(text => IsNativelyVisible(text) && text.Name.Contains(InstallerProduct.WebsiteLabel, StringComparison.Ordinal))
+        .Select(text => text.Name)
+        .FirstOrDefault() ?? string.Empty;
+
+    /// <summary>True when any visible text still carries NSIS's stock "Nullsoft Install System" branding.</summary>
+    public static bool ShowsStockNsisBranding(Window window) => window
+        .FindAllDescendants(condition => condition.ByControlType(ControlType.Text))
+        .Any(text => IsNativelyVisible(text) && text.Name.Contains(InstallerProduct.StockNsisBranding, StringComparison.Ordinal));
 
     public static bool ShowsBrandingText(Window window) => window
         .FindAllDescendants(condition => condition.ByName(InstallerProduct.BrandingText))
@@ -117,7 +119,7 @@ public sealed class InstallerWindowDriver : IDisposable
         CurrentPage(window).Properties.NativeWindowHandle.ValueOrDefault;
 
     private static bool IsBrandingLine(AutomationElement text, Window window) =>
-        text.AutomationId is BrandingLineId or BrandingLineTextId || text.Parent?.Equals(window) == true;
+        text.AutomationId == BrandingLineId || text.Parent?.Equals(window) == true;
 
     private static bool IsNativelyVisible(AutomationElement element) =>
         element.Properties.NativeWindowHandle.TryGetValue(out var handle) && handle != IntPtr.Zero
@@ -129,15 +131,21 @@ public sealed class InstallerWindowDriver : IDisposable
         where T : class
     {
         var page = 0;
+        var captured = IntPtr.Zero;
         return WaitFor(() =>
         {
             if (stop() is { } done) return done;
-            onPage(page++);
+            // Report each page once, after NSIS has painted it.
+            var shown = CurrentPageHandle(window);
+            if (shown != captured)
+            {
+                Wait.UntilResponsive(window, Timeouts.DialogClose);
+                onPage(page++);
+                captured = shown;
+            }
             var next = PrimaryButton(window);
             if (!next.IsEnabled) return null;
-            var shown = CurrentPageHandle(window);
             next.Invoke();
-            // Wait for the next page, so each screenshot shows a different page.
             Retry.WhileTrue(() => stop() is null && CurrentPageHandle(window) == shown,
                 Timeouts.DialogClose, Timeouts.PollInterval, throwOnTimeout: false, ignoreException: true);
             return null;

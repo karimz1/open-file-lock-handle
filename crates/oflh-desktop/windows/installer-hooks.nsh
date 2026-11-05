@@ -300,6 +300,7 @@ FunctionEnd
 ; The template's defines, VERSION included, do not exist yet here, so read the
 ; version Tauri stamps on the setup exe (the uninstaller carries the same).
 !macro OFLH_BRANDING_LINE
+  ClearErrors
   GetDLLVersion "$EXEPATH" $1 $2
   ${If} ${Errors}
     StrCpy $3 "$(^Name)"
@@ -309,14 +310,33 @@ FunctionEnd
     IntOp $5 $2 >> 16
     StrCpy $3 "$(^Name) $3.$4.$5"
   ${EndIf}
-  ; MUI2 shows the text in 1256 over the 1028 branding control; set both.
+  ; NSIS's own branding controls (1028, and MUI2's 1256 over it) stayed
+  ; blank on Windows 11; hide both so NSIS's default can never show, and draw
+  ; the line as a native label left of the Back button (ID 3).
   GetDlgItem $0 $HWNDPARENT 1028
-  SendMessage $0 ${WM_SETTEXT} 0 "STR:$3  ·  ${OFLH_WEBSITE_LABEL}"
+  ShowWindow $0 ${SW_HIDE}
   GetDlgItem $0 $HWNDPARENT 1256
-  SendMessage $0 ${WM_SETTEXT} 0 "STR:$3  ·  ${OFLH_WEBSITE_LABEL} "
+  ShowWindow $0 ${SW_HIDE}
+  GetDlgItem $0 $HWNDPARENT 3
+  System::Call '*(i 0, i 0, i 0, i 0) p.r1'
+  System::Call 'user32::GetWindowRect(p r0, p r1)'
+  System::Call 'user32::MapWindowPoints(p 0, p $HWNDPARENT, p r1, i 2)'
+  System::Call '*$1(i.r4, i.r5, i, i.r6)'
+  System::Call '*$1(i 7, i 0, i 0, i 0)'
+  System::Call 'user32::MapDialogRect(p $HWNDPARENT, p r1)'
+  System::Call '*$1(i.r2)'
+  System::Free $1
+  ; $2 margin, $4 Back left, $5 top, $6 bottom
+  IntOp $4 $4 - $2
+  IntOp $4 $4 - $2
+  IntOp $6 $6 - $5
+  ; WS_CHILD | WS_VISIBLE | SS_CENTERIMAGE | SS_NOPREFIX | SS_ENDELLIPSIS
+  System::Call 'user32::CreateWindowExW(i 0, w "STATIC", w "$3  ·  ${OFLH_WEBSITE_LABEL}", i 0x50004280, i r2, i r5, i r4, i r6, p $HWNDPARENT, p 0, p 0, p 0) p.r0'
+  SendMessage $HWNDPARENT ${WM_GETFONT} 0 0 $1
+  SendMessage $0 ${WM_SETFONT} $1 1
+  SetCtlColors $0 "6B7280" transparent
 !macroend
 !macro OFLH_GUI_INIT
-  ClearErrors
   !insertmacro OFLH_SMOOTH_HEADER_IMAGE
   !insertmacro OFLH_HEADER_WORDMARK
   !insertmacro OFLH_BRANDING_LINE

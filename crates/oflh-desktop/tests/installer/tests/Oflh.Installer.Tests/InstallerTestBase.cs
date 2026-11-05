@@ -45,8 +45,8 @@ public abstract class InstallerTestBase
         Assert.Multiple(() =>
         {
             Assert.That(InstallerWindowDriver.ShowsBrandingText(window), Is.True, $"{screenshotName}: OFLH branding must be native text.");
-            Assert.That(brandingLine, Does.Contain(InstallerProduct.WebsiteLabel).And.Not.Contain(InstallerProduct.StockNsisBranding),
-                $"{screenshotName}: the branding line must be OFLH's, not NSIS's default.");
+            Assert.That(brandingLine, Does.StartWith(InstallerProduct.ProductName), $"{screenshotName}: the OFLH branding line is missing.");
+            Assert.That(InstallerWindowDriver.ShowsStockNsisBranding(window), Is.False, $"{screenshotName}: NSIS's default branding is visible.");
             foreach (var (text, bounds) in InstallerWindowDriver.Paragraphs(window))
                 Assert.That(frame.Right - bounds.Right, Is.GreaterThanOrEqualTo(MinimumTextInsetPixels),
                     $"{screenshotName}: \"{text}\" runs to the window edge ({bounds}).");
