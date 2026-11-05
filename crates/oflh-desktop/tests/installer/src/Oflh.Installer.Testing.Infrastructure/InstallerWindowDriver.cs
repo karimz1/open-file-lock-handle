@@ -120,6 +120,10 @@ public sealed class InstallerWindowDriver : IDisposable
     public static bool IsFinishButton(Button button) =>
         InstallerProduct.FinishButtonNames.Contains(button.Name.Replace("&", "", StringComparison.Ordinal));
 
+    /// <summary>The Finish page's "Start OFLH Desktop" check box (MUI control 1203).</summary>
+    public static CheckBox? RunAppCheckBox(Window window) =>
+        CurrentPage(window).FindFirstDescendant(condition => condition.ByAutomationId("1203"))?.AsCheckBox();
+
     /// <summary>The directory page's path box, present only on that page.</summary>
     public static AutomationElement? DirectoryField(Window window) =>
         CurrentPage(window).FindFirstDescendant(condition => condition.ByAutomationId(DirectoryFieldId));

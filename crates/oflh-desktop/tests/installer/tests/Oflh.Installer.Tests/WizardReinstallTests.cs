@@ -54,14 +54,16 @@ public sealed class WizardReinstallTests : InstallerTestBase
             Assert.That(await ProcessRunner.WaitForExitAsync(app, Timeouts.ProcessExit), Is.True, "Confirming did not close the running app.");
             Assert.That(finish.IsEnabled, Is.True);
             Assert.That(probe.ExecutableExists, Is.True);
+            // Starting the app is not under test here and would race with cleanup.
+            if (InstallerWindowDriver.RunAppCheckBox(confirmWizard.Window) is { } runApp) runApp.IsChecked = false;
             finish.Invoke();
-            // The installer starts the app as it exits; wait so cleanup can find it.
             Assert.That(await ProcessRunner.WaitForExitAsync(confirmWizard.Process, Timeouts.ProcessExit), Is.True, "The installer did not exit after Finish.");
         }
         finally
         {
-            // Finish starts the app again, and a failed assertion can leave the
-            // original running; either would lock the install folder.
+            // A failed step can leave a wizard or the app running, and the wizard's
+            // working directory is the install folder; either would lock it.
+            Processes.StopStarted();
             ProcessRunner.StopAll(probe.ExecutablePath);
             if (File.Exists(probe.UninstallerPath))
                 await Processes.RunAsync(probe.UninstallerPath, $"/S _?={InstallDirectory}", Timeouts.Uninstall);

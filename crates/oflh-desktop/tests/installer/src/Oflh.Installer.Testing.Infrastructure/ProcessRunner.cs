@@ -72,6 +72,12 @@ public sealed class ProcessRunner : IDisposable
         }
     }
 
+    /// <summary>Stops every process this runner started that is still running.</summary>
+    public void StopStarted()
+    {
+        foreach (var process in started) Stop(process);
+    }
+
     public void Dispose()
     {
         foreach (var process in started)
