@@ -34,7 +34,10 @@ public sealed class WizardReinstallTests : InstallerTestBase
         {
             // Act: cancel at the running-app prompt
             var (cancelWizard, cancelPrompt, cancelPlacement) = OpenWizardToRunningAppPrompt(wizardOptions, new Point(70, 60), "cancel");
-            InstallerWindowDriver.PressEnter(cancelPrompt);
+            var defaultButton = InstallerWindowDriver.DefaultButton(cancelPrompt);
+            Assert.That(defaultButton is not null && InstallerWindowDriver.IsCancelButton(defaultButton), Is.True,
+                $"Enter must choose Cancel at the running-app prompt, not \"{defaultButton?.Name}\".");
+            defaultButton!.Invoke();
             InstallerWindowDriver.WaitForModalToClose(cancelWizard.Window);
 
             // Assert

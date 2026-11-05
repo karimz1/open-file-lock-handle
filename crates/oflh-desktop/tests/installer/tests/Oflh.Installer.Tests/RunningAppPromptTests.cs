@@ -29,13 +29,14 @@ public sealed class RunningAppPromptTests : InstallerTestBase
             var prompt = InstallerWindowDriver.WaitForModal(installer);
             var placement = InstallerWindowDriver.PlacementOf(prompt, installer);
             InstallerWindowDriver.SaveScreenshot(prompt, Reports, $"running-app-prompt-at-{x}-{y}");
-            InstallerWindowDriver.PressEnter(prompt);
+            var defaultButton = InstallerWindowDriver.DefaultButton(prompt);
+            defaultButton?.Invoke();
 
             // Assert
             Assert.That(InstallerWindowDriver.IsInside(prompt, installer), Is.True, "The prompt must sit over the installer.");
             if (first is { } previous)
                 Assert.That(placement.MatchesRelativeTo(previous), Is.True, "The prompt must follow the installer when it moves.");
-            Assert.That(await ProcessRunner.WaitForExitAsync(fixture, Timeouts.ProcessExit), Is.True, "Enter did not dismiss the prompt.");
+            Assert.That(await ProcessRunner.WaitForExitAsync(fixture, Timeouts.ProcessExit), Is.True, "The default button did not dismiss the prompt.");
             Assert.That(await File.ReadAllTextAsync(TestEnvironment.Required(TestEnvironment.DialogResultVariable)), Is.EqualTo(CancelResult),
                 "Enter must choose Cancel.");
             first = placement;

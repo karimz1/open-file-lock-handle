@@ -32,8 +32,6 @@ public sealed class InstallerWindowDriver : IDisposable
     private const string DirectoryFieldId = "1019";
 
     private readonly UIA3Automation automation = new();
-    private const int TitleBarClickOffset = 12;
-
     private readonly List<Window> windows = [];
 
     public Window MainWindowOf(Process process)
@@ -63,16 +61,20 @@ public sealed class InstallerWindowDriver : IDisposable
             .And(condition.ByAutomationId("CommandButton_1").Or(condition.ByAutomationId("1")).Or(condition.ByName("OK"))))?.AsButton(),
         "The prompt's confirm button was not found.", Timeouts.Window);
 
-    public static void PressEnter(Window window)
-    {
-        // A shell flyout, such as the runner's Start menu, can hold the keyboard focus,
-        // and Windows refuses SetForeground from a background process. A real click
-        // on the title bar moves the focus the way a user would.
-        var frame = window.BoundingRectangle;
-        Mouse.Click(new System.Drawing.Point(frame.Left + frame.Width / 2, frame.Top + TitleBarClickOffset));
-        window.Focus();
-        Keyboard.Type(VirtualKeyShort.RETURN);
-    }
+    /// <summary>
+    /// The button that Enter activates: Win32 marks it as the default button
+    /// (STATE_SYSTEM_DEFAULT) or gives it the keyboard focus.
+    /// </summary>
+    public static Button? DefaultButton(Window prompt) =>
+        prompt.FindAllDescendants(condition => condition.ByControlType(ControlType.Button))
+            .FirstOrDefault(button => IsDefault(button) || button.Properties.HasKeyboardFocus.ValueOrDefault)?.AsButton();
+
+    public static bool IsCancelButton(Button button) =>
+        button.AutomationId is "2" or "CommandButton_2" || button.Name.Replace("&", "", StringComparison.Ordinal) == "Cancel";
+
+    private static bool IsDefault(AutomationElement button) =>
+        button.Patterns.LegacyIAccessible.TryGetPattern(out var legacy) &&
+        legacy!.State.ValueOrDefault.HasFlag(AccessibilityState.STATE_SYSTEM_DEFAULT);
 
     public static DialogPlacement PlacementOf(Window prompt, Window owner) =>
         DialogPlacement.Measure(owner.BoundingRectangle, prompt.BoundingRectangle);
