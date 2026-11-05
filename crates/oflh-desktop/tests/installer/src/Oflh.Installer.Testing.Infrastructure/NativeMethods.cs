@@ -15,4 +15,11 @@ internal static partial class NativeMethods
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool SetProcessDpiAwarenessContext(IntPtr context);
+
+    // Renders a window into a device context even when other windows cover it.
+    internal const uint PrintWindowRenderFullContent = 2;
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool PrintWindow(IntPtr window, IntPtr deviceContext, uint flags);
 }

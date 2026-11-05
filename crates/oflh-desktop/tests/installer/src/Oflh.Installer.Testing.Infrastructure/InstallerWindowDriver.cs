@@ -127,7 +127,36 @@ public sealed class InstallerWindowDriver : IDisposable
     public static void SaveScreenshot(AutomationElement element, string directory, string name)
     {
         Directory.CreateDirectory(directory);
-        Capture.Element(element).ToFile(Path.Combine(directory, name + ".png"));
+        var path = Path.Combine(directory, name + ".png");
+        if (!TryCaptureWindow(element, path)) Capture.Element(element).ToFile(path);
+    }
+
+    /// <summary>
+    /// Captures only the element's own window, so the runner's Start menu or console
+    /// cannot cover it the way they cover a screen capture.
+    /// </summary>
+    private static bool TryCaptureWindow(AutomationElement element, string path)
+    {
+        var handle = element.Properties.NativeWindowHandle.ValueOrDefault;
+        var bounds = element.BoundingRectangle;
+        if (handle == IntPtr.Zero || bounds.Width <= 0 || bounds.Height <= 0) return false;
+
+        using var bitmap = new System.Drawing.Bitmap(bounds.Width, bounds.Height);
+        using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
+        {
+            var deviceContext = graphics.GetHdc();
+            try
+            {
+                if (!NativeMethods.PrintWindow(handle, deviceContext, NativeMethods.PrintWindowRenderFullContent)) return false;
+            }
+            finally
+            {
+                graphics.ReleaseHdc(deviceContext);
+            }
+        }
+
+        bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        return true;
     }
 
     /// <summary>Best-effort screenshots of every window touched by the test, for failure diagnosis.</summary>
