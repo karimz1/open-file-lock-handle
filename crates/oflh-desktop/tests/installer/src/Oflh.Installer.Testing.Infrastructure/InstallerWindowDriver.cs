@@ -63,6 +63,8 @@ public sealed class InstallerWindowDriver : IDisposable
 
     public static void PressEnter(Window window)
     {
+        // A shell flyout, such as the runner's Start menu, can hold the keyboard focus.
+        window.SetForeground();
         window.Focus();
         Keyboard.Type(VirtualKeyShort.RETURN);
     }

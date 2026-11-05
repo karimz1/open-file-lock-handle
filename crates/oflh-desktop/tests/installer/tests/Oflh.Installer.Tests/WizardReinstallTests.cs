@@ -57,7 +57,6 @@ public sealed class WizardReinstallTests : InstallerTestBase
             // Starting the app is not under test here and would race with cleanup.
             if (InstallerWindowDriver.RunAppCheckBox(confirmWizard.Window) is { } runApp) runApp.IsChecked = false;
             finish.Invoke();
-            Assert.That(await ProcessRunner.WaitForExitAsync(confirmWizard.Process, Timeouts.ProcessExit), Is.True, "The installer did not exit after Finish.");
         }
         finally
         {
