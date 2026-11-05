@@ -36,6 +36,11 @@ public sealed class UninstallWizardTests : InstallerTestBase
 
             // Assert
             Assert.That(await ProcessRunner.WaitForExitAsync(app, Timeouts.ProcessExit), Is.True, "Confirming did not close the running app.");
+            // Interactive uninstalls end on the progress page; Close enables when done.
+            var close = InstallerWindowDriver.PrimaryButton(window);
+            Assert.That(FlaUI.Core.Tools.Retry.WhileFalse(() => close.IsEnabled, Timeouts.Uninstall).Result, Is.True, "The uninstaller never finished removing files.");
+            InspectPage(window, "uninstall-finished");
+            close.Invoke();
             Assert.That(await ProcessRunner.WaitForExitAsync(uninstaller, Timeouts.Uninstall), Is.True, "The uninstaller did not finish.");
             Assert.Multiple(() =>
             {
