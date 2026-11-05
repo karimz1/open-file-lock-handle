@@ -45,6 +45,33 @@ public sealed class ProcessRunner : IDisposable
         process.WaitForExit();
     }
 
+    /// <summary>
+    /// Stops every running copy of <paramref name="executablePath"/>, including ones
+    /// started by the installer itself, such as the Finish page's "Start" option.
+    /// </summary>
+    public static void StopAll(string executablePath)
+    {
+        foreach (var process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(executablePath)))
+        {
+            using (process)
+            {
+                if (IsRunningFrom(process, executablePath)) Stop(process);
+            }
+        }
+    }
+
+    private static bool IsRunningFrom(Process process, string executablePath)
+    {
+        try
+        {
+            return string.Equals(process.MainModule?.FileName, Path.GetFullPath(executablePath), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return false; // Exited meanwhile or belongs to another session.
+        }
+    }
+
     public void Dispose()
     {
         foreach (var process in started)

@@ -24,7 +24,8 @@ public sealed class InstallerWindowDriver : IDisposable
 
     private const string PageDialogClass = "#32770";
 
-    // The full-width branding line above the buttons is meant to span the frame.
+    // The full-width branding line above the buttons, a direct child of the outer
+    // window, is meant to span the frame.
     private const string BrandingLineId = "1028";
 
     // MUI2's directory page path edit control.
@@ -83,7 +84,7 @@ public sealed class InstallerWindowDriver : IDisposable
     /// </remarks>
     public static IReadOnlyList<(string Text, Rectangle Bounds)> Paragraphs(Window window) => CurrentPage(window)
         .FindAllDescendants(condition => condition.ByControlType(ControlType.Text))
-        .Where(text => text.Name.Length > MinimumParagraphLength && text.AutomationId != BrandingLineId && IsNativelyVisible(text))
+        .Where(text => text.Name.Length > MinimumParagraphLength && !IsBrandingLine(text, window) && IsNativelyVisible(text))
         .Select(text => (text.Name, text.BoundingRectangle))
         .ToList();
 
@@ -92,6 +93,9 @@ public sealed class InstallerWindowDriver : IDisposable
     private static AutomationElement CurrentPage(Window window) =>
         window.FindAllChildren(condition => condition.ByClassName(PageDialogClass))
             .FirstOrDefault(IsNativelyVisible) ?? window;
+
+    private static bool IsBrandingLine(AutomationElement text, Window window) =>
+        text.AutomationId == BrandingLineId || text.Parent?.Equals(window) == true;
 
     private static bool IsNativelyVisible(AutomationElement element) =>
         element.Properties.NativeWindowHandle.TryGetValue(out var handle) && handle != IntPtr.Zero
