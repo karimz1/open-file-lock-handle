@@ -119,7 +119,7 @@ public sealed class InstallerWindowDriver : IDisposable
         CurrentPage(window).Properties.NativeWindowHandle.ValueOrDefault;
 
     private static bool IsBrandingLine(AutomationElement text, Window window) =>
-        text.AutomationId == BrandingLineId || text.Parent?.Equals(window) == true;
+        text.Properties.AutomationId.ValueOrDefault == BrandingLineId || text.Parent?.Equals(window) == true;
 
     private static bool IsNativelyVisible(AutomationElement element) =>
         element.Properties.NativeWindowHandle.TryGetValue(out var handle) && handle != IntPtr.Zero
