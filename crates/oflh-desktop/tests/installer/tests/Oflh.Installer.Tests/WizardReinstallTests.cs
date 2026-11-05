@@ -55,6 +55,8 @@ public sealed class WizardReinstallTests : InstallerTestBase
             Assert.That(finish.IsEnabled, Is.True);
             Assert.That(probe.ExecutableExists, Is.True);
             finish.Invoke();
+            // The installer starts the app as it exits; wait so cleanup can find it.
+            Assert.That(await ProcessRunner.WaitForExitAsync(confirmWizard.Process, Timeouts.ProcessExit), Is.True, "The installer did not exit after Finish.");
         }
         finally
         {
