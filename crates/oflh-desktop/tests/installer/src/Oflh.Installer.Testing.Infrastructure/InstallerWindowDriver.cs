@@ -32,6 +32,8 @@ public sealed class InstallerWindowDriver : IDisposable
     private const string DirectoryFieldId = "1019";
 
     private readonly UIA3Automation automation = new();
+    private const int TitleBarClickOffset = 12;
+
     private readonly List<Window> windows = [];
 
     public Window MainWindowOf(Process process)
@@ -63,8 +65,11 @@ public sealed class InstallerWindowDriver : IDisposable
 
     public static void PressEnter(Window window)
     {
-        // A shell flyout, such as the runner's Start menu, can hold the keyboard focus.
-        window.SetForeground();
+        // A shell flyout, such as the runner's Start menu, can hold the keyboard focus,
+        // and Windows refuses SetForeground from a background process. A real click
+        // on the title bar moves the focus the way a user would.
+        var frame = window.BoundingRectangle;
+        Mouse.Click(new System.Drawing.Point(frame.Left + frame.Width / 2, frame.Top + TitleBarClickOffset));
         window.Focus();
         Keyboard.Type(VirtualKeyShort.RETURN);
     }
