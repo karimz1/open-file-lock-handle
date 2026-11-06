@@ -162,7 +162,10 @@ fn confirmation_buttons(app: &App) -> Line<'static> {
 }
 
 fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
-    let (keys, status) = match app.screen {
+    let (keys, status) = if app.waiting {
+        (app.language.text("w wait · z cancel"), "WAITING")
+    } else {
+        match app.screen {
         Screen::Confirm if app.confirm_scrollable => (app.language.text("Tab / ←→ choose · d details · ↑↓ PgUp/PgDn scroll · Enter confirm · Esc cancel"), ""),
         Screen::Confirm => (app.language.text("Tab / ←→ choose · d details · Enter confirm · Esc cancel"), ""),
         Screen::Details if app.detail_ports => (
@@ -186,6 +189,7 @@ fn footer_lines(width: u16, app: &App) -> Vec<Line<'static>> {
             app.language.text("1/2/3 tabs · / search · ↑↓ move · Enter inspect · Space select · Ctrl+A all · Tab/→ tree · i panel · m/c RAM/CPU · a auto · r refresh · k stop · x force · ? help · R GitHub · D Donate · q quit"),
             app.language.text("Enter inspect · Space select · m RAM / c CPU / n name / p PID"),
         ),
+    }
     };
     let keys = if width < 60 {
         match app.screen {

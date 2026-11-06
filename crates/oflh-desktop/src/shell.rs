@@ -1,4 +1,5 @@
 //! Tauri transport and native desktop integrations. Inspection remains in the service.
+use crate::service::WaitFollowUp;
 use crate::{contract::*, dropped_target::DroppedTarget, service::Service};
 use serde::Serialize;
 use std::{
@@ -132,6 +133,77 @@ fn follow_process(service: Desktop<'_>, revision: u32, key: String) -> Result<St
 #[tauri::command]
 fn cancel(service: Desktop<'_>) -> Status {
     service.cancel()
+}
+#[tauri::command]
+fn wait_until_free(service: Desktop<'_>, request: WaitRequest) -> Status {
+    service.wait_until_free(request)
+}
+#[tauri::command]
+fn cancel_wait(service: Desktop<'_>) -> Status {
+    service.cancel_wait()
+}
+#[tauri::command]
+async fn wait_follow_up(
+    app: tauri::AppHandle,
+    service: Desktop<'_>,
+    action: String,
+    destination: Option<PathBuf>,
+    locale: Option<String>,
+) -> Result<(), Failure> {
+    let service = service.inner().clone();
+    blocking(move || {
+        let follow_up = match action.as_str() {
+            "reveal" => WaitFollowUp::Reveal,
+            "delete" => WaitFollowUp::Delete,
+            "move" => WaitFollowUp::Move(
+                destination.ok_or_else(|| Failure::invalid("Choose a move destination first"))?,
+            ),
+            _ => return Err(Failure::invalid("Unknown wait follow-up")),
+        };
+        // Revalidate immediately before the action; native paths never enter JS.
+        let path = service.shared_wait_path()?;
+        if action == "reveal" {
+            // This quick vault resource unlock has its native open guard.
+            service.wait_follow_up(WaitFollowUp::Reveal)?;
+            app.opener()
+                .reveal_item_in_dir(&path)
+                .map_err(integration)?;
+        } else {
+            service.wait_follow_up_in_background(follow_up)?;
+        }
+        if let Some(locale) = locale {
+            let (title, body) = crate::wait::notification_message(&locale);
+            crate::wait::notify_free(&app, title, body)?;
+        }
+        Ok(())
+    })
+    .await
+}
+#[tauri::command]
+async fn choose_wait_destination(app: tauri::AppHandle) -> Result<Option<PathBuf>, Failure> {
+    blocking(move || {
+        app.dialog()
+            .file()
+            .blocking_pick_folder()
+            .map(|path| path.into_path())
+            .transpose()
+            .map_err(integration)
+    })
+    .await
+}
+#[tauri::command]
+fn notify_wait_free(app: tauri::AppHandle, locale: Option<String>) -> Result<(), Failure> {
+    let locale = locale.unwrap_or_default();
+    let (title, body) = crate::wait::notification_message(&locale);
+    crate::wait::notify_free(&app, title, body)
+}
+#[tauri::command]
+fn focus_window(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
 #[tauri::command]
 fn close_inspection(service: Desktop<'_>) -> Result<Status, Failure> {
@@ -523,6 +595,7 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(move |app| {
             let handle = app.handle().clone();
             let app_data = app.path().app_data_dir()?;
@@ -595,6 +668,12 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
             follow_process,
             cancel,
             close_inspection,
+            wait_until_free,
+            cancel_wait,
+            wait_follow_up,
+            choose_wait_destination,
+            notify_wait_free,
+            focus_window,
             choose,
             page,
             details,

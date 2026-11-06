@@ -11,11 +11,11 @@ publish = false
 workspace = true
 
 [features]
-default = []
+default = ["oflh-platform/wait-actions"]
 # Enables Tauri mock-runtime helpers only for the updater integration test run.
 updater-tests = ["desktop", "tauri/test"]
 custom-protocol = ["tauri/custom-protocol"]
-desktop = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog", "dep:tauri-plugin-opener", "dep:tauri-plugin-clipboard-manager", "dep:tauri-plugin-updater", "dep:tauri-plugin-process", "dep:tauri-plugin-single-instance"]
+desktop = ["oflh-platform/wait-actions", "dep:tauri", "dep:tauri-build", "dep:tauri-plugin-dialog", "dep:tauri-plugin-opener", "dep:tauri-plugin-clipboard-manager", "dep:tauri-plugin-updater", "dep:tauri-plugin-process", "dep:tauri-plugin-single-instance", "dep:tauri-plugin-notification"]
 
 [dependencies]
 oflh-core.workspace = true
@@ -33,6 +33,7 @@ tauri-plugin-opener = { version = "2", optional = true }
 tauri-plugin-clipboard-manager = { version = "2", optional = true }
 tauri-plugin-updater = { version = "2", optional = true }
 tauri-plugin-process = { version = "2", optional = true }
+tauri-plugin-notification = { version = "2", optional = true }
 
 # Windows only: a second launch (Explorer "Inspect file/folder") hands its target to
 # the running window. On Linux the plugin needs a D-Bus session bus and panics without one.

@@ -24,6 +24,7 @@ use worker::{Work, Worker};
 enum Event {
     Input(std::io::Result<TerminalEvent>),
     Scan(u64, Result<PreparedSnapshot>),
+    Wait(u64, Result<()>),
     ScopedScan(u64, Box<Result<(Target, PreparedSnapshot)>>),
     Metrics(u64, Result<Vec<(Identity, Metrics)>>),
     Killed(usize, Vec<String>),
@@ -54,6 +55,8 @@ pub struct StartOptions {
     pub ports_path_only: bool,
     /// Optional exact local port to search for at startup.
     pub port: Option<u16>,
+    /// Optional deadline for interactive w wait.
+    pub wait_timeout: Option<Duration>,
 }
 
 /// Run the interactive terminal with background scanning and RAII restoration.
@@ -70,6 +73,7 @@ pub fn run(
     app.language = options.language.unwrap_or_else(Language::system);
     app.update.enabled = !options.no_update_check
         && oflh_core::releases::can_check_releases(VERSION, PULL_REQUEST_URL);
+    app.configure_wait(options.wait_timeout);
     app.ports = options.ports;
     app.ports_path_only = options.ports_path_only;
     app.follow_port_folder = options.follow_port_folder;
@@ -112,7 +116,7 @@ pub fn run(
         if let Some(at) = update_schedule.deadline() {
             deadline = deadline.min(at);
         }
-        if app.scanning || app.stopping {
+        if app.scanning || app.stopping || app.waiting {
             deadline = deadline.min(pulse)
         }
         if app.auto
@@ -172,6 +176,12 @@ pub fn run(
                 app.finish_scan(Instant::now(), success);
                 refresh.completed(Instant::now());
                 dirty = true
+            }
+            Ok(Event::Wait(result_generation, result)) if result_generation == generation => {
+                sampling = false;
+                sample = None;
+                app.complete_wait(&result);
+                dirty = true;
             }
             Ok(Event::ScopedScan(result_generation, result)) if result_generation == generation => {
                 sampling = false;
@@ -242,7 +252,7 @@ pub fn run(
         }
         match effect {
             Effect::Quit => return Ok(()),
-            Effect::Scan if !app.scanning && !app.stopping => {
+            Effect::Scan if !app.scanning && !app.stopping && !app.waiting => {
                 generation += 1;
                 sample = None;
                 sampling = false;
@@ -277,6 +287,26 @@ pub fn run(
                     app.error = true
                 }
                 dirty = true
+            }
+            Effect::Wait => {
+                generation += 1;
+                sample = None;
+                sampling = false;
+                app.auto = false;
+                worker.request(
+                    generation,
+                    Work::Wait {
+                        target: app.target.clone(),
+                        include_ports: app.ports_requested,
+                        port: selected_wait_port(&app),
+                        timeout: app.wait_timeout,
+                    },
+                );
+                pulse = Instant::now() + PULSE;
+            }
+            Effect::CancelWait => {
+                worker.cancel_scan();
+                app.complete_wait(&Err(Error::Cancelled));
             }
             Effect::CancelScan => {
                 worker.cancel_scan();
@@ -324,7 +354,15 @@ pub fn run(
             app.update.begin(false);
             update_schedule.started();
         }
-        if (app.scanning || app.stopping) && now >= pulse {
+        if (app.scanning || app.stopping || app.waiting) && now >= pulse {
+            if let Some(started) = app.wait_started {
+                app.wait_elapsed = now.saturating_duration_since(started);
+                app.status = localized!(
+                    app.language,
+                    "Waiting for {seconds}s · z cancel",
+                    seconds = app.wait_elapsed.as_secs()
+                );
+            }
             if let Some(started) = app.scan_started {
                 app.scan_elapsed = now.saturating_duration_since(started);
                 app.scan_progress = worker.progress();
@@ -388,6 +426,15 @@ fn open_link(url: &'static str) -> std::io::Result<()> {
         let _ = child.wait();
     });
     Ok(())
+}
+
+fn selected_wait_port(app: &App) -> Option<u16> {
+    app.port_query
+        .split("port:")
+        .nth(1)
+        .and_then(|part| part.split_whitespace().next())
+        .and_then(|part| part.parse().ok())
+        .filter(|port| *port > 0)
 }
 
 fn scan_work(app: &App) -> Work {

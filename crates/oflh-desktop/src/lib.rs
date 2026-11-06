@@ -17,3 +17,5 @@ pub mod sessions;
 #[cfg(feature = "desktop")]
 pub mod shell;
 pub mod startup;
+#[cfg(feature = "desktop")]
+pub mod wait;

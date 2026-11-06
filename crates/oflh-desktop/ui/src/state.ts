@@ -16,6 +16,7 @@ export const initialStatus: Status = {
   processes: 0,
   ports: 0,
   usages: 0,
+  wait: { waiting: false, elapsed_ms: 0, outcome: null, error: null },
   warnings: [],
   error: null,
   version: "",

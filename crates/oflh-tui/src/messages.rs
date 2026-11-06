@@ -95,6 +95,11 @@ labels! {
     "Checking updates…", "Neue Version wird geprüft…", "正在检查更新…";
     "No newer stable release · u check updates", "Keine neuere stabile Version · u erneut prüfen", "没有更新的稳定版本 · u 再次检查";
     "Cancel", "Abbrechen", "取消";
+    "Waiting until free · z cancel", "Warten, bis frei · z abbrechen", "等待空闲 · z 取消";
+    "FREE: no matching holders remain.", "FREI: Keine passenden Nutzer mehr vorhanden.", "空闲：未发现匹配的占用进程。";
+    "Wait timed out before the target became free.", "Zeitgrenze erreicht, bevor das Ziel frei wurde.", "目标在超时前未变为空闲。";
+    "Waiting cancelled", "Warten abgebrochen", "等待已取消";
+    "w wait · z cancel", "w warten · z abbrechen", "w 等待 · z 取消";
     "processes", "Prozesse", "进程";
     "files", "Dateien", "文件";
     "ports", "Ports", "端口";
@@ -261,6 +266,20 @@ labels! {
 }
 // Literal formats compile in all languages; arguments are evaluated in only one branch.
 macro_rules! localized {
+    ($language:expr, "Waiting for {seconds}s · z cancel" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Waiting for {seconds}s · z cancel" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Warten seit {seconds} s · z abbrechen" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("已等待 {seconds} 秒 · z 取消" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Wait failed: {error}" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Wait failed: {error}" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Warten fehlgeschlagen: {error}" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("等待失败：{error}" $(, $($arguments)*)?),
+        }
+    };
     ($language:expr, "{name} closes completely, with all {n} open windows, such as “{title}”." $(, $($arguments:tt)*)?) => {
         match $language {
             $crate::view::messages::Language::English => format!("{name} closes completely, with all {n} open windows, such as “{title}”." $(, $($arguments)*)?),

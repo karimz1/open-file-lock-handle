@@ -20,6 +20,7 @@ Source: https://github.com/karimz1/open-file-lock-handle
 
 Usage: oflh [OPTIONS] [PATH]
        oflh check [OPTIONS] [PATH]
+       oflh wait [--timeout SECONDS] [OPTIONS] [PATH]
 
   oflh check --json file  check once and print versioned JSON for scripts
   oflh check --port 3000  check whether local port 3000 has a binding
@@ -37,7 +38,9 @@ Options:
   --ports       start in the Ports tab (TCP listeners and bound UDP)
   --port PORT   start in Ports with an exact local-port filter
   --language en|de|zh|system   choose language; default follows the system locale
-  --json        on check: print one JSON document (schema version 1); no TTY required
+  wait PATH       poll until free; 0 free, 4 timeout, 130 cancelled
+  --wait-timeout SECONDS   optional deadline for the interactive w command
+  --timeout SECONDS / --poll-interval SECONDS   configure wait
   --no-update-check   disable network release checks
   --version     print version
   --help        show help
@@ -51,6 +54,7 @@ Quellcode: https://github.com/karimz1/open-file-lock-handle
 
 Aufruf: oflh [OPTIONS] [PATH]
         oflh check [OPTIONS] [PATH]
+       oflh wait [--timeout SECONDS] [OPTIONS] [PATH]
 
   oflh check --json Datei  einmal prüfen und versioniertes JSON für Skripte ausgeben
   oflh check --port 3000   prüfen, ob lokaler Port 3000 gebunden ist
@@ -68,7 +72,9 @@ Optionen:
   --ports       in der Portansicht starten (TCP-Listener und gebundenes UDP)
   --port PORT   Portansicht mit exaktem lokalen Portfilter öffnen
   --language en|de|zh|system   Sprache wählen; Standard folgt der System-Locale
-  --json        bei check: ein JSON-Dokument (Schema-Version 1); kein TTY nötig
+  wait            auf Freigabe warten; 0 Erfolg, 4 Zeitgrenze, 130 abgebrochen
+  --wait-timeout SEKUNDEN   optionale Grenze für den interaktiven w-Befehl
+  --timeout SEKUNDEN / --poll-interval SEKUNDEN   Warten steuern
   --no-update-check   Netzwerkprüfung auf neue Versionen deaktivieren
   --version     Version ausgeben
   --help        Hilfe anzeigen
@@ -81,6 +87,7 @@ const CHINESE_HELP: &str = "oflh — Open File Lock Handle. 查找正在使用�
 
 用法：oflh [OPTIONS] [PATH]
        oflh check [OPTIONS] [PATH]
+       oflh wait [--timeout SECONDS] [OPTIONS] [PATH]
 
   oflh check --json 文件  检查一次并为脚本输出带版本的 JSON
   oflh check --port 3000  检查本地端口 3000 是否有绑定
@@ -98,7 +105,9 @@ const CHINESE_HELP: &str = "oflh — Open File Lock Handle. 查找正在使用�
   --ports       从端口视图启动（TCP 侦听器和已绑定的 UDP）
   --port PORT   从端口视图启动，并精确筛选本地端口
   --language en|de|zh|system   选择语言；默认跟随系统区域设置
-  --json        用于 check：输出一个 JSON 文档（架构版本 1）；无需 TTY
+  wait            等待目标空闲；0 成功，4 超时，130 已中断
+  --wait-timeout 秒   交互式 w 命令的可选等待时限
+  --timeout 秒 / --poll-interval 秒   设置等待选项
   --no-update-check   禁用联网版本检查
   --version     输出版本
   --help        显示帮助

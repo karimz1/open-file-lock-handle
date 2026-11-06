@@ -85,6 +85,7 @@ import { SettingsMenu } from "./SettingsMenu";
 import { useUpdates } from "./useUpdates";
 import { UpdateBanner } from "./UpdateBanner";
 import { BackgroundInspection } from "./BackgroundInspection";
+import { WaitUntilFree } from "./WaitUntilFree";
 import { UpdateFeedback } from "./UpdateFeedback";
 import {
   languageOptions,
@@ -223,7 +224,7 @@ export function App() {
   const [startingScan, setStartingScan] = useState(false);
   const [closingInspection, setClosingInspection] = useState(false);
   const [awaitingResults, setAwaitingResults] = useState(false);
-  const scanBusy = status.scanning || startingScan;
+  const scanBusy = status.scanning || startingScan || status.wait.waiting;
   const [backgroundScan, setBackgroundScan] = useState(false);
   const backgroundRevision = useRef(0);
   const [view, setView] = useState<View>("processes");
@@ -2096,7 +2097,9 @@ export function App() {
                       void api.openInstalledRelease().catch(report)
                     }
                   >
-                    {t("app.k_installed_version", { version: status.version })}
+                    {t("app.k_installed_version", {
+                      version: status.version,
+                    })}
                   </button>{" "}
                   · {t("app.k_mit_license")}
                 </p>
@@ -2176,6 +2179,15 @@ export function App() {
         </main>
       </div>
       <footer className="statusbar">
+        {!maximized && (
+          <WaitUntilFree
+            status={status}
+            portQuery={portQuery}
+            disabled={inspectionLocked}
+            report={report}
+            onStatus={apply}
+          />
+        )}
         <span className="status-current" role={scanBusy ? undefined : "status"}>
           {scanBusy ? (
             <BackgroundInspection

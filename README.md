@@ -359,6 +359,8 @@ re-verify the process identity before sending anything.
 
 <a id="project-references"></a>
 
+**Non-destructive wait:** `oflh wait file` or `oflh wait --port 3000`; optional `--timeout`, 0 when free, 4 on timeout.
+
 ## Documentation
 
 | Guide | What's in it |

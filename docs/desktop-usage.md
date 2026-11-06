@@ -378,3 +378,18 @@ sudo pacman -Syu webkit2gtk-4.1 gtk3
 
 CI extracts and launches the archive as an unprivileged user on Ubuntu and
 Fedora (x86-64 and ARM64) and on Arch Linux (x86-64).
+
+
+## Wait until free
+
+Choose **Wait until free** in the workspace to watch the current file or folder
+without ending a process. In Ports, a `port:3000` filter selects one local
+binding. The wait polls once per second, never overlaps a previous scan and can
+be cancelled at any time. A zero timeout means no deadline; otherwise the wait
+ends with a distinct timeout, not a success.
+
+When a confirming scan reports no matching holders, OFLH shows a desktop
+notification and brings the window forward. You can instead select reveal,
+delete or move before starting; move asks for a destination first. A fresh scan
+runs immediately before the selected action and refuses it if a holder returns.
+Deletion is explicit and never happens just because a wait completed.

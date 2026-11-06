@@ -1,4 +1,4 @@
-use crate::view::messages::Language;
+use crate::view::messages::{Language, localized};
 use crossterm::event::{KeyCode as K, KeyEvent, KeyModifiers as M};
 use oflh_core::ports::{PortIndex, PortQuery};
 use oflh_core::{
@@ -45,6 +45,8 @@ pub enum Effect {
     Quit,
     Scan,
     CancelScan,
+    Wait,
+    CancelWait,
     CheckUpdate,
     FollowPort(Identity, std::path::PathBuf),
     Kill(Vec<Identity>, bool),
@@ -225,6 +227,10 @@ pub struct App {
     pub sessions: crate::session::Sessions,
     /// Sign-out awaiting confirmation.
     pub sign_out: Option<crate::session::SignOutPrompt>,
+    pub waiting: bool,
+    pub wait_started: Option<std::time::Instant>,
+    pub wait_elapsed: std::time::Duration,
+    pub wait_timeout: Option<std::time::Duration>,
 }
 impl App {
     pub fn new(target: Target, version: String) -> Self {
@@ -286,6 +292,10 @@ impl App {
             status: String::new(),
             sessions: Default::default(),
             sign_out: None,
+            waiting: false,
+            wait_started: None,
+            wait_elapsed: std::time::Duration::ZERO,
+            wait_timeout: None,
             error: false,
             width: 80,
             height: 24,
@@ -295,9 +305,17 @@ impl App {
     pub fn can_auto_scan(&self) -> bool {
         !self.scanning
             && !self.stopping
+            && !self.waiting
             && !self.editing
             && self.tree.is_none()
             && matches!(self.screen, Screen::Main | Screen::Details)
+    }
+    /// Select an optional one-minute wait deadline, documented in terminal usage.
+    pub fn configure_wait(&mut self, timeout: Option<std::time::Duration>) {
+        self.wait_timeout = timeout;
+        if timeout.is_some() {
+            self.waiting = false;
+        }
     }
     pub fn begin_scan(&mut self, now: std::time::Instant) {
         self.scanning = true;
@@ -714,6 +732,18 @@ impl App {
         }
         if key.code == K::Char('q') {
             return Effect::Quit;
+        }
+        if key.code == K::Char('z') && self.waiting {
+            self.waiting = false;
+            return Effect::CancelWait;
+        }
+        if key.code == K::Char('w') && !self.scanning && !self.stopping {
+            self.waiting = true;
+            self.wait_started = Some(std::time::Instant::now());
+            self.wait_elapsed = std::time::Duration::ZERO;
+            self.status = self.language.text("Waiting until free · z cancel").into();
+            self.error = false;
+            return Effect::Wait;
         }
         if key.code == K::Char('z') && self.scanning {
             return Effect::CancelScan;
@@ -1247,5 +1277,61 @@ impl App {
             _ => {}
         }
         Effect::None
+    }
+}
+
+impl App {
+    pub fn complete_wait(&mut self, result: &oflh_core::Result<()>) {
+        self.waiting = false;
+        self.wait_started = None;
+        match result {
+            Ok(()) => {
+                self.status = self
+                    .language
+                    .text("FREE: no matching holders remain.")
+                    .into();
+                self.error = false;
+            }
+            Err(Error::WaitTimedOut) => {
+                self.status = self
+                    .language
+                    .text("Wait timed out before the target became free.")
+                    .into();
+                self.error = true;
+            }
+            Err(Error::Cancelled) => {
+                self.status = self.language.text("Waiting cancelled").into();
+                self.error = false;
+            }
+            Err(error) => {
+                self.status = localized!(self.language, "Wait failed: {error}", error = error);
+                self.error = true;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod wait_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent};
+    #[test]
+    fn w_starts_wait_and_z_cancels_without_terminating() {
+        let mut app = App::new(Target::new(".").unwrap(), "test".into());
+        assert!(matches!(
+            app.key(KeyEvent::new(KeyCode::Char('w'), M::NONE)),
+            Effect::Wait
+        ));
+        assert!(app.waiting);
+        assert!(matches!(
+            app.key(KeyEvent::new(KeyCode::Char('z'), M::NONE)),
+            Effect::CancelWait
+        ));
+        assert!(!app.waiting);
+        app.complete_wait(&Err(Error::WaitTimedOut));
+        assert!(app.error);
+        assert!(app.status.contains("timed out"));
+        app.complete_wait(&Ok(()));
+        assert!(!app.error && app.status.starts_with("FREE:"));
     }
 }
