@@ -30,6 +30,37 @@ on:
 permissions:
   contents: read
 jobs:
+  installer-dialog:
+    if: ${{ !inputs.administrator_only }}
+    name: Native NSIS dialog smoke test
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Compile and exercise the actual installer dialog macro
+        shell: pwsh
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}/NSIS/makensis.exe"
+          if (!(Test-Path $compiler)) { choco install nsis --yes --no-progress }
+          $env:OFLH_DIALOG_SMOKE_EXE = Join-Path $env:RUNNER_TEMP 'oflh-dialog-smoke.exe'
+          $env:OFLH_DIALOG_SMOKE_RESULT = Join-Path $env:RUNNER_TEMP 'oflh-dialog-result.txt'
+          $env:OFLH_INSTALLER_REPORT = Join-Path $PWD 'installer-e2e-report'
+          $hooks = (Resolve-Path 'crates/oflh-desktop/windows/installer-hooks.nsh').Path
+          & $compiler "/DOUTPUT_EXE=$env:OFLH_DIALOG_SMOKE_EXE" "/DRESULT_OUTPUT=$env:OFLH_DIALOG_SMOKE_RESULT" "/DHOOKS=$hooks" crates/oflh-desktop/tests/installer/fixtures/dialog-smoke.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS fixture compilation failed' }
+          dotnet restore crates/oflh-desktop/tests/installer/Oflh.Installer.Tests.sln --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Test dependency restore failed' }
+          dotnet test crates/oflh-desktop/tests/installer/Oflh.Installer.Tests.sln --no-restore --filter 'TestCategory=DialogSmoke' --logger 'trx;LogFileName=dialog-smoke.trx' --results-directory installer-e2e-report
+          if ($LASTEXITCODE -ne 0) { throw 'FlaUI dialog test failed' }
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: installer-dialog-flaui
+          path: installer-e2e-report/
+          retention-days: 3
   administrator-recovery:
     name: Administrator recovery / ${{ matrix.label }}
     runs-on: ${{ matrix.runner }}
@@ -91,6 +122,17 @@ jobs:
           cache-dependency-path: crates/oflh-desktop/ui/package-lock.json
       - run: npm ci
         working-directory: crates/oflh-desktop/ui
+      - name: Compile the rendered NSIS installer template early
+        # Renders the real Tauri template and hooks with makensis against a stub
+        # executable, so script errors fail here in minutes instead of after the
+        # full Windows build.
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq nsis
+          mkdir -p ../../../target/x86_64-pc-windows-msvc/release
+          printf 'MZ' > ../../../target/x86_64-pc-windows-msvc/release/oflh-desktop.exe
+          (cd .. && ui/node_modules/.bin/tauri bundle --bundles nsis --target x86_64-pc-windows-msvc --no-binary-patching -c '{"bundle":{"createUpdaterArtifacts":false}}')
+          rm -rf ../../../target/x86_64-pc-windows-msvc
+        working-directory: crates/oflh-desktop/ui
       - name: Verify updater signing key against the app public key
         env:
           UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -103,7 +145,17 @@ jobs:
           npm run tauri -- signer sign -f "$RUNNER_TEMP/updater-preflight.key" "$RUNNER_TEMP/updater-preflight"
           cargo xtask verify-updater-signature --config ../tauri.conf.json --payload "$RUNNER_TEMP/updater-preflight" --signature "$RUNNER_TEMP/updater-preflight.sig"
         working-directory: crates/oflh-desktop/ui
-      - run: npm run format:check && npm run build && npm test && npx playwright install --with-deps chrome && npm run test:ui
+      - run: npm run format:check && npm run build && npm test && npx playwright install --with-deps chrome
+        working-directory: crates/oflh-desktop/ui
+      - name: Load the installed Chrome executable's real native icon
+        env:
+          OFLH_ICON_SMOKE_EXECUTABLE: /opt/google/chrome/chrome
+          OFLH_ICON_DATA_URL_FILE: ${{ runner.temp }}/oflh-native-icon.txt
+        run: cargo test -p oflh-icons --test native --locked native_application_icon_is_renderable -- --ignored
+      - name: Browser end-to-end tests with a native application icon
+        env:
+          OFLH_NATIVE_ICON_PATH: ${{ runner.temp }}/oflh-native-icon.txt
+        run: npm run test:ui
         working-directory: crates/oflh-desktop/ui
       - uses: actions/upload-artifact@v7
         if: ${{ always() && inputs.upload_artifacts }}
@@ -112,7 +164,7 @@ jobs:
           path: |
             crates/oflh-desktop/ui/playwright-report/
             crates/oflh-desktop/ui/test-results/
-          retention-days: 1
+          retention-days: 3
   native:
     needs: frontend
     name: Desktop / ${{ matrix.label }}
@@ -156,6 +208,8 @@ jobs:
           cargo fmt --all --check
           cargo clippy -p oflh-desktop --all-targets --features desktop --locked -- -D warnings
           cargo test -p oflh-desktop --features updater-tests --locked
+          cargo test -p oflh-icons --locked
+          cargo test -p oflh-platform --test native --locked native_graceful
       - name: Set traceable build identity and matching installer version
         run: |
           OFLH_VERSION=$(cargo xtask ci-version --version "$RELEASE_TAG" --commit "$BUILD_COMMIT" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" --repository "$GITHUB_REPOSITORY" --server-url "$GITHUB_SERVER_URL" --pr-number "$PR_NUMBER" --github-env "$GITHUB_ENV")
@@ -227,6 +281,81 @@ jobs:
       - name: Bundle the built executable without rebuilding
         run: npm run tauri -- bundle --config "$RUNNER_TEMP/desktop-version.json" --no-binary-patching --bundles '${{ matrix.bundles }}'
         working-directory: crates/oflh-desktop/ui
+      - name: Validate the built application's native icon
+        env:
+          ICON_SMOKE_OS: ${{ matrix.os }}
+        run: |
+          python - <<'PYCODE'
+          import os, pathlib, shutil
+          root = pathlib.Path.cwd()
+          platform = os.environ["ICON_SMOKE_OS"]
+          executable = root / "target/release" / ("oflh-desktop.exe" if platform == "windows" else "oflh-desktop")
+          if platform == "darwin":
+              executable = root / "target/release/bundle/macos/OFLH Desktop.app/Contents/MacOS/oflh-desktop"
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write(f"OFLH_ICON_SMOKE_EXECUTABLE={executable}\n")
+              if platform == "linux":
+                  data = pathlib.Path(os.environ["RUNNER_TEMP"]) / "oflh-icon-data"
+                  (data / "applications").mkdir(parents=True, exist_ok=True)
+                  (data / "icons/hicolor/128x128/apps").mkdir(parents=True, exist_ok=True)
+                  (data / "applications/oflh.desktop").write_text(f'[Desktop Entry]\nType=Application\nExec="{executable}"\nIcon=oflh\n')
+                  shutil.copy(root / "crates/oflh-desktop/icons/128x128.png", data / "icons/hicolor/128x128/apps/oflh.png")
+                  output.write(f"XDG_DATA_HOME={data}\n")
+          PYCODE
+      - name: Exercise native icon lookup against the built application
+        run: cargo test -p oflh-icons --test native --locked native_application_icon_is_renderable -- --ignored
+      - name: Install Chrome for native Windows icon validation
+        if: matrix.os == 'windows' && matrix.arch == 'amd64'
+        run: npx playwright install chrome
+        working-directory: crates/oflh-desktop/ui
+      - name: Validate the actual Chrome executable icon on Windows
+        if: matrix.os == 'windows' && matrix.arch == 'amd64'
+        shell: pwsh
+        run: |
+          $chrome = @("$env:ProgramFiles/Google/Chrome/Application/chrome.exe", "${env:ProgramFiles(x86)}/Google/Chrome/Application/chrome.exe", "$env:LOCALAPPDATA/Google/Chrome/Application/chrome.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (!$chrome) { throw 'Installed Chrome executable is missing' }
+          $env:OFLH_ICON_SMOKE_EXECUTABLE = $chrome
+          cargo test -p oflh-icons --test native --locked native_application_icon_is_renderable -- --ignored
+          if ($LASTEXITCODE -ne 0) { throw 'Chrome native icon validation failed' }
+      - uses: actions/setup-dotnet@v5
+        if: matrix.os == 'windows'
+        with:
+          dotnet-version: '10.0.x'
+      - name: Use a 1920x1080 display so the screenshot tests can offer 150% scaling
+        # Set-DisplayResolution exists on Windows Server only; the ARM64 Windows 11
+        # image keeps its resolution and the 150% case is skipped there.
+        if: matrix.os == 'windows' && matrix.arch == 'amd64'
+        shell: pwsh
+        run: Set-DisplayResolution -Width 1920 -Height 1080 -Force
+      - name: Dismiss the first-sign-in privacy screen on the ARM64 image
+        # The windows-11-arm image shows "Choose privacy settings" over the
+        # desktop, which would cover every installer screenshot.
+        if: matrix.os == 'windows' && matrix.arch == 'arm64'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          New-Item -Force 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\OOBE' | Out-Null
+          Set-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\OOBE' DisablePrivacyExperience 1 -Type DWord
+          Get-Process WWAHost, CloudExperienceHostBroker, CloudExperienceHost -ErrorAction SilentlyContinue | Stop-Process -Force
+      - name: Windows installer end-to-end workflow
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem target/release/bundle/nsis/*-setup.exe
+          if (@($installer).Count -ne 1) { throw 'Expected exactly one Windows installer' }
+          $env:OFLH_INSTALLER_EXE = $installer.FullName
+          $env:OFLH_INSTALLER_REPORT = Join-Path $PWD 'installer-e2e-report'
+          dotnet restore crates/oflh-desktop/tests/installer/Oflh.Installer.Tests.sln --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Test dependency restore failed' }
+          dotnet test crates/oflh-desktop/tests/installer/Oflh.Installer.Tests.sln --no-restore --filter 'TestCategory=Installer' --logger 'trx;LogFileName=installer.trx' --results-directory installer-e2e-report
+          if ($LASTEXITCODE -ne 0) { throw 'FlaUI installer E2E failed' }
+      - name: Upload Windows installer end-to-end evidence
+        if: ${{ always() && matrix.os == 'windows' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-e2e-${{ matrix.arch }}
+          path: installer-e2e-report/
+          retention-days: 3
       - name: Check the generated NSIS script
         if: matrix.os == 'windows'
         run: |
@@ -269,7 +398,7 @@ jobs:
           archive: false
           path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.tar.gz
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'linux'
         with:
@@ -277,7 +406,7 @@ jobs:
           archive: false
           path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.deb
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'linux'
         with:
@@ -285,42 +414,42 @@ jobs:
           archive: false
           path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.rpm
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: inputs.upload_artifacts && matrix.os == 'darwin'
         with:
           archive: false
           path: desktop-dist/oflh-desktop.darwin.${{ matrix.arch }}.dmg
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: inputs.upload_artifacts && matrix.os == 'darwin'
         with:
           archive: false
           path: desktop-dist/oflh-desktop.darwin.${{ matrix.arch }}.app.tar.gz
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: inputs.upload_artifacts && matrix.os == 'darwin'
         with:
           archive: false
           path: desktop-dist/oflh-desktop.darwin.${{ matrix.arch }}.app.tar.gz.sig
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: inputs.upload_artifacts && matrix.os == 'windows'
         with:
           archive: false
           path: desktop-dist/oflh-desktop.windows.${{ matrix.arch }}-installer.exe
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: inputs.upload_artifacts && matrix.os == 'windows'
         with:
           archive: false
           path: desktop-dist/oflh-desktop.windows.${{ matrix.arch }}-installer.exe.sig
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - name: Stage release-branch download
         id: release-download
         if: env.RELEASE_BRANCH_DOWNLOAD == 'true'
@@ -343,14 +472,14 @@ jobs:
           archive: false
           path: ${{ steps.release-download.outputs.path }}
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: inputs.upload_artifacts
         with:
           name: desktop-receipt-${{ matrix.os }}-${{ matrix.arch }}
           path: desktop-dist/*.manifest
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
 
   prune-tester-builds:
     name: Delete older tester builds of this branch or PR

@@ -84,6 +84,26 @@ fn native_scan_and_confirmed_force_action_use_captured_child_lifetime() {
     assert_eq!(page.total, 1);
     assert!(dataset.path(&page.rows[0].path_ref).unwrap().is_file());
     let mut backend = oflh_platform::native().unwrap();
+    #[cfg(windows)]
+    {
+        // This fixture has no GUI window. A rejected normal close must retain
+        // a distinct recoverable result and leave the captured process alive.
+        let normal = service
+            .prepare(
+                status.revision,
+                std::slice::from_ref(&key),
+                false,
+                &mut *backend,
+            )
+            .unwrap();
+        let results = service.terminate(&normal.ticket, &mut *backend).unwrap();
+        assert_eq!(
+            results[0].outcome,
+            oflh_desktop::contract::ActionOutcome::Failed
+        );
+        assert_eq!(results[0].error.as_ref().unwrap().kind, "close_unavailable");
+        assert!(child.0.try_wait().unwrap().is_none());
+    }
     let confirmation = service
         .prepare(status.revision, &[key], true, &mut *backend)
         .unwrap();

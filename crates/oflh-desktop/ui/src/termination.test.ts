@@ -35,6 +35,7 @@ describe("force recovery", () => {
       result("still_running"),
       result("failed", "permission_denied"),
       result("failed", "io"),
+      result("failed", "close_unavailable"),
     ]) {
       expect(
         forceRecoveryTargets(confirmation, [

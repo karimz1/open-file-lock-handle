@@ -9,15 +9,17 @@ use windows_sys::Win32::Graphics::Gdi::{
     DeleteObject, GetDIBits, GetObjectW, HBITMAP,
 };
 use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
-use windows_sys::Win32::UI::Shell::{SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW};
+use windows_sys::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize};
+use windows_sys::Win32::UI::Shell::{
+    ExtractIconExW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO};
 
 pub(crate) fn icon(executable: &Path) -> Option<Icon> {
-    let wide: Vec<u16> = executable
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
+    // Tauri blocking-pool threads do not necessarily have a COM apartment.
+    // SHGetFileInfo requires COM; balance even an S_FALSE initialization.
+    let _apartment = Apartment::new();
+    let wide = shell_path(executable);
     // SAFETY: SHFILEINFOW is plain data; all-zero is a valid initial value.
     let mut info: SHFILEINFOW = unsafe { std::mem::zeroed() };
     // SAFETY: `wide` is NUL-terminated and outlives the call; `info` is a
@@ -32,7 +34,14 @@ pub(crate) fn icon(executable: &Path) -> Option<Icon> {
         )
     };
     if found == 0 || info.hIcon.is_null() {
-        return None;
+        // Shell extensions can fail for an otherwise readable executable.
+        // Read its first embedded large icon before using the neutral glyph.
+        // SAFETY: wide is terminated and the output slot is writable.
+        let count =
+            unsafe { ExtractIconExW(wide.as_ptr(), 0, &mut info.hIcon, std::ptr::null_mut(), 1) };
+        if count == 0 || count == u32::MAX || info.hIcon.is_null() {
+            return None;
+        }
     }
     let pixels = icon_pixels(info.hIcon);
     // SAFETY: SHGFI_ICON transfers ownership of hIcon to the caller.
@@ -125,4 +134,77 @@ fn bitmap_bgra(bitmap: HBITMAP) -> Option<(u32, u32, Vec<u8>)> {
     // SAFETY: `dc` was created above and is no longer used.
     unsafe { DeleteDC(dc) };
     (lines == height).then_some((width as u32, height as u32, pixels))
+}
+
+// Convert only the spelling passed to the shell. Keep native dataset paths
+// lossless: the shell does not accept the extended-length Win32 prefix.
+fn shell_path(path: &Path) -> Vec<u16> {
+    let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    let prefix: Vec<u16> = r"\\?\".encode_utf16().collect();
+    let unc: Vec<u16> = r"\\?\UNC\".encode_utf16().collect();
+    let mut shell = if wide.starts_with(&unc) {
+        r"\\"
+            .encode_utf16()
+            .chain(wide[unc.len()..].iter().copied())
+            .collect::<Vec<_>>()
+    } else if wide.starts_with(&prefix) && wide.get(5) == Some(&(b':' as u16)) {
+        wide[prefix.len()..].to_vec()
+    } else {
+        wide
+    };
+    shell.push(0);
+    shell
+}
+
+struct Apartment(bool);
+impl Apartment {
+    fn new() -> Self {
+        // SAFETY: no reserved pointer; initialization applies to this thread.
+        Self(unsafe { CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32) } >= 0)
+    }
+}
+impl Drop for Apartment {
+    fn drop(&mut self) {
+        if self.0 {
+            // SAFETY: balances successful initialization on the same thread.
+            unsafe { CoUninitialize() };
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::windows::ffi::OsStringExt;
+    #[test]
+    fn shell_paths_accept_extended_drive_and_unc_spelling() {
+        for (native, shell) in [
+            (
+                r"\\?\C:\Program Files\Browser\chrome.exe",
+                r"C:\Program Files\Browser\chrome.exe",
+            ),
+            (
+                r"\\?\UNC\server\apps\browser.exe",
+                r"\\server\apps\browser.exe",
+            ),
+            (r"C:\apps\浏览器.exe", r"C:\apps\浏览器.exe"),
+        ] {
+            assert_eq!(
+                shell_path(Path::new(native)),
+                shell.encode_utf16().chain([0]).collect::<Vec<_>>()
+            );
+        }
+    }
+    #[test]
+    fn own_executable_has_the_same_icon_with_extended_path_spelling() {
+        let path = std::env::current_exe().unwrap();
+        let normal =
+            std::ffi::OsString::from_wide(&shell_path(&path)[..shell_path(&path).len() - 1]);
+        let native = icon(&path);
+        assert!(
+            native.is_some(),
+            "the shell should provide an executable icon"
+        );
+        assert_eq!(native, icon(Path::new(&normal)));
+    }
 }

@@ -5,7 +5,7 @@ LangString addOrReinstall ${LANG_GERMAN} "Komponenten hinzufügen oder neu insta
 LangString alreadyInstalled ${LANG_GERMAN} "Bereits installiert"
 LangString alreadyInstalledLong ${LANG_GERMAN} "${PRODUCTNAME} ${VERSION} ist bereits installiert. Wähle aus, was passieren soll, und klicke auf Weiter."
 LangString appRunning ${LANG_GERMAN} "${PRODUCTNAME} läuft noch. Schließe es und versuche es erneut."
-LangString appRunningOkKill ${LANG_GERMAN} "${PRODUCTNAME} läuft noch.$\nKlicke auf OK, um es zu beenden."
+LangString appRunningOkKill ${LANG_GERMAN} "Klicke auf OK, um es zu beenden und fortzufahren."
 LangString chooseMaintenanceOption ${LANG_GERMAN} "Wähle aus, was passieren soll."
 LangString chooseHowToInstall ${LANG_GERMAN} "Wähle aus, wie ${PRODUCTNAME} installiert werden soll."
 LangString createDesktop ${LANG_GERMAN} "Desktop-Verknüpfung erstellen"

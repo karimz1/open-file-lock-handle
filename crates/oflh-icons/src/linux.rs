@@ -32,7 +32,12 @@ impl DesktopIndex {
                 let stem = file
                     .file_stem()
                     .map(|stem| stem.to_string_lossy().into_owned());
-                for key in entry.executables.into_iter().chain(stem) {
+                let aliases = entry
+                    .executables
+                    .iter()
+                    .flat_map(|command| launcher_aliases(Path::new(command)))
+                    .collect::<Vec<_>>();
+                for key in entry.executables.into_iter().chain(aliases).chain(stem) {
                     // Earlier roots (the user's own) win, as in XDG lookup.
                     by_executable
                         .entry(key)
@@ -81,6 +86,40 @@ impl DesktopIndex {
         }
         None
     }
+}
+
+/// Desktop launchers can be symlinks or Chrome's wrapper script. Resolve only
+/// absolute installed paths; never execute a launcher to discover an icon.
+fn launcher_aliases(command: &Path) -> Vec<String> {
+    if !command.is_absolute() {
+        return Vec::new();
+    }
+    let Ok(canonical) = command.canonicalize() else {
+        return Vec::new();
+    };
+    let mut aliases = vec![canonical.to_string_lossy().into_owned()];
+    if command
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            matches!(
+                name,
+                "google-chrome"
+                    | "google-chrome-stable"
+                    | "google-chrome-beta"
+                    | "google-chrome-unstable"
+            )
+        })
+        && let Some(parent) = canonical.parent()
+    {
+        // Google's launcher execs the adjacent `chrome` binary. Keep this
+        // alias absolute so stable and beta installations retain their icons.
+        let binary = parent.join("chrome");
+        if binary.is_file() {
+            aliases.push(binary.to_string_lossy().into_owned());
+        }
+    }
+    aliases
 }
 
 struct Entry {
@@ -332,6 +371,41 @@ mod tests {
             index.icon(Path::new("/usr/bin/app")).unwrap().bytes,
             b"mine"
         );
+    }
+
+    #[test]
+    fn chrome_wrapper_and_symlink_resolve_to_the_running_binary_per_installation() {
+        let root = tempfile::tempdir().unwrap();
+        for channel in ["stable", "beta"] {
+            let launcher = root.path().join(format!("bin/google-chrome-{channel}"));
+            let installed = root.path().join(format!("opt/{channel}"));
+            write(&installed.join("google-chrome"), b"#!/bin/sh\nexec chrome");
+            write(&installed.join("chrome"), b"synthetic executable");
+            fs::create_dir_all(launcher.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(installed.join("google-chrome"), &launcher).unwrap();
+            write(
+                &root
+                    .path()
+                    .join(format!("applications/chrome-{channel}.desktop")),
+                format!(
+                    "[Desktop Entry]\nExec={} %U\nIcon=chrome-{channel}\n",
+                    launcher.display()
+                )
+                .as_bytes(),
+            );
+            write(
+                &root
+                    .path()
+                    .join(format!("icons/hicolor/48x48/apps/chrome-{channel}.png")),
+                channel.as_bytes(),
+            );
+        }
+        let index = DesktopIndex::build(vec![root.path().to_path_buf()]);
+        for channel in ["stable", "beta"] {
+            let binary = root.path().join(format!("opt/{channel}/chrome"));
+            assert_eq!(index.icon(&binary).unwrap().bytes, channel.as_bytes());
+        }
+        assert!(index.icon(Path::new("/unrelated/chrome")).is_none());
     }
 
     #[test]
