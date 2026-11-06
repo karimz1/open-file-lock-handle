@@ -164,7 +164,7 @@ jobs:
           archive: false
           path: dist/oflh-cli.*
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
   inspection-summary:
     name: Compare six native inspection profiles
     needs: test

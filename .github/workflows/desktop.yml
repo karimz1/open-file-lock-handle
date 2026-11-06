@@ -60,7 +60,7 @@ jobs:
         with:
           name: installer-dialog-flaui
           path: installer-e2e-report/
-          retention-days: 1
+          retention-days: 3
   administrator-recovery:
     name: Administrator recovery / ${{ matrix.label }}
     runs-on: ${{ matrix.runner }}
@@ -164,7 +164,7 @@ jobs:
           path: |
             crates/oflh-desktop/ui/playwright-report/
             crates/oflh-desktop/ui/test-results/
-          retention-days: 1
+          retention-days: 3
   native:
     needs: frontend
     name: Desktop / ${{ matrix.label }}
@@ -355,7 +355,7 @@ jobs:
         with:
           name: installer-e2e-${{ matrix.arch }}
           path: installer-e2e-report/
-          retention-days: 1
+          retention-days: 3
       - name: Check the generated NSIS script
         if: matrix.os == 'windows'
         run: |
@@ -398,7 +398,7 @@ jobs:
           archive: false
           path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.tar.gz
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'linux'
         with:
@@ -406,7 +406,7 @@ jobs:
           archive: false
           path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.deb
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'linux'
         with:
@@ -414,42 +414,42 @@ jobs:
           archive: false
           path: desktop-dist/oflh-desktop.linux.${{ matrix.arch }}.rpm
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: inputs.upload_artifacts && matrix.os == 'darwin'
         with:
           archive: false
           path: desktop-dist/oflh-desktop.darwin.${{ matrix.arch }}.dmg
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: inputs.upload_artifacts && matrix.os == 'darwin'
         with:
           archive: false
           path: desktop-dist/oflh-desktop.darwin.${{ matrix.arch }}.app.tar.gz
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: inputs.upload_artifacts && matrix.os == 'darwin'
         with:
           archive: false
           path: desktop-dist/oflh-desktop.darwin.${{ matrix.arch }}.app.tar.gz.sig
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: inputs.upload_artifacts && matrix.os == 'windows'
         with:
           archive: false
           path: desktop-dist/oflh-desktop.windows.${{ matrix.arch }}-installer.exe
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: inputs.upload_artifacts && matrix.os == 'windows'
         with:
           archive: false
           path: desktop-dist/oflh-desktop.windows.${{ matrix.arch }}-installer.exe.sig
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - name: Stage release-branch download
         id: release-download
         if: env.RELEASE_BRANCH_DOWNLOAD == 'true'
@@ -472,14 +472,14 @@ jobs:
           archive: false
           path: ${{ steps.release-download.outputs.path }}
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - uses: actions/upload-artifact@v7
         if: inputs.upload_artifacts
         with:
           name: desktop-receipt-${{ matrix.os }}-${{ matrix.arch }}
           path: desktop-dist/*.manifest
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
 
   prune-tester-builds:
     name: Delete older tester builds of this branch or PR
