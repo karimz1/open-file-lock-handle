@@ -1112,15 +1112,6 @@ export function App() {
             />
           </div>
         </nav>
-        {!maximized && (
-          <WaitUntilFree
-            status={status}
-            portQuery={portQuery}
-            disabled={inspectionLocked}
-            report={report}
-            onStatus={apply}
-          />
-        )}
         <main
           inert={inspectionLocked && !backgroundScan}
           aria-busy={inspectionLocked}
@@ -2005,7 +1996,9 @@ export function App() {
                       void api.openInstalledRelease().catch(report)
                     }
                   >
-                    {t("app.k_installed_version", { version: status.version })}
+                    {t("app.k_installed_version", {
+                      version: status.version,
+                    })}
                   </button>{" "}
                   · {t("app.k_mit_license")}
                 </p>
@@ -2085,6 +2078,15 @@ export function App() {
         </main>
       </div>
       <footer className="statusbar">
+        {!maximized && (
+          <WaitUntilFree
+            status={status}
+            portQuery={portQuery}
+            disabled={inspectionLocked}
+            report={report}
+            onStatus={apply}
+          />
+        )}
         <span className="status-current" role={scanBusy ? undefined : "status"}>
           {scanBusy ? (
             <BackgroundInspection
