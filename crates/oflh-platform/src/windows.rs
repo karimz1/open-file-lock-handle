@@ -830,10 +830,7 @@ impl Backend for Native {
             return Err(io("enumerate windows", std::io::Error::last_os_error()));
         }
         if state.sent == 0 {
-            return Err(Error::Unavailable(
-                "no window accepted a graceful close request; use force kill explicitly if needed"
-                    .into(),
-            ));
+            return Err(Error::CloseUnavailable);
         }
         Ok(())
     }

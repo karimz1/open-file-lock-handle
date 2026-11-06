@@ -25,6 +25,7 @@ Key facts:
 - [Development](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/development.md): build, test, project layout, snapshots, profiling
 - [Architecture](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/architecture.md): crates, Backend trait, threading, process identity, desktop IPC
 - [Regression coverage](https://github.com/karimz1/open-file-lock-handle/blob/main/docs/inspection-regressions.md): contracts and the tests that enforce them
+- [Windows installer tests](https://github.com/karimz1/open-file-lock-handle/blob/main/crates/oflh-desktop/tests/installer/README.md): .NET NUnit + FlaUI tests for the NSIS installer, with CI screenshots
 - [Contributing](https://github.com/karimz1/open-file-lock-handle/blob/main/CONTRIBUTING.md): bug reports and pull requests
 
 ## Featured & listed on

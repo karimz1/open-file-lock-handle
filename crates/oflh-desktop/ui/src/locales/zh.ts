@@ -402,6 +402,7 @@ const zh: TranslationSchema<typeof en> = {
     k_system_default: "跟随系统",
   },
   navigation: {
+    k_resize_sidebar: "调整侧栏宽度",
     k_collapse_sidebar: "收起侧栏",
     k_expand_sidebar: "展开侧栏",
     k_next_previous_workspace: "下一个 / 上一个工作区",
@@ -536,6 +537,8 @@ const zh: TranslationSchema<typeof en> = {
     k_visible_columns: "可见列",
   },
   termination: {
+    k_close_unavailable:
+      "没有窗口接受关闭请求。你可以检查并确认强制退出此进程。",
     k_impact_critical: "Windows 需要此进程。结束它可能导致电脑崩溃。",
     k_impact_service: "某个服务很可能会立即重新启动它。",
     k_impact_group_service: "服务",

@@ -1,3 +1,4 @@
+import { SidebarResize, readSidebarWidth } from "./SidebarResize";
 import { useScrollRegionFades } from "./ScrollArea";
 import {
   confirmationText,
@@ -275,6 +276,27 @@ export function App() {
       return next;
     });
   };
+  const columnPicker = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const outside = (event: PointerEvent) => {
+      const picker = columnPicker.current;
+      if (picker && !picker.contains(event.target as Node)) picker.open = false;
+    };
+    const escape = (event: KeyboardEvent) => {
+      const picker = columnPicker.current;
+      if (event.key === "Escape" && picker?.open) {
+        event.stopPropagation();
+        picker.open = false;
+        picker.querySelector("summary")?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape, true);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape, true);
+    };
+  }, []);
   const [showColumns, setShowColumns] = useState(false);
   const [fitAllRequest, setFitAllRequest] = useState(0);
   const [columnsFitting, setColumnsFitting] = useState(false);
@@ -286,6 +308,7 @@ export function App() {
       return false;
     }
   });
+  const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   const sidebarIsCollapsed = sidebarCollapsed || maximized;
   const toggleSidebarCollapsed = () => {
     setSidebarCollapsed((current) => {
@@ -332,6 +355,8 @@ export function App() {
   const [showSupport, setShowSupport] = useState(false);
   const [results, setResults] = useState<ActionResult[] | null>(null);
   const [acting, setActing] = useState(false);
+  const [settlingRefreshes, setSettlingRefreshes] = useState(0);
+  const settlingTarget = useRef<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [pendingDrop, setPendingDrop] = useState<number | null>(null);
   const [openingWindow, setOpeningWindow] = useState(false);
@@ -718,6 +743,37 @@ export function App() {
       .reveal(status.revision, reference, containing)
       .catch((failure) => report(failure, operation));
   };
+  const [matchingKeys, setMatchingKeys] = useState<string[] | null>(null);
+  const selectionQuery = JSON.stringify({ ...tableQuery, offset: 0, limit: 0 });
+  useEffect(() => {
+    let live = true;
+    setMatchingKeys(null);
+    if (status.revision && ["processes", "handles", "ports"].includes(view))
+      void api
+        .keys(status.revision, JSON.parse(selectionQuery))
+        .then((keys) => {
+          if (live) setMatchingKeys(keys);
+        })
+        .catch((failure) => {
+          if (live) report(failure);
+        });
+    return () => {
+      live = false;
+    };
+  }, [status.revision, view, selectionQuery, report]);
+  const allMatchingSelected =
+    !!matchingKeys?.length && matchingKeys.every((key) => selected.has(key));
+  const toggleAll = () => {
+    if (!matchingKeys) return;
+    setSelected((current) => {
+      const next = new Set(current);
+      for (const key of matchingKeys) {
+        if (allMatchingSelected) next.delete(key);
+        else next.add(key);
+      }
+      return next;
+    });
+  };
   const selectAll = () => {
     void api
       .keys(status.revision, tableQuery)
@@ -764,12 +820,40 @@ export function App() {
         setConfirmation(null);
         setResultContext({ confirmation, ancestorOwner });
         setResults(value);
+        settlingTarget.current = statusRef.current.target;
+        setSettlingRefreshes(
+          value.some((result) => result.outcome === "exited") ? 2 : 0,
+        );
         setSelected(new Set());
         runScan(() => api.refresh(), view, false);
       })
       .catch(report)
       .finally(() => setActing(false));
   };
+  // Child processes and sockets can close shortly after the parent exits.
+  // Two bounded rescans settle the grid; never infer exit or signal from them.
+  useEffect(() => {
+    if (settlingRefreshes && status.target !== settlingTarget.current) {
+      setSettlingRefreshes(0);
+      return;
+    }
+    if (!settlingRefreshes || scanBusy || !gridReady || acting || confirmation)
+      return;
+    const timer = window.setTimeout(() => {
+      setSettlingRefreshes((left) => left - 1);
+      runScan(() => api.refresh(), view, false, true);
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [
+    settlingRefreshes,
+    scanBusy,
+    gridReady,
+    acting,
+    confirmation,
+    view,
+    status.revision,
+    status.target,
+  ]);
   const recoveryTargets = forceRecoveryTargets(
     resultContext?.confirmation ?? null,
     results ?? [],
@@ -1004,6 +1088,11 @@ export function App() {
           inert={inspectionLocked}
           aria-disabled={inspectionLocked}
           className={`sidebar${sidebarIsCollapsed ? " collapsed" : ""}`}
+          style={
+            sidebarIsCollapsed || sidebarWidth === null
+              ? undefined
+              : { width: sidebarWidth }
+          }
           aria-label={t("navigation.k_workspace")}
         >
           {!maximized && (
@@ -1112,6 +1201,9 @@ export function App() {
             />
           </div>
         </nav>
+        {!sidebarIsCollapsed && (
+          <SidebarResize width={sidebarWidth} onChange={setSidebarWidth} />
+        )}
         <main
           inert={inspectionLocked && !backgroundScan}
           aria-busy={inspectionLocked}
@@ -1371,10 +1463,19 @@ export function App() {
                       </label>
                     )}
 
-                    <button className="select-all" onClick={selectAll}>
-                      {t("selection.k_select_all")}
+                    <button
+                      className="select-all"
+                      onClick={toggleAll}
+                      disabled={!matchingKeys?.length}
+                      aria-pressed={allMatchingSelected}
+                    >
+                      {t(
+                        allMatchingSelected
+                          ? "selection.k_deselect_all"
+                          : "selection.k_select_all",
+                      )}
                     </button>
-                    <details className="column-picker">
+                    <details className="column-picker" ref={columnPicker}>
                       <summary>
                         <Columns3 size={14} />
                         <span className="compact-label">
@@ -2564,6 +2665,8 @@ export function App() {
                     )
                   ) : result.outcome === "unverified" ? (
                     t("termination.k_request_sent_couldn_t_verify_exit")
+                  ) : result.error?.kind === "close_unavailable" ? (
+                    t("termination.k_close_unavailable")
                   ) : result.error?.kind === "identity_changed" ? (
                     t(
                       "termination.k_process_changed_or_already_exited_no_te_9b7e90d2",

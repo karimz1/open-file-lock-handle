@@ -352,7 +352,7 @@ code {
   padding: 23px 10px 12px;
   gap: 5px;
   user-select: none;
-  transition: width 0.15s ease;
+  transition: none;
   overflow-x: hidden;
   overflow-y: auto;
 }
@@ -3003,4 +3003,43 @@ kbd.shortcut {
 }
 .statusbar > .wait-panel:empty {
   display: none;
+}
+
+/* Portal menus escape the sidebar's scroll clipping and sit over the grid. */
+.settings-popup-root {
+  position: fixed;
+  z-index: 100;
+}
+.settings-popup button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  justify-content: flex-start;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+}
+.settings-popup button:hover {
+  background: var(--hover);
+}
+button,
+summary {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.sidebar-resize {
+  flex: 0 0 5px;
+  margin-left: -3px;
+  margin-right: -2px;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sidebar-resize:hover,
+.sidebar-resize:focus-visible {
+  background: var(--accent);
+}
+.sidebar:has(+ .sidebar-resize:active) {
+  transition: none;
 }

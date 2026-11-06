@@ -149,6 +149,20 @@ request. Cross-compiling is not a substitute.
 [Regression coverage](inspection-regressions.md) lists which test guards which
 behavior.
 
+### Windows installer UI automation
+
+The desktop crate owns the [Windows installer test guide](../crates/oflh-desktop/tests/installer/README.md).
+The suite uses FlaUI.UIA3 and NUnit against real NSIS dialogs and built packages;
+it runs on interactive Windows CI runners. It checks owner-relative dialog
+placement, default cancellation, installation, reinstallation and uninstallation.
+Screenshots and TRX results are CI artifacts, not committed images.
+
+The repository [llms.txt](../llms.txt) links this guide and official framework
+references. The [website index](https://oflh.karimzouine.com/llms.txt) covers
+public downloads and user documentation. These indexes provide navigation;
+Google's [AI search guidance](https://developers.google.com/search/docs/appearance/ai-features)
+still recommends normal crawlable, helpful content rather than special AI files.
+
 ## Project layout
 
 ```text

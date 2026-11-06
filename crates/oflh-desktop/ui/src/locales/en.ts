@@ -414,6 +414,7 @@ const en = {
     k_system_default: "System default",
   },
   navigation: {
+    k_resize_sidebar: "Resize sidebar",
     k_collapse_sidebar: "Collapse sidebar",
     k_expand_sidebar: "Expand sidebar",
     k_next_previous_workspace: "Next / previous workspace",
@@ -554,6 +555,8 @@ const en = {
     k_visible_columns: "Visible columns",
   },
   termination: {
+    k_close_unavailable:
+      "No window accepted the close request. Review force quit to stop this process.",
     k_impact_critical:
       "Windows needs this process. Ending it can crash your PC.",
     k_impact_service: "A service will probably restart it right away.",

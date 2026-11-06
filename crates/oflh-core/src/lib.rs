@@ -96,6 +96,9 @@ pub enum Error {
     /// A holder returned between the free scan and the chosen follow-up.
     #[error("the target is held again; no follow-up action was performed")]
     WaitTargetHeld,
+    /// The process has no window that accepts a graceful close request.
+    #[error("No window accepted a close request. You can review force quit next.")]
+    CloseUnavailable,
     /// A platform capability is unavailable or returned an invalid observation.
     #[error("{0}")]
     Unavailable(String),

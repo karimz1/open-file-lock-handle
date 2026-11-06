@@ -47,6 +47,7 @@ impl From<Error> for Failure {
             Error::Cancelled => ("cancelled", None),
             Error::WaitTimedOut => ("wait_timeout", None),
             Error::WaitTargetHeld => ("wait_target_held", None),
+            Error::CloseUnavailable => ("close_unavailable", None),
             Error::Unavailable(_) => ("unavailable", None),
             Error::Io { source, .. } => (
                 match source.kind() {

@@ -5905,3 +5905,153 @@ test("wait has timeout, cancellation, free notification and no automatic follow-
     path: documentationScreenshotPath("desktop-wait-free.png"),
   });
 });
+
+test("issue 153: column picker dismisses outside and on Escape", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const picker = page.locator(".column-picker");
+  await picker.locator("summary").click();
+  await expect(picker).toHaveAttribute("open", "");
+  await page.getByRole("textbox", { name: "Search loaded results" }).click();
+  await expect(picker).not.toHaveAttribute("open");
+  await picker.locator("summary").click();
+  await page.keyboard.press("Escape");
+  await expect(picker).not.toHaveAttribute("open");
+  await expect(picker.locator("summary")).toBeFocused();
+});
+
+test("issue 153: selection toggles without selecting button text", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const all = page.getByRole("button", { name: "Select all", exact: true });
+  await expect(all).toBeEnabled();
+  await all.click();
+  const clear = page
+    .getByRole("button", { name: "Deselect all", exact: true })
+    .first();
+  await expect(clear).toHaveAttribute("aria-pressed", "true");
+  await clear.click();
+  await expect(all).toHaveAttribute("aria-pressed", "false");
+  await all.dblclick();
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
+});
+
+test("issue 153: sidebar resizes by pointer and keyboard and persists", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const sidebar = page.getByRole("navigation", { name: "Workspace" });
+  const separator = page.getByRole("separator", { name: "Resize sidebar" });
+  const before = (await sidebar.boundingBox())!.width;
+  const box = (await separator.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 100, box.y + box.height / 2);
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await sidebar.boundingBox())!.width)
+    .toBe(before + 100);
+  await separator.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect
+    .poll(async () => (await sidebar.boundingBox())!.width)
+    .toBe(before + 116);
+  await page.reload();
+  await expect
+    .poll(async () => (await sidebar.boundingBox())!.width)
+    .toBe(before + 116);
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(separator).toHaveCount(0);
+  await page.getByRole("button", { name: "Expand sidebar" }).click();
+  await expect
+    .poll(async () => (await sidebar.boundingBox())!.width)
+    .toBe(before + 116);
+});
+
+test("issue 153: settings popup escapes sidebar clipping", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const about = page.getByRole("menuitem", { name: "About OFLH" });
+  await expect(about).toBeVisible();
+  const hit = await about.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return element.contains(
+      document.elementFromPoint(rect.right - 5, rect.top + rect.height / 2),
+    );
+  });
+  expect(hit).toBe(true);
+  await about.click();
+  await expect(page.getByRole("dialog", { name: "About OFLH" })).toBeVisible();
+});
+
+test("issue 153: rejected window close offers confirmed force recovery", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    (window as any).__terminationResults = [
+      {
+        pid: 4000,
+        outcome: "failed",
+        error: {
+          kind: "close_unavailable",
+          message: "No window accepted a close request.",
+          os_code: null,
+        },
+      },
+    ];
+  });
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: /^Close (?!dialog)/ }).click();
+  await dialog
+    .getByRole("button", { name: "Force terminate…", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  await expect(dialog.getByText("PID 4000")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "terminate",
+        ).length,
+    ),
+  ).toBe(1);
+});
+
+test("issue 153: post-termination scans settle late socket exits then stop", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /^Ports 2/ }).click();
+  await page.evaluate(() => {
+    (window as any).__terminateSuccessfully = true;
+    (window as any).__delayedPortExit = true;
+  });
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /^Close (?!dialog)/ })
+    .click();
+  await expect(page.getByText("Process exited", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "No matching local ports" }),
+  ).toBeVisible();
+  const refreshCount = () =>
+    page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "refresh",
+        ).length,
+    );
+  await expect.poll(refreshCount).toBe(3);
+  await page.waitForTimeout(1500);
+  expect(await refreshCount()).toBe(3);
+});
