@@ -131,6 +131,7 @@ export function WaitUntilFree({
       inert={false}
       className={`wait-panel ${status.wait.waiting ? "waiting" : ""} ${ready ? "free" : ""}`}
       aria-live="polite"
+      data-wait-panel
     >
       {!status.wait.waiting && !ready && !failure && (
         <button

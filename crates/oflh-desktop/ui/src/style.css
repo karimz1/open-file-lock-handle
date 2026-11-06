@@ -2980,11 +2980,19 @@ kbd.shortcut {
 }
 
 /* Wait/cancel is a workspace action, not an inert results edit. */
-.app-body > .wait-panel {
-  align-self: flex-start;
-  position: absolute;
-  top: 85px;
-  left: 220px;
-  right: 24px;
-  z-index: 3;
+.workspace-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.wait-slot {
+  flex: none;
+  padding: 0 24px;
+}
+.wait-slot .wait-panel {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 6px;
 }

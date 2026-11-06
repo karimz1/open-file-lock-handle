@@ -181,7 +181,15 @@ async fn wait_follow_up(
 }
 #[tauri::command]
 async fn choose_wait_destination(app: tauri::AppHandle) -> Result<Option<PathBuf>, Failure> {
-    blocking(move || Ok(app.dialog().file().blocking_pick_folder())).await
+    blocking(move || {
+        app.dialog()
+            .file()
+            .blocking_pick_folder()
+            .map(|path| path.into_path())
+            .transpose()
+            .map_err(integration)
+    })
+    .await
 }
 #[tauri::command]
 fn notify_wait_free(app: tauri::AppHandle, locale: Option<String>) -> Result<(), Failure> {
