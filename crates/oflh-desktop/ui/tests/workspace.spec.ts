@@ -6027,3 +6027,49 @@ test("issue 153: post-termination scans settle late socket exits then stop", asy
   await page.waitForTimeout(1500);
   expect(await refreshCount()).toBe(3);
 });
+
+test("wait has timeout, cancellation, free notification and no automatic follow-up", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Wait until free", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.getByLabel("Timeout in seconds (0 means none)"),
+  ).toHaveValue("0");
+  await dialog.getByLabel("Timeout in seconds (0 means none)").fill("30");
+  await page.screenshot({
+    path: documentationScreenshotPath("desktop-wait-options.png"),
+  });
+  await dialog.getByRole("button", { name: "Start waiting" }).click();
+  await expect(
+    page.getByText("Waiting until the target is free"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByText("Waiting cancelled.")).toBeVisible();
+  await page.evaluate(() => ((window as any).__emitWaitFree = true));
+  await page.getByRole("button", { name: "Wait again" }).click();
+  await dialog.getByRole("button", { name: "Start waiting" }).click();
+  await expect(page.getByText("The target is free.")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "notify_wait_free",
+        ).length,
+    ),
+  ).toBe(1);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "wait_follow_up",
+        ).length,
+    ),
+  ).toBe(0);
+  await page.screenshot({
+    path: documentationScreenshotPath("desktop-wait-free.png"),
+  });
+});
