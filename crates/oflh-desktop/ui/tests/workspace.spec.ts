@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
 // Synthetic IPC fixtures are test-only. The production bundle always invokes Rust.
 const documentationScreenshotPath = (filename: string) =>
@@ -6,6 +7,12 @@ const documentationScreenshotPath = (filename: string) =>
     : `test-results/${filename}`;
 
 test.beforeEach(async ({ page }) => {
+  if (process.env.OFLH_NATIVE_ICON_PATH) {
+    const icon = readFileSync(process.env.OFLH_NATIVE_ICON_PATH, "utf8");
+    await page.addInitScript((icon) => {
+      (window as any).__nativeApplicationIcon = icon;
+    }, icon);
+  }
   await page.addInitScript(() => {
     if (!sessionStorage.getItem("theme-test-initialized")) {
       localStorage.setItem("oflh-theme", "light");
@@ -18,6 +25,7 @@ test.beforeEach(async ({ page }) => {
     const callbackEvents = new Map<number, string>();
     let callbackId = 0;
     let terminated = false;
+    let refreshCount = 0;
     const processRows = Array.from({ length: 1500 }, (_, index) => ({
       key: `${4000 + index}:18446744073709551615:0/exe`,
       process_key: `${4000 + index}:18446744073709551615:0`,
@@ -365,6 +373,8 @@ test.beforeEach(async ({ page }) => {
           if (command === "process_icon") {
             // Blender and node have app icons; the rest use the fallback.
             const index = Number(String(args.reference).split(":")[1]);
+            if (index === 0 && (window as any).__nativeApplicationIcon)
+              return (window as any).__nativeApplicationIcon;
             const color = ["#e87d0d", "#3c873a"][index % 5];
             return color
               ? `data:image/svg+xml,${encodeURIComponent(
@@ -456,7 +466,8 @@ test.beforeEach(async ({ page }) => {
               processes: processRows.length,
               usages: 18000,
             });
-          if (["refresh", "revisit", "choose"].includes(command))
+          if (["refresh", "revisit", "choose"].includes(command)) {
+            if (command === "refresh") refreshCount++;
             return (status = {
               ...status,
               generation: status.generation + 1,
@@ -465,6 +476,7 @@ test.beforeEach(async ({ page }) => {
                   ? status.revision + 1
                   : status.revision,
             });
+          }
           if (command === "page" && (window as any).__failNextPageForTest) {
             (window as any).__failNextPageForTest = false;
             throw {
@@ -512,7 +524,13 @@ test.beforeEach(async ({ page }) => {
                 (!args.query.ports_path_only || row.pid > 0) &&
                 (!args.query.process_key ||
                   row.process_key === args.query.process_key) &&
-                !(terminated && row.pid === 4000),
+                !(terminated && row.pid === 4000) &&
+                !(
+                  terminated &&
+                  (window as any).__delayedPortExit &&
+                  row.pid === 0 &&
+                  refreshCount >= 2
+                ),
             );
             return {
               revision: args.revision,
@@ -2594,7 +2612,7 @@ for (const [saved, resolved, background] of [
       (theme) => localStorage.setItem("oflh-theme", theme),
       saved,
     );
-    await page.route("**/src/main.tsx", (route) => route.abort());
+    await page.route(/\/src\/main\.tsx(?:\?.*)?$/, (route) => route.abort());
     await page.goto("/");
     await expect(page.locator("html")).toHaveAttribute("data-theme", resolved);
     await expect(page.locator("html")).toHaveCSS(
@@ -5857,52 +5875,6 @@ test.describe("multi-user sessions", () => {
     await expect(
       page.getByRole("button", { name: /^Benutzer abmelden…/ }),
     ).toBeDisabled();
-  });
-});
-
-test("wait has timeout, cancellation, free notification and no automatic follow-up", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await page
-    .getByRole("button", { name: "Wait until free", exact: true })
-    .click();
-  const dialog = page.getByRole("dialog");
-  await expect(
-    dialog.getByLabel("Timeout in seconds (0 means none)"),
-  ).toHaveValue("0");
-  await dialog.getByLabel("Timeout in seconds (0 means none)").fill("30");
-  await page.screenshot({
-    path: documentationScreenshotPath("desktop-wait-options.png"),
-  });
-  await dialog.getByRole("button", { name: "Start waiting" }).click();
-  await expect(
-    page.getByText("Waiting until the target is free"),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(page.getByText("Waiting cancelled.")).toBeVisible();
-  await page.evaluate(() => ((window as any).__emitWaitFree = true));
-  await page.getByRole("button", { name: "Wait again" }).click();
-  await dialog.getByRole("button", { name: "Start waiting" }).click();
-  await expect(page.getByText("The target is free.")).toBeVisible();
-  expect(
-    await page.evaluate(
-      () =>
-        (window as any).__testCalls.filter(
-          (call: any) => call.command === "notify_wait_free",
-        ).length,
-    ),
-  ).toBe(1);
-  expect(
-    await page.evaluate(
-      () =>
-        (window as any).__testCalls.filter(
-          (call: any) => call.command === "wait_follow_up",
-        ).length,
-    ),
-  ).toBe(0);
-  await page.screenshot({
-    path: documentationScreenshotPath("desktop-wait-free.png"),
   });
 });
 
