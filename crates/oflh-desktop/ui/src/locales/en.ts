@@ -1,4 +1,27 @@
 const en = {
+  wait: {
+    k_title: "Wait until free",
+    k_action: "Wait until free",
+    k_description:
+      "OFLH checks again once per second. No process is stopped. A final free scan runs before any follow-up.",
+    k_timeout_label: "Timeout in seconds (0 means none)",
+    k_follow_up: "After it becomes free",
+    k_notify_only: "Notify only",
+    k_reveal: "Reveal in file manager",
+    k_move: "Move to a folder…",
+    k_delete: "Delete",
+    k_start: "Start waiting",
+    k_waiting: "Waiting until the target is free",
+    k_elapsed: "Elapsed: {{time}}",
+    k_no_timeout: "No time limit",
+    k_timeout_limit: "Stops after {{seconds}} s",
+    k_free: "The target is free.",
+    k_timeout: "Timed out before the target became free.",
+    k_held_again: "A holder returned. No follow-up action was performed.",
+    k_cancelled: "Waiting cancelled.",
+    k_again: "Wait again",
+    k_confirm_delete: "Delete this target after a final confirming free scan?",
+  },
   sessions: {
     k_user: "User",
     k_session: "Session",

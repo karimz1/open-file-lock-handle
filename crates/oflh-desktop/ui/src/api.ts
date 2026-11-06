@@ -22,6 +22,12 @@ export interface Status {
   processes: number;
   ports: number;
   usages: number;
+  wait: {
+    waiting: boolean;
+    elapsed_ms: number;
+    outcome: "free" | "failed" | null;
+    error: Failure | null;
+  };
   warnings: string[];
   error: Failure | null;
   version: string;
@@ -50,6 +56,12 @@ export interface Row {
   memory: number | null;
   cpu: number | null;
   usages: number;
+  wait: {
+    waiting: boolean;
+    elapsed_ms: number;
+    outcome: "free" | "failed" | null;
+    error: Failure | null;
+  };
   actionable: boolean;
   port: {
     protocol: string;
@@ -258,6 +270,35 @@ export const api = {
   recent: () => invoke<{ id: number; display: string }[]>("recent"),
   revisit: (id: number) => invoke<Status>("revisit", { id }),
   removeRecent: (id: number) => invoke<void>("remove_recent", { id }),
+  waitUntilFree: (
+    path: string | null,
+    includePorts: boolean,
+    port: number | null,
+    timeoutSeconds: number | null,
+  ) =>
+    invoke<Status>("wait_until_free", {
+      request: {
+        path,
+        include_ports: includePorts,
+        port,
+        timeout: timeoutSeconds,
+      },
+    }),
+  focusWindow: () => invoke<void>("focus_window"),
+  cancelWait: () => invoke<Status>("cancel_wait"),
+  notifyWaitFree: (locale?: string) =>
+    invoke<void>("notify_wait_free", { locale: locale ?? null }),
+  chooseWaitDestination: () => invoke<string | null>("choose_wait_destination"),
+  waitFollowUp: (
+    action: "reveal" | "delete" | "move",
+    destination: string | null,
+    locale?: string,
+  ) =>
+    invoke<void>("wait_follow_up", {
+      action,
+      destination,
+      locale: locale ?? null,
+    }),
   clearRecent: () => invoke<void>("clear_recent"),
 };
 export function errorMessage(error: unknown): string {

@@ -45,6 +45,8 @@ impl From<Error> for Failure {
             Error::Changed => ("identity_changed", None),
             Error::Protected => ("protected", None),
             Error::Cancelled => ("cancelled", None),
+            Error::WaitTimedOut => ("wait_timeout", None),
+            Error::WaitTargetHeld => ("wait_target_held", None),
             Error::Unavailable(_) => ("unavailable", None),
             Error::Io { source, .. } => (
                 match source.kind() {
@@ -104,6 +106,8 @@ pub struct Status {
     pub warnings: Vec<String>,
     /// Failure for this operation, if any.
     pub error: Option<Failure>,
+    /// Active or completed wait state, independent of the displayed inspection.
+    pub wait: WaitStatus,
     /// Compact Cargo workspace application version.
     pub version: &'static str,
     /// Full source commit used to build this application, when available.
@@ -112,6 +116,27 @@ pub struct Status {
     pub build_url: &'static str,
     /// Pull request that produced this build, when available.
     pub pull_request_url: &'static str,
+}
+
+#[allow(missing_docs)]
+/// Options for a bounded target wait. Native paths do not round-trip through UI strings.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WaitRequest {
+    pub path: Option<std::path::PathBuf>,
+    pub include_ports: bool,
+    pub port: Option<u16>,
+    pub timeout: Option<std::time::Duration>,
+}
+
+/// Serialisable waiting state; elapsed time advances between scan publications.
+#[derive(Clone, Debug, Default, Serialize)]
+#[allow(missing_docs)]
+pub struct WaitStatus {
+    pub waiting: bool,
+    pub elapsed_ms: u64,
+    pub outcome: Option<&'static str>,
+    pub error: Option<Failure>,
 }
 
 /// Live work counters, distinct from the accepted snapshot's result counts.

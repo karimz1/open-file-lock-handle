@@ -55,6 +55,7 @@ pub mod impact;
 pub mod ports;
 pub mod releases;
 pub mod search;
+pub mod wait;
 pub use ports::{Port, Protocol};
 
 pub use path::Target;
@@ -89,6 +90,12 @@ pub enum Error {
     /// A newer operation or shutdown cancelled this operation cooperatively.
     #[error("operation cancelled")]
     Cancelled,
+    /// No confirming scan reported the target free before the selected deadline.
+    #[error("wait timed out before the target became free")]
+    WaitTimedOut,
+    /// A holder returned between the free scan and the chosen follow-up.
+    #[error("the target is held again; no follow-up action was performed")]
+    WaitTargetHeld,
     /// A platform capability is unavailable or returned an invalid observation.
     #[error("{0}")]
     Unavailable(String),

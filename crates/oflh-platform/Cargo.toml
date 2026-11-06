@@ -13,10 +13,12 @@ workspace = true
 [features]
 # Developer probes only; the distributed CLI/desktop never enable this feature.
 native-query-experiment = []
+wait-actions = []
 
 [[example]]
 name = "windows_native_probe"
 required-features = ["native-query-experiment"]
+
 
 [dependencies]
 netstat2 = "0.11.2"

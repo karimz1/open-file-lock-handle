@@ -5,7 +5,13 @@ pub mod elevation;
 pub mod inspection_helper;
 mod locale;
 pub mod updates;
+mod wait;
+#[cfg(any(feature = "wait-actions", test))]
+mod wait_actions;
 pub use locale::system_locale;
+pub use wait::{WaitTarget, wait_until_free};
+#[cfg(any(feature = "wait-actions", test))]
+pub use wait_actions::confirm_free_before_action;
 /// Read the process table once and list each identity's running children.
 #[cfg(any(target_os = "linux", target_os = "macos", windows))]
 fn children_for(
