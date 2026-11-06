@@ -2,6 +2,8 @@
 #![allow(dead_code, unexpected_cfgs)]
 #[path = "../src/app.rs"]
 mod app;
+#[path = "../src/session.rs"]
+mod session;
 #[path = "../src/view.rs"]
 mod view;
 use app::{App, Sort};

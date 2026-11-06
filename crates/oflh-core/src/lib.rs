@@ -50,6 +50,8 @@ pub fn version_report(application: &str) -> String {
     report
 }
 
+pub mod check;
+pub mod impact;
 pub mod ports;
 pub mod releases;
 pub mod search;
@@ -87,6 +89,9 @@ pub enum Error {
     /// A newer operation or shutdown cancelled this operation cooperatively.
     #[error("operation cancelled")]
     Cancelled,
+    /// The process has no window that accepts a graceful close request.
+    #[error("No window accepted a close request. You can review force quit next.")]
+    CloseUnavailable,
     /// A platform capability is unavailable or returned an invalid observation.
     #[error("{0}")]
     Unavailable(String),
@@ -296,7 +301,7 @@ pub struct Usage {
 }
 
 /// A captured ancestor whose identity must survive UI refreshes unchanged.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Ancestor {
     /// Captured process lifetime; a zero birth token is not actionable.
     pub identity: Identity,

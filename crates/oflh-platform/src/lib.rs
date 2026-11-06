@@ -6,6 +6,20 @@ pub mod inspection_helper;
 mod locale;
 pub mod updates;
 pub use locale::system_locale;
+/// Read the process table once and list each identity's running children.
+#[cfg(any(target_os = "linux", target_os = "macos", windows))]
+fn children_for(
+    table: Result<Vec<impact::ProcessEntry>>,
+    ids: &[Identity],
+) -> Vec<Option<Vec<Ancestor>>> {
+    match table {
+        Ok(table) => ids
+            .iter()
+            .map(|&id| Some(impact::children_of(&table, id)))
+            .collect(),
+        Err(_) => vec![None; ids.len()],
+    }
+}
 #[cfg(any(windows, test))]
 mod inspection_protocol;
 #[cfg(any(windows, test))]
@@ -45,6 +59,12 @@ pub trait Backend: Send + 'static {
         Err(Error::Unavailable(
             "process exit verification unavailable".into(),
         ))
+    }
+    /// Describe what else terminating each lifetime may affect: its visible
+    /// windows and running children, in input order. Informational only;
+    /// anything the platform cannot read stays `None` instead of failing.
+    fn impact(&mut self, ids: &[Identity]) -> Vec<impact::Impact> {
+        vec![impact::Impact::default(); ids.len()]
     }
     /// Request termination after validating identity and protected-process guards.
     fn terminate(&mut self, id: Identity, force: bool, cancel: &Cancellation) -> Result<()>;

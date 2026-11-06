@@ -95,8 +95,6 @@ labels! {
     "Checking updates…", "Neue Version wird geprüft…", "正在检查更新…";
     "No newer stable release · u check updates", "Keine neuere stabile Version · u erneut prüfen", "没有更新的稳定版本 · u 再次检查";
     "Cancel", "Abbrechen", "取消";
-    "Force kill", "Beenden erzwingen", "强制终止";
-    "Terminate", "Beenden", "终止";
     "processes", "Prozesse", "进程";
     "files", "Dateien", "文件";
     "ports", "Ports", "端口";
@@ -146,11 +144,14 @@ labels! {
     "FILE", "DATEI", "文件";
     "RELATION", "BEZUG", "关系";
     "DIRECTORY", "ORDNER", "目录";
-    "FORCE KILL", "BEENDEN ERZWINGEN", "强制终止";
-    "Immediate termination: no cleanup. Unsaved work may be lost.", "Sofortiges Beenden ohne Aufräumen. Ungespeicherte Arbeit kann verloren gehen.", "立即终止，不执行清理。未保存的工作可能丢失。";
-    "Request a normal shutdown. Unsaved work may be lost.", "Normales Beenden anfordern. Ungespeicherte Arbeit kann verloren gehen.", "请求正常退出。未保存的工作可能丢失。";
+    "OFLH asks the program to close. Unsaved work may be lost.", "OFLH bittet das Programm, sich zu schließen. Ungespeicherte Arbeit kann verloren gehen.", "OFLH 会请求程序关闭。未保存的工作可能丢失。";
+    "OFLH asks each program to close. Unsaved work may be lost.", "OFLH bittet jedes Programm, sich zu schließen. Ungespeicherte Arbeit kann verloren gehen.", "OFLH 会请求每个程序关闭。未保存的工作可能丢失。";
+    "OFLH stops it immediately, without letting it save. Unsaved work will be lost.", "OFLH beendet es sofort, ohne Speichern. Ungespeicherte Arbeit geht verloren.", "OFLH 会立即结束它，不给保存机会。未保存的工作将丢失。";
+    "OFLH stops them immediately, without letting them save. Unsaved work will be lost.", "OFLH beendet sie sofort, ohne Speichern. Ungespeicherte Arbeit geht verloren.", "OFLH 会立即结束它们，不给保存机会。未保存的工作将丢失。";
+    "Close", "Schließen", "关闭";
+    "Force quit", "Sofort beenden", "强制结束";
     "Target: selected ancestor. Its application and children may be affected.", "Ziel: gewählter Vorfahr. Anwendung und Kindprozesse können betroffen sein.", "目标：所选祖先进程。其应用程序和子进程可能受到影响。";
-    "Affected processes (including selections hidden by filters):", "Betroffene Prozesse (einschließlich ausgefilterter Auswahl):", "受影响的进程（包括被筛选条件隐藏的选择）：";
+    "Processes (filtered ones included):", "Prozesse (auch ausgefilterte):", "进程（含被筛选隐藏的）：";
     "LINKS", "LINKS", "链接";
     "D  Donate: https://buymeacoffee.com/karimz1", "D  Spenden: https://buymeacoffee.com/karimz1", "D  捐赠：https://buymeacoffee.com/karimz1";
     "Press uppercase R or D to open in your browser.", "Großes R oder D öffnet den Link im Browser.", "按大写 R 或 D 在浏览器中打开链接。";
@@ -232,6 +233,21 @@ labels! {
     "m RAM / c CPU / n name / p PID", "m RAM / c CPU / n Name / p PID", "m RAM / c CPU / n 名称 / p PID";
     "l locks", "l Sperren", "l 锁定";
     "Tab / ←→ choose · Enter confirm · Esc cancel", "Tab / ←→ wählen · Enter bestätigen · Esc abbrechen", "Tab / ←→ 选择 · Enter 确认 · Esc 取消";
+    "Tab / ←→ choose · d details · Enter confirm · Esc cancel", "Tab / ←→ wählen · d Details · Enter bestätigen · Esc abbrechen", "Tab / ←→ 选择 · d 详情 · Enter 确认 · Esc 取消";
+    "1 background process keeps running.", "1 Hintergrundprozess läuft weiter.", "1 个后台进程会继续运行。";
+    "1 more file it has open is released too.", "Auch 1 weitere geöffnete Datei wird freigegeben.", "另外 1 个已打开的文件也会被释放。";
+    "A connection on 1 network port will drop.", "Eine Verbindung über 1 Netzwerkport wird getrennt.", "1 个网络端口上的连接将断开。";
+    "Background processes are not closed; some may exit with it.", "Hintergrundprozesse werden nicht beendet, manche enden eventuell mit.", "后台进程不会被结束，部分可能随之退出。";
+    "Tab / ←→ choose · d details · ↑↓ PgUp/PgDn scroll · Enter confirm · Esc cancel", "Tab / ←→ wählen · d Details · ↑↓ Bild↑/Bild↓ blättern · Enter bestätigen · Esc abbrechen", "Tab / ←→ 选择 · d 详情 · ↑↓ PgUp/PgDn 滚动 · Enter 确认 · Esc 取消";
+    "Checking windows and child processes…", "Fenster und Kindprozesse werden geprüft…", "正在检查窗口和子进程…";
+    "▴ Space show less", "▴ Leertaste weniger zeigen", "▴ 空格 收起";
+    "↑↓ / PgUp PgDn scroll · Home/End", "↑↓ / Bild↑ Bild↓ blättern · Pos1/Ende", "↑↓ / PgUp PgDn 滚动 · Home/End";
+    "Windows needs this process. Ending it can crash your PC.", "Windows braucht diesen Prozess. Wenn du ihn beendest, kann dein PC abstürzen.", "Windows 需要此进程。结束它可能导致电脑崩溃。";
+    "A service will probably restart it right away.", "Ein Dienst startet es wahrscheinlich sofort neu.", "某个服务很可能会立即重新启动它。";
+    "Service", "Dienst", "服务";
+    "may restart it", "startet es eventuell neu", "可能会重新启动它";
+    "Files and ports come from the latest scan.", "Dateien und Ports stammen aus dem letzten Scan.", "文件和端口来自最近一次扫描。";
+    "Window list not available on this platform", "Fensterliste auf dieser Plattform nicht verfügbar", "此平台无法列出窗口";
     "/ search · f files · r refresh · a auto · k stop · x force · ? help · Esc back · q quit", "/ suchen · f Dateien · r aktualisieren · a automatisch · k beenden · x erzwingen · ? Hilfe · Esc zurück · q beenden", "/ 搜索 · f 文件 · r 刷新 · a 自动 · k 终止 · x 强制终止 · ? 帮助 · Esc 返回 · q 退出";
     "1/2/3 tabs · / search · s all/this path · Enter inspect · Space select · r refresh · a auto · k stop · x force · ? help · q quit", "1/2/3 Ansichten · / suchen · s alle/dieser Pfad · Enter untersuchen · Space auswählen · r aktualisieren · a automatisch · k beenden · x erzwingen · ? Hilfe · q beenden", "1/2/3 视图 · / 搜索 · s 所有/此路径 · Enter 检查 · Space 选择 · r 刷新 · a 自动 · k 终止 · x 强制终止 · ? 帮助 · q 退出";
     "/ search · p ports · l locks only · ↑↓ select · ←→ path · r refresh · a auto · k stop · x force · R GitHub · D Donate · Esc back · q quit", "/ suchen · p Ports · l nur Sperren · ↑↓ auswählen · ←→ Pfad · r aktualisieren · a automatisch · k beenden · x erzwingen · R GitHub · D Spenden · Esc zurück · q beenden", "/ 搜索 · p 端口 · l 仅锁定 · ↑↓ 选择 · ←→ 路径 · r 刷新 · a 自动 · k 终止 · x 强制终止 · R GitHub · D 捐赠 · Esc 返回 · q 退出";
@@ -245,6 +261,83 @@ labels! {
 }
 // Literal formats compile in all languages; arguments are evaluated in only one branch.
 macro_rules! localized {
+    ($language:expr, "{name} closes completely, with all {n} open windows, such as “{title}”." $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("{name} closes completely, with all {n} open windows, such as “{title}”." $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("{name} wird komplett geschlossen – mit allen {n} offenen Fenstern, z. B. „{title}“." $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("{name} 将完全关闭，包括全部 {n} 个打开的窗口，例如“{title}”。" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "{n} background processes keep running." $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("{n} background processes keep running." $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("{n} Hintergrundprozesse laufen weiter." $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("{n} 个后台进程会继续运行。" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "{n} more files it has open are released too." $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("{n} more files it has open are released too." $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Auch {n} weitere geöffnete Dateien werden freigegeben." $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("另外 {n} 个已打开的文件也会被释放。" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Connections on {n} network ports will drop." $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Connections on {n} network ports will drop." $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Verbindungen über {n} Netzwerkports werden getrennt." $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("{n} 个网络端口上的连接将断开。" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Windows ({n})" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Windows ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Fenster ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("窗口（{n}）" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Background processes ({n})" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Background processes ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Hintergrundprozesse ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("后台进程（{n}）" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Files ({n})" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Files ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Dateien ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("文件（{n}）" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Ports ({n})" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Ports ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Ports ({n})" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("端口（{n}）" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "{first}–{last} of {total} ↕" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("{first}–{last} of {total} ↕" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("{first}–{last} von {total} ↕" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("{first}–{last} / {total} ↕" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "▾ +{n} more · Space show all {total}" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("▾ +{n} more · Space show all {total}" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("▾ +{n} weitere · Leertaste alle {total} zeigen" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("▾ 另有 {n} 项 · 空格 显示全部 {total} 项" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "+{n} more not listed" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("+{n} more not listed" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("+{n} weitere nicht aufgeführt" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("另有 {n} 项未列出" $(, $($arguments)*)?),
+        }
+    };
     ($language:expr, "↑ {version} · U releases · b hide" $(, $($arguments:tt)*)?) => {
         match $language {
             $crate::view::messages::Language::English => format!("↑ {version} · U releases · b hide" $(, $($arguments)*)?),
@@ -392,11 +485,32 @@ macro_rules! localized {
             $crate::view::messages::Language::Chinese => format!("所选路径 · {} · {}" $(, $($arguments)*)?),
         }
     };
-    ($language:expr, "{} {} processes?" $(, $($arguments:tt)*)?) => {
+    ($language:expr, "Close {name}?" $(, $($arguments:tt)*)?) => {
         match $language {
-            $crate::view::messages::Language::English => format!("{} {} processes?" $(, $($arguments)*)?),
-            $crate::view::messages::Language::German => format!("{} · Prozesse: {}?" $(, $($arguments)*)?),
-            $crate::view::messages::Language::Chinese => format!("{} {} 个进程？" $(, $($arguments)*)?),
+            $crate::view::messages::Language::English => format!("Close {name}?" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("{name} schließen?" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("关闭 {name}？" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Close {n} processes?" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Close {n} processes?" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("{n} Prozesse schließen?" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("关闭 {n} 个进程？" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Force quit {name}?" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Force quit {name}?" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("{name} sofort beenden?" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("强制结束 {name}？" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Force quit {n} processes?" $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Force quit {n} processes?" $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("{n} Prozesse sofort beenden?" $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("强制结束 {n} 个进程？" $(, $($arguments)*)?),
         }
     };
     ($language:expr, "VERSION {}" $(, $($arguments:tt)*)?) => {
@@ -490,7 +604,7 @@ m / c          Sort RAM / CPU descending
 n / p          Sort name / PID
 k / x          Stop / force kill selection or current process
 K / X          Selection; otherwise all filtered processes
-Tab            Choose Cancel / Terminate
+Tab            Choose Cancel / Close
 ?              Show help
 R / D          Open repository / donation page
 u / U / b      Check updates / releases / dismiss (release builds)

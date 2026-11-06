@@ -72,6 +72,27 @@ async fn blocking<T: Send + 'static>(
         .await
         .map_err(integration)?
 }
+/// Application icon for a row's executable as a `data:` URL, or `null` for the
+/// neutral fallback. Runs off the UI thread; results are cached per path.
+#[tauri::command]
+async fn process_icon(
+    service: Desktop<'_>,
+    revision: u32,
+    reference: String,
+) -> Result<Option<String>, Failure> {
+    static ICONS: std::sync::OnceLock<oflh_icons::IconCache> = std::sync::OnceLock::new();
+    let dataset = service.dataset(revision)?;
+    blocking(move || {
+        let Ok(path) = dataset.executable(&reference) else {
+            return Ok(None);
+        };
+        Ok(ICONS
+            .get_or_init(oflh_icons::IconCache::native)
+            .data_url(&path)
+            .map(|url| url.to_string()))
+    })
+    .await
+}
 #[tauri::command]
 fn status(service: Desktop<'_>) -> Status {
     service.status()
@@ -137,8 +158,8 @@ async fn choose(
 }
 #[tauri::command]
 async fn page(service: Desktop<'_>, revision: u32, query: TableQuery) -> Result<Page, Failure> {
-    let dataset = service.dataset(revision)?;
-    blocking(move || dataset.page(&query)).await
+    let service = service.inner().clone();
+    blocking(move || service.page(revision, &query)).await
 }
 #[tauri::command]
 async fn details(service: Desktop<'_>, revision: u32, key: String) -> Result<Details, Failure> {
@@ -210,16 +231,25 @@ async fn prepare(
     force: bool,
 ) -> Result<Confirmation, Failure> {
     let service = service.inner().clone();
-    blocking(move || service.prepare(revision, &keys, force)).await
+    blocking(move || {
+        let mut backend = oflh_platform::native().map_err(Failure::from)?;
+        service.prepare(revision, &keys, force, &mut *backend)
+    })
+    .await
 }
 #[tauri::command]
-fn prepare_ancestor(
+async fn prepare_ancestor(
     service: Desktop<'_>,
     owner: String,
     key: String,
     force: bool,
 ) -> Result<Confirmation, Failure> {
-    service.prepare_ancestor(&owner, &key, force)
+    let service = service.inner().clone();
+    blocking(move || {
+        let mut backend = oflh_platform::native().map_err(Failure::from)?;
+        service.prepare_ancestor(&owner, &key, force, &mut *backend)
+    })
+    .await
 }
 #[tauri::command]
 fn prepare_elevated(service: Desktop<'_>, ticket: String) -> Result<Confirmation, Failure> {
@@ -237,6 +267,48 @@ async fn terminate(service: Desktop<'_>, ticket: String) -> Result<Vec<ActionRes
         service.terminate(&ticket, &mut *backend)
     })
     .await
+}
+#[tauri::command]
+async fn prepare_sign_out(
+    service: Desktop<'_>,
+    revision: u32,
+    key: String,
+) -> Result<SignOutConfirmation, Failure> {
+    let service = service.inner().clone();
+    blocking(move || service.prepare_sign_out(revision, &key)).await
+}
+#[tauri::command]
+async fn sign_out(service: Desktop<'_>, ticket: String) -> Result<(), Failure> {
+    let service = service.inner().clone();
+    blocking(move || service.sign_out(&ticket)).await
+}
+#[tauri::command]
+async fn send_message(
+    service: Desktop<'_>,
+    revision: u32,
+    key: String,
+    text: String,
+) -> Result<(), Failure> {
+    let service = service.inner().clone();
+    blocking(move || service.send_message(revision, &key, &text)).await
+}
+#[tauri::command]
+async fn share_files(service: Desktop<'_>) -> Result<ShareFiles, Failure> {
+    let service = service.inner().clone();
+    blocking(move || Ok(service.share_files())).await
+}
+#[tauri::command]
+async fn prepare_close_file(
+    service: Desktop<'_>,
+    id: u32,
+) -> Result<CloseFileConfirmation, Failure> {
+    let service = service.inner().clone();
+    blocking(move || service.prepare_close_file(id)).await
+}
+#[tauri::command]
+async fn close_file(service: Desktop<'_>, ticket: String) -> Result<(), Failure> {
+    let service = service.inner().clone();
+    blocking(move || service.close_file(&ticket)).await
 }
 #[derive(Serialize)]
 struct Recent {
@@ -539,7 +611,14 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
             remove_recent,
             open_paypal,
             clear_recent,
-            revisit
+            revisit,
+            process_icon,
+            prepare_sign_out,
+            sign_out,
+            send_message,
+            share_files,
+            prepare_close_file,
+            close_file
         ])
         .run(tauri::generate_context!())?;
     Ok(())

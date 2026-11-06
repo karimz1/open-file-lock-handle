@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { type Details, type PathValue, type Row } from "./api";
 import { memory } from "./state";
+import { SessionPanel } from "./SessionPanel";
 import { t, tValue, type MessageKey } from "./i18n";
 export function Inspector({
   details,
@@ -23,7 +24,13 @@ export function Inspector({
   inspectFolder,
   terminateAncestor,
   terminateCurrent,
+  revision,
+  notify,
+  report,
 }: {
+  revision: number;
+  notify: (message: string) => void;
+  report: (failure: unknown) => void;
   details: Details;
   availability: "current" | "updating" | "missing";
   rowCurrent: boolean;
@@ -302,8 +309,13 @@ export function Inspector({
           </div>
         </div>
         <section>
-          <h4>{t("inspector.k_account")}</h4>
-          <p>{details.process.user}</p>
+          <SessionPanel
+            details={details}
+            revision={revision}
+            current={current}
+            notify={notify}
+            report={report}
+          />
           <div className="inline-actions">
             <button disabled={!current} onClick={() => copy("pid")}>
               <Copy size={13} />

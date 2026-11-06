@@ -1,10 +1,13 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+mod check;
 mod messages;
 use oflh_tui::Language;
 use std::{ffi::OsString, io::IsTerminal, process::ExitCode};
 #[derive(Debug, thiserror::Error)]
 enum CliError {
+    #[error("{0}")]
+    Check(String),
     #[error("{0}")]
     Usage(String),
     #[error(transparent)]
@@ -21,6 +24,8 @@ struct Arguments {
     view: oflh_tui::StartOptions,
     help: bool,
     version: bool,
+    check: bool,
+    json: bool,
 }
 
 fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Arguments, CliError> {
@@ -29,6 +34,10 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Argu
     let mut arguments = arguments.into_iter();
     while let Some(argument) = arguments.next() {
         if !positional {
+            if argument == "check" && result.path.is_none() && !result.check {
+                result.check = true;
+                continue;
+            }
             if argument == "--" {
                 positional = true;
                 continue;
@@ -58,6 +67,10 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Argu
             }
             if argument == "--no-update-check" {
                 result.view.no_update_check = true;
+                continue;
+            }
+            if argument == "--json" {
+                result.json = true;
                 continue;
             }
             if argument == "--ports" {
@@ -110,6 +123,17 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Argu
         }
         positional = true;
     }
+    if result.json && !result.check {
+        return Err(CliError::Usage(
+            messages::choose(
+                result.view.language.unwrap_or_else(Language::system),
+                "--json requires the check subcommand",
+                "--json benötigt den Unterbefehl check",
+                "--json 需要 check 子命令",
+            )
+            .into(),
+        ));
+    }
     result.view.follow_port_folder = result.path.is_none();
     result.view.ports_path_only = result.view.ports && result.path.is_some();
     Ok(result)
@@ -127,9 +151,10 @@ fn language_usage(language: Option<Language>) -> CliError {
     )
 }
 
-fn run() -> Result<(), CliError> {
+fn run() -> Result<RunResult, CliError> {
     if let Some(result) = oflh_platform::inspection_helper::dispatch() {
-        return Ok(result?);
+        result?;
+        return Ok(RunResult::Success);
     }
     let arguments = parse_arguments(std::env::args_os().skip(1))?;
     if arguments.help {
@@ -137,11 +162,25 @@ fn run() -> Result<(), CliError> {
             "{}",
             messages::help(arguments.view.language.unwrap_or_else(Language::system))
         );
-        return Ok(());
+        return Ok(RunResult::Success);
     }
     if arguments.version {
         println!("{}", oflh_core::version_report("oflh"));
-        return Ok(());
+        return Ok(RunResult::Success);
+    }
+    if arguments.check {
+        let options = check::Options::from_view(
+            &arguments.view,
+            arguments.view.language.unwrap_or_else(Language::system),
+            arguments.path,
+            arguments.json,
+        );
+        return check::run(options)
+            .map(|outcome| match outcome {
+                check::Outcome::Free => RunResult::Success,
+                check::Outcome::Held => RunResult::CheckHeld,
+            })
+            .map_err(|error| CliError::Check(error.to_string()));
     }
     let path = arguments.path;
     let target = oflh_core::Target::new(path.unwrap_or_else(|| OsString::from(".")))?;
@@ -160,13 +199,21 @@ fn run() -> Result<(), CliError> {
         backend,
         arguments.view,
     )?;
-    Ok(())
+    Ok(RunResult::Success)
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RunResult {
+    Success,
+    CheckHeld,
 }
 fn main() -> ExitCode {
     match run() {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(RunResult::Success) => ExitCode::SUCCESS,
+        Ok(RunResult::CheckHeld) => ExitCode::from(check::EXIT_HELD),
         Err(error) => {
-            let code = if matches!(error, CliError::Usage(_)) {
+            let code = if matches!(error, CliError::Check(_)) {
+                check::error_exit_code(&error)
+            } else if matches!(error, CliError::Usage(_)) {
                 2
             } else {
                 1
@@ -180,6 +227,32 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn check_json_and_port_arguments_do_not_change_interactive_defaults() {
+        let parsed = parse_arguments(
+            ["check", "--json", "--port", "3000"]
+                .into_iter()
+                .map(OsString::from),
+        )
+        .unwrap();
+        assert!(parsed.check);
+        assert!(parsed.json);
+        assert_eq!(parsed.view.port, Some(3000));
+        let scoped = parse_arguments(
+            ["check", "--json", "--ports", "."]
+                .into_iter()
+                .map(OsString::from),
+        )
+        .unwrap();
+        assert!(scoped.view.ports_path_only);
+        assert_eq!(scoped.path, Some(OsString::from(".")));
+        assert!(parse_arguments(["--json"].into_iter().map(OsString::from)).is_err());
+        let literal =
+            parse_arguments(["check", "--", "--json"].into_iter().map(OsString::from)).unwrap();
+        assert_eq!(literal.path, Some(OsString::from("--json")));
+        assert!(!literal.json);
+    }
+
     #[test]
     fn disabling_update_checks_preserves_options_and_literal_path_rules() {
         let parsed = parse_arguments(

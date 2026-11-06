@@ -43,6 +43,11 @@ jobs:
   desktop:
     needs: validate
     uses: ./.github/workflows/desktop.yml
+    # desktop.yml declares a release-branch-only artifact cleanup job with
+    # actions: write; it is skipped for tags but the caller must allow it.
+    permissions:
+      contents: read
+      actions: write
     secrets:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}

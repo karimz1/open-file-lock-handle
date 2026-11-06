@@ -48,7 +48,11 @@ pub enum Effect {
     CheckUpdate,
     FollowPort(Identity, std::path::PathBuf),
     Kill(Vec<Identity>, bool),
+    /// Read windows and children for the pending targets.
+    Impact(Vec<Identity>),
     Link(&'static str),
+    /// Sign out the confirmed session after revalidating it.
+    SignOut(oflh_sessions::SessionKey),
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum UpdateFeedback {
@@ -203,12 +207,24 @@ pub struct App {
     pub force: bool,
     pub confirm: bool,
     pub parent_action: bool,
+    /// Best-effort impact per pending target, read off the UI thread.
+    pub impact: HashMap<Identity, oflh_core::impact::Impact>,
+    /// Whether the confirmation lists the full impact (toggled with `d`).
+    pub impact_details: bool,
+    /// Details list every kept row instead of the first few per group.
+    pub impact_all: bool,
+    /// Set while drawing: the confirmation is taller than the terminal.
+    pub confirm_scrollable: bool,
     pub scroll: usize,
     pub status: String,
     pub error: bool,
     pub width: u16,
     pub height: u16,
     pub page: usize,
+    /// Owner sessions of processes; empty in tests unless a fake is set.
+    pub sessions: crate::session::Sessions,
+    /// Sign-out awaiting confirmation.
+    pub sign_out: Option<crate::session::SignOutPrompt>,
 }
 impl App {
     pub fn new(target: Target, version: String) -> Self {
@@ -262,8 +278,14 @@ impl App {
             force: false,
             confirm: false,
             parent_action: false,
+            impact: HashMap::new(),
+            impact_details: false,
+            impact_all: false,
+            confirm_scrollable: false,
             scroll: 0,
             status: String::new(),
+            sessions: Default::default(),
+            sign_out: None,
             error: false,
             width: 80,
             height: 24,
@@ -666,10 +688,13 @@ impl App {
                 self.screen = Screen::Main;
                 self.scroll = 0
             }
-            K::Up => self.scroll = self.scroll.saturating_sub(1),
+            K::Up | K::Char('k') => self.scroll = self.scroll.saturating_sub(1),
             K::Down | K::Char('j') => self.scroll += 1,
             K::PageDown => self.scroll += self.page,
             K::PageUp => self.scroll = self.scroll.saturating_sub(self.page),
+            // Drawing clamps the offset to the last full page.
+            K::Home => self.scroll = 0,
+            K::End => self.scroll = usize::MAX / 2,
             K::Char('R') => {
                 return Effect::Link("https://github.com/karimz1/open-file-lock-handle");
             }
@@ -692,6 +717,9 @@ impl App {
         }
         if key.code == K::Char('z') && self.scanning {
             return Effect::CancelScan;
+        }
+        if self.sign_out.is_some() {
+            return self.sign_out_key(key.code);
         }
         if self.screen == Screen::Confirm {
             return self.confirm_key(key.code);
@@ -729,7 +757,7 @@ impl App {
                             .into();
                         self.error = true
                     } else {
-                        self.prepare_kill(key.code)
+                        return self.prepare_kill(key.code);
                     }
                 }
                 K::Char('1' | '2' | '3') => return self.switch_tab(key.code),
@@ -746,7 +774,7 @@ impl App {
                 }
             }
             K::Char('a') => self.auto = !self.auto,
-            K::Char('k' | 'K' | 'x' | 'X') => self.prepare_kill(key.code),
+            K::Char('k' | 'K' | 'x' | 'X') => return self.prepare_kill(key.code),
             K::Char('?') => {
                 self.screen = Screen::Help;
                 self.scroll = 0
@@ -795,6 +823,7 @@ impl App {
                         }
                     }
                 }
+                K::Char('L') => self.prepare_sign_out(),
                 K::Char('l') if !self.detail_ports => {
                     self.detail_locks = !self.detail_locks;
                     self.filter_details()
@@ -984,11 +1013,14 @@ impl App {
         self.screen = Screen::Details;
         self.filter_details()
     }
-    fn prepare_kill(&mut self, key: K) {
+    fn prepare_kill(&mut self, key: K) -> Effect {
         if self.stopping {
-            return;
+            return Effect::None;
         }
         self.pending.clear();
+        self.impact.clear();
+        self.impact_details = false;
+        self.impact_all = false;
         self.confirm = false;
         self.scroll = 0;
         self.force = matches!(key, K::Char('x' | 'X'));
@@ -1001,7 +1033,7 @@ impl App {
                     .text("This ancestor cannot be terminated: protected or identity unavailable.")
                     .into();
                 self.error = true;
-                return;
+                return Effect::None;
             }
             self.parent_action = tree.cursor + 1 < tree.nodes.len();
             self.pending.push(target)
@@ -1048,12 +1080,124 @@ impl App {
             self.pending.clear();
             self.status = self.language.text("Cannot terminate: selection includes a protected process or an unavailable identity.").into();
             self.error = true;
+            return Effect::None;
+        }
+        if self.pending.is_empty() {
+            return Effect::None;
+        }
+        self.screen = Screen::Confirm;
+        Effect::Impact(self.pending.iter().map(|target| target.identity).collect())
+    }
+    /// Attach impact read for `ids`, ignoring results for an older confirmation.
+    pub fn accept_impact(&mut self, ids: &[Identity], impact: Vec<oflh_core::impact::Impact>) {
+        if self.screen != Screen::Confirm
+            || ids.len() != self.pending.len()
+            || ids
+                .iter()
+                .zip(&self.pending)
+                .any(|(id, target)| *id != target.identity)
+        {
             return;
         }
-        if !self.pending.is_empty() {
-            self.screen = Screen::Confirm
+        self.impact = ids.iter().copied().zip(impact).collect()
+    }
+    /// Session of the process shown in details, if it has one.
+    pub fn detail_session(&mut self) -> Option<oflh_sessions::Session> {
+        let pid = self.detail()?.identity.pid;
+        self.sessions.of(pid)
+    }
+
+    fn prepare_sign_out(&mut self) {
+        use crate::session;
+        let Some(target) = self.detail_session() else {
+            self.status = session::unsupported(self.language).into();
+            self.error = true;
+            return;
+        };
+        match self
+            .sessions
+            .availability(oflh_sessions::Action::SignOut, &target)
+        {
+            oflh_sessions::Availability::Available => {}
+            availability => {
+                self.status = session::requirement(self.language, availability)
+                    .unwrap_or_else(|| session::unsupported(self.language))
+                    .into();
+                self.error = true;
+                return;
+            }
+        }
+        let pids: Vec<(u32, String)> = self
+            .snapshot
+            .processes
+            .iter()
+            .map(|process| (process.identity.pid, process.name.clone()))
+            .collect();
+        let processes = pids
+            .into_iter()
+            .filter(|(pid, _)| {
+                self.sessions
+                    .of(*pid)
+                    .is_some_and(|other| other.id == target.id)
+            })
+            .map(|(pid, name)| format!("{} (PID {pid})", oflh_core::safe(&name)))
+            .collect();
+        self.sign_out = Some(session::SignOutPrompt {
+            session: target,
+            processes,
+            confirm: false,
+        });
+    }
+
+    fn sign_out_key(&mut self, key: K) -> Effect {
+        let Some(prompt) = &mut self.sign_out else {
+            return Effect::None;
+        };
+        match key {
+            K::Esc | K::Char('q' | 'n') => self.sign_out = None,
+            K::Tab | K::BackTab | K::Left | K::Right => prompt.confirm = !prompt.confirm,
+            K::Enter if prompt.confirm => {
+                let key = prompt.key();
+                return Effect::SignOut(key);
+            }
+            K::Enter => self.sign_out = None,
+            _ => {}
+        }
+        Effect::None
+    }
+
+    /// Run a confirmed sign-out: single use, revalidated, never elevated.
+    pub fn finish_sign_out(&mut self, key: &oflh_sessions::SessionKey) {
+        let Some(prompt) = self.sign_out.take() else {
+            return;
+        };
+        if prompt.key() != *key {
+            return;
+        }
+        let result = match self.sessions.source() {
+            Some(source)
+                if self
+                    .sessions
+                    .availability(oflh_sessions::Action::SignOut, &prompt.session)
+                    == oflh_sessions::Availability::Available =>
+            {
+                oflh_sessions::sign_out(source.as_ref(), key)
+            }
+            _ => Err(oflh_sessions::Error::PermissionDenied),
+        };
+        self.sessions.invalidate();
+        match result {
+            Ok(()) => {
+                self.status = crate::session::done(self.language, &prompt.session.user);
+                self.error = false
+            }
+            Err(error) => {
+                self.status = crate::session::failed(self.language, &error);
+                self.error = true
+            }
         }
     }
+
     fn confirm_key(&mut self, key: K) -> Effect {
         match key {
             K::Esc | K::Char('q' | 'n') => {
@@ -1061,8 +1205,20 @@ impl App {
                 self.screen = Screen::Main
             }
             K::Tab | K::Left | K::Right => self.confirm = !self.confirm,
-            K::Up => self.scroll = self.scroll.saturating_sub(1),
+            K::Char('d') => self.impact_details = !self.impact_details,
+            // Space expands every group (opening Details if needed) or collapses them.
+            K::Char(' ' | 'a') => {
+                if self.impact_details {
+                    self.impact_all = !self.impact_all
+                } else {
+                    self.impact_details = true;
+                    self.impact_all = true
+                }
+            }
+            K::Up | K::Char('k') => self.scroll = self.scroll.saturating_sub(1),
             K::Down | K::Char('j') => self.scroll += 1,
+            K::Home => self.scroll = 0,
+            K::End => self.scroll = usize::MAX / 2,
             K::PageUp => self.scroll = self.scroll.saturating_sub(self.page),
             K::PageDown => self.scroll += self.page,
             K::Enter => {

@@ -6,6 +6,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { RowIcon } from "./AppIcon";
 import {
   ArrowDown,
   ArrowUp,
@@ -19,10 +20,13 @@ import { api, type Page, type Row, type Sort, type TableQuery } from "./api";
 import { createPageLoader } from "./pageLoader";
 import { columnText, columnMeasurer } from "./columnSizing";
 import { memory, compactPath } from "./state";
+import { sessionCell } from "./sessions";
 import { t, tValue, type MessageKey } from "./i18n";
 export type ColumnKey =
   | "process"
   | "pid"
+  | "user"
+  | "session"
   | "path"
   | "evidence"
   | "memory"
@@ -66,6 +70,8 @@ interface Props {
 export const fileColumns: ColumnDefinition[] = [
   { key: "process", label: "app.k_process", sort: "name", width: 220 },
   { key: "pid", label: "app.k_pid", sort: "pid", width: 84 },
+  { key: "user", label: "sessions.k_user", width: 140 },
+  { key: "session", label: "sessions.k_session", width: 110 },
   { key: "path", label: "app.k_path", sort: "path", width: 380 },
   { key: "evidence", label: "filters.k_evidence_access", width: 170 },
   { key: "memory", label: "inspector.k_memory", sort: "memory", width: 104 },
@@ -74,6 +80,8 @@ export const fileColumns: ColumnDefinition[] = [
 export const portColumns: ColumnDefinition[] = [
   { key: "process", label: "app.k_process", sort: "name", width: 220 },
   { key: "pid", label: "app.k_pid", sort: "pid", width: 84 },
+  { key: "user", label: "sessions.k_user", width: 140 },
+  { key: "session", label: "sessions.k_session", width: 110 },
   { key: "address", label: "app.k_local_address", sort: "address", width: 230 },
   { key: "port", label: "app.k_port", sort: "port", width: 90 },
   {
@@ -139,6 +147,8 @@ export function Table(props: Props) {
   const [widths, setWidths] = useState<Record<ColumnKey, number>>({
     process: 220,
     pid: 84,
+    user: 140,
+    session: 110,
     path: 380,
     evidence: 170,
     memory: 104,
@@ -631,6 +641,11 @@ export function Table(props: Props) {
                           <PanelRightOpen size={14} />
                         )}
                       </button>
+                      <RowIcon
+                        revision={displayPage?.revision}
+                        reference={row.icon_ref}
+                        processKey={row.process_key}
+                      />
                       <span title={row.name}>
                         {row.name || t("app.k_unnamed")}
                       </span>
@@ -641,6 +656,16 @@ export function Table(props: Props) {
                     {!props.hiddenColumns.has("pid") && (
                       <div role="gridcell" className="mono muted">
                         {row.pid || "—"}
+                      </div>
+                    )}
+                    {!props.hiddenColumns.has("user") && (
+                      <div role="gridcell" title={row.user}>
+                        {row.user || "—"}
+                      </div>
+                    )}
+                    {!props.hiddenColumns.has("session") && (
+                      <div role="gridcell" className="muted">
+                        {sessionCell(row.session, row.session_kind)}
                       </div>
                     )}
                     {props.query.ports ? (

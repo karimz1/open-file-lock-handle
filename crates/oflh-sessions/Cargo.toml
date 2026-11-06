@@ -1,0 +1,17 @@
+[package]
+name = "oflh-sessions"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Owning user and login session of processes, plus session and network-share actions"
+
+[lints]
+workspace = true
+
+[dependencies]
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_RemoteDesktop", "Win32_Storage_FileSystem", "Win32_NetworkManagement_NetManagement", "Win32_UI_WindowsAndMessaging"] }

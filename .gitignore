@@ -16,3 +16,11 @@ rec/
 /crates/oflh-desktop/ui/test-results/
 /crates/oflh-desktop/ui/playwright-report/
 /desktop-dist/
+
+# Native installer UI tests (FlaUI / NUnit)
+/crates/oflh-desktop/tests/installer/**/bin/
+/crates/oflh-desktop/tests/installer/**/obj/
+/installer-e2e-report/
+
+# Generated installer review screenshots are CI artifacts, not source assets.
+/installer-*.png
