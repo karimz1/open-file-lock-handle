@@ -7,7 +7,7 @@ Key facts:
 - The desktop app is available since [v0.2.0](https://github.com/karimz1/open-file-lock-handle/releases/tag/v0.2.0).
 - Finds file users by enumerating process references (open descriptors/handles, memory mappings, loaded modules, executables, working directories), not by walking directories, so whole-drive scans (`oflh 'C:\'`, `oflh /`) take well under a second on the recorded machines.
 - Usage: `oflh [OPTIONS] [PATH]`. Options: `--ports`, `--port PORT`, `--language en|de|zh|system`, `--no-update-check`, `--version`, `--help`. Options go before PATH.
-- The CLI is interactive only: it requires a TTY and has no JSON or script output mode.
+- `oflh check [OPTIONS] [PATH]` is non-interactive and works without a TTY. `--json` emits one versioned JSON document (`version: 1`). Exit codes: 0 free, 1 held, 2 usage error, 3 inspection failed. Use `--port PORT` for local bindings.
 - "Open" is not "locked": lock evidence is reported separately (Linux flock/POSIX/OFD locks, macOS F_GETLK conflicts, Windows sharing violations with the owner marked unverified).
 - Process actions verify PID plus start time before signaling and never close handles inside another process.
 - Ports: local TCP listeners and bound UDP sockets only, read from OS socket tables without running lsof, ss, or netstat.

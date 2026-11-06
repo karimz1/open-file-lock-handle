@@ -5,6 +5,7 @@ folder, or local port, lets you search and drill into the results, and can ask
 a process to exit. For installation, see the [README](../README.md#install).
 
 - [Usage](#usage)
+- [Scripting without a terminal](#scripting)
 - [Reading the results](#file-inspection)
 - [Search](#search)
 - [Ports](#ports)
@@ -49,6 +50,42 @@ and rejected. Use `--` to pass a path that starts with a dash:
 oflh needs an interactive terminal. When stdin or stdout is redirected it exits
 with status 1 and the message `an interactive terminal is required`. Invalid
 options exit with status 2.
+
+<a id="scripting"></a>
+## Scripting without a terminal
+
+`oflh check` performs one inspection and exits. It works with redirected stdin
+and stdout, on files, folders, and local ports:
+
+```sh
+oflh check ./build/app
+oflh check --json ./build
+oflh check --port 3000 --json
+```
+
+Without `--json`, a free target produces one line; a held target produces a
+holder count and up to five process names. Diagnostics and coverage warnings
+go to stderr. `--language` selects the human-message language; JSON keys remain
+English.
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | Free: no matching file/folder usages or local port bindings |
+| 1 | Held: at least one matching holder or binding |
+| 2 | Bad arguments or usage |
+| 3 | Inspection failed, was cancelled, or is unsupported |
+
+With `--json`, stdout contains exactly one object. **Schema version 1** is stable;
+future versions may add fields, so consumers must ignore unknown fields. The
+`target` is `{ "kind": "path", "path": "..." }` or
+`{ "kind": "port", "port": 3000 }`. `free` is the same free/held definition that
+the wait feature will reuse. `processes[]` contains `pid`, `name`, `user`,
+`executable`, `usages[]`, and `ports[]`. Usages contain `path`, `relation`,
+`access`, `deleted`, and `lock` (text evidence or `null`); ports contain
+`protocol` (`tcp` or `udp`), `address`, and `number`. `warnings` contains
+partial-inspection notices, which do not by themselves make a target held.
+Native paths that are not valid UTF-8 use the Unicode replacement character;
+the scan itself retains the original native path.
 
 <a id="file-inspection"></a>
 

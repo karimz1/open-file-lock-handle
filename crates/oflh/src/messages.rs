@@ -19,7 +19,10 @@ const ENGLISH_HELP: &str = "oflh — Open File Lock Handle. See what's using you
 Source: https://github.com/karimz1/open-file-lock-handle
 
 Usage: oflh [OPTIONS] [PATH]
+       oflh check [OPTIONS] [PATH]
 
+  oflh check --json file  check once and print versioned JSON for scripts
+  oflh check --port 3000  check whether local port 3000 has a binding
   oflh .                  inspect files in the current directory
   oflh --ports            inspect all visible local port bindings
   oflh --port 3000        find a TCP listener or UDP binding on port 3000
@@ -34,15 +37,23 @@ Options:
   --ports       start in the Ports tab (TCP listeners and bound UDP)
   --port PORT   start in Ports with an exact local-port filter
   --language en|de|zh|system   choose language; default follows the system locale
+  --json        on check: print one JSON document (schema version 1); no TTY required
   --no-update-check   disable network release checks
   --version     print version
-  --help        show help";
+  --help        show help
+
+Check exit codes: 0 free, 1 held, 2 usage error, 3 inspection failed.
+JSON relation/access/lock values use the same stable labels as the terminal.
+Paths that are not valid UTF-8 use the Unicode replacement character.";
 const GERMAN_HELP: &str =
     "oflh — Open File Lock Handle. Finden Sie Prozesse, die Dateien und Ports verwenden.
 Quellcode: https://github.com/karimz1/open-file-lock-handle
 
 Aufruf: oflh [OPTIONS] [PATH]
+        oflh check [OPTIONS] [PATH]
 
+  oflh check --json Datei  einmal prüfen und versioniertes JSON für Skripte ausgeben
+  oflh check --port 3000   prüfen, ob lokaler Port 3000 gebunden ist
   oflh .                  Dateien im aktuellen Ordner untersuchen
   oflh --ports            alle sichtbaren lokalen Portbindungen untersuchen
   oflh --port 3000        TCP-Listener oder UDP-Bindung auf Port 3000 finden
@@ -57,14 +68,22 @@ Optionen:
   --ports       in der Portansicht starten (TCP-Listener und gebundenes UDP)
   --port PORT   Portansicht mit exaktem lokalen Portfilter öffnen
   --language en|de|zh|system   Sprache wählen; Standard folgt der System-Locale
+  --json        bei check: ein JSON-Dokument (Schema-Version 1); kein TTY nötig
   --no-update-check   Netzwerkprüfung auf neue Versionen deaktivieren
   --version     Version ausgeben
-  --help        Hilfe anzeigen";
+  --help        Hilfe anzeigen
+
+Exit-Codes von check: 0 frei, 1 belegt, 2 falscher Aufruf, 3 Prüfung fehlgeschlagen.
+JSON-Werte für Relation/Zugriff/Sperre entsprechen den Terminalbezeichnungen.
+Nicht UTF-8-konforme Pfade verwenden das Unicode-Ersatzzeichen.";
 const CHINESE_HELP: &str = "oflh — Open File Lock Handle. 查找正在使用文件和端口的进程。
 源代码：https://github.com/karimz1/open-file-lock-handle
 
 用法：oflh [OPTIONS] [PATH]
+       oflh check [OPTIONS] [PATH]
 
+  oflh check --json 文件  检查一次并为脚本输出带版本的 JSON
+  oflh check --port 3000  检查本地端口 3000 是否有绑定
   oflh .                  检查当前目录中的文件
   oflh --ports            检查所有可见的本地端口绑定
   oflh --port 3000        查找端口 3000 上的 TCP 侦听器或 UDP 绑定
@@ -79,6 +98,11 @@ const CHINESE_HELP: &str = "oflh — Open File Lock Handle. 查找正在使用�
   --ports       从端口视图启动（TCP 侦听器和已绑定的 UDP）
   --port PORT   从端口视图启动，并精确筛选本地端口
   --language en|de|zh|system   选择语言；默认跟随系统区域设置
+  --json        用于 check：输出一个 JSON 文档（架构版本 1）；无需 TTY
   --no-update-check   禁用联网版本检查
   --version     输出版本
-  --help        显示帮助";
+  --help        显示帮助
+
+check 退出码：0 空闲，1 已占用，2 参数错误，3 检查失败。
+JSON 的 relation/access/lock 值与终端使用相同的稳定标签。
+非 UTF-8 路径使用 Unicode 替换字符。";
