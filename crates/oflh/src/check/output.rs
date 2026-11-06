@@ -213,11 +213,12 @@ mod tests {
         };
         let target = oflh_core::Target::new("fixture.txt").unwrap();
         let empty = to_json(&Snapshot::default(), Some(&target), &options, Outcome::Free);
+        let mut encoded_path = String::new();
+        push_string(&mut encoded_path, &target.path.to_string_lossy());
         assert_eq!(
             empty,
             format!(
-                "{{\"version\":1,\"target\":{{\"kind\":\"path\",\"path\":\"{}\"}},\"free\":true,\"processes\":[],\"warnings\":[]}}",
-                target.path.to_string_lossy()
+                "{{\"version\":1,\"target\":{{\"kind\":\"path\",\"path\":{encoded_path}}},\"free\":true,\"processes\":[],\"warnings\":[]}}"
             )
         );
 
