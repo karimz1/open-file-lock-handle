@@ -343,8 +343,12 @@ and can scan a whole drive quickly because it never walks the directory tree.
 
 ### Can I use oflh in scripts?
 
-Not yet. Both interfaces are interactive: the terminal app exits with an error
-when stdin or stdout is not a terminal, and there is no JSON output mode.
+Yes. `oflh check PATH` runs one non-interactive inspection; add `--json` for one
+JSON document on stdout, or use `--port PORT` for a local port. It never opens a
+terminal UI and does not require a TTY. Exit codes are **0** free, **1** held,
+**2** bad arguments, and **3** inspection failed. See the
+[terminal guide](docs/terminal-usage.md#scripting) for the stable versioned JSON
+schema and examples.
 
 ### Is it safe to run?
 
