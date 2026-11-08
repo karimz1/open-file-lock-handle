@@ -3154,7 +3154,7 @@ dependencies = [
 
 [[package]]
 name = "oflh"
-version = "0.9.0"
+version = "0.9.0-rc.1"
 dependencies = [
  "ctrlc",
  "oflh-core",
@@ -3168,7 +3168,7 @@ dependencies = [
 
 [[package]]
 name = "oflh-core"
-version = "0.9.0"
+version = "0.9.0-rc.1"
 dependencies = [
  "semver",
  "thiserror 2.0.21",
@@ -3177,7 +3177,7 @@ dependencies = [
 
 [[package]]
 name = "oflh-desktop"
-version = "0.9.0"
+version = "0.9.0-rc.1"
 dependencies = [
  "oflh-core",
  "oflh-icons",
@@ -3202,7 +3202,7 @@ dependencies = [
 
 [[package]]
 name = "oflh-icons"
-version = "0.9.0"
+version = "0.9.0-rc.1"
 dependencies = [
  "objc2",
  "objc2-app-kit",
@@ -3213,7 +3213,7 @@ dependencies = [
 
 [[package]]
 name = "oflh-platform"
-version = "0.9.0"
+version = "0.9.0-rc.1"
 dependencies = [
  "cc",
  "libc",
@@ -3229,14 +3229,14 @@ dependencies = [
 
 [[package]]
 name = "oflh-sessions"
-version = "0.9.0"
+version = "0.9.0-rc.1"
 dependencies = [
  "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "oflh-tui"
-version = "0.9.0"
+version = "0.9.0-rc.1"
 dependencies = [
  "crossterm",
  "oflh-core",
@@ -6818,7 +6818,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.9.0"
+version = "0.9.0-rc.1"
 dependencies = [
  "base64 0.22.1",
  "flate2",
