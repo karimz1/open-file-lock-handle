@@ -3,11 +3,17 @@ import {
   Copy,
   ExternalLink,
   Files,
+  Hourglass,
   ChevronRight,
   CornerDownRight,
   X,
 } from "lucide-react";
-import { type Details, type PathValue, type Row } from "./api";
+import {
+  type Details,
+  type PathValue,
+  type Row,
+  type WaitSelection,
+} from "./api";
 import { memory } from "./state";
 import { SessionPanel } from "./SessionPanel";
 import { MatchingFiles } from "./MatchingFiles";
@@ -29,7 +35,11 @@ export function Inspector({
   notify,
   report,
   target,
+  onWait,
+  waitDisabled,
 }: {
+  onWait: (selection: WaitSelection) => void;
+  waitDisabled: boolean;
   target: string;
   revision: number;
   notify: (message: string) => void;
@@ -89,7 +99,18 @@ export function Inspector({
   });
   const ancestor = nodes.find((item) => item.key === ancestorKey);
   const currentSelected = ancestorKey === details.process.process_key;
-  const path = (label: MessageKey, value: PathValue, available = current) => (
+  const waitForFile = (value: PathValue) =>
+    onWait({
+      revision,
+      target: { kind: "file", reference: value.reference },
+      display: value.display,
+    });
+  const path = (
+    label: MessageKey,
+    value: PathValue,
+    available = current,
+    canWait = false,
+  ) => (
     <section>
       <h4>{t(label)}</h4>
       <p className="detail-path mono">
@@ -108,6 +129,15 @@ export function Inspector({
             <ExternalLink size={13} />
             {t("common.k_reveal")}
           </button>
+          {canWait && (
+            <button
+              disabled={!available || waitDisabled}
+              onClick={() => waitForFile(value)}
+            >
+              <Hourglass size={13} />
+              {t("wait.k_file_action")}
+            </button>
+          )}
         </div>
       )}
     </section>
@@ -201,12 +231,29 @@ export function Inspector({
             copy={copy}
             reveal={reveal}
             showAll={() => handles(true)}
+            onWait={waitForFile}
+            waitDisabled={waitDisabled}
           />
         )}
         <div
           className="detail-navigation"
           aria-label={t("inspection.k_process_inspection_views")}
         >
+          {details.process.actionable && (
+            <button
+              disabled={!current || waitDisabled}
+              onClick={() =>
+                onWait({
+                  revision,
+                  target: { kind: "process", key: details.process.process_key },
+                  display: `${details.process.name} (PID ${details.process.pid})`,
+                })
+              }
+            >
+              <Hourglass size={14} />
+              {t("wait.k_process_action")}
+            </button>
+          )}
           <button onClick={() => handles()}>
             <Files size={14} /> {t("inspector.k_matching_handles")}{" "}
             <span>{details.process.usages}</span>
@@ -355,6 +402,19 @@ export function Inspector({
               <p>
                 {row.port.protocol} · {tValue(row.port.state)}
               </p>
+              <button
+                disabled={!current || !rowCurrent || waitDisabled}
+                onClick={() =>
+                  onWait({
+                    revision,
+                    target: { kind: "port", reference: row.port!.reference },
+                    display: `Port ${row.port!.number}`,
+                  })
+                }
+              >
+                <Hourglass size={13} />
+                {t("wait.k_port_action")}
+              </button>
             </section>
           ) : row.matching_files ? null : (
             <>
@@ -365,6 +425,7 @@ export function Inspector({
                   reference: row.path_ref,
                 },
                 current && rowCurrent,
+                true,
               )}
               <section>
                 <h4>{t("inspector.k_file_observation")}</h4>

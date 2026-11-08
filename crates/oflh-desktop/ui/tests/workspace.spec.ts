@@ -197,40 +197,47 @@ test.beforeEach(async ({ page }) => {
               generation: status.generation + 1,
               scanning: false,
             });
-          if (command === "wait_until_free" && (window as any).__emitWaitFree) {
-            const freeStatus = {
+          if (command === "wait_for_selection") {
+            const waiting = (status = {
               ...status,
               wait: {
-                waiting: false,
-                elapsed_ms: 500,
-                outcome: "free",
-                error: null,
-              },
-            };
-            setTimeout(
-              () =>
-                (window as any).__waitFree({
-                  event: "scan-status",
-                  payload: freeStatus,
-                }),
-              100,
-            );
-          }
-          if (command === "wait_until_free") {
-            return (status = {
-              ...status,
-              wait: {
+                ...status.wait,
+                id: ((status.wait as any).id ?? 0) + 1,
+                target: {
+                  kind: args.request.target.kind,
+                  display:
+                    args.request.target.kind === "process"
+                      ? "FixturePdfEditor (PID 4000)"
+                      : args.request.target.kind === "port"
+                        ? "Port 8080"
+                        : "/build/documents/Bestellbestätigung .pdf",
+                },
                 waiting: true,
                 elapsed_ms: 500,
                 outcome: null,
                 error: null,
               },
-            });
+            } as typeof status);
+            if ((window as any).__emitWaitFree) {
+              const freeStatus = {
+                ...waiting,
+                wait: { ...waiting.wait, waiting: false, outcome: "free" },
+              };
+              setTimeout(() => {
+                status = freeStatus as typeof status;
+                (window as any).__waitFree({
+                  event: "scan-status",
+                  payload: freeStatus,
+                });
+              }, 100);
+            }
+            return waiting;
           }
           if (command === "cancel_wait") {
             return (status = {
               ...status,
               wait: {
+                ...status.wait,
                 waiting: false,
                 elapsed_ms: 500,
                 outcome: "failed",
@@ -244,26 +251,6 @@ test.beforeEach(async ({ page }) => {
           }
           if (command === "notify_wait_free") return;
           if (command === "focus_window") return;
-          if ((window as any).__emitWaitFree) {
-            await new Promise((resolve) => setTimeout(resolve, 60));
-            const eventId = [...callbackEvents].find(
-              ([, name]) => name === "scan-status",
-            )?.[0];
-            const callback = callbacks.get(Number(eventId));
-            callback?.({
-              event: "scan-status",
-              id: Number(eventId),
-              payload: (status = {
-                ...status,
-                wait: {
-                  waiting: false,
-                  elapsed_ms: 500,
-                  outcome: "free",
-                  error: null,
-                },
-              }),
-            });
-          }
           // Terminal-server fixture: several people signed in at once.
           const multi = (window as any).__multiUser as
             { elevated: boolean; os?: string } | undefined;
@@ -6372,19 +6359,49 @@ test("issue 153: post-termination scans settle late socket exits then stop", asy
 test("wait has timeout, cancellation, free notification and no automatic follow-up", async ({
   page,
 }) => {
+  await page.addInitScript(() => {
+    (window as any).__fileMatchFixture = true;
+  });
   await page.goto("/");
+  await expect(
+    page.getByRole("button", { name: "Wait until free", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("grid").getByRole("row").nth(1).click();
   await page
-    .getByRole("button", { name: "Wait until free", exact: true })
+    .getByRole("region", { name: "Matching files", exact: true })
+    .getByRole("button", { name: "Wait for file to become free", exact: true })
+    .first()
     .click();
   const dialog = page.getByRole("dialog");
-  await expect(
-    dialog.getByLabel("Timeout in seconds (0 means none)"),
-  ).toHaveValue("0");
-  await dialog.getByLabel("Timeout in seconds (0 means none)").fill("30");
+  await expect(dialog).toContainText("Bestellbestätigung .pdf");
+  await expect(dialog.getByLabel("Set a time limit")).not.toBeChecked();
+  await dialog.getByLabel("Set a time limit").check();
+  await dialog.getByLabel("Time limit in seconds").fill("30");
   await page.screenshot({
     path: documentationScreenshotPath("desktop-wait-options.png"),
   });
   await dialog.getByRole("button", { name: "Start waiting" }).click();
+  const request = await page.evaluate(
+    () =>
+      (window as any).__testCalls.find(
+        (call: any) => call.command === "wait_for_selection",
+      ).args.request,
+  );
+  expect(request).toEqual({
+    revision: 1,
+    target: { kind: "file", reference: "1:0:0" },
+    timeout_seconds: 30,
+  });
+  expect(request.path).toBeUndefined();
+  await expect(
+    page.getByRole("textbox", { name: "Search loaded results" }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Refresh", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText("Updating results…", { exact: true }),
+  ).toHaveCount(0);
   await expect(
     page.getByText("Waiting until the target is free"),
   ).toBeVisible();
@@ -6392,6 +6409,7 @@ test("wait has timeout, cancellation, free notification and no automatic follow-
   await expect(page.getByText("Waiting cancelled.")).toBeVisible();
   await page.evaluate(() => ((window as any).__emitWaitFree = true));
   await page.getByRole("button", { name: "Wait again" }).click();
+  await expect(dialog.getByLabel("Set a time limit")).not.toBeChecked();
   await dialog.getByRole("button", { name: "Start waiting" }).click();
   await expect(page.getByText("The target is free.")).toBeVisible();
   expect(
@@ -6413,4 +6431,91 @@ test("wait has timeout, cancellation, free notification and no automatic follow-
   await page.screenshot({
     path: documentationScreenshotPath("desktop-wait-free.png"),
   });
+});
+
+test("process waiting uses its captured lifetime and offers no file follow-up", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__fileMatchFixture = true;
+    (window as any).__emitWaitFree = true;
+  });
+  await page.goto("/");
+  await page
+    .getByRole("grid")
+    .getByRole("row")
+    .nth(1)
+    .click({ button: "right" });
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Wait for process exit", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("FixturePdfEditor (PID 4000)");
+  await expect(dialog).toContainText(
+    "Other processes may still be using its files.",
+  );
+  await expect(dialog.getByRole("combobox")).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  await dialog.getByRole("button", { name: "Start waiting" }).click();
+  await expect(
+    page.getByText("The selected process has exited.", { exact: true }),
+  ).toBeVisible();
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls.find((call: any) => call.command === "wait_for_selection").args
+      .request,
+  ).toEqual({
+    revision: 1,
+    target: { kind: "process", key: "4000:18446744073709551615:0" },
+    timeout_seconds: null,
+  });
+  await expect
+    .poll(
+      async () =>
+        (await page.evaluate(() => (window as any).__testCalls)).filter(
+          (call: any) => call.command === "notify_wait_free",
+        ).length,
+    )
+    .toBe(1);
+  expect(
+    calls.some(
+      (call: any) =>
+        call.command === "terminate" || call.command === "wait_follow_up",
+    ),
+  ).toBe(false);
+});
+
+test("file waiting confirms destructive follow-ups and resets them for another selection", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__fileMatchFixture = true;
+  });
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  const file = page.locator(".matching-file-list > li").first();
+  await file
+    .getByRole("button", { name: "Wait for file to become free" })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("After it becomes free").selectOption("delete");
+  const start = dialog.getByRole("button", { name: "Start waiting" });
+  await expect(start).toBeDisabled();
+  await dialog
+    .getByRole("checkbox", {
+      name: "Delete this target after a final confirming free scan?",
+    })
+    .check();
+  await expect(start).toBeEnabled();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page
+    .locator(".matching-file-list > li")
+    .nth(1)
+    .getByRole("button", { name: "Wait for file to become free" })
+    .click();
+  await expect(dialog).toContainText("Bestellung-2.pdf");
+  await expect(dialog.getByLabel("After it becomes free")).toHaveValue("none");
 });

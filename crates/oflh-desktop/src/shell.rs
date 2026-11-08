@@ -139,6 +139,13 @@ fn wait_until_free(service: Desktop<'_>, request: WaitRequest) -> Status {
     service.wait_until_free(request)
 }
 #[tauri::command]
+fn wait_for_selection(
+    service: Desktop<'_>,
+    request: SelectionWaitRequest,
+) -> Result<Status, Failure> {
+    service.wait_for_selection(request)
+}
+#[tauri::command]
 fn cancel_wait(service: Desktop<'_>) -> Status {
     service.cancel_wait()
 }
@@ -149,6 +156,7 @@ async fn wait_follow_up(
     action: String,
     destination: Option<PathBuf>,
     locale: Option<String>,
+    wait_id: u64,
 ) -> Result<(), Failure> {
     let service = service.inner().clone();
     blocking(move || {
@@ -161,19 +169,20 @@ async fn wait_follow_up(
             _ => return Err(Failure::invalid("Unknown wait follow-up")),
         };
         // Revalidate immediately before the action; native paths never enter JS.
-        let path = service.shared_wait_path()?;
+        let path = service.shared_wait_path(wait_id)?;
         if action == "reveal" {
-            // This quick vault resource unlock has its native open guard.
-            service.wait_follow_up(WaitFollowUp::Reveal)?;
+            // Recheck the completed wait before revealing its retained native path.
+            service.wait_follow_up(wait_id, WaitFollowUp::Reveal)?;
             app.opener()
                 .reveal_item_in_dir(&path)
                 .map_err(integration)?;
         } else {
-            service.wait_follow_up_in_background(follow_up)?;
+            service.wait_follow_up_in_background(wait_id, follow_up)?;
         }
         if let Some(locale) = locale {
-            let (title, body) = crate::wait::notification_message(&locale);
-            crate::wait::notify_free(&app, title, body)?;
+            let target = service.completed_wait_target(wait_id)?;
+            let (title, body) = crate::wait::notification_message(&locale, &target);
+            crate::wait::notify_free(&app, title, &body)?;
         }
         Ok(())
     })
@@ -192,10 +201,16 @@ async fn choose_wait_destination(app: tauri::AppHandle) -> Result<Option<PathBuf
     .await
 }
 #[tauri::command]
-fn notify_wait_free(app: tauri::AppHandle, locale: Option<String>) -> Result<(), Failure> {
+fn notify_wait_free(
+    app: tauri::AppHandle,
+    service: Desktop<'_>,
+    locale: Option<String>,
+    wait_id: u64,
+) -> Result<(), Failure> {
     let locale = locale.unwrap_or_default();
-    let (title, body) = crate::wait::notification_message(&locale);
-    crate::wait::notify_free(&app, title, body)
+    let target = service.completed_wait_target(wait_id)?;
+    let (title, body) = crate::wait::notification_message(&locale, &target);
+    crate::wait::notify_free(&app, title, &body)
 }
 #[tauri::command]
 fn focus_window(app: tauri::AppHandle) {
@@ -669,6 +684,7 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
             cancel,
             close_inspection,
             wait_until_free,
+            wait_for_selection,
             cancel_wait,
             wait_follow_up,
             choose_wait_destination,

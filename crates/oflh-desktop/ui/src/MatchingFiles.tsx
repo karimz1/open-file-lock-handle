@@ -1,5 +1,5 @@
-import { Copy, ExternalLink } from "lucide-react";
-import type { Row } from "./api";
+import { Copy, ExternalLink, Hourglass } from "lucide-react";
+import type { Row, PathValue } from "./api";
 import { t, tValue } from "./i18n";
 
 /** Query-matching paths, grouped without merging their access or lock evidence. */
@@ -9,12 +9,16 @@ export function MatchingFiles({
   copy,
   reveal,
   showAll,
+  onWait,
+  waitDisabled,
 }: {
   row: Row;
   current: boolean;
   copy: (field: string, reference: string) => void;
   reveal: (reference: string) => void;
   showAll: () => void;
+  onWait: (path: PathValue) => void;
+  waitDisabled: boolean;
 }) {
   const matches = row.matching_files;
   if (!matches) return null;
@@ -35,6 +39,13 @@ export function MatchingFiles({
                 onClick={() => copy("path", file.path.reference)}
               >
                 <Copy size={13} /> {t("selection.k_copy_path")}
+              </button>
+              <button
+                disabled={!current || waitDisabled}
+                onClick={() => onWait(file.path)}
+              >
+                <Hourglass size={13} />
+                {t("wait.k_file_action")}
               </button>
               <button
                 disabled={!current}

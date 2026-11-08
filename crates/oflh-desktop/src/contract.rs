@@ -129,11 +129,52 @@ pub struct WaitRequest {
     pub port: Option<u16>,
     pub timeout: Option<std::time::Duration>,
 }
+/// Wait for one captured table selection, retaining native paths and birth identities.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SelectionWaitRequest {
+    /// Accepted snapshot that owns the reference or process key.
+    pub revision: u32,
+    /// Exact resource or process selected by the user.
+    pub target: SelectionWaitTarget,
+    /// Deadline in seconds; absence means no deadline.
+    pub timeout_seconds: Option<u64>,
+}
+/// Opaque references prevent display paths and PID-only keys from becoming action inputs.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SelectionWaitTarget {
+    /// All observed users of this exact native path must disappear.
+    File {
+        /// Snapshot-local native path reference.
+        reference: String,
+    },
+    /// Only this captured process lifetime must exit; no file is declared free.
+    Process {
+        /// PID plus complete birth identity.
+        key: String,
+    },
+    /// All local bindings of this selected port number must disappear.
+    Port {
+        /// Snapshot-local port reference.
+        reference: String,
+    },
+}
+/// Display-only description retained with the running or completed wait.
+#[derive(Clone, Debug, Serialize)]
+pub struct WaitTargetView {
+    /// `file`, `process`, or `port`; process completion never implies file freedom.
+    pub kind: &'static str,
+    /// Sanitized path, process name/PID, or port number.
+    pub display: String,
+}
 
 /// Serialisable waiting state; elapsed time advances between scan publications.
 #[derive(Clone, Debug, Default, Serialize)]
 #[allow(missing_docs)]
 pub struct WaitStatus {
+    pub id: u64,
+    pub target: Option<WaitTargetView>,
     pub waiting: bool,
     pub elapsed_ms: u64,
     pub outcome: Option<&'static str>,

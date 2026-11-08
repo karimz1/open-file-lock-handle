@@ -1,5 +1,27 @@
 const en = {
   wait: {
+    k_file_action: "Wait for file to become free",
+    k_process_action: "Wait for process exit",
+    k_port_action: "Wait for port to become free",
+    k_file_target: "Selected file or folder",
+    k_process_target: "Selected process",
+    k_port_target: "Selected port",
+    k_file_description:
+      "Checks only this path once per second, across all processes. No process is stopped. A final scan checks that it is still free before a follow-up.",
+    k_process_description:
+      "Checks once per second whether this captured process has exited. Nothing is stopped. Other processes may still be using its files.",
+    k_port_description:
+      "Checks once per second until no local bindings of this port number remain. No process is stopped.",
+    k_enable_timeout: "Set a time limit",
+    k_seconds: "Time limit in seconds",
+    k_selection_changed:
+      "The selection is no longer current or another operation is running. Close this dialog and choose the target again.",
+    k_confirm_move:
+      "Move this selected target after a final confirming free scan.",
+    k_waiting_process: "Waiting for process exit",
+    k_process_exited: "The selected process has exited.",
+    k_activity: "Selected target wait",
+    k_dismiss: "Dismiss wait status",
     k_title: "Wait until free",
     k_action: "Wait until free",
     k_description:

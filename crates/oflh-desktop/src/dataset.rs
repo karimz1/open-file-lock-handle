@@ -414,7 +414,7 @@ impl Dataset {
         });
         row
     }
-    fn port(&self, reference: &str) -> Result<&oflh_core::Port, Failure> {
+    pub(crate) fn port(&self, reference: &str) -> Result<&oflh_core::Port, Failure> {
         let parts: Vec<_> = reference.split(':').collect();
         if parts.len() != 3 || parts[0].parse::<u32>().ok() != Some(self.revision) {
             return Err(Failure::invalid(

@@ -40,6 +40,15 @@ export function acceptStatus(current: Status, incoming: Status): Status {
     (incoming.elapsed_ms ?? 0) < (current.elapsed_ms ?? 0)
   )
     return current;
+  if (
+    current.wait.id !== undefined &&
+    incoming.wait.id !== undefined &&
+    (incoming.wait.id < current.wait.id ||
+      (incoming.wait.id === current.wait.id &&
+        current.wait.outcome &&
+        incoming.wait.waiting))
+  )
+    return { ...incoming, wait: current.wait };
   return incoming;
 }
 export function selectKey(

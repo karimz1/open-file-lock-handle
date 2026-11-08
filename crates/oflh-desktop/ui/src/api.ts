@@ -23,6 +23,8 @@ export interface Status {
   ports: number;
   usages: number;
   wait: {
+    id?: number;
+    target?: { kind: "file" | "process" | "port"; display: string } | null;
     waiting: boolean;
     elapsed_ms: number;
     outcome: "free" | "failed" | null;
@@ -76,6 +78,15 @@ export interface Row {
     endpoint: string;
     reference: string;
   } | null;
+}
+export type SelectionWaitTarget =
+  | { kind: "file"; reference: string }
+  | { kind: "process"; key: string }
+  | { kind: "port"; reference: string };
+export interface WaitSelection {
+  revision: number;
+  target: SelectionWaitTarget;
+  display: string;
 }
 export type Sort =
   | "relevance"
@@ -287,31 +298,27 @@ export const api = {
   recent: () => invoke<{ id: number; display: string }[]>("recent"),
   revisit: (id: number) => invoke<Status>("revisit", { id }),
   removeRecent: (id: number) => invoke<void>("remove_recent", { id }),
-  waitUntilFree: (
-    path: string | null,
-    includePorts: boolean,
-    port: number | null,
-    timeoutSeconds: number | null,
-  ) =>
-    invoke<Status>("wait_until_free", {
+  waitForSelection: (selection: WaitSelection, timeoutSeconds: number | null) =>
+    invoke<Status>("wait_for_selection", {
       request: {
-        path,
-        include_ports: includePorts,
-        port,
-        timeout: timeoutSeconds,
+        revision: selection.revision,
+        target: selection.target,
+        timeout_seconds: timeoutSeconds,
       },
     }),
   focusWindow: () => invoke<void>("focus_window"),
   cancelWait: () => invoke<Status>("cancel_wait"),
-  notifyWaitFree: (locale?: string) =>
-    invoke<void>("notify_wait_free", { locale: locale ?? null }),
+  notifyWaitFree: (waitId: number, locale?: string) =>
+    invoke<void>("notify_wait_free", { waitId, locale: locale ?? null }),
   chooseWaitDestination: () => invoke<string | null>("choose_wait_destination"),
   waitFollowUp: (
+    waitId: number,
     action: "reveal" | "delete" | "move",
     destination: string | null,
     locale?: string,
   ) =>
     invoke<void>("wait_follow_up", {
+      waitId,
       action,
       destination,
       locale: locale ?? null,

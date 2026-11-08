@@ -40,6 +40,9 @@ pub enum WaitFollowUp {
 }
 #[derive(Clone)]
 struct WaitJob {
+    id: u64,
+    process: Option<Identity>,
+    description: WaitTargetView,
     path: Option<PathBuf>,
     include_ports: bool,
     port: Option<u16>,
@@ -68,6 +71,7 @@ struct State {
     wait_started: Option<std::time::Instant>,
     wait_outcome: Option<Result<(), Failure>>,
     wait_completed: Option<WaitJob>,
+    next_wait: u64,
 }
 struct Shared {
     state: Mutex<State>,
@@ -164,6 +168,7 @@ impl Service {
                 wait_started: None,
                 wait_outcome: None,
                 wait_completed: None,
+                next_wait: 0,
             }),
             recent_targets: Mutex::new(recent_targets),
             ready: Condvar::new(),
@@ -190,36 +195,49 @@ impl Service {
                     // scrutinee temporary otherwise lives for the entire block.
                     let wait = worker.lock().wait.clone();
                     if let Some(wait) = wait {
+                        let options = oflh_core::wait::Options {
+                            timeout: wait.timeout,
+                            ..Default::default()
+                        };
                         let path = wait
                             .path
                             .as_deref()
                             .map(Target::new)
                             .transpose()
                             .map_err(Failure::from);
-                        let result = path.and_then(|path| {
-                            oflh_platform::wait_until_free(
+                        let result = if let Some(identity) = wait.process {
+                            crate::process_wait::wait_for_exit(
                                 &mut *backend,
-                                oflh_platform::WaitTarget {
-                                    path: path.as_ref(),
-                                    include_ports: wait.include_ports,
-                                    port: wait.port,
-                                    scope_ports_to_path: true,
-                                },
-                                oflh_core::wait::Options {
-                                    timeout: wait.timeout,
-                                    ..Default::default()
-                                },
+                                identity,
+                                options,
                                 wait.started,
                                 &wait.cancel,
+                                &oflh_core::wait::PollSleeper,
                             )
                             .map_err(Failure::from)
-                        });
+                        } else {
+                            path.and_then(|path| {
+                                oflh_platform::wait_until_free(
+                                    &mut *backend,
+                                    oflh_platform::WaitTarget {
+                                        path: path.as_ref(),
+                                        include_ports: wait.include_ports,
+                                        port: wait.port,
+                                        scope_ports_to_path: wait.path.is_some(),
+                                    },
+                                    options,
+                                    wait.started,
+                                    &wait.cancel,
+                                )
+                                .map_err(Failure::from)
+                            })
+                        };
                         let status = {
                             let mut state = worker.lock();
-                            if let Some(wait) = &state.wait
-                                && wait.cancel.check().is_err()
-                            {
-                                state.wait = None;
+                            // Cancellation or a replacement wait invalidates this completion.
+                            if state.wait.as_ref().is_none_or(|current| {
+                                current.id != wait.id || current.cancel.check().is_err()
+                            }) {
                                 continue;
                             }
                             state.wait_outcome = Some(result);
@@ -427,23 +445,118 @@ impl Service {
         if state.scanning || state.pending.is_some() || state.wait.is_some() {
             return status(&state);
         }
+        let description = WaitTargetView {
+            kind: if request.path.is_some() {
+                "file"
+            } else {
+                "port"
+            },
+            display: request.path.as_deref().map(display).unwrap_or_else(|| {
+                request
+                    .port
+                    .map_or_else(String::new, |port| format!("Port {port}"))
+            }),
+        };
+        self.begin_wait_locked(
+            &mut state,
+            WaitJob {
+                id: 0,
+                process: None,
+                description,
+                path: request.path,
+                include_ports: request.include_ports,
+                port: request.port,
+                timeout: request.timeout,
+                cancel: Cancellation::default(),
+                started: std::time::Instant::now(),
+            },
+        )
+    }
+    /// Resolve a row selection in its owning snapshot before scheduling background work.
+    pub fn wait_for_selection(&self, request: SelectionWaitRequest) -> Result<Status, Failure> {
+        let mut state = self.shared.lock();
+        if state.scanning || state.pending.is_some() || state.wait.is_some() {
+            return Err(Failure::invalid(
+                "Finish or cancel the current inspection or wait first",
+            ));
+        }
+        if request.revision != state.dataset.revision {
+            return Err(Failure::from(Error::Changed));
+        }
+        if request
+            .timeout_seconds
+            .is_some_and(|seconds| seconds == 0 || seconds > 86400)
+        {
+            return Err(Failure::invalid(
+                "Wait timeout must be between 1 and 86400 seconds",
+            ));
+        }
+        let (path, process, port, description) = match request.target {
+            SelectionWaitTarget::File { reference } => {
+                let path = state.dataset.path(&reference)?;
+                let description = WaitTargetView {
+                    kind: "file",
+                    display: display(&path),
+                };
+                (Some(path), None, None, description)
+            }
+            SelectionWaitTarget::Process { key } => {
+                let (_, process) = state.dataset.process(&key)?;
+                process.identity.validate().map_err(Failure::from)?;
+                (
+                    None,
+                    Some(process.identity),
+                    None,
+                    WaitTargetView {
+                        kind: "process",
+                        display: format!(
+                            "{} (PID {})",
+                            oflh_core::safe(&process.name),
+                            process.identity.pid
+                        ),
+                    },
+                )
+            }
+            SelectionWaitTarget::Port { reference } => {
+                let port = state.dataset.port(&reference)?.number;
+                (
+                    None,
+                    None,
+                    Some(port),
+                    WaitTargetView {
+                        kind: "port",
+                        display: format!("Port {port}"),
+                    },
+                )
+            }
+        };
+        Ok(self.begin_wait_locked(
+            &mut state,
+            WaitJob {
+                id: 0,
+                path,
+                process,
+                port,
+                description,
+                include_ports: false,
+                timeout: request.timeout_seconds.map(std::time::Duration::from_secs),
+                cancel: Cancellation::default(),
+                started: std::time::Instant::now(),
+            },
+        ))
+    }
+    fn begin_wait_locked(&self, state: &mut State, mut job: WaitJob) -> Status {
         if let Some(wait) = &state.wait_completed {
             wait.cancel.cancel();
         }
         state.wait_completed = None;
-        let cancel = Cancellation::default();
+        state.next_wait = state.next_wait.wrapping_add(1);
+        job.id = state.next_wait;
         state.wait_started = Some(std::time::Instant::now());
         state.wait_outcome = None;
-        state.wait = Some(WaitJob {
-            path: request.path,
-            include_ports: request.include_ports,
-            port: request.port,
-            timeout: request.timeout,
-            cancel,
-            started: std::time::Instant::now(),
-        });
+        state.wait = Some(job);
         self.shared.ready.notify_one();
-        status(&state)
+        status(state)
     }
     /// Cancel waiting without changing accepted inspection results.
     pub fn cancel_wait(&self) -> Status {
@@ -490,23 +603,39 @@ impl Service {
     }
 
     /// Native path retained for the final guarded reveal action.
-    pub fn shared_wait_path(&self) -> Result<PathBuf, Failure> {
+    pub fn shared_wait_path(&self, id: u64) -> Result<PathBuf, Failure> {
         let state = self.shared.lock();
         state
-            .wait
+            .wait_completed
             .as_ref()
-            .or(state.wait_completed.as_ref())
+            .filter(|job| job.id == id && state.wait_outcome.as_ref().is_some_and(Result::is_ok))
             .and_then(|wait| wait.path.clone())
             .ok_or_else(|| Failure::invalid("No filesystem target is waiting"))
     }
+    /// Describe only the successfully completed wait identified by the caller.
+    pub fn completed_wait_target(&self, id: u64) -> Result<WaitTargetView, Failure> {
+        let state = self.shared.lock();
+        state
+            .wait_completed
+            .as_ref()
+            .filter(|job| job.id == id && state.wait_outcome.as_ref().is_some_and(Result::is_ok))
+            .map(|job| job.description.clone())
+            .ok_or_else(|| Failure::invalid("This wait is no longer the completed operation"))
+    }
     /// Run an explicit follow-up only after another complete free scan.
-    pub fn wait_follow_up(&self, follow_up: WaitFollowUp) -> Result<(), Failure> {
+    pub fn wait_follow_up(&self, id: u64, follow_up: WaitFollowUp) -> Result<(), Failure> {
         let state = self.shared.lock();
         let job = state.wait_completed.clone();
-        let Some(job) = job.filter(|_| state.wait_outcome.as_ref().is_some_and(Result::is_ok))
+        let Some(job) = job
+            .filter(|job| job.id == id && state.wait_outcome.as_ref().is_some_and(Result::is_ok))
         else {
             return Err(Failure::invalid("No target is waiting to become free"));
         };
+        if job.process.is_some() {
+            return Err(Failure::invalid(
+                "Process waits have no filesystem follow-up",
+            ));
+        }
         drop(state);
         let target = job
             .path
@@ -579,7 +708,11 @@ impl Service {
         self.enqueue(path, None)
     }
     /// Execute the optional explicit action without blocking the Tauri command queue.
-    pub fn wait_follow_up_in_background(&self, follow_up: WaitFollowUp) -> Result<(), Failure> {
+    pub fn wait_follow_up_in_background(
+        &self,
+        id: u64,
+        follow_up: WaitFollowUp,
+    ) -> Result<(), Failure> {
         let Self { shared, sessions } = self;
         let service = Self {
             shared: shared.clone(),
@@ -588,7 +721,7 @@ impl Service {
         std::thread::Builder::new()
             .name("oflh-wait-follow-up".into())
             .spawn(move || {
-                let _ = service.wait_follow_up(follow_up);
+                let _ = service.wait_follow_up(id, follow_up);
             })
             .map(|_| ())
             .map_err(|error| Failure::from(oflh_core::io("start wait follow-up", error)))
@@ -1095,6 +1228,12 @@ fn status(state: &State) -> Status {
             .collect(),
         error: state.error.clone(),
         wait: WaitStatus {
+            id: state.next_wait,
+            target: state
+                .wait
+                .as_ref()
+                .or(state.wait_completed.as_ref())
+                .map(|job| job.description.clone()),
             waiting: state.wait.is_some(),
             elapsed_ms: state.wait_started.map_or(0, |started| {
                 started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
@@ -1398,6 +1537,172 @@ mod tests {
         let cancelled = service.cancel_wait();
         assert!(!cancelled.wait.waiting);
         assert_eq!(cancelled.wait.error.as_ref().unwrap().kind, "cancelled");
+    }
+    #[test]
+    fn selection_wait_retains_the_exact_native_file_and_rejects_cancelled_job_completions() {
+        let folder = tempfile::tempdir().unwrap();
+        let first = folder.path().join("first.pdf");
+        let second = folder.path().join("second.pdf");
+        std::fs::write(&first, b"fixture").unwrap();
+        std::fs::write(&second, b"fixture").unwrap();
+        let (started_sender, started) = channel();
+        let (release, release_receiver) = channel();
+        let (notifications, completed) = channel();
+        let service = Service::new(
+            Box::new(Gated {
+                started: started_sender,
+                release: release_receiver,
+            }),
+            move |status| {
+                notifications.send(status).unwrap();
+            },
+        )
+        .unwrap();
+        {
+            let mut state = service.shared.lock();
+            state.target = Some(folder.path().into());
+            state.dataset = Arc::new(Dataset::new(
+                7,
+                Snapshot {
+                    processes: vec![Process {
+                        identity: Identity {
+                            pid: 424242,
+                            started: 10,
+                            started_sub: 1,
+                        },
+                        usages: vec![
+                            oflh_core::Usage {
+                                path: first.clone(),
+                                ..Default::default()
+                            },
+                            oflh_core::Usage {
+                                path: second.clone(),
+                                ..Default::default()
+                            },
+                        ],
+                        ..Default::default()
+                    }],
+                    warnings: vec![],
+                },
+            ));
+        }
+        let request = |revision, reference: &str| SelectionWaitRequest {
+            revision,
+            target: SelectionWaitTarget::File {
+                reference: reference.into(),
+            },
+            timeout_seconds: None,
+        };
+        assert!(service.wait_for_selection(request(6, "7:0:0")).is_err());
+        assert!(service.wait_for_selection(request(7, "6:0:0")).is_err());
+        assert!(!service.status().wait.waiting);
+        let initial = service.wait_for_selection(request(7, "7:0:0")).unwrap();
+        assert_eq!(initial.revision, 7);
+        assert_eq!(
+            started.recv_timeout(TIMEOUT).unwrap(),
+            Target::new(&first).unwrap().path
+        );
+        assert!(service.wait_for_selection(request(7, "7:0:1")).is_err());
+        service.cancel_wait();
+        let next = service.wait_for_selection(request(7, "7:0:1")).unwrap();
+        assert_ne!(initial.wait.id, next.wait.id);
+        release.send(()).unwrap();
+        assert_eq!(
+            started.recv_timeout(TIMEOUT).unwrap(),
+            Target::new(&second).unwrap().path
+        );
+        assert!(completed.try_recv().is_err());
+        assert!(service.status().wait.waiting);
+        release.send(()).unwrap();
+        let done = completed.recv_timeout(TIMEOUT).unwrap();
+        assert_eq!(done.wait.id, next.wait.id);
+        assert_eq!(done.wait.target.as_ref().unwrap().display, display(&second));
+        assert_eq!(done.wait.outcome, Some("free"));
+        assert!(service.completed_wait_target(initial.wait.id).is_err());
+        assert!(service.shared_wait_path(initial.wait.id).is_err());
+        assert_eq!(service.shared_wait_path(next.wait.id).unwrap(), second);
+    }
+    #[test]
+    fn process_wait_rejects_pid_only_keys_and_never_authorizes_a_file_follow_up() {
+        let (service, identity) = action_service();
+        let request = |key| SelectionWaitRequest {
+            revision: 1,
+            target: SelectionWaitTarget::Process { key },
+            timeout_seconds: Some(30),
+        };
+        assert!(
+            service
+                .wait_for_selection(request(identity.pid.to_string()))
+                .is_err()
+        );
+        assert!(
+            service
+                .wait_for_selection(request(format!("{}:0:0", identity.pid)))
+                .is_err()
+        );
+        let started = service
+            .wait_for_selection(request(identity_key(identity)))
+            .unwrap();
+        let deadline = Instant::now() + TIMEOUT;
+        while service.status().wait.waiting && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert_eq!(service.status().wait.outcome, Some("free"));
+        assert_eq!(
+            service.completed_wait_target(started.wait.id).unwrap().kind,
+            "process"
+        );
+        assert!(
+            service
+                .wait_follow_up(started.wait.id, WaitFollowUp::Delete)
+                .is_err()
+        );
+        assert!(service.shared_wait_path(started.wait.id).is_err());
+    }
+    #[test]
+    fn selected_port_wait_counts_bindings_without_any_filesystem_target() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (notifications, completed) = channel();
+        let service = Service::new(Box::new(Recorder::default()), move |status| {
+            notifications.send(status).unwrap();
+        })
+        .unwrap();
+        service.shared.lock().dataset = Arc::new(Dataset::new(
+            1,
+            Snapshot {
+                processes: vec![Process {
+                    ports: vec![oflh_core::Port {
+                        protocol: oflh_core::Protocol::Tcp,
+                        address: address.ip(),
+                        number: address.port(),
+                    }],
+                    ..Process::default()
+                }],
+                warnings: vec![],
+            },
+        ));
+        service
+            .wait_for_selection(SelectionWaitRequest {
+                revision: 1,
+                target: SelectionWaitTarget::Port {
+                    reference: "1:0:port-0".into(),
+                },
+                timeout_seconds: Some(5),
+            })
+            .unwrap();
+        assert!(matches!(
+            completed.recv_timeout(Duration::from_millis(200)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        assert!(service.status().wait.waiting);
+        drop(listener);
+        let done = completed.recv_timeout(TIMEOUT).unwrap();
+        assert_eq!(done.wait.outcome, Some("free"));
+        assert_eq!(
+            done.wait.target.unwrap().display,
+            format!("Port {}", address.port())
+        );
     }
     #[test]
     fn wait_timeout_publishes_failure() {
@@ -2105,6 +2410,12 @@ mod tests {
         std::fs::write(&path, b"keep").unwrap();
         let (service, _) = action_service();
         service.shared.lock().wait_completed = Some(WaitJob {
+            id: 1,
+            process: None,
+            description: WaitTargetView {
+                kind: "file",
+                display: display(&path),
+            },
             path: Some(path.clone()),
             include_ports: false,
             port: None,

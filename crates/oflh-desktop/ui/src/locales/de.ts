@@ -3,6 +3,28 @@ import en from "./en";
 
 const de: TranslationSchema<typeof en> = {
   wait: {
+    k_file_action: "Auf Dateifreigabe warten",
+    k_process_action: "Auf Prozessende warten",
+    k_port_action: "Auf freien Port warten",
+    k_file_target: "Ausgewählte Datei oder Ordner",
+    k_process_target: "Ausgewählter Prozess",
+    k_port_target: "Ausgewählter Port",
+    k_file_description:
+      "Prüft nur diesen Pfad einmal pro Sekunde bei allen Prozessen. Kein Prozess wird beendet. Vor einer Folgeaktion wird erneut geprüft, ob das Ziel noch frei ist.",
+    k_process_description:
+      "Prüft einmal pro Sekunde, ob dieser erfasste Prozess beendet ist. Nichts wird beendet. Andere Prozesse können seine Dateien weiterhin verwenden.",
+    k_port_description:
+      "Prüft einmal pro Sekunde, bis keine lokalen Bindungen dieser Portnummer mehr bestehen. Kein Prozess wird beendet.",
+    k_enable_timeout: "Zeitlimit setzen",
+    k_seconds: "Zeitlimit in Sekunden",
+    k_selection_changed:
+      "Die Auswahl ist nicht mehr aktuell oder eine andere Aktion läuft. Schließe den Dialog und wähle das Ziel erneut aus.",
+    k_confirm_move:
+      "Dieses ausgewählte Ziel nach einer abschließenden Freiprüfung verschieben.",
+    k_waiting_process: "Warte auf Prozessende",
+    k_process_exited: "Der ausgewählte Prozess ist beendet.",
+    k_activity: "Warten auf ausgewähltes Ziel",
+    k_dismiss: "Wartestatus schließen",
     k_title: "Warten, bis frei",
     k_action: "Warten, bis frei",
     k_description:

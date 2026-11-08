@@ -3,6 +3,27 @@ import en from "./en";
 
 const zh: TranslationSchema<typeof en> = {
   wait: {
+    k_file_action: "等待文件空闲",
+    k_process_action: "等待进程退出",
+    k_port_action: "等待端口空闲",
+    k_file_target: "所选文件或文件夹",
+    k_process_target: "所选进程",
+    k_port_target: "所选端口",
+    k_file_description:
+      "每秒检查所有进程对这个路径的使用情况。不会停止任何进程。后续操作前会再次确认目标仍为空闲。",
+    k_process_description:
+      "每秒检查这个已捕获的进程是否退出。不会停止任何程序。其他进程仍可能使用其文件。",
+    k_port_description:
+      "每秒检查，直到此端口号不存在任何本地绑定。不会停止任何进程。",
+    k_enable_timeout: "设置时限",
+    k_seconds: "时限（秒）",
+    k_selection_changed:
+      "所选结果已过期或其他操作正在运行。请关闭此对话框并重新选择目标。",
+    k_confirm_move: "在最终确认空闲后移动此所选目标。",
+    k_waiting_process: "正在等待进程退出",
+    k_process_exited: "所选进程已退出。",
+    k_activity: "等待所选目标",
+    k_dismiss: "关闭等待状态",
     k_title: "等待目标空闲",
     k_action: "等待空闲",
     k_description:

@@ -394,14 +394,28 @@ Fedora (x86-64 and ARM64) and on Arch Linux (x86-64).
 
 ## Wait until free
 
-Choose **Wait until free** in the workspace to watch the current file or folder
-without ending a process. In Ports, a `port:3000` filter selects one local
-binding. The wait polls once per second, never overlaps a previous scan and can
-be cancelled at any time. A zero timeout means no deadline; otherwise the wait
-ends with a distinct timeout, not a success.
+Start waiting from a result's context menu or details:
+
+- **Wait for file to become free** watches the selected file or folder across
+  all processes. Each entry under **Matching files** has this action, so a
+  drive-root inspection can wait for one PDF without watching the whole drive.
+- **Wait for process exit** watches the selected PID and its captured birth
+  identity. Process exit does not mean its files are free; other processes may
+  still have them open. This mode only notifies and has no file follow-up.
+- **Wait for port to become free** watches the selected port number across all
+  local bindings, independently of the file inspection or search text.
+
+The dialog shows the exact target. **Set a time limit** enables a deadline of
+1 to 86,400 seconds; leaving it off waits until completion or cancellation.
+Checks run once per second on the background worker. Nothing is terminated.
+The status banner names the target and lets you cancel without changing the
+accepted inspection. Only one wait runs at a time.
 
 When a confirming scan reports no matching holders, OFLH shows a desktop
 notification and brings the window forward. You can instead select reveal,
 delete or move before starting; move asks for a destination first. A fresh scan
 runs immediately before the selected action and refuses it if a holder returns.
-Deletion is explicit and never happens just because a wait completed.
+Moving and deletion require an explicit checkbox for the displayed target and
+never happen just because a wait completed. Starting a new wait resets the
+follow-up to **Notify only**. Notifications and follow-ups belong to the
+specific wait; cancelled or replaced results cannot complete a newer wait.

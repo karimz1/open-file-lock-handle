@@ -62,6 +62,7 @@ import {
   type Status,
   type TableQuery,
   type ColumnFilters,
+  type WaitSelection,
 } from "./api";
 import { acceptStatus, initialStatus, selectKey } from "./state";
 import { readOpenMaximized, writeOpenMaximized } from "./windowStartup";
@@ -224,7 +225,7 @@ export function App() {
   const [startingScan, setStartingScan] = useState(false);
   const [closingInspection, setClosingInspection] = useState(false);
   const [awaitingResults, setAwaitingResults] = useState(false);
-  const scanBusy = status.scanning || startingScan || status.wait.waiting;
+  const scanBusy = status.scanning || startingScan;
   const [backgroundScan, setBackgroundScan] = useState(false);
   const backgroundRevision = useRef(0);
   const [view, setView] = useState<View>("processes");
@@ -243,6 +244,7 @@ export function App() {
     gridFailed;
   const preparingRefresh = awaitingResults && !status.scanning && !gridReady;
   const inspectionLocked = scanBusy || closingInspection || preparingRefresh;
+  const scanUnavailable = inspectionLocked || status.wait.waiting;
   useEffect(() => {
     if (!scanBusy && gridReady) setAwaitingResults(false);
   }, [scanBusy, gridReady]);
@@ -347,6 +349,9 @@ export function App() {
   const [detailsRevision, setDetailsRevision] = useState(0);
   const [detailsMissing, setDetailsMissing] = useState(false);
   const [context, setContext] = useState<Row | null>(null);
+  const [waitSelection, setWaitSelection] = useState<WaitSelection | null>(
+    null,
+  );
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [ancestorOwner, setAncestorOwner] = useState<string | null>(null);
   const [resultContext, setResultContext] = useState<{
@@ -411,11 +416,12 @@ export function App() {
     [],
   );
   useEffect(() => {
-    if (!autoReloadSeconds || !status.revision || scanBusy || !gridReady)
+    if (!autoReloadSeconds || !status.revision || scanUnavailable || !gridReady)
       return;
     const interval = window.setInterval(() => {
       if (
         !statusRef.current.scanning &&
+        !statusRef.current.wait.waiting &&
         !scanRequestPending.current &&
         !document.querySelector("dialog[open]") &&
         !confirmation &&
@@ -439,6 +445,7 @@ export function App() {
     showErrorDetails,
     status.revision,
     scanBusy,
+    scanUnavailable,
     view,
   ]);
   const tableQuery: TableQuery = {
@@ -571,6 +578,7 @@ export function App() {
   ) => {
     if (
       statusRef.current.scanning ||
+      statusRef.current.wait.waiting ||
       scanRequestPending.current ||
       (["processes", "handles", "ports"].includes(view) &&
         gridRevision !== statusRef.current.revision &&
@@ -599,7 +607,7 @@ export function App() {
   };
   const refresh = () => runScan(() => api.refresh(), view, false);
   const closeInspection = () => {
-    if (inspectionLocked || scanRequestPending.current || acting) return;
+    if (scanUnavailable || scanRequestPending.current || acting) return;
     scanRequestPending.current = true;
     setClosingInspection(true);
     void api
@@ -664,6 +672,7 @@ export function App() {
     setDragging(false);
     if (
       view === "ports" ||
+      statusRef.current.wait.waiting ||
       inspectionLocked ||
       scanRequestPending.current ||
       windowRequestPending.current ||
@@ -839,7 +848,13 @@ export function App() {
       setSettlingRefreshes(0);
       return;
     }
-    if (!settlingRefreshes || scanBusy || !gridReady || acting || confirmation)
+    if (
+      !settlingRefreshes ||
+      scanUnavailable ||
+      !gridReady ||
+      acting ||
+      confirmation
+    )
       return;
     const timer = window.setTimeout(() => {
       setSettlingRefreshes((left) => left - 1);
@@ -848,7 +863,7 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [
     settlingRefreshes,
-    scanBusy,
+    scanUnavailable,
     gridReady,
     acting,
     confirmation,
@@ -1069,11 +1084,11 @@ export function App() {
             <AutoRefresh
               value={autoReloadSeconds}
               onChange={setAutoReloadSeconds}
-              disabled={inspectionLocked}
+              disabled={scanUnavailable}
             />
           )}
           <button
-            disabled={!status.revision || inspectionLocked}
+            disabled={!status.revision || scanUnavailable}
             onClick={refresh}
             title={`${t("status.k_refresh")} (${modifier}+R ${t("common.k_or")} F5)`}
           >
@@ -1170,6 +1185,7 @@ export function App() {
               </div>
               <button
                 title={t("inspection.k_open_file")}
+                disabled={scanUnavailable}
                 onClick={() => runScan(() => api.choose(false))}
               >
                 <File size={16} />
@@ -1177,6 +1193,7 @@ export function App() {
               </button>
               <button
                 title={t("inspection.k_open_folder")}
+                disabled={scanUnavailable}
                 onClick={() => runScan(() => api.choose(true))}
               >
                 <FolderOpen size={17} />
@@ -1295,7 +1312,7 @@ export function App() {
                 </div>
               )}
               {!maximized && view !== "ports" && (
-                <div className="target-area" inert={inspectionLocked}>
+                <div className="target-area" inert={scanUnavailable}>
                   <form
                     className="target-bar"
                     onSubmit={(event) => {
@@ -1756,6 +1773,8 @@ export function App() {
                     />
                     {details && (
                       <Inspector
+                        onWait={setWaitSelection}
+                        waitDisabled={inspectionLocked || status.wait.waiting}
                         target={status.target}
                         key={details.process.process_key}
                         terminateCurrent={(force) =>
@@ -2205,16 +2224,16 @@ export function App() {
           )}
         </main>
       </div>
+      <WaitUntilFree
+        status={status}
+        selection={waitSelection}
+        onChoose={setWaitSelection}
+        onClose={() => setWaitSelection(null)}
+        disabled={inspectionLocked}
+        report={report}
+        onStatus={apply}
+      />
       <footer className="statusbar">
-        {!maximized && (
-          <WaitUntilFree
-            status={status}
-            portQuery={portQuery}
-            disabled={inspectionLocked}
-            report={report}
-            onStatus={apply}
-          />
-        )}
         <span className="status-current" role={scanBusy ? undefined : "status"}>
           {scanBusy ? (
             <BackgroundInspection
@@ -2449,6 +2468,41 @@ export function App() {
             {t("app.k_actions_for_pid")} {context.pid}
           </p>
           <div className="context-actions">
+            {(context.path || context.port) && (
+              <button
+                disabled={status.wait.waiting || inspectionLocked}
+                onClick={() => {
+                  setWaitSelection({
+                    revision: status.revision,
+                    target: context.port
+                      ? { kind: "port", reference: context.port.reference }
+                      : { kind: "file", reference: context.path_ref },
+                    display: context.port
+                      ? `Port ${context.port.number}`
+                      : context.path,
+                  });
+                  setContext(null);
+                }}
+              >
+                {t(context.port ? "wait.k_port_action" : "wait.k_file_action")}
+              </button>
+            )}
+            {context.actionable && (
+              <button
+                disabled={status.wait.waiting || inspectionLocked}
+                onClick={() => {
+                  setWaitSelection({
+                    revision: status.revision,
+                    target: { kind: "process", key: context.process_key },
+                    display: `${context.name} (PID ${context.pid})`,
+                  });
+                  setContext(null);
+                }}
+              >
+                {t("wait.k_process_action")}
+              </button>
+            )}
+            <hr />
             {context.port && (
               <>
                 <button

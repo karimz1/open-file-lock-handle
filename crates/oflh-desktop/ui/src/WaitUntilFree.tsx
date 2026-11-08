@@ -1,120 +1,253 @@
 import { useEffect, useRef, useState } from "react";
-import { Hourglass, TimerOff, X } from "lucide-react";
-import { api, type Status } from "./api";
+import { Check, Hourglass, Info, TimerOff, X } from "lucide-react";
+import { api, type Status, type WaitSelection } from "./api";
 import { Modal } from "./Modal";
-import { t } from "./i18n";
-import { locale } from "./i18n";
-import { normalizeTypedPath } from "./targetPath";
+import { locale, t } from "./i18n";
 
 export type FollowUp = "none" | "reveal" | "delete" | "move";
-export interface WaitOptions {
-  path: string | null;
-  includePorts: boolean;
-  port: number | null;
+interface WaitOptions {
+  selection: WaitSelection;
   timeoutSeconds: number | null;
   followUp: FollowUp;
   destination: string | null;
-}
-export function waitTarget(path: string, portQuery: string) {
-  const match = /^(?:.*\b)?port:(\d{1,5})\s*$/i.exec(portQuery.trim());
-  const port = match ? Number(match[1]) : null;
-  return {
-    path: match ? null : normalizeTypedPath(path),
-    port: port && port > 0 && port <= 65535 ? port : null,
-  };
+  id?: number;
 }
 export function elapsedLabel(ms: number) {
   const seconds = Math.floor(ms / 1000);
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+function WaitDialog({
+  selection,
+  current,
+  close,
+  start,
+  report,
+}: {
+  selection: WaitSelection;
+  current: boolean;
+  close: () => void;
+  start: (options: WaitOptions) => Promise<void>;
+  report: (error: unknown) => void;
+}) {
+  const [followUp, setFollowUp] = useState<FollowUp>("none");
+  const [deadline, setDeadline] = useState(false);
+  const [seconds, setSeconds] = useState(300);
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const kind = selection.target.kind;
+  const destructive = followUp === "delete" || followUp === "move";
+  const validTimeout =
+    !deadline ||
+    (Number.isInteger(seconds) && seconds >= 1 && seconds <= 86400);
+  const begin = async () => {
+    setBusy(true);
+    try {
+      const destination =
+        followUp === "move" ? await api.chooseWaitDestination() : null;
+      if (followUp === "move" && !destination) return;
+      await start({
+        selection,
+        timeoutSeconds: deadline ? seconds : null,
+        followUp,
+        destination,
+      });
+      close();
+    } catch (error) {
+      report(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal
+      className="wait-dialog"
+      title={t(
+        kind === "process"
+          ? "wait.k_process_action"
+          : kind === "port"
+            ? "wait.k_port_action"
+            : "wait.k_file_action",
+      )}
+      close={() => {
+        if (!busy) close();
+      }}
+    >
+      <div className="wait-target-card">
+        <span className="eyebrow">
+          {t(
+            kind === "process"
+              ? "wait.k_process_target"
+              : kind === "port"
+                ? "wait.k_port_target"
+                : "wait.k_file_target",
+          )}
+        </span>
+        <p className={kind === "process" ? "" : "mono"}>{selection.display}</p>
+      </div>
+      <p className="hint wait-description">
+        <Info size={16} aria-hidden="true" />
+        {t(
+          kind === "process"
+            ? "wait.k_process_description"
+            : kind === "port"
+              ? "wait.k_port_description"
+              : "wait.k_file_description",
+        )}
+      </p>
+      <div className="wait-fields">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={deadline}
+            onChange={(event) => setDeadline(event.target.checked)}
+          />
+          {t("wait.k_enable_timeout")}
+        </label>
+        {deadline && (
+          <label className="wait-field">
+            {t("wait.k_seconds")}
+            <input
+              type="number"
+              min="1"
+              max="86400"
+              step="1"
+              value={Number.isFinite(seconds) ? seconds : ""}
+              onChange={(event) =>
+                setSeconds(
+                  event.target.value === "" ? NaN : Number(event.target.value),
+                )
+              }
+            />
+          </label>
+        )}
+        {kind === "file" && (
+          <label className="wait-field">
+            {t("wait.k_follow_up")}
+            <select
+              value={followUp}
+              onChange={(event) => {
+                setFollowUp(event.target.value as FollowUp);
+                setConfirmed(false);
+              }}
+            >
+              <option value="none">{t("wait.k_notify_only")}</option>
+              <option value="reveal">{t("wait.k_reveal")}</option>
+              <option value="move">{t("wait.k_move")}</option>
+              <option value="delete">{t("wait.k_delete")}</option>
+            </select>
+          </label>
+        )}
+        {destructive && (
+          <label className="checkbox-label wait-confirm">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(event) => setConfirmed(event.target.checked)}
+            />
+            {t(
+              followUp === "delete"
+                ? "wait.k_confirm_delete"
+                : "wait.k_confirm_move",
+            )}
+          </label>
+        )}
+      </div>
+      {!current && (
+        <p className="hint" role="status">
+          {t("wait.k_selection_changed")}
+        </p>
+      )}
+      <div className="modal-actions">
+        <button data-default-focus disabled={busy} onClick={close}>
+          {t("common.k_cancel")}
+        </button>
+        <button
+          className="primary"
+          disabled={
+            !current || busy || !validTimeout || (destructive && !confirmed)
+          }
+          onClick={() => void begin()}
+        >
+          <Hourglass size={15} />
+          {t("wait.k_start")}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Selection actions open the dialog; only an active or completed wait has a status banner. */
 export function WaitUntilFree({
   status,
-  portQuery,
+  selection,
   disabled,
   report,
   onStatus,
+  onChoose,
+  onClose,
 }: {
   status: Status;
-  portQuery: string;
+  selection: WaitSelection | null;
   disabled: boolean;
   report: (error: unknown) => void;
   onStatus: (status: Status) => void;
+  onChoose: (selection: WaitSelection) => void;
+  onClose: () => void;
 }) {
-  const [configuring, setConfiguring] = useState(false);
-  const [followUp, setFollowUp] = useState<FollowUp>("none");
-  const [timeoutSeconds, setTimeoutSeconds] = useState(0);
   const [options, setOptions] = useState<WaitOptions | null>(null);
-  const [elapsed, setElapsed] = useState(status.wait.elapsed_ms);
+  const [elapsed, setElapsed] = useState(0);
+  const [dismissed, setDismissed] = useState<number | null>(null);
   const completed = useRef(false);
-  const target = waitTarget(status.target, portQuery);
   const ready = status.wait.outcome === "free";
-
+  const target =
+    status.wait.target ||
+    (options
+      ? {
+          kind: options.selection.target.kind,
+          display: options.selection.display,
+        }
+      : null);
   useEffect(() => {
     if (!status.wait.waiting) return;
-    setElapsed(status.wait.elapsed_ms);
     const started = Date.now() - status.wait.elapsed_ms;
+    setElapsed(status.wait.elapsed_ms);
     const timer = window.setInterval(
       () => setElapsed(Date.now() - started),
-      250,
+      1000,
     );
     return () => window.clearInterval(timer);
-  }, [status.wait.waiting, status.wait.elapsed_ms]);
+  }, [status.wait.waiting, status.wait.id]);
   useEffect(() => {
-    if (!ready || !options || completed.current) return;
+    if (
+      !ready ||
+      !options ||
+      completed.current ||
+      status.wait.id !== options.id ||
+      options.id === undefined
+    )
+      return;
     completed.current = true;
-    const request =
+    void (
       options.followUp === "none"
-        ? api.notifyWaitFree(locale)
-        : api.waitFollowUp(options.followUp, options.destination, locale);
-    void request.catch(report);
-  }, [ready, options, report]);
-
-  const begin = async () => {
-    const selectedTarget = waitTarget(status.target, portQuery);
-    if (!selectedTarget.path && !selectedTarget.port) return;
-    let destination: string | null = null;
-    try {
-      if (followUp === "move") {
-        destination = await api.chooseWaitDestination();
-        if (!destination) return;
-      }
-      if (followUp === "delete" && !window.confirm(t("wait.k_confirm_delete")))
-        return;
-      const next: WaitOptions = {
-        ...selectedTarget,
-        includePorts: !selectedTarget.port && status.target !== "",
-        port: selectedTarget.port,
-        timeoutSeconds: timeoutSeconds || null,
-        followUp,
-        destination,
-      };
-      setOptions(next);
-      completed.current = false;
-      const waiting = await api.waitUntilFree(
-        selectedTarget.path,
-        !selectedTarget.port,
-        selectedTarget.port,
-        next.timeoutSeconds,
-      );
-      onStatus(waiting);
-      setConfiguring(false);
-      if (waiting.wait.error) report(waiting.wait.error);
-    } catch (error) {
-      report(error);
-    }
-  };
-  const cancel = () =>
-    void api
-      .cancelWait()
-      .then((current) => {
-        onStatus(current);
-        setOptions(null);
-      })
-      .catch(report);
-  const dismiss = () => {
-    completed.current = true;
-    setOptions(null);
+        ? api.notifyWaitFree(options.id, locale)
+        : api.waitFollowUp(
+            options.id,
+            options.followUp,
+            options.destination,
+            locale,
+          )
+    ).catch(report);
+  }, [ready, options, status.wait.id, report]);
+  const begin = async (next: WaitOptions) => {
+    const waiting = await api.waitForSelection(
+      next.selection,
+      next.timeoutSeconds,
+    );
+    completed.current = false;
+    setDismissed(null);
+    setOptions({ ...next, id: waiting.wait.id });
+    onStatus(waiting);
   };
   const failure =
     status.wait.error?.kind === "wait_timeout"
@@ -124,114 +257,96 @@ export function WaitUntilFree({
         : status.wait.error?.kind === "cancelled"
           ? t("wait.k_cancelled")
           : status.wait.error?.message;
-
-  if (!status.target && !portQuery && !status.wait.waiting) return null;
+  const visible =
+    target &&
+    (status.wait.waiting || ready || failure) &&
+    (status.wait.id === undefined || dismissed !== status.wait.id);
   return (
-    <section
-      inert={false}
-      className={`wait-panel ${status.wait.waiting ? "waiting" : ""} ${ready ? "free" : ""}`}
-      aria-live="polite"
-      data-wait-panel
-    >
-      {!status.wait.waiting && !ready && !failure && (
-        <button
-          type="button"
-          disabled={disabled || (!target.path && !target.port)}
-          onClick={() => setConfiguring(true)}
+    <>
+      {visible && (
+        <section
+          className={`wait-panel ${ready ? "free" : ""}`}
+          role="region"
+          aria-label={t("wait.k_activity")}
+          data-wait-panel
         >
-          <Hourglass size={15} /> {t("wait.k_action")}
-        </button>
-      )}
-      {status.wait.waiting && (
-        <>
-          <Hourglass size={16} className="spin" />
-          <strong>{t("wait.k_waiting")}</strong>
-          <span>{t("wait.k_elapsed", { time: elapsedLabel(elapsed) })}</span>
-          <span className="muted">
-            {options?.timeoutSeconds
-              ? t("wait.k_timeout_limit", { seconds: options.timeoutSeconds })
-              : t("wait.k_no_timeout")}
-          </span>
-          <button type="button" onClick={cancel}>
-            <X size={14} /> {t("common.k_cancel")}
-          </button>
-        </>
-      )}
-      {ready && (
-        <>
-          <span role="status">✓ {t("wait.k_free")}</span>
-          <button
-            type="button"
-            onClick={() => {
-              dismiss();
-              setConfiguring(true);
-            }}
-          >
-            {t("wait.k_again")}
-          </button>
-        </>
-      )}
-      {failure && !status.wait.waiting && (
-        <>
-          <TimerOff size={15} />
-          <span>{failure}</span>
-          <button
-            type="button"
-            onClick={() => {
-              dismiss();
-              setConfiguring(true);
-            }}
-          >
-            {t("wait.k_again")}
-          </button>
-        </>
-      )}
-      {configuring && (
-        <Modal title={t("wait.k_title")} close={() => setConfiguring(false)}>
-          <p>{t("wait.k_description")}</p>
-          <label>
-            {t("wait.k_timeout_label")}
-            <input
-              aria-label={t("wait.k_timeout_label")}
-              type="number"
-              min="0"
-              max="86400"
-              value={timeoutSeconds}
-              onChange={(event) =>
-                setTimeoutSeconds(
-                  Math.min(86400, Math.max(0, Number(event.target.value))),
+          {status.wait.waiting ? (
+            <Hourglass size={16} />
+          ) : ready ? (
+            <Check size={16} />
+          ) : (
+            <TimerOff size={16} />
+          )}
+          <strong role="status">
+            {status.wait.waiting
+              ? t(
+                  target.kind === "process"
+                    ? "wait.k_waiting_process"
+                    : "wait.k_waiting",
                 )
-              }
-            />
-          </label>
-          <label>
-            {t("wait.k_follow_up")}
-            <select
-              aria-label={t("wait.k_follow_up")}
-              value={followUp}
-              disabled={!target.path}
-              onChange={(event) => setFollowUp(event.target.value as FollowUp)}
-            >
-              <option value="none">{t("wait.k_notify_only")}</option>
-              <option value="reveal">{t("wait.k_reveal")}</option>
-              <option value="move">{t("wait.k_move")}</option>
-              <option value="delete">{t("wait.k_delete")}</option>
-            </select>
-          </label>
-          <div className="modal-actions">
-            <button type="button" onClick={() => setConfiguring(false)}>
-              {t("common.k_cancel")}
-            </button>
-            <button
-              type="button"
-              className="primary"
-              onClick={() => void begin()}
-            >
-              {t("wait.k_start")}
-            </button>
-          </div>
-        </Modal>
+              : ready
+                ? t(
+                    target.kind === "process"
+                      ? "wait.k_process_exited"
+                      : "wait.k_free",
+                  )
+                : failure}
+          </strong>
+          <span className="wait-resource" title={target.display}>
+            {target.display}
+          </span>
+          {status.wait.waiting && (
+            <>
+              <span className="mono">{elapsedLabel(elapsed)}</span>
+              <button
+                onClick={() =>
+                  void api.cancelWait().then(onStatus).catch(report)
+                }
+              >
+                {t("common.k_cancel")}
+              </button>
+            </>
+          )}
+          {!status.wait.waiting && (
+            <>
+              {options && (
+                <button
+                  disabled={
+                    disabled || options.selection.revision !== status.revision
+                  }
+                  onClick={() => onChoose(options.selection)}
+                >
+                  {t("wait.k_again")}
+                </button>
+              )}
+              <button
+                className="icon-button"
+                aria-label={t("wait.k_dismiss")}
+                onClick={() => {
+                  setDismissed(status.wait.id ?? 0);
+                  setOptions(null);
+                }}
+              >
+                <X size={15} />
+              </button>
+            </>
+          )}
+        </section>
       )}
-    </section>
+      {selection && (
+        <WaitDialog
+          key={JSON.stringify(selection)}
+          selection={selection}
+          current={
+            !disabled &&
+            !status.wait.waiting &&
+            selection.revision === status.revision
+          }
+          close={onClose}
+          start={begin}
+          report={report}
+        />
+      )}
+    </>
   );
 }
