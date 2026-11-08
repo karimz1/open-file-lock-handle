@@ -10,7 +10,18 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-type RowMatch = (usize, Option<usize>, u32);
+struct RowMatch {
+    process: usize,
+    usage: Option<usize>,
+    score: u32,
+    // Process rows retain only query-matching observations, including lock filters.
+    files: Vec<usize>,
+}
+impl RowMatch {
+    fn path_index(&self) -> Option<usize> {
+        self.usage.or_else(|| self.files.first().copied())
+    }
+}
 struct CachedQuery {
     query: TableQuery,
     rows: Arc<[RowMatch]>,
@@ -117,7 +128,7 @@ impl Dataset {
             .ok_or_else(|| Failure::from(oflh_core::Error::Changed))?;
         Ok((index, &self.snapshot.processes[index]))
     }
-    fn matched(&self, request: &TableQuery) -> Result<Vec<(usize, Option<usize>, u32)>, Failure> {
+    fn matched(&self, request: &TableQuery) -> Result<Vec<RowMatch>, Failure> {
         let filters = &request.columns;
         for text in [&filters.name, &filters.path, &filters.access] {
             if text.len() > 4096 {
@@ -149,7 +160,7 @@ impl Dataset {
         let path = Query::new(&filters.path);
         let access = Query::new(&filters.access);
         let mut scratch = Scratch::default();
-        matches.retain(|&(process, usage, _)| {
+        let mut row_matches = |process: usize, usage: Option<usize>| {
             let row = if request.ports {
                 self.port_row(process, usage.unwrap_or_default())
             } else {
@@ -207,14 +218,23 @@ impl Dataset {
                 } else {
                     text_matches(&access, &access_text, &mut scratch)
                 }
+        };
+        matches.retain_mut(|matched| {
+            if !request.ports && !request.handles {
+                matched
+                    .files
+                    .retain(|&usage| row_matches(matched.process, Some(usage)));
+                !matched.files.is_empty()
+            } else {
+                row_matches(matched.process, matched.usage)
+            }
         });
+        // File column filters can change the first displayed path.
+        self.sort_file_matches(request, &mut matches);
         Ok(matches)
     }
     /// Search in Rust using exactly the shared word-boundary/wildcard matcher.
-    fn matched_search(
-        &self,
-        request: &TableQuery,
-    ) -> Result<Vec<(usize, Option<usize>, u32)>, Failure> {
+    fn matched_search(&self, request: &TableQuery) -> Result<Vec<RowMatch>, Failure> {
         if request.text.len() > 4096 {
             return Err(Failure::invalid("Search is limited to 4096 bytes"));
         }
@@ -250,38 +270,60 @@ impl Dataset {
             } else {
                 0
             };
+            let mut files = Vec::new();
             for (usage_index, fields) in index.usages.iter().enumerate() {
                 if request.locks_only && process.usages[usage_index].lock.is_none() {
                     continue;
                 }
                 if file_query.matches(fields, &mut scratch) {
                     if !request.handles {
-                        let score = if relevance {
-                            index.score(&query, &mut scratch)
-                        } else {
-                            0
-                        };
-                        matches.push((process_index, None, score));
-                        break;
+                        files.push(usage_index);
+                        continue;
                     }
                     let score = if relevance {
                         query.score(fields, &mut scratch).max(metadata_score)
                     } else {
                         0
                     };
-                    matches.push((process_index, Some(usage_index), score));
+                    matches.push(RowMatch {
+                        process: process_index,
+                        usage: Some(usage_index),
+                        score,
+                        files: Vec::new(),
+                    });
                 }
             }
+            if !files.is_empty() {
+                matches.push(RowMatch {
+                    process: process_index,
+                    usage: None,
+                    score: if relevance {
+                        index.score(&query, &mut scratch)
+                    } else {
+                        0
+                    },
+                    files,
+                });
+            }
+        }
+        self.sort_file_matches(request, &mut matches);
+        Ok(matches)
+    }
+    fn sort_file_matches(&self, request: &TableQuery, matches: &mut [RowMatch]) {
+        if request.ports {
+            return;
         }
         matches.sort_by(|left, right| {
-            let first = &self.snapshot.processes[left.0];
-            let second = &self.snapshot.processes[right.0];
+            let first = &self.snapshot.processes[left.process];
+            let second = &self.snapshot.processes[right.process];
             let ordering = match request.sort {
-                Sort::Relevance => right.2.cmp(&left.2),
+                Sort::Relevance => right.score.cmp(&left.score),
                 Sort::Port | Sort::Protocol | Sort::Address => Ordering::Equal,
                 Sort::Name => first.name.cmp(&second.name),
                 Sort::Pid => first.identity.pid.cmp(&second.identity.pid),
-                Sort::Path => row_path(first, left.1).cmp(row_path(second, right.1)),
+                Sort::Path => {
+                    row_path(first, left.path_index()).cmp(row_path(second, right.path_index()))
+                }
                 Sort::Memory => first.memory.cmp(&second.memory),
                 Sort::Cpu => first
                     .cpu
@@ -294,12 +336,11 @@ impl Dataset {
                 ordering
             };
             ordering
-                .then_with(|| left.0.cmp(&right.0))
-                .then_with(|| left.1.cmp(&right.1))
+                .then_with(|| left.process.cmp(&right.process))
+                .then_with(|| left.usage.cmp(&right.usage))
         });
-        Ok(matches)
     }
-    fn matched_ports(&self, request: &TableQuery) -> Vec<(usize, Option<usize>, u32)> {
+    fn matched_ports(&self, request: &TableQuery) -> Vec<RowMatch> {
         let query = oflh_core::ports::PortQuery::new(&request.text);
         let mut scratch = Scratch::default();
         let mut matches = Vec::new();
@@ -320,15 +361,20 @@ impl Dataset {
                     &self.port_indices[process_index][port_index],
                     &mut scratch,
                 ) {
-                    matches.push((process_index, Some(port_index), 0));
+                    matches.push(RowMatch {
+                        process: process_index,
+                        usage: Some(port_index),
+                        score: 0,
+                        files: Vec::new(),
+                    });
                 }
             }
         }
         matches.sort_by(|left, right| {
-            let first = &self.snapshot.processes[left.0];
-            let second = &self.snapshot.processes[right.0];
-            let first_port = &first.ports[left.1.unwrap_or_default()];
-            let second_port = &second.ports[right.1.unwrap_or_default()];
+            let first = &self.snapshot.processes[left.process];
+            let second = &self.snapshot.processes[right.process];
+            let first_port = &first.ports[left.usage.unwrap_or_default()];
+            let second_port = &second.ports[right.usage.unwrap_or_default()];
             let ordering = match request.sort {
                 Sort::Relevance | Sort::Port => first_port.number.cmp(&second_port.number),
                 Sort::Protocol => first_port.protocol.cmp(&second_port.protocol),
@@ -348,8 +394,8 @@ impl Dataset {
                 ordering
             };
             ordering
-                .then_with(|| left.0.cmp(&right.0))
-                .then_with(|| left.1.cmp(&right.1))
+                .then_with(|| left.process.cmp(&right.process))
+                .then_with(|| left.usage.cmp(&right.usage))
         });
         matches
     }
@@ -393,7 +439,7 @@ impl Dataset {
         let keys: Vec<_> = self
             .cached_matches(request)?
             .iter()
-            .map(|(index, _, _)| identity_key(self.snapshot.processes[*index].identity))
+            .map(|matched| identity_key(self.snapshot.processes[matched.process].identity))
             .filter(|key| seen.insert(key.clone()))
             .collect();
         if keys.len() > 10000 {
@@ -409,14 +455,15 @@ impl Dataset {
         let total = matches.len();
         let rows = matches
             .iter()
-            .copied()
             .skip(request.offset)
             .take(request.limit.clamp(1, 200))
-            .map(|(process, usage, _)| {
+            .map(|matched| {
                 if request.ports {
-                    self.port_row(process, usage.unwrap_or_default())
+                    self.port_row(matched.process, matched.usage.unwrap_or_default())
+                } else if matched.usage.is_none() {
+                    self.process_match_row(matched)
                 } else {
-                    self.row(process, usage)
+                    self.row(matched.process, matched.usage)
                 }
             })
             .collect();
@@ -425,6 +472,73 @@ impl Dataset {
             total,
             rows,
         })
+    }
+    fn process_match_row(&self, matched: &RowMatch) -> Row {
+        let mut row = self.row(matched.process, matched.files.first().copied());
+        // Selection and process-row focus stay stable as the matching file changes.
+        row.key = format!("{}/exe", row.process_key);
+        row.usages = matched.files.len();
+        let evidence_row = matched.files.iter().find_map(|&usage| {
+            self.snapshot.processes[matched.process].usages[usage]
+                .lock
+                .as_ref()
+                .map(|_| self.row(matched.process, Some(usage)))
+        });
+        row.evidence = evidence_row
+            .as_ref()
+            .and_then(|value| value.evidence.clone());
+        row.evidence_label = evidence_row.and_then(|value| value.evidence_label);
+        row.matching_files = Some(self.matching_files(matched));
+        row
+    }
+    fn matching_files(&self, matched: &RowMatch) -> MatchingFiles {
+        let process = &self.snapshot.processes[matched.process];
+        let mut paths = std::collections::HashMap::<&Path, Option<usize>>::new();
+        let mut files: Vec<MatchingFile> = Vec::new();
+        for &usage_index in &matched.files {
+            let usage = &process.usages[usage_index];
+            let file_index = *paths.entry(&usage.path).or_insert_with(|| {
+                if files.len() >= 3 {
+                    return None;
+                }
+                files.push(MatchingFile {
+                    path: PathValue {
+                        display: display(&usage.path),
+                        reference: self.path_ref(matched.process, &usage_index.to_string()),
+                    },
+                    references: 0,
+                    observations: Vec::new(),
+                    more_references: 0,
+                });
+                Some(files.len() - 1)
+            });
+            let Some(file_index) = file_index else {
+                continue;
+            };
+            let file = &mut files[file_index];
+            file.references += 1;
+            let observation = FileObservation {
+                relation: usage.relation.label().into(),
+                access: usage.access.label().into(),
+                evidence: usage.lock.as_ref().map(|value| safe(&value.to_string())),
+                evidence_label: usage
+                    .lock
+                    .as_ref()
+                    .map(|value| evidence_label(value).into()),
+                deleted: usage.deleted,
+            };
+            if !file.observations.contains(&observation) {
+                if file.observations.len() < 8 {
+                    file.observations.push(observation);
+                } else {
+                    file.more_references += 1;
+                }
+            }
+        }
+        MatchingFiles {
+            files,
+            total: paths.len(),
+        }
     }
     /// Build a display row from validated internal indices.
     fn row(&self, process_index: usize, usage_index: Option<usize>) -> Row {
@@ -448,6 +562,7 @@ impl Dataset {
             user: safe(&process.user),
             path: display(row_path(process, usage_index)),
             path_ref: self.path_ref(process_index, &path_index),
+            matching_files: None,
             icon_ref: self.path_ref(process_index, "exe"),
             session: None,
             session_kind: None,
@@ -460,15 +575,7 @@ impl Dataset {
                 .unwrap_or("unknown")
                 .into(),
             evidence: evidence.map(|value| safe(&value.to_string())),
-            evidence_label: evidence.map(|value| {
-                match value {
-                    oflh_core::LockEvidence::Kernel(_) => "Kernel lock",
-                    oflh_core::LockEvidence::SharingConflict(_) => {
-                        "Sharing conflict; owner unverified"
-                    }
-                }
-                .into()
-            }),
+            evidence_label: evidence.map(|value| evidence_label(value).into()),
             deleted: usage.is_some_and(|value| value.deleted),
             memory: process.memory,
             cpu: process.cpu,
@@ -639,6 +746,12 @@ fn row_path(process: &Process, usage: Option<usize>) -> &Path {
         .and_then(|index| process.usages.get(index))
         .map(|usage| usage.path.as_path())
         .unwrap_or(&process.executable)
+}
+fn evidence_label(evidence: &oflh_core::LockEvidence) -> &'static str {
+    match evidence {
+        oflh_core::LockEvidence::Kernel(_) => "Kernel lock",
+        oflh_core::LockEvidence::SharingConflict(_) => "Sharing conflict; owner unverified",
+    }
 }
 pub(crate) fn display(path: &Path) -> String {
     crate::path_text::display(path)
@@ -828,6 +941,129 @@ mod tests {
             })
             .unwrap();
         assert_eq!(page.total, 1);
+    }
+    #[test]
+    fn process_paths_preview_only_matching_files_and_group_references_without_losing_evidence() {
+        let mut snapshot = fixture().snapshot;
+        let pdf = PathBuf::from("/fixture/Bestellbestätigung .pdf");
+        snapshot.processes[0].usages.extend([
+            Usage {
+                path: pdf.clone(),
+                ..Usage::default()
+            },
+            Usage {
+                path: pdf.clone(),
+                relation: Relation::Mapped,
+                ..Usage::default()
+            },
+            Usage {
+                path: pdf.clone(),
+                relation: Relation::NativeFileUser,
+                lock: Some(LockEvidence::SharingConflict(oflh_core::AccessKind::Delete)),
+                ..Usage::default()
+            },
+            Usage {
+                path: "/fixture/Bestellung-2.pdf".into(),
+                ..Usage::default()
+            },
+        ]);
+        let dataset = Dataset::new(7, snapshot);
+        let mut query = TableQuery {
+            text: "FixtureWorker bestell".into(),
+            limit: 200,
+            ..TableQuery::default()
+        };
+        let page = dataset.page(&query).unwrap();
+        assert_eq!(page.total, 1);
+        let row = &page.rows[0];
+        assert_eq!(row.key, "42:18446744073709551615:0/exe");
+        assert_eq!(row.usages, 4);
+        assert_eq!(dataset.path(&row.path_ref).unwrap(), pdf);
+        assert_eq!(row.path, display(&pdf));
+        assert_eq!(
+            row.evidence_label.as_deref(),
+            Some("Sharing conflict; owner unverified")
+        );
+        let matching = row.matching_files.as_ref().unwrap();
+        assert_eq!(matching.total, 2);
+        assert_eq!(matching.files[0].references, 3);
+        assert_eq!(matching.files[0].observations.len(), 3);
+        assert_eq!(matching.files[0].observations[1].relation, "mapped");
+        assert!(
+            matching.files[0].observations[2]
+                .evidence
+                .as_ref()
+                .unwrap()
+                .contains("owner unverified")
+        );
+        assert_eq!(
+            dataset.path(&matching.files[0].path.reference).unwrap(),
+            pdf
+        );
+        assert_eq!(
+            dataset
+                .details(&row.process_key)
+                .unwrap()
+                .executable
+                .display,
+            display(Path::new("/fixture/worker"))
+        );
+        query.locks_only = true;
+        let locked = dataset.page(&query).unwrap();
+        assert_eq!(locked.rows[0].key, row.key);
+        let matching = locked.rows[0].matching_files.as_ref().unwrap();
+        assert_eq!(matching.total, 1);
+        assert_eq!(matching.files[0].references, 1);
+        assert_eq!(
+            matching.files[0].observations[0].relation,
+            "native file user"
+        );
+        query.locks_only = false;
+        query.text = "FileLockExample".into();
+        let unlocked = dataset.page(&query).unwrap();
+        assert!(unlocked.rows[0].evidence.is_none()); // Unrelated locked files must not leak evidence.
+        assert_eq!(unlocked.rows[0].key, row.key);
+        assert_eq!(unlocked.rows[0].matching_files.as_ref().unwrap().total, 1);
+    }
+    #[test]
+    fn process_file_previews_are_bounded_and_column_filters_narrow_the_same_observation() {
+        let mut snapshot = fixture().snapshot;
+        snapshot.processes[0].usages = (0..10)
+            .map(|index| Usage {
+                path: "/fixture/first.pdf".into(),
+                lock: Some(LockEvidence::Kernel(format!("range {index}"))),
+                ..Usage::default()
+            })
+            .chain((0..5).map(|index| Usage {
+                path: format!("/fixture/extra-{index}.pdf").into(),
+                ..Usage::default()
+            }))
+            .collect();
+        let dataset = Dataset::new(7, snapshot);
+        let mut query = TableQuery {
+            text: "pdf".into(),
+            ..TableQuery::default()
+        };
+        let page = dataset.page(&query).unwrap();
+        let matching = page.rows[0].matching_files.as_ref().unwrap();
+        assert_eq!(matching.total, 6);
+        assert_eq!(matching.files.len(), 3);
+        assert_eq!(matching.files[0].references, 10);
+        assert_eq!(matching.files[0].observations.len(), 8);
+        assert_eq!(matching.files[0].more_references, 2);
+        query.columns.path = "extra-4".into();
+        let filtered = dataset.page(&query).unwrap();
+        assert_eq!(filtered.total, 1);
+        let row = &filtered.rows[0];
+        assert!(row.path.ends_with("extra-4.pdf"));
+        assert!(row.evidence.is_none());
+        query.columns.evidence = EvidenceFilter::Kernel;
+        assert_eq!(dataset.page(&query).unwrap().total, 0);
+        query.columns = ColumnFilters::default();
+        query.handles = true;
+        let handles = dataset.page(&query).unwrap();
+        assert_eq!(handles.total, 15);
+        assert!(handles.rows[0].matching_files.is_none());
     }
     #[test]
     fn path_references_reject_stale_and_invalid_indices() {
@@ -1250,14 +1486,15 @@ mod query_cache_tests {
                     assert_eq!(matches.len(), 1000);
                     let indices: std::collections::BTreeSet<_> = matches
                         .iter()
-                        .map(|&(process, usage, score)| {
-                            assert_eq!(usage, handles.then_some(19));
+                        .map(|matched| {
+                            assert_eq!(matched.usage, handles.then_some(19));
+                            assert_eq!(matched.files, if handles { vec![] } else { vec![19] });
                             if sort == Sort::Relevance {
-                                assert!(score > 0);
+                                assert!(matched.score > 0);
                             } else {
-                                assert_eq!(score, 0);
+                                assert_eq!(matched.score, 0);
                             }
-                            process
+                            matched.process
                         })
                         .collect();
                     assert_eq!(indices, (0..1000).collect());

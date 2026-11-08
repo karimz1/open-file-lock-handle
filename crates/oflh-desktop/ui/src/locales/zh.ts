@@ -25,6 +25,16 @@ const zh: TranslationSchema<typeof en> = {
     k_again: "再次等待",
     k_confirm_delete: "在最终确认空闲后删除此目标？",
   },
+  matches: {
+    k_title: "匹配的文件",
+    k_more: "另有 {{n}} 个",
+    k_more_files: "另有 {{n}} 个匹配的文件。",
+    k_reference_one: "1 个引用 · 访问与证据",
+    k_references: "{{n}} 个引用 · 访问与证据",
+    k_more_references:
+      "另有 {{n}} 个引用。请查看所有匹配的文件使用情况以了解详情。",
+    k_show_all: "查看所有匹配的文件使用情况",
+  },
   sessions: {
     k_user: "用户",
     k_session: "会话",

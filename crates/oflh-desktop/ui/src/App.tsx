@@ -340,6 +340,7 @@ export function App() {
   const [activeRow, setActiveRow] = useState<{
     row: Row;
     revision: number;
+    queryKey: string;
   } | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
   const [details, setDetails] = useState<Details | null>(null);
@@ -453,6 +454,7 @@ export function App() {
     limit: 200,
     process_key: scope?.key,
   };
+  const tableQueryKey = JSON.stringify(tableQuery);
   useEffect(() => {
     let active = true;
     const subscriptions = [
@@ -1674,7 +1676,11 @@ export function App() {
                         const closing =
                           focused === row.process_key &&
                           activeRow?.row.key === row.key;
-                        setActiveRow({ row, revision });
+                        setActiveRow({
+                          row,
+                          revision,
+                          queryKey: tableQueryKey,
+                        });
                         setFocused(closing ? null : row.process_key);
                       }}
                       revision={status.revision}
@@ -1686,11 +1692,19 @@ export function App() {
                         setSelected((current) =>
                           selectKey(current, row.process_key, additive),
                         );
-                        setActiveRow({ row, revision });
+                        setActiveRow({
+                          row,
+                          revision,
+                          queryKey: tableQueryKey,
+                        });
                         setFocused(row.process_key);
                       }}
                       onOpen={(row, revision) => {
-                        setActiveRow({ row, revision });
+                        setActiveRow({
+                          row,
+                          revision,
+                          queryKey: tableQueryKey,
+                        });
                         setFocused(row.process_key);
                       }}
                       onContext={(row, revision) => {
@@ -1703,7 +1717,11 @@ export function App() {
                           return;
                         }
                         setContext(row);
-                        setActiveRow({ row, revision });
+                        setActiveRow({
+                          row,
+                          revision,
+                          queryKey: tableQueryKey,
+                        });
                         setFocused(row.process_key);
                       }}
                       onSort={changeSort}
@@ -1715,11 +1733,16 @@ export function App() {
                           const row = page.rows.find(
                             (row) =>
                               row.key === current.row.key &&
-                              row.path === current.row.path &&
+                              (row.matching_files ||
+                                row.path === current.row.path) &&
                               row.port?.endpoint === current.row.port?.endpoint,
                           );
                           return row
-                            ? { row, revision: page.revision }
+                            ? {
+                                row,
+                                revision: page.revision,
+                                queryKey: tableQueryKey,
+                              }
                             : current;
                         });
                       }}
@@ -1757,7 +1780,10 @@ export function App() {
                         revision={detailsRevision}
                         notify={setToast}
                         report={(failure) => report(failure)}
-                        rowCurrent={activeRow?.revision === status.revision}
+                        rowCurrent={
+                          activeRow?.revision === status.revision &&
+                          activeRow.queryKey === tableQueryKey
+                        }
                         availability={
                           detailsMissing
                             ? "missing"
@@ -1793,14 +1819,14 @@ export function App() {
                             ),
                           )
                         }
-                        handles={() => {
+                        handles={(preserveSearch) => {
                           if (inspectionLocked) return;
                           setView("handles");
                           setScope({
                             key: details.process.process_key,
                             name: details.process.name,
                           });
-                          setFileQuery("");
+                          if (!preserveSearch) setFileQuery("");
                         }}
                       />
                     )}

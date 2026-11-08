@@ -27,6 +27,16 @@ const de: TranslationSchema<typeof en> = {
     k_confirm_delete:
       "Dieses Ziel nach einem abschließenden Frei-Scan löschen?",
   },
+  matches: {
+    k_title: "Passende Dateien",
+    k_more: "+{{n}} weitere",
+    k_more_files: "{{n}} weitere passende Dateien.",
+    k_reference_one: "1 Referenz · Zugriff und Nachweise",
+    k_references: "{{n}} Referenzen · Zugriff und Nachweise",
+    k_more_references:
+      "{{n}} zusätzliche Referenzen. Details stehen unter allen passenden Dateizugriffen.",
+    k_show_all: "Alle passenden Dateizugriffe anzeigen",
+  },
   sessions: {
     k_user: "Benutzer",
     k_session: "Sitzung",

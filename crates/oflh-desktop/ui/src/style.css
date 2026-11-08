@@ -839,6 +839,36 @@ main {
 .path-cell {
   color: var(--muted);
 }
+.matching-files-more {
+  display: block;
+  font-family: inherit;
+  font-size: 0.8462rem;
+  margin-top: 3px;
+}
+.matching-file-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.matching-file-list > li + li {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.matching-file-observations {
+  margin: 9px 0;
+}
+.matching-file-observations summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.matching-file-observations ul {
+  padding-left: 17px;
+  overflow-wrap: anywhere;
+}
+.matching-file-observations li {
+  margin: 8px 0;
+}
 .numeric {
   font-variant-numeric: tabular-nums;
 }

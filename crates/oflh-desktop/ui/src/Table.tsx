@@ -170,7 +170,7 @@ export function Table(props: Props) {
   });
   useEffect(() => {
     virtual.measure();
-  }, [props.fontSize, props.query.handles]);
+  }, [props.fontSize, queryKey, props.hiddenColumns]);
   const items = virtual.getVirtualItems();
   const firstVisible = items[0]?.index ?? 0;
   const lastVisible = items.at(-1)?.index ?? firstVisible;
@@ -698,10 +698,10 @@ export function Table(props: Props) {
                         {!props.hiddenColumns.has("path") && (
                           <div
                             role="gridcell"
-                            className={`mono path-cell ${props.query.handles ? "full-path-cell" : ""}`}
+                            className={`mono path-cell ${props.query.handles || row.matching_files ? "full-path-cell" : ""}`}
                             title={row.path}
                           >
-                            {(props.query.handles
+                            {(props.query.handles || row.matching_files
                               ? row.path
                               : compactPath(row.path, props.target)) ||
                               t("common.k_unavailable_2c9c1f79")}
@@ -710,6 +710,23 @@ export function Table(props: Props) {
                                 {t("table.k_deleted")}
                               </span>
                             )}
+                            {row.matching_files &&
+                              row.matching_files.total > 1 && (
+                                <button
+                                  className="inline-link matching-files-more"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    props.onOpen(row, displayPage!.revision);
+                                  }}
+                                  onDoubleClick={(event) =>
+                                    event.stopPropagation()
+                                  }
+                                >
+                                  {t("matches.k_more", {
+                                    n: row.matching_files.total - 1,
+                                  })}
+                                </button>
+                              )}
                           </div>
                         )}
                         {!props.hiddenColumns.has("evidence") && (

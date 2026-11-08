@@ -22,6 +22,16 @@ const en = {
     k_again: "Wait again",
     k_confirm_delete: "Delete this target after a final confirming free scan?",
   },
+  matches: {
+    k_title: "Matching files",
+    k_more: "+{{n}} more",
+    k_more_files: "{{n}} more matching files.",
+    k_reference_one: "1 reference · access and evidence",
+    k_references: "{{n}} references · access and evidence",
+    k_more_references:
+      "{{n}} additional references. View all matching file usages for details.",
+    k_show_all: "View all matching file usages",
+  },
   sessions: {
     k_user: "User",
     k_session: "Session",

@@ -10,6 +10,7 @@ import {
 import { type Details, type PathValue, type Row } from "./api";
 import { memory } from "./state";
 import { SessionPanel } from "./SessionPanel";
+import { MatchingFiles } from "./MatchingFiles";
 import { t, tValue, type MessageKey } from "./i18n";
 export function Inspector({
   details,
@@ -38,7 +39,7 @@ export function Inspector({
   close: () => void;
   copy: (field: string, reference?: string) => void;
   reveal: (reference: string) => void;
-  handles: () => void;
+  handles: (preserveSearch?: boolean) => void;
   ports: () => void;
   inspectFolder: () => void;
   terminateAncestor: (key: string, force: boolean) => void;
@@ -186,11 +187,25 @@ export function Inspector({
           <h2>{details.process.name || "(unnamed)"}</h2>
           <p className="mono muted">PID {details.process.pid}</p>
         </div>
+        {row && !rowCurrent && (
+          <p className="hint detail-refresh-note" role="status">
+            {t("inspection.k_captured_observation")}
+          </p>
+        )}
+        {row?.matching_files && (
+          <MatchingFiles
+            row={row}
+            current={current && rowCurrent}
+            copy={copy}
+            reveal={reveal}
+            showAll={() => handles(true)}
+          />
+        )}
         <div
           className="detail-navigation"
           aria-label={t("inspection.k_process_inspection_views")}
         >
-          <button onClick={handles}>
+          <button onClick={() => handles()}>
             <Files size={14} /> {t("inspector.k_matching_handles")}{" "}
             <span>{details.process.usages}</span>
             <ChevronRight size={14} />
@@ -327,11 +342,6 @@ export function Inspector({
             </button>
           </div>
         </section>
-        {row && !rowCurrent && (
-          <p className="hint" role="status">
-            {t("inspection.k_captured_observation")}
-          </p>
-        )}
         {row &&
           (row.port ? (
             <section>
@@ -341,7 +351,7 @@ export function Inspector({
                 {row.port.protocol} · {tValue(row.port.state)}
               </p>
             </section>
-          ) : (
+          ) : row.matching_files ? null : (
             <>
               {path(
                 "inspector.k_selected_file_full_path",

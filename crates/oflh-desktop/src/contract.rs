@@ -279,6 +279,8 @@ pub struct Row {
     pub path: String,
     /// Opaque snapshot path reference for native actions.
     pub path_ref: String,
+    /// Bounded, query-matching file groups for a process row; absent for observations.
+    pub matching_files: Option<MatchingFiles>,
     /// Opaque reference to the executable, used only to look up its icon.
     pub icon_ref: String,
     /// Login session id the process runs in, filled per page; `None` when unknown.
@@ -305,6 +307,40 @@ pub struct Row {
     pub actionable: bool,
     /// Socket observation for port-table rows.
     pub port: Option<PortView>,
+}
+/// A bounded preview of distinct native paths matching a process-table query.
+#[derive(Clone, Debug, Serialize)]
+pub struct MatchingFiles {
+    /// First matching paths in observation order, capped at three.
+    pub files: Vec<MatchingFile>,
+    /// Total distinct native paths, including paths omitted from the preview.
+    pub total: usize,
+}
+/// Repeated observations grouped by their lossless native path.
+#[derive(Clone, Debug, Serialize)]
+pub struct MatchingFile {
+    /// Display path and snapshot-bound native action reference.
+    pub path: PathValue,
+    /// Number of references to this path matching the current query.
+    pub references: usize,
+    /// Distinct access/evidence combinations, capped at eight.
+    pub observations: Vec<FileObservation>,
+    /// References with combinations omitted from the bounded observation preview.
+    pub more_references: usize,
+}
+/// A displayed observation category; a resource user is not necessarily a lock owner.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct FileObservation {
+    /// Observed relation to the file.
+    pub relation: String,
+    /// Observed access mode, including unknown access.
+    pub access: String,
+    /// Full evidence with platform ownership limitations.
+    pub evidence: Option<String>,
+    /// Concise evidence category.
+    pub evidence_label: Option<String>,
+    /// Whether this observation refers to an unlinked path.
+    pub deleted: bool,
 }
 /// A bounded window into the sorted, filtered snapshot.
 #[derive(Clone, Debug, Serialize)]

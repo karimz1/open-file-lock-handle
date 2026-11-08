@@ -22,7 +22,9 @@ export function columnText(
       return sessionCell(row.session, row.session_kind);
     case "path":
       return (
-        ((handles ? row.path : compactPath(row.path, target)) ||
+        ((handles || row.matching_files
+          ? row.path
+          : compactPath(row.path, target)) ||
           t("common.k_unavailable_2c9c1f79")) +
         (row.deleted ? ` ${t("table.k_deleted")}` : "")
       );

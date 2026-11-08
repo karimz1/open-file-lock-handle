@@ -539,6 +539,113 @@ test.beforeEach(async ({ page }) => {
             };
           }
           if (command === "page") {
+            if ((window as any).__fileMatchFixture) {
+              const process = processRows[0];
+              process.name = "FixturePdfEditor";
+              process.path = "/build/PdfEditor.exe";
+              const paths = [
+                "/build/documents/" +
+                  "long-folder/".repeat(5) +
+                  "Bestellbestätigung .pdf",
+                "/build/documents/Bestellung-2.pdf",
+                "/build/documents/Bestellung-3.pdf",
+                "/build/documents/Bestellung-4.pdf",
+              ];
+              const observations = [
+                {
+                  relation: "open",
+                  access: "unknown",
+                  evidence: null,
+                  evidence_label: null,
+                  deleted: false,
+                },
+                {
+                  relation: "mapped",
+                  access: "mapped",
+                  evidence: null,
+                  evidence_label: null,
+                  deleted: false,
+                },
+                {
+                  relation: "native file user",
+                  access: "unknown",
+                  evidence:
+                    "SHARING CONFLICT: delete denied; reported file user, lock owner unverified",
+                  evidence_label: "Sharing conflict; owner unverified",
+                  deleted: false,
+                },
+              ];
+              const all = paths
+                .flatMap((path, index) =>
+                  (index === 0 ? observations : [observations[0]]).map(
+                    (observation, relation) => ({
+                      ...freshRow(process),
+                      ...observation,
+                      path,
+                      key: `${process.process_key}/${index * 3 + relation}`,
+                      path_ref: `${args.revision}:0:${index * 3 + relation}`,
+                    }),
+                  ),
+                )
+                .filter(
+                  (row) =>
+                    (!args.query.text ||
+                      row.path
+                        .toLowerCase()
+                        .includes(args.query.text.toLowerCase())) &&
+                    (!args.query.locks_only || row.evidence) &&
+                    (!args.query.columns?.path ||
+                      row.path.includes(args.query.columns.path)),
+                );
+              const files = [...new Set(all.map((row) => row.path))].map(
+                (path) => {
+                  const rows = all.filter((row) => row.path === path);
+                  return {
+                    path: { display: path, reference: rows[0].path_ref },
+                    references: rows.length,
+                    observations: rows.map(
+                      ({
+                        relation,
+                        access,
+                        evidence,
+                        evidence_label,
+                        deleted,
+                      }) => ({
+                        relation,
+                        access,
+                        evidence,
+                        evidence_label,
+                        deleted,
+                      }),
+                    ),
+                    more_references: 0,
+                  };
+                },
+              );
+              const rows = args.query.handles
+                ? all
+                : all.length
+                  ? [
+                      {
+                        ...freshRow(process),
+                        path: all[0].path,
+                        path_ref: all[0].path_ref,
+                        matching_files: {
+                          files: files.slice(0, 3),
+                          total: files.length,
+                        },
+                      },
+                    ]
+                  : [];
+              return {
+                revision: args.revision,
+                total: rows.length,
+                rows: rows.slice(
+                  args.query.offset,
+                  args.query.offset + args.query.limit,
+                ),
+              };
+            }
             if ((window as any).__wideCellsForTest) {
               processRows[1400].name =
                 "OffscreenWorkerWithAnExceptionallyLongProcessName";
@@ -2060,6 +2167,90 @@ test("first launch previews a theme and migrates neutral Dark", async ({
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "vscode");
   await expect(dialog).not.toBeVisible();
+});
+
+test("process search shows matching file paths and grouped references above ancestry", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__fileMatchFixture = true;
+  });
+  await page.goto("/");
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  await search.fill("bestell");
+  const row = page.getByRole("grid").getByRole("row").nth(1);
+  const path = row.locator(".path-cell");
+  await expect(path).toContainText("Bestellbestätigung .pdf");
+  await expect(path).not.toContainText("PdfEditor.exe");
+  await expect(path).toHaveCSS("white-space", "normal");
+  await row.getByRole("button", { name: "+3 more", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Process details" });
+  const files = panel.getByRole("region", {
+    name: "Matching files",
+    exact: true,
+  });
+  await expect(files).toBeInViewport();
+  await expect(files.locator(".matching-file-list > li")).toHaveCount(3);
+  const first = files.locator(".matching-file-list > li").first();
+  await expect(first).toContainText("Bestellbestätigung .pdf");
+  await first
+    .getByText("3 references · access and evidence", { exact: true })
+    .click();
+  await expect(first).toContainText("Sharing conflict; owner unverified");
+  await expect(first.locator("details li")).toHaveCount(3);
+  await first.getByRole("button", { name: "Copy path", exact: true }).click();
+  await first.getByRole("button", { name: "Reveal", exact: true }).click();
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls.find((call: any) => call.command === "copy").args.reference,
+  ).toBe("1:0:0");
+  expect(
+    calls.find((call: any) => call.command === "reveal").args.reference,
+  ).toBe("1:0:0");
+  expect(
+    await files.evaluate((element) =>
+      element.compareDocumentPosition(
+        element.parentElement!.querySelector(".ancestry")!,
+      ),
+    ),
+  ).toBe(4);
+  await page.screenshot({ path: "test-results/matching-process-files.png" });
+  await files
+    .getByRole("button", { name: "View all matching file usages", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "File usages", exact: true }),
+  ).toBeVisible();
+  await expect(search).toHaveValue("bestell");
+  await expect(page.getByRole("grid")).toHaveAttribute("aria-rowcount", "7");
+});
+
+test("a changed process search updates file details without carrying the previous path", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__fileMatchFixture = true;
+  });
+  await page.goto("/");
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  await search.fill("bestellbest");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  const files = page.getByRole("region", {
+    name: "Matching files",
+    exact: true,
+  });
+  await expect(files).toContainText("Bestellbestätigung .pdf");
+  await search.fill("Bestellung-2");
+  await expect(files).toContainText("Bestellung-2.pdf");
+  await expect(files).not.toContainText("Bestellbestätigung .pdf");
+  await expect(
+    files.getByRole("button", { name: "Copy path", exact: true }),
+  ).toBeEnabled();
+  await search.fill("absent-file");
+  await expect(page.getByRole("grid")).toHaveAttribute("aria-rowcount", "1");
+  await expect(
+    files.getByRole("button", { name: "Copy path", exact: true }),
+  ).toBeDisabled();
 });
 
 test("single-click rows open details and panel buttons close them", async ({

@@ -54,13 +54,18 @@ view ignores file and folder drops.
 A folder target includes everything below it, so you can open `C:\` or `/` to
 search the whole system. The sidebar switches between two views of the result:
 
-- **Processes** (`Ctrl+1`) has one row per process.
+- **Processes** (`Ctrl+1`) has one row per process. Its **Path** column shows
+  the first matching file's full path; **+N more** opens the matching files
+  in details. The executable path is listed separately in details.
 - **File usages** (`Ctrl+2`) has one row per matching file reference.
 
-Click a row to open its details panel: **Matching handles**, **Local ports**,
-and **Process ancestry**, with full paths and buttons to copy a path or reveal
-it in the file manager. Table paths are shortened to fit; the details show them
-in full.
+Click a process row to see **Matching files** near the top of details, with
+buttons to copy each path or reveal it in the file manager. Repeated references
+to the same native path appear together; expand the reference count to see
+their access and lock evidence. The preview shows up to three files and eight
+distinct observation categories per file. **View all matching file usages**
+keeps the search and filters and opens every matching reference for that process.
+**Matching handles**, **Local ports**, and **Process ancestry** remain available.
 
 An open file is not proof of a lock. Tick **Lock evidence only** to keep only
 rows with lock or sharing-conflict evidence. On Windows, reported users of a

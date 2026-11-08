@@ -43,6 +43,11 @@ export interface Row {
   user: string;
   path: string;
   path_ref: string;
+  /** Bounded preview of the files matching the process-table query. */
+  matching_files?: {
+    files: MatchingFile[];
+    total: number;
+  } | null;
   /** Opaque executable reference for the row's app icon. */
   icon_ref?: string;
   /** Login session id, filled for visible rows; null when unknown. */
@@ -114,6 +119,18 @@ export interface Page {
 export interface PathValue {
   display: string;
   reference: string;
+}
+export interface MatchingFile {
+  path: PathValue;
+  references: number;
+  observations: {
+    relation: string;
+    access: string;
+    evidence: string | null;
+    evidence_label: string | null;
+    deleted: boolean;
+  }[];
+  more_references: number;
 }
 export type SessionKind =
   "console" | "rdp" | "ssh" | "tty" | "x11" | "wayland" | "services" | "other";
