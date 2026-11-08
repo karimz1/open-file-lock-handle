@@ -14,6 +14,7 @@
   --text: #202733;
   --muted: #6b7484;
   --border: #dde2e9;
+  --field-border: color-mix(in srgb, var(--text) 52%, var(--panel));
   --hover: #eef1f6;
   --accent: #4264db;
   --accent-bg: #eaf0ff;
@@ -35,6 +36,7 @@ body {
 }
 button,
 input,
+textarea,
 select {
   font: inherit;
 }
@@ -77,6 +79,8 @@ button.danger {
 }
 button:focus-visible,
 input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
 [tabindex]:focus-visible,
 summary:focus-visible {
   outline: 2px solid var(--accent);
@@ -2942,6 +2946,30 @@ kbd.shortcut {
   resize: vertical;
   min-height: 4.5rem;
   font: inherit;
+}
+/* Native form defaults do not share the app's theme tokens. */
+.modal :is(textarea, select, input[type="number"], input[type="text"]) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--field-border);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--panel);
+  font: inherit;
+  line-height: 1.5;
+}
+.modal textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.modal select option {
+  color: var(--text);
+  background: var(--panel);
+}
+.session-message-preview pre {
+  color: var(--text);
 }
 .session-message-modal {
   width: min(620px, calc(100vw - 32px));

@@ -6519,3 +6519,144 @@ test("file waiting confirms destructive follow-ups and resets them for another s
   await expect(dialog).toContainText("Bestellung-2.pdf");
   await expect(dialog.getByLabel("After it becomes free")).toHaveValue("none");
 });
+
+for (const [theme, scheme] of [
+  ["light", "light"],
+  ["rider", "dark"],
+  ["vscode", "dark"],
+  ["purple", "dark"],
+  ["system", "light"],
+  ["system", "dark"],
+] as const) {
+  for (const fontSize of [14, 24]) {
+    test(`message and wait forms have readable colors without horizontal scrolling in ${theme}/${scheme} at ${fontSize}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 860, height: 560 });
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.addInitScript(
+        ({ theme, fontSize }) => {
+          sessionStorage.setItem("theme-test-initialized", "1");
+          localStorage.setItem("oflh-theme", theme);
+          localStorage.setItem("oflh-font-size", String(fontSize));
+          (window as any).__fileMatchFixture = true;
+          (window as any).__multiUser = { elevated: true };
+        },
+        { theme, fontSize },
+      );
+      await page.goto("/");
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-theme",
+        theme === "system" ? (scheme === "dark" ? "vscode" : "light") : theme,
+      );
+      const readability = async (field: import("@playwright/test").Locator) =>
+        field.evaluate((element) => {
+          const style = getComputedStyle(element);
+          const canvas = document.createElement("canvas");
+          canvas.width = canvas.height = 1;
+          const context = canvas.getContext("2d")!;
+          const luminance = (color: string) => {
+            context.fillStyle = color;
+            context.fillRect(0, 0, 1, 1);
+            const [r, g, b] = [...context.getImageData(0, 0, 1, 1).data]
+              .slice(0, 3)
+              .map((value) => {
+                const channel = value / 255;
+                return channel <= 0.04045
+                  ? channel / 12.92
+                  : ((channel + 0.055) / 1.055) ** 2.4;
+              });
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          };
+          const contrast = (foreground: string, background: string) => {
+            const [light, dark] = [
+              luminance(foreground),
+              luminance(background),
+            ].sort((a, b) => b - a);
+            return (light + 0.05) / (dark + 0.05);
+          };
+          return {
+            text: contrast(style.color, style.backgroundColor),
+            border: contrast(style.borderTopColor, style.backgroundColor),
+            background: style.backgroundColor,
+            outline: style.outlineColor,
+          };
+        });
+      await page.getByRole("grid").getByRole("row").nth(1).click();
+      await page
+        .getByRole("button", { name: "Send message…", exact: true })
+        .click();
+      const dialog = page.getByRole("dialog");
+      const note = dialog.getByRole("textbox", {
+        name: "Message",
+        exact: true,
+      });
+      await note.fill("Please save and close this file when convenient.");
+      const messageColors = await readability(note);
+      expect(messageColors.text).toBeGreaterThanOrEqual(4.5);
+      expect(messageColors.border).toBeGreaterThanOrEqual(3);
+      await expect(note).toHaveCSS("outline-width", "2px");
+      await expect(dialog.locator(".session-message-context")).toContainText(
+        "Bestellbestätigung .pdf",
+      );
+      const messageBody = await dialog
+        .locator(".session-message-preview pre")
+        .innerText();
+      await expect(dialog.locator(".modal-body")).toHaveJSProperty(
+        "scrollLeft",
+        0,
+      );
+      expect(
+        await dialog
+          .locator(".modal-body")
+          .evaluate(
+            (element) => element.scrollWidth <= element.clientWidth + 1,
+          ),
+      ).toBe(true);
+      const send = dialog.getByRole("button", { name: "Send", exact: true });
+      await expect(send).toBeInViewport();
+      await page.screenshot({
+        path: `test-results/message-theme-${theme}-${scheme}-${fontSize}.png`,
+      });
+      await send.click();
+      const sent = await page.evaluate(
+        () =>
+          (window as any).__testCalls.find(
+            (call: any) => call.command === "send_message",
+          ).args.text,
+      );
+      expect(sent).toBe(messageBody);
+      expect(sent).toContain("Bestellbestätigung .pdf");
+      expect(sent).toContain("FixturePdfEditor");
+      await page
+        .locator(".matching-file-list > li")
+        .first()
+        .getByRole("button", { name: "Wait for file to become free" })
+        .click();
+      await dialog.getByLabel("Set a time limit").check();
+      const timeoutColors = await readability(
+        dialog.getByLabel("Time limit in seconds"),
+      );
+      const followUpColors = await readability(
+        dialog.getByLabel("After it becomes free"),
+      );
+      for (const colors of [timeoutColors, followUpColors]) {
+        expect(colors.text).toBeGreaterThanOrEqual(4.5);
+        expect(colors.border).toBeGreaterThanOrEqual(3);
+      }
+      expect(
+        await dialog
+          .locator(".modal-body")
+          .evaluate(
+            (element) => element.scrollWidth <= element.clientWidth + 1,
+          ),
+      ).toBe(true);
+      await expect(
+        dialog.getByRole("button", { name: "Start waiting" }),
+      ).toBeInViewport();
+      await page.screenshot({
+        path: `test-results/wait-theme-${theme}-${scheme}-${fontSize}.png`,
+      });
+    });
+  }
+}
