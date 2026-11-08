@@ -2943,6 +2943,40 @@ kbd.shortcut {
   min-height: 4.5rem;
   font: inherit;
 }
+.session-message-modal {
+  width: min(620px, calc(100vw - 32px));
+}
+.session-message-modal .owner-line {
+  overflow-wrap: anywhere;
+}
+.session-message-context {
+  border-left: 2px solid var(--accent);
+  padding: 6px 10px;
+  margin: 10px 0 14px;
+  background: var(--accent-bg);
+}
+.session-message-context p {
+  margin: 3px 0 0;
+}
+.session-message-preview {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--panel);
+}
+.session-message-preview summary {
+  cursor: pointer;
+  font-weight: 550;
+}
+.session-message-preview pre {
+  font: inherit;
+  font-size: 0.9231rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-bottom: 0;
+}
 .sign-out-note {
   font-weight: 600;
 }

@@ -2253,6 +2253,154 @@ test("a changed process search updates file details without carrying the previou
   ).toBeDisabled();
 });
 
+for (const [
+  locale,
+  sendLabel,
+  messageLabel,
+  delivery,
+  previewLabel,
+  ownNotice,
+] of [
+  [
+    "en",
+    "Send message…",
+    "Message",
+    "The recipient does not need OFLH.",
+    "Recipient preview",
+    "This is your own session.",
+  ],
+  [
+    "de",
+    "Nachricht senden…",
+    "Nachricht",
+    "Der Empfänger braucht kein OFLH.",
+    "Empfängervorschau",
+    "Das ist deine eigene Sitzung.",
+  ],
+  [
+    "zh",
+    "发送消息…",
+    "消息",
+    "收件人无需安装 OFLH。",
+    "收件人预览",
+    "这是你自己的会话。",
+  ],
+]) {
+  test(`native message preview retains the file context and explains delivery in ${locale}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 860, height: 560 });
+    await page.addInitScript((language) => {
+      localStorage.setItem("oflh-language", language);
+      (window as any).__fileMatchFixture = true;
+      (window as any).__multiUser = { elevated: true };
+    }, locale);
+    await page.goto("/");
+    // The same synthetic search field and grid exist in each locale.
+    await page.locator(".search-box input").fill("bestellbest");
+    await page.getByRole("grid").getByRole("row").nth(1).click();
+    await page.getByRole("button", { name: sendLabel, exact: true }).click();
+    const modal = page.getByRole("dialog");
+    await expect(modal).toContainText(delivery);
+    await expect(modal).toContainText(ownNotice);
+    const note = modal.getByRole("textbox", {
+      name: messageLabel,
+      exact: true,
+    });
+    await expect(note).not.toBeEmpty();
+    await note.fill("hey");
+    const preview = modal.locator(".session-message-preview");
+    await expect(preview.getByText(new RegExp(previewLabel))).toBeVisible();
+    await expect(preview).toContainText("Bestellbestätigung .pdf");
+    await expect(preview).toContainText("FixturePdfEditor");
+    await expect(preview).toContainText("4000");
+    await expect(preview).toContainText("hey");
+    const text = await preview.locator("pre").innerText();
+    const send = modal.locator(".modal-actions .primary");
+    await expect(send).toBeEnabled();
+    await expect(send).toBeInViewport();
+    await page.screenshot({
+      path: `test-results/native-message-${locale}.png`,
+    });
+    await send.click();
+    await expect(modal).not.toBeVisible();
+    const calls = await page.evaluate(() =>
+      (window as any).__testCalls.filter(
+        (call: any) => call.command === "send_message",
+      ),
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].args.text).toBe(text);
+    expect(calls[0].args.key).toBe("4000:18446744073709551615:0");
+    expect([...calls[0].args.text].length).toBeLessThanOrEqual(1000);
+  });
+}
+
+test("native message limits include automatic context and stale drafts cannot send", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__fileMatchFixture = true;
+    (window as any).__multiUser = { elevated: true };
+  });
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page
+    .getByRole("button", { name: "Send message…", exact: true })
+    .click();
+  const modal = page.getByRole("dialog");
+  const note = modal.getByRole("textbox", { name: "Message", exact: true });
+  const send = modal.getByRole("button", { name: "Send", exact: true });
+  await note.fill("x".repeat(1000));
+  await expect(send).toBeDisabled();
+  await expect(modal).toContainText("The full message is too long.");
+  await note.fill(" ");
+  await expect(send).toBeDisabled();
+  await note.fill("Please check this file.");
+  await expect(send).toBeEnabled();
+  // A newly accepted native snapshot must not be combined with the old draft.
+  await page.evaluate(() => {
+    (window as any).__waitFree({
+      event: "scan-status",
+      payload: {
+        generation: 2,
+        revision: 2,
+        scanning: false,
+        elapsed_ms: 0,
+        last_scan_elapsed_ms: 100,
+        progress: {
+          phase: "files",
+          processes: 1,
+          resources: 1,
+          files: 1,
+          directories: 0,
+        },
+        target: "/workspace/project",
+        processes: 1,
+        ports: 0,
+        usages: 1,
+        warnings: [],
+        error: null,
+        wait: { waiting: false, elapsed_ms: 0, outcome: null, error: null },
+        version: "development",
+        commit: "",
+        build_url: "",
+        pull_request_url: "",
+      },
+    });
+  });
+  await expect(send).toBeDisabled();
+  await expect(modal).toContainText(
+    "Close this draft and reopen it from the current results.",
+  );
+  const calls = await page.evaluate(() =>
+    (window as any).__testCalls.filter(
+      (call: any) => call.command === "send_message",
+    ),
+  );
+  expect(calls).toHaveLength(0);
+});
+
 test("single-click rows open details and panel buttons close them", async ({
   page,
 }) => {
@@ -5939,9 +6087,11 @@ test.describe("multi-user sessions", () => {
       await message.getByRole("textbox").fill("Server restarts at 18:00.");
       await message.getByRole("button", { name: "Send", exact: true }).click();
       await expect(page.getByText("Message sent to max.muster.")).toBeVisible();
-      expect((await calls(page, "send_message"))[0].args.text).toBe(
-        "Server restarts at 18:00.",
-      );
+      const sent = (await calls(page, "send_message"))[0].args.text;
+      expect(sent).toContain("Server restarts at 18:00.");
+      expect(sent).toContain("Application: node (PID 4001)");
+      expect(sent).toContain("To: max.muster · Session 3 (RDP)");
+      expect(sent).toContain("Inspected target: /workspace/project");
 
       await details.getByRole("button", { name: "Sign out user…" }).click();
       const dialog = page.getByRole("dialog");

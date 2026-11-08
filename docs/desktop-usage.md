@@ -242,7 +242,14 @@ process table. macOS shows the owner only.
   rights; on Linux it always needs root.
 - **Send message…** (Windows) shows a message in that user's session, for
   example to ask them to save and close a file. Another user's session needs
-  administrator rights.
+  administrator rights. Windows displays a native dialog; the recipient does
+  not need OFLH. The form includes an editable request and a preview of the
+  complete message, including the file (or inspected target or port), process
+  name, PID, and recipient session. File context remains included when you
+  replace the suggested request. The 1,000-character limit includes this
+  context; paths are not silently shortened. Sending does not close anything,
+  allow a reply, or confirm that the recipient read the message. When the owner
+  is your own session, the form explains that it will appear on your desktop.
 - **Open over the network** (Windows, administrator): when someone has the
   target open through an SMB share, the panel lists them and **Close open
   file** closes that network open.

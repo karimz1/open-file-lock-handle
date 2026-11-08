@@ -68,6 +68,34 @@ const zh: TranslationSchema<typeof en> = {
       "使用 sudo 启动 OFLH 才能使用。OFLH 从不自行申请权限。",
     k_message_title: "向 {{user}} 发送消息",
     k_message_label: "消息",
+    k_message_subject: "文件或应用访问请求 — OFLH",
+    k_message_recipient: "收件人：{{user}}",
+    k_message_process: "应用：{{name}}（PID {{pid}}）",
+    k_message_file: "文件：{{path}}",
+    k_message_port: "本地端口：{{endpoint}}（{{protocol}}）",
+    k_message_target: "检查目标：{{path}}",
+    k_message_file_reason:
+      "OFLH 发现此应用在你的会话中引用了该文件。这并不能证明应用持有文件锁。",
+    k_message_port_reason: "OFLH 发现此应用在你的会话中使用了该本地端口。",
+    k_message_target_reason:
+      "OFLH 发现此应用在你的会话中使用了该目标或其内容。打开文件并不能证明持有文件锁。",
+    k_message_no_action:
+      "通过 Open File Lock Handle (OFLH) 发送。发送此请求不会关闭任何文件或应用。",
+    k_message_default_note:
+      "如果你不再需要下方文件，能否请你保存更改并关闭它？我需要访问该文件。谢谢。",
+    k_message_application_note:
+      "能否请你确认是否仍需使用下方应用？关闭前请保存更改。谢谢。",
+    k_message_port_note:
+      "能否请你确认此应用是否仍需使用下方端口？我需要使用该端口。关闭任何程序前请保存工作。谢谢。",
+    k_message_delivery:
+      "Windows 会在该用户的会话中显示原生消息对话框。收件人无需安装 OFLH。该消息无法直接回复；发送成功并不代表已被阅读。",
+    k_message_own_session: "这是你自己的会话。消息将显示在你的桌面上。",
+    k_message_preview: "收件人预览 · 包含文件与应用信息",
+    k_message_length: "{{n}} / 1000 个字符（含上下文）。",
+    k_message_too_long:
+      "完整消息过长。请缩短留言后再发送；文件路径不会被自动截短。",
+    k_message_stale:
+      "检查结果或所选文件已更改。请关闭此草稿，并从当前结果中重新打开。",
     k_message_placeholder: "请保存工作，服务器将在 18:00 重启。",
     k_message_send: "发送",
     k_message_sent: "已向 {{user}} 发送消息。",

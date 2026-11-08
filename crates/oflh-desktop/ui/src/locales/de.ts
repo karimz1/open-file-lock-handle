@@ -70,6 +70,37 @@ const de: TranslationSchema<typeof en> = {
       "Starte OFLH mit sudo, um das zu nutzen. OFLH fordert nie selbst Rechte an.",
     k_message_title: "Nachricht an {{user}} senden",
     k_message_label: "Nachricht",
+    k_message_subject: "Bitte um Zugriff auf Datei oder Anwendung — OFLH",
+    k_message_recipient: "An: {{user}}",
+    k_message_process: "Anwendung: {{name}} (PID {{pid}})",
+    k_message_file: "Datei: {{path}}",
+    k_message_port: "Lokaler Port: {{endpoint}} ({{protocol}})",
+    k_message_target: "Untersuchtes Ziel: {{path}}",
+    k_message_file_reason:
+      "OFLH hat einen Zugriff dieser Anwendung auf die Datei in deiner Sitzung gefunden. Das beweist nicht, dass die Anwendung eine Sperre hält.",
+    k_message_port_reason:
+      "OFLH hat festgestellt, dass diese Anwendung den lokalen Port in deiner Sitzung verwendet.",
+    k_message_target_reason:
+      "OFLH hat Zugriffe dieser Anwendung auf das Ziel oder dessen Inhalte in deiner Sitzung gefunden. Eine offene Datei beweist keine Sperre.",
+    k_message_no_action:
+      "Gesendet mit Open File Lock Handle (OFLH). Durch das Senden dieser Bitte werden keine Dateien oder Anwendungen geschlossen.",
+    k_message_default_note:
+      "Kannst du bitte deine Änderungen speichern und die unten genannte Datei schließen, wenn du sie nicht mehr brauchst? Ich möchte darauf zugreifen. Danke.",
+    k_message_application_note:
+      "Kannst du bitte prüfen, ob du die unten genannte Anwendung noch brauchst? Speichere bitte deine Änderungen, bevor du sie schließt. Danke.",
+    k_message_port_note:
+      "Kannst du bitte prüfen, ob diese Anwendung den unten genannten Port noch braucht? Ich möchte ihn verwenden. Speichere bitte deine Arbeit, bevor du etwas schließt. Danke.",
+    k_message_delivery:
+      "Windows zeigt einen nativen Nachrichtendialog in der Sitzung dieses Benutzers. Der Empfänger braucht kein OFLH. Antworten sind darüber nicht möglich; Senden bestätigt nicht, dass die Nachricht gelesen wurde.",
+    k_message_own_session:
+      "Das ist deine eigene Sitzung. Die Nachricht erscheint auf deinem Desktop.",
+    k_message_preview:
+      "Empfängervorschau · Datei- und Anwendungskontext enthalten",
+    k_message_length: "{{n}} / 1000 Zeichen, einschließlich Kontext.",
+    k_message_too_long:
+      "Die vollständige Nachricht ist zu lang. Kürze deinen Text vor dem Senden; Dateipfade werden niemals stillschweigend gekürzt.",
+    k_message_stale:
+      "Die Untersuchung oder ausgewählte Datei hat sich geändert. Schließe den Entwurf und öffne ihn aus den aktuellen Ergebnissen erneut.",
     k_message_placeholder:
       "Bitte speichere deine Arbeit, der Server startet um 18:00 neu.",
     k_message_send: "Senden",

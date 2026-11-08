@@ -65,6 +65,37 @@ const en = {
       "Start OFLH with sudo to use this. OFLH never asks for rights on its own.",
     k_message_title: "Send a message to {{user}}",
     k_message_label: "Message",
+    k_message_subject: "File or application access request — OFLH",
+    k_message_recipient: "To: {{user}}",
+    k_message_process: "Application: {{name}} (PID {{pid}})",
+    k_message_file: "File: {{path}}",
+    k_message_port: "Local port: {{endpoint}} ({{protocol}})",
+    k_message_target: "Inspected target: {{path}}",
+    k_message_file_reason:
+      "OFLH found this application referencing the file in your session. This does not prove that the application owns a lock.",
+    k_message_port_reason:
+      "OFLH found this application using the local port in your session.",
+    k_message_target_reason:
+      "OFLH found this application using the target or its contents in your session. An open file does not prove lock ownership.",
+    k_message_no_action:
+      "Sent using Open File Lock Handle (OFLH). Sending this request does not close any files or applications.",
+    k_message_default_note:
+      "Could you please save any changes and close the file below if you no longer need it? I need to access it. Thank you.",
+    k_message_application_note:
+      "Could you please check whether you still need the application listed below? Please save any changes before closing it. Thank you.",
+    k_message_port_note:
+      "Could you please check whether this application still needs the port below? I need to use it. Please save your work before closing anything. Thank you.",
+    k_message_delivery:
+      "Windows displays a native message dialog in this user's session. The recipient does not need OFLH. This is a one-way message; Send does not confirm that it was read.",
+    k_message_own_session:
+      "This is your own session. The message will appear on your desktop.",
+    k_message_preview:
+      "Recipient preview · file and application context included",
+    k_message_length: "{{n}} / 1000 characters, including context.",
+    k_message_too_long:
+      "The full message is too long. Shorten your note before sending; file paths are never silently shortened.",
+    k_message_stale:
+      "The inspection or selected file changed. Close this draft and reopen it from the current results.",
     k_message_placeholder:
       "Please save your work, the server restarts at 18:00.",
     k_message_send: "Send",

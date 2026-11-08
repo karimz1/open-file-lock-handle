@@ -28,7 +28,9 @@ export function Inspector({
   revision,
   notify,
   report,
+  target,
 }: {
+  target: string;
   revision: number;
   notify: (message: string) => void;
   report: (failure: unknown) => void;
@@ -328,6 +330,9 @@ export function Inspector({
             details={details}
             revision={revision}
             current={current}
+            row={row}
+            rowCurrent={rowCurrent}
+            target={target}
             notify={notify}
             report={report}
           />

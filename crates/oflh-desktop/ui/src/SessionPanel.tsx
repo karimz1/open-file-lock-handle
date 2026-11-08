@@ -4,12 +4,20 @@ import {
   api,
   type Availability,
   type Details,
+  type Row,
   type SignOutConfirmation,
 } from "./api";
 import { Modal } from "./Modal";
 import { ImpactGroup } from "./TerminationImpact";
 import { availabilityHint, ownerLine } from "./sessions";
 import { t } from "./i18n";
+import {
+  sessionMessage,
+  sessionMessageContext,
+  sessionMessageLength,
+  sessionMessageNote,
+  sessionMessageResource,
+} from "./sessionMessage";
 
 /** A session action button; disabled with a visible reason when rights are missing. */
 function ActionButton({
@@ -54,12 +62,18 @@ export function SessionPanel({
   details,
   revision,
   current,
+  row,
+  rowCurrent,
+  target,
   notify,
   report,
 }: {
   details: Details;
   revision: number;
   current: boolean;
+  row: Row | null;
+  rowCurrent: boolean;
+  target: string;
   notify: (message: string) => void;
   report: (failure: unknown) => void;
 }) {
@@ -69,10 +83,25 @@ export function SessionPanel({
     session: null,
   };
   const actions = details.session_actions;
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<{
+    note: string;
+    context: string;
+    revision: number;
+    processKey: string;
+  } | null>(null);
   const [signOut, setSignOut] = useState<SignOutConfirmation | null>(null);
   const [busy, setBusy] = useState(false);
   const user = owner.session?.user || owner.user;
+  const context = sessionMessageContext(details, row, target);
+  const text = message ? sessionMessage(message.context, message.note) : "";
+  const length = sessionMessageLength(text);
+  const messageCurrent =
+    current &&
+    (!row || rowCurrent) &&
+    (!message ||
+      (message.revision === revision &&
+        message.processKey === details.process.process_key &&
+        message.context === context));
   const hint = (availability: Availability | undefined) =>
     availability ? availabilityHint(availability) : null;
   const run = (work: Promise<void>, done: string) => {
@@ -94,8 +123,15 @@ export function SessionPanel({
             availability={actions.send_message}
             icon={<MessageSquare size={13} />}
             label={t("sessions.k_send_message")}
-            disabled={!current || busy}
-            onClick={() => setMessage("")}
+            disabled={!messageCurrent || busy}
+            onClick={() =>
+              setMessage({
+                note: sessionMessageNote(details, row),
+                context,
+                revision,
+                processKey: details.process.process_key,
+              })
+            }
           />
           <ActionButton
             availability={actions.sign_out}
@@ -115,32 +151,63 @@ export function SessionPanel({
       )}
       {message !== null && !hint(actions?.send_message) && (
         <Modal
+          className="session-message-modal"
           title={t("sessions.k_message_title", { user })}
           close={() => setMessage(null)}
         >
+          <p className="owner-line">{ownerLine(owner)}</p>
+          <div className="session-message-context detail-path">
+            <strong>
+              {t("sessions.k_message_process", {
+                name: details.process.name || t("app.k_unnamed"),
+                pid: details.process.pid,
+              })}
+            </strong>
+            <p>{sessionMessageResource(details, row, target)}</p>
+          </div>
           <label className="message-field">
             {t("sessions.k_message_label")}
             <textarea
               data-default-focus
               maxLength={1000}
-              rows={4}
-              value={message}
+              rows={3}
+              value={message.note}
               placeholder={t("sessions.k_message_placeholder")}
-              onChange={(event) => setMessage(event.target.value)}
+              onChange={(event) =>
+                setMessage({ ...message, note: event.target.value })
+              }
             />
           </label>
+          {owner.session?.own && (
+            <p className="hint">{t("sessions.k_message_own_session")}</p>
+          )}
+          <p className="hint">{t("sessions.k_message_delivery")}</p>
+          <details className="session-message-preview" open>
+            <summary>{t("sessions.k_message_preview")}</summary>
+            <pre>{text}</pre>
+          </details>
+          <p className={length > 1000 ? "danger-text" : "hint"} role="status">
+            {t("sessions.k_message_length", { n: length })}
+            {length > 1000 && ` ${t("sessions.k_message_too_long")}`}
+          </p>
+          {!messageCurrent && (
+            <p className="hint" role="status">
+              {t("sessions.k_message_stale")}
+            </p>
+          )}
           <div className="modal-actions">
             <button onClick={() => setMessage(null)}>
               {t("common.k_cancel")}
             </button>
             <button
               className="primary"
-              disabled={!message.trim() || busy}
+              disabled={
+                !message.note.trim() || length > 1000 || busy || !messageCurrent
+              }
               onClick={() => {
-                const text = message;
                 setMessage(null);
                 run(
-                  api.sendMessage(revision, details.process.process_key, text),
+                  api.sendMessage(message.revision, message.processKey, text),
                   t("sessions.k_message_sent", { user }),
                 );
               }}

@@ -1756,6 +1756,7 @@ export function App() {
                     />
                     {details && (
                       <Inspector
+                        target={status.target}
                         key={details.process.process_key}
                         terminateCurrent={(force) =>
                           prepare(force, [details.process.process_key])
