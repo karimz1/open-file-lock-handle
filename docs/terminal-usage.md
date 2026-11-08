@@ -436,3 +436,23 @@ Prompt. Paths are displayed in their familiar drive or UNC form (`C:\`,
 only make sense in the extended namespace (devices, reserved names, trailing
 dots or spaces, alternate streams) keep their `\\?\` prefix. On Linux and macOS,
 a backslash is an ordinary filename character.
+
+
+## Wait until a target is free
+
+`oflh wait PATH` and `oflh wait --port 3000` poll the same native inspection as the
+interactive app without opening a TTY. No process is stopped. Any matching
+reported usage or binding keeps the target held; a free scan is the final
+confirmation, not process-exit detection or a watched PID.
+
+The default interval is one second. `--poll-interval SECONDS` changes it and
+`--timeout SECONDS` sets a deadline. Values are positive whole seconds. Signals
+such as Ctrl+C cancel cooperatively. Exit codes are **0** when a scan confirms
+free, **4** on timeout, **130** on cancellation, **2** for bad arguments, and
+**3** for inspection failures, extending the codes from `check`.
+
+In the interactive terminal press **w** to wait for the current target; a
+Ports view with a `port:3000` filter waits for that local binding. Press **z**
+to cancel. Auto-refresh pauses so scans never overlap. `--wait-timeout SECONDS`
+configures the optional deadline for this interactive wait. The status line
+shows elapsed time and whether the wait succeeded, timed out or was cancelled.

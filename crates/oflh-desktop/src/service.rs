@@ -4,7 +4,7 @@ use crate::{
     dataset::{Dataset, display},
     recent::RecentTargets,
 };
-use oflh_core::{Ancestor, Cancellation, Identity, Process, Snapshot, Target};
+use oflh_core::{Ancestor, Cancellation, Error, Identity, Process, Snapshot, Target};
 use oflh_platform::Backend;
 use std::{
     collections::HashSet,
@@ -26,6 +26,27 @@ struct PendingAction {
     elevated: bool,
     targets: Vec<ActionTarget>,
 }
+/// An explicit one-shot action gated by a fresh free scan.
+#[derive(Clone, Debug)]
+pub enum WaitFollowUp {
+    /// No resource or window change.
+    None,
+    /// Reveal the still-retained native path in the system file manager.
+    Reveal,
+    /// Delete the file or directory after the final scan.
+    Delete,
+    /// Move into this directory after checking the native target is free.
+    Move(std::path::PathBuf),
+}
+#[derive(Clone)]
+struct WaitJob {
+    path: Option<PathBuf>,
+    include_ports: bool,
+    port: Option<u16>,
+    timeout: Option<std::time::Duration>,
+    cancel: Cancellation,
+    started: std::time::Instant,
+}
 struct State {
     generation: u32,
     dataset: Arc<Dataset>,
@@ -43,6 +64,10 @@ struct State {
     admin_recovery: Option<PendingAction>,
     next_ticket: u64,
     ancestry: Option<(String, Vec<Ancestor>)>,
+    wait: Option<WaitJob>,
+    wait_started: Option<std::time::Instant>,
+    wait_outcome: Option<Result<(), Failure>>,
+    wait_completed: Option<WaitJob>,
 }
 struct Shared {
     state: Mutex<State>,
@@ -59,6 +84,18 @@ impl Shared {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
     }
+}
+fn cancel_wait_locked(state: &mut State) {
+    if let Some(wait) = &state.wait {
+        wait.cancel.cancel();
+    }
+    if let Some(wait) = &state.wait_completed {
+        wait.cancel.cancel();
+    }
+    state.wait = None;
+    state.wait_completed = None;
+    state.wait_started = None;
+    state.wait_outcome = None;
 }
 fn storage_failure(error: impl std::fmt::Display) -> Failure {
     Failure {
@@ -123,6 +160,10 @@ impl Service {
                 admin_recovery: None,
                 next_ticket: 0,
                 ancestry: None,
+                wait: None,
+                wait_started: None,
+                wait_outcome: None,
+                wait_completed: None,
             }),
             recent_targets: Mutex::new(recent_targets),
             ready: Condvar::new(),
@@ -134,17 +175,61 @@ impl Service {
                 loop {
                     let job = {
                         let mut state = worker.lock();
-                        while state.pending.is_none() && !state.shutdown {
-                            state = worker
+                        while state.pending.is_none() && state.wait.is_none() && !state.shutdown {
+                            let result = worker
                                 .ready
-                                .wait(state)
-                                .unwrap_or_else(|error| error.into_inner());
+                                .wait_timeout(state, std::time::Duration::from_millis(50));
+                            state = result.unwrap_or_else(|error| error.into_inner()).0;
                         }
                         if state.shutdown {
                             return;
                         }
                         state.pending.take()
                     };
+                    // Drop the temporary guard before native scanning; an `if let`
+                    // scrutinee temporary otherwise lives for the entire block.
+                    let wait = worker.lock().wait.clone();
+                    if let Some(wait) = wait {
+                        let path = wait
+                            .path
+                            .as_deref()
+                            .map(Target::new)
+                            .transpose()
+                            .map_err(Failure::from);
+                        let result = path.and_then(|path| {
+                            oflh_platform::wait_until_free(
+                                &mut *backend,
+                                oflh_platform::WaitTarget {
+                                    path: path.as_ref(),
+                                    include_ports: wait.include_ports,
+                                    port: wait.port,
+                                    scope_ports_to_path: true,
+                                },
+                                oflh_core::wait::Options {
+                                    timeout: wait.timeout,
+                                    ..Default::default()
+                                },
+                                wait.started,
+                                &wait.cancel,
+                            )
+                            .map_err(Failure::from)
+                        });
+                        let status = {
+                            let mut state = worker.lock();
+                            if let Some(wait) = &state.wait
+                                && wait.cancel.check().is_err()
+                            {
+                                state.wait = None;
+                                continue;
+                            }
+                            state.wait_outcome = Some(result);
+                            state.wait_completed = state.wait.clone();
+                            state.wait = None;
+                            status(&state)
+                        };
+                        notify(status);
+                        continue;
+                    }
                     let Some(job) = job else {
                         continue;
                     };
@@ -294,6 +379,10 @@ impl Service {
         if state.scanning {
             cancel_scan(&mut state);
         }
+        if let Some(wait) = &state.wait {
+            wait.cancel.cancel();
+        }
+        state.wait = None;
         self.enqueue_locked(&mut state, Some(path), None)
     }
     fn enqueue(&self, path: Option<PathBuf>, owner: Option<Identity>) -> Result<Status, Failure> {
@@ -308,7 +397,8 @@ impl Service {
     ) -> Result<Status, Failure> {
         // Coalesce all entry points atomically: timer, keyboard, dialogs and drops
         // cannot cancel an inspection merely because its acknowledgment is delayed.
-        if state.scanning {
+        if state.scanning || state.wait.is_some() {
+            cancel_wait_locked(state);
             return Ok(status(state));
         }
         state.generation = state
@@ -330,6 +420,148 @@ impl Service {
         self.shared.ready.notify_one();
         Ok(status(state))
     }
+    /// Wait for the current target. Only one scan is in flight and cancellation
+    /// stops both the sleep and native scan; a deadline is never reported as free.
+    pub fn wait_until_free(&self, request: WaitRequest) -> Status {
+        let mut state = self.shared.lock();
+        if state.scanning || state.pending.is_some() || state.wait.is_some() {
+            return status(&state);
+        }
+        if let Some(wait) = &state.wait_completed {
+            wait.cancel.cancel();
+        }
+        state.wait_completed = None;
+        let cancel = Cancellation::default();
+        state.wait_started = Some(std::time::Instant::now());
+        state.wait_outcome = None;
+        state.wait = Some(WaitJob {
+            path: request.path,
+            include_ports: request.include_ports,
+            port: request.port,
+            timeout: request.timeout,
+            cancel,
+            started: std::time::Instant::now(),
+        });
+        self.shared.ready.notify_one();
+        status(&state)
+    }
+    /// Cancel waiting without changing accepted inspection results.
+    pub fn cancel_wait(&self) -> Status {
+        let mut state = self.shared.lock();
+        cancel_wait_locked(&mut state);
+        state.wait_outcome = Some(Err(Failure::from(Error::Cancelled)));
+        self.shared.ready.notify_one();
+        status(&state)
+    }
+    #[cfg(test)]
+    fn wait_follow_up_with_backend(
+        &self,
+        follow_up: WaitFollowUp,
+        backend: &mut dyn Backend,
+    ) -> Result<(), Failure> {
+        let state = self.shared.lock();
+        let job = state
+            .wait_completed
+            .clone()
+            .filter(|_| state.wait_outcome.as_ref().is_some_and(Result::is_ok));
+        let Some(job) = job else {
+            return Err(Failure::invalid("No free target"));
+        };
+        drop(state);
+        let target = job
+            .path
+            .as_deref()
+            .map(Target::new)
+            .transpose()
+            .map_err(Failure::from)?;
+        oflh_platform::confirm_free_before_action(
+            backend,
+            target.as_ref(),
+            job.include_ports,
+            job.port,
+            &job.cancel,
+        )
+        .map_err(Failure::from)?;
+        match follow_up {
+            WaitFollowUp::Delete => std::fs::remove_file(&target.unwrap().path)
+                .map_err(|e| Failure::from(oflh_core::io("delete", e))),
+            _ => Ok(()),
+        }
+    }
+
+    /// Native path retained for the final guarded reveal action.
+    pub fn shared_wait_path(&self) -> Result<PathBuf, Failure> {
+        let state = self.shared.lock();
+        state
+            .wait
+            .as_ref()
+            .or(state.wait_completed.as_ref())
+            .and_then(|wait| wait.path.clone())
+            .ok_or_else(|| Failure::invalid("No filesystem target is waiting"))
+    }
+    /// Run an explicit follow-up only after another complete free scan.
+    pub fn wait_follow_up(&self, follow_up: WaitFollowUp) -> Result<(), Failure> {
+        let state = self.shared.lock();
+        let job = state.wait_completed.clone();
+        let Some(job) = job.filter(|_| state.wait_outcome.as_ref().is_some_and(Result::is_ok))
+        else {
+            return Err(Failure::invalid("No target is waiting to become free"));
+        };
+        drop(state);
+        let target = job
+            .path
+            .as_deref()
+            .map(Target::new)
+            .transpose()
+            .map_err(Failure::from)?;
+        let mut backend = oflh_platform::native().map_err(Failure::from)?;
+        oflh_platform::confirm_free_before_action(
+            &mut *backend,
+            target.as_ref(),
+            job.include_ports,
+            job.port,
+            &job.cancel,
+        )
+        .map_err(Failure::from)?;
+        let result = (|| {
+            let Some(target) = target else {
+                return Err(Failure::invalid("Port waits have no filesystem follow-up"));
+            };
+            match follow_up {
+                WaitFollowUp::None | WaitFollowUp::Reveal => Ok(()),
+                WaitFollowUp::Delete if target.directory => std::fs::remove_dir_all(&target.path)
+                    .map_err(|error| oflh_core::io("delete folder after becoming free", error))
+                    .map_err(Failure::from),
+                WaitFollowUp::Delete => std::fs::remove_file(&target.path)
+                    .map_err(|error| oflh_core::io("delete file after becoming free", error))
+                    .map_err(Failure::from),
+                WaitFollowUp::Move(destination) => {
+                    let name = target.path.file_name().ok_or_else(|| {
+                        Failure::invalid("Choose a destination for a named target")
+                    })?;
+                    let destination = destination.join(name);
+                    if destination.exists() {
+                        return Err(Failure::invalid(
+                            "The move destination already contains this name",
+                        ));
+                    }
+                    std::fs::rename(&target.path, &destination)
+                        .map_err(|error| {
+                            oflh_core::io(
+                                "move target into selected folder after becoming free",
+                                error,
+                            )
+                        })
+                        .map_err(Failure::from)
+                }
+            }
+        })();
+        if let Err(error) = &result {
+            let mut state = self.shared.lock();
+            state.wait_outcome = Some(Err(error.clone()));
+        }
+        result
+    }
     /// Rescan the last successful native target without a display-string round trip.
     pub fn refresh(&self) -> Result<Status, Failure> {
         {
@@ -346,6 +578,22 @@ impl Service {
         }
         self.enqueue(path, None)
     }
+    /// Execute the optional explicit action without blocking the Tauri command queue.
+    pub fn wait_follow_up_in_background(&self, follow_up: WaitFollowUp) -> Result<(), Failure> {
+        let Self { shared, sessions } = self;
+        let service = Self {
+            shared: shared.clone(),
+            sessions: sessions.clone(),
+        };
+        std::thread::Builder::new()
+            .name("oflh-wait-follow-up".into())
+            .spawn(move || {
+                let _ = service.wait_follow_up(follow_up);
+            })
+            .map(|_| ())
+            .map_err(|error| Failure::from(oflh_core::io("start wait follow-up", error)))
+    }
+
     /// Cancel running and queued scans while preserving accepted results.
     pub fn cancel(&self) -> Status {
         let mut state = self.shared.lock();
@@ -362,6 +610,7 @@ impl Service {
             .ok_or_else(|| Failure::invalid("Restart the application to close this inspection"))?;
         state.cancellation.cancel();
         state.cancellation = Cancellation::default();
+        cancel_wait_locked(&mut state);
         state.pending = None;
         state.scanning = false;
         state.started = None;
@@ -735,6 +984,9 @@ impl Drop for Service {
         let mut state = self.shared.lock();
         state.shutdown = true;
         state.cancellation.cancel();
+        if let Some(wait) = &state.wait {
+            wait.cancel.cancel();
+        }
         state.pending = None;
         state.action = None;
         self.shared.ready.notify_one();
@@ -842,6 +1094,20 @@ fn status(state: &State) -> Status {
             .map(|warning| oflh_core::safe(warning))
             .collect(),
         error: state.error.clone(),
+        wait: WaitStatus {
+            waiting: state.wait.is_some(),
+            elapsed_ms: state.wait_started.map_or(0, |started| {
+                started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
+            }),
+            outcome: state
+                .wait_outcome
+                .as_ref()
+                .map(|result| if result.is_ok() { "free" } else { "failed" }),
+            error: state
+                .wait_outcome
+                .as_ref()
+                .and_then(|result| result.as_ref().err().cloned()),
+        },
         version: oflh_core::display_version(),
         commit: oflh_core::BUILD_COMMIT,
         build_url: oflh_core::BUILD_URL,
@@ -876,9 +1142,14 @@ fn target_impact(native: oflh_core::impact::Impact, scanned: Option<&Process>) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oflh_core::{Error, Metrics, Process, Result};
-    use std::sync::mpsc::{Receiver, Sender, channel};
+    use oflh_core::{Error, Metrics, Process, Result, Usage};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+        mpsc::{Receiver, Sender, channel},
+    };
     use std::time::Duration;
+    use std::time::Instant;
     const TIMEOUT: Duration = Duration::from_secs(5);
     struct Gated {
         started: Sender<PathBuf>,
@@ -1081,6 +1352,80 @@ mod tests {
                 Ok(())
             }
         }
+    }
+
+    struct HeldFixture {
+        scans: Arc<AtomicUsize>,
+    }
+    impl Backend for HeldFixture {
+        fn scan(&mut self, _: &Target, _: &Cancellation) -> Result<Snapshot> {
+            self.scans.fetch_add(1, Ordering::SeqCst);
+            Ok(Snapshot {
+                processes: vec![Process {
+                    usages: vec![Usage::default()],
+                    ..Process::default()
+                }],
+                warnings: vec![],
+            })
+        }
+        fn sample(&mut self, _: &[Identity], _: &Cancellation) -> Result<Vec<(Identity, Metrics)>> {
+            Ok(vec![])
+        }
+        fn terminate(&mut self, _: Identity, _: bool, _: &Cancellation) -> Result<()> {
+            unreachable!()
+        }
+    }
+    #[test]
+    fn wait_acknowledges_immediately_and_can_cancel() {
+        let service = Service::new(
+            Box::new(HeldFixture {
+                scans: Arc::new(AtomicUsize::new(0)),
+            }),
+            |_| {},
+        )
+        .unwrap();
+        assert!(
+            service
+                .wait_until_free(WaitRequest {
+                    path: Some(std::env::temp_dir()),
+                    include_ports: false,
+                    port: None,
+                    timeout: Some(Duration::from_secs(30))
+                })
+                .wait
+                .waiting
+        );
+        let cancelled = service.cancel_wait();
+        assert!(!cancelled.wait.waiting);
+        assert_eq!(cancelled.wait.error.as_ref().unwrap().kind, "cancelled");
+    }
+    #[test]
+    fn wait_timeout_publishes_failure() {
+        let scans = Arc::new(AtomicUsize::new(0));
+        let (sender, received) = channel();
+        let service = Service::new(
+            Box::new(HeldFixture {
+                scans: scans.clone(),
+            }),
+            move |status| {
+                if status.wait.error.is_some() {
+                    let _ = sender.send(status.wait);
+                }
+            },
+        )
+        .unwrap();
+        request_with_short_timeout(&service);
+        let wait = received.recv_timeout(TIMEOUT).unwrap();
+        assert_eq!(wait.error.unwrap().kind, "wait_timeout");
+        assert!(scans.load(Ordering::SeqCst) > 0);
+    }
+    fn request_with_short_timeout(service: &Service) {
+        service.wait_until_free(WaitRequest {
+            path: Some(std::env::temp_dir()),
+            include_ports: false,
+            port: None,
+            timeout: Some(Duration::from_millis(150)),
+        });
     }
     fn action_service() -> (Service, Identity) {
         let service = Service::new(Box::new(Recorder::default()), |_| {}).unwrap();
@@ -1752,5 +2097,27 @@ mod tests {
         assert!(published.target.ends_with("oflh-desktop-explorer"));
         assert_eq!(service.recent().len(), 1);
         assert!(service.take_over(PathBuf::new()).is_err());
+    }
+    #[test]
+    fn explicit_wait_follow_up_rejects_target_held_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("held.bin");
+        std::fs::write(&path, b"keep").unwrap();
+        let (service, _) = action_service();
+        service.shared.lock().wait_completed = Some(WaitJob {
+            path: Some(path.clone()),
+            include_ports: false,
+            port: None,
+            timeout: None,
+            cancel: Cancellation::default(),
+            started: Instant::now(),
+        });
+        service.shared.lock().wait_outcome = Some(Ok(()));
+        let mut recorder = HeldFixture {
+            scans: Arc::new(AtomicUsize::new(0)),
+        };
+        let held = service.wait_follow_up_with_backend(WaitFollowUp::Delete, &mut recorder);
+        assert_eq!(held.unwrap_err().kind, "wait_target_held");
+        assert_eq!(std::fs::read(&path).unwrap(), b"keep");
     }
 }

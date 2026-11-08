@@ -7,10 +7,10 @@ use std::{
     time::Duration,
 };
 
-fn check(arguments: &[&str], path: Option<&Path>) -> Output {
+fn check_base(command_name: &str, arguments: &[&str], path: Option<&Path>) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_oflh"));
     command
-        .arg("check")
+        .arg(command_name)
         .args(arguments)
         .args(["--language", "en"]);
     if let Some(path) = path {
@@ -22,6 +22,13 @@ fn check(arguments: &[&str], path: Option<&Path>) -> Output {
         .stderr(Stdio::piped())
         .output()
         .unwrap()
+}
+
+fn check(arguments: &[&str], path: Option<&Path>) -> Output {
+    check_base("check", arguments, path)
+}
+fn wait(arguments: &[&str], path: Option<&Path>) -> Output {
+    check_base("wait", arguments, path)
 }
 
 fn field<'a>(json: &'a str, name: &str) -> Option<&'a str> {
@@ -178,4 +185,56 @@ fn bad_check_arguments_use_the_usage_exit_code() {
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
     assert!(!output.stderr.is_empty());
+}
+
+#[test]
+fn wait_returns_when_a_child_releases_a_real_file() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("wait-fixture.bin");
+    fs::write(&path, b"fixture").unwrap();
+    let holder = hold_file(&path);
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(700));
+        drop(holder);
+    });
+    let free = wait(&["--timeout", "30"], Some(&path));
+    assert_eq!(
+        free.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&free.stderr)
+    );
+    assert!(String::from_utf8(free.stdout).unwrap().starts_with("FREE:"));
+}
+
+#[test]
+fn wait_timeout_and_real_port_release_have_distinct_outcomes() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port().to_string();
+    let timeout = wait(&["--timeout", "1", "--port", &port], None);
+    assert_eq!(
+        timeout.status.code(),
+        Some(4),
+        "stderr: {}",
+        String::from_utf8_lossy(&timeout.stderr)
+    );
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(500));
+        drop(listener);
+    });
+    let free = wait(&["--timeout", "30", "--port", &port], None);
+    assert_eq!(
+        free.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&free.stderr)
+    );
+}
+
+#[test]
+fn free_wait_succeeds_without_a_terminal() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("already-free");
+    let output = wait(&[], Some(&path));
+    assert_eq!(output.status.code(), Some(0));
 }

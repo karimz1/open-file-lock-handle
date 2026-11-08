@@ -2949,6 +2949,61 @@ kbd.shortcut {
   display: flex;
   color: var(--warning, #b7791f);
 }
+/* Waiting remains readable without taking focus away from accepted results. */
+.wait-panel {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin: 0 0 0.8rem;
+  font-size: 0.9rem;
+}
+.wait-panel.waiting,
+.wait-panel.free {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.wait-panel.free {
+  color: var(--success);
+}
+.wait-panel label {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.8rem 0;
+}
+.wait-panel .modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.statusbar > .wait-panel {
+  flex: none;
+  gap: 8px;
+  margin: 0;
+  max-height: 32px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.statusbar > .wait-panel button {
+  min-height: 0;
+  padding: 2px 7px;
+  font-size: 0.85em;
+}
+.statusbar > .wait-panel.waiting,
+.statusbar > .wait-panel.free {
+  padding: 2px 7px;
+  border: 0;
+  background: none;
+}
+.statusbar > .wait-panel .muted {
+  display: none;
+}
+.statusbar > .wait-panel:empty {
+  display: none;
+}
 
 /* Portal menus escape the sidebar's scroll clipping and sit over the grid. */
 .settings-popup-root {

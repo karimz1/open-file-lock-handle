@@ -2,6 +2,29 @@ import type { TranslationSchema } from "../i18n/types";
 import en from "./en";
 
 const zh: TranslationSchema<typeof en> = {
+  wait: {
+    k_title: "等待目标空闲",
+    k_action: "等待空闲",
+    k_description:
+      "OFLH 每秒重新检查一次，不会结束任何进程。执行后续操作前会再次确认目标已空闲。",
+    k_timeout_label: "超时秒数（0 表示不限制）",
+    k_follow_up: "空闲后执行",
+    k_notify_only: "仅通知",
+    k_reveal: "在文件管理器中显示",
+    k_move: "移动到文件夹…",
+    k_delete: "删除",
+    k_start: "开始等待",
+    k_waiting: "正在等待目标空闲",
+    k_elapsed: "已等待：{{time}}",
+    k_no_timeout: "无时间限制",
+    k_timeout_limit: "在 {{seconds}} 秒后停止",
+    k_free: "目标已空闲。",
+    k_timeout: "目标在超时前未变为空闲。",
+    k_held_again: "占用进程再次出现，未执行后续操作。",
+    k_cancelled: "等待已取消。",
+    k_again: "再次等待",
+    k_confirm_delete: "在最终确认空闲后删除此目标？",
+  },
   sessions: {
     k_user: "用户",
     k_session: "会话",

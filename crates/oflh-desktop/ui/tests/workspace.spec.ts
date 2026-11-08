@@ -102,6 +102,7 @@ test.beforeEach(async ({ page }) => {
         "Some processes could not be inspected because access was denied.",
       ],
       error: null,
+      wait: { waiting: false, elapsed_ms: 0, outcome: null, error: null },
       version:
         new URL(location.href).searchParams.get("version") ?? "development",
       commit: "0123456789abcdef0123456789abcdef01234567",
@@ -131,6 +132,7 @@ test.beforeEach(async ({ page }) => {
     ];
     Object.assign(window, {
       __testCalls: calls,
+      __waitFree: () => {},
       __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
       __TAURI_INTERNALS__: {
         metadata: {
@@ -149,6 +151,8 @@ test.beforeEach(async ({ page }) => {
           calls.push({ command, args });
           if (command === "plugin:event|listen") {
             callbackEvents.set(args.handler, args.event);
+            if (args.event === "scan-status")
+              (window as any).__waitFree = callbacks.get(args.handler);
             return 1;
           }
           if (command === "plugin:event|unlisten") return;
@@ -193,6 +197,73 @@ test.beforeEach(async ({ page }) => {
               generation: status.generation + 1,
               scanning: false,
             });
+          if (command === "wait_until_free" && (window as any).__emitWaitFree) {
+            const freeStatus = {
+              ...status,
+              wait: {
+                waiting: false,
+                elapsed_ms: 500,
+                outcome: "free",
+                error: null,
+              },
+            };
+            setTimeout(
+              () =>
+                (window as any).__waitFree({
+                  event: "scan-status",
+                  payload: freeStatus,
+                }),
+              100,
+            );
+          }
+          if (command === "wait_until_free") {
+            return (status = {
+              ...status,
+              wait: {
+                waiting: true,
+                elapsed_ms: 500,
+                outcome: null,
+                error: null,
+              },
+            });
+          }
+          if (command === "cancel_wait") {
+            return (status = {
+              ...status,
+              wait: {
+                waiting: false,
+                elapsed_ms: 500,
+                outcome: "failed",
+                error: {
+                  kind: "cancelled",
+                  message: "Cancelled",
+                  os_code: null,
+                },
+              },
+            });
+          }
+          if (command === "notify_wait_free") return;
+          if (command === "focus_window") return;
+          if ((window as any).__emitWaitFree) {
+            await new Promise((resolve) => setTimeout(resolve, 60));
+            const eventId = [...callbackEvents].find(
+              ([, name]) => name === "scan-status",
+            )?.[0];
+            const callback = callbacks.get(Number(eventId));
+            callback?.({
+              event: "scan-status",
+              id: Number(eventId),
+              payload: (status = {
+                ...status,
+                wait: {
+                  waiting: false,
+                  elapsed_ms: 500,
+                  outcome: "free",
+                  error: null,
+                },
+              }),
+            });
+          }
           // Terminal-server fixture: several people signed in at once.
           const multi = (window as any).__multiUser as
             { elevated: boolean; os?: string } | undefined;
@@ -5955,4 +6026,50 @@ test("issue 153: post-termination scans settle late socket exits then stop", asy
   await expect.poll(refreshCount).toBe(3);
   await page.waitForTimeout(1500);
   expect(await refreshCount()).toBe(3);
+});
+
+test("wait has timeout, cancellation, free notification and no automatic follow-up", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Wait until free", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.getByLabel("Timeout in seconds (0 means none)"),
+  ).toHaveValue("0");
+  await dialog.getByLabel("Timeout in seconds (0 means none)").fill("30");
+  await page.screenshot({
+    path: documentationScreenshotPath("desktop-wait-options.png"),
+  });
+  await dialog.getByRole("button", { name: "Start waiting" }).click();
+  await expect(
+    page.getByText("Waiting until the target is free"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByText("Waiting cancelled.")).toBeVisible();
+  await page.evaluate(() => ((window as any).__emitWaitFree = true));
+  await page.getByRole("button", { name: "Wait again" }).click();
+  await dialog.getByRole("button", { name: "Start waiting" }).click();
+  await expect(page.getByText("The target is free.")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "notify_wait_free",
+        ).length,
+    ),
+  ).toBe(1);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "wait_follow_up",
+        ).length,
+    ),
+  ).toBe(0);
+  await page.screenshot({
+    path: documentationScreenshotPath("desktop-wait-free.png"),
+  });
 });

@@ -8,6 +8,8 @@ pub enum CheckTarget {
     Path,
     /// One local TCP listener or UDP binding number.
     Port(u16),
+    /// A local port binding on a process that also references the current path.
+    PortOnPathProcesses(u16),
 }
 
 /// Classify a completed snapshot without interpreting scan warnings as holders.
@@ -17,6 +19,9 @@ pub fn is_free(snapshot: &Snapshot, target: CheckTarget) -> bool {
             .processes
             .iter()
             .all(|process| process.usages.is_empty()),
+        CheckTarget::PortOnPathProcesses(number) => snapshot.processes.iter().all(|process| {
+            process.usages.is_empty() || process.ports.iter().all(|port| port.number != number)
+        }),
         CheckTarget::Port(number) => snapshot
             .processes
             .iter()

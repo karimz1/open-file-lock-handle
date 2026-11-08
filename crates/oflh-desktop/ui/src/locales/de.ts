@@ -2,6 +2,31 @@ import type { TranslationSchema } from "../i18n/types";
 import en from "./en";
 
 const de: TranslationSchema<typeof en> = {
+  wait: {
+    k_title: "Warten, bis frei",
+    k_action: "Warten, bis frei",
+    k_description:
+      "OFLH prüft jede Sekunde erneut. Kein Prozess wird beendet. Vor jeder Folgeaktion erfolgt ein abschließender Frei-Scan.",
+    k_timeout_label: "Zeitgrenze in Sekunden (0 bedeutet keine)",
+    k_follow_up: "Nach der Freigabe",
+    k_notify_only: "Nur benachrichtigen",
+    k_reveal: "Im Dateimanager anzeigen",
+    k_move: "In einen Ordner verschieben…",
+    k_delete: "Löschen",
+    k_start: "Warten starten",
+    k_waiting: "Warten, bis das Ziel frei ist",
+    k_elapsed: "Vergangen: {{time}}",
+    k_no_timeout: "Keine Zeitgrenze",
+    k_timeout_limit: "Endet nach {{seconds}} s",
+    k_free: "Das Ziel ist frei.",
+    k_timeout: "Zeitgrenze erreicht, bevor das Ziel frei wurde.",
+    k_held_again:
+      "Ein Nutzer ist zurückgekehrt. Keine Folgeaktion wurde ausgeführt.",
+    k_cancelled: "Warten abgebrochen.",
+    k_again: "Erneut warten",
+    k_confirm_delete:
+      "Dieses Ziel nach einem abschließenden Frei-Scan löschen?",
+  },
   sessions: {
     k_user: "Benutzer",
     k_session: "Sitzung",
