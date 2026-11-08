@@ -4,11 +4,15 @@
 pub mod elevation;
 pub mod inspection_helper;
 mod locale;
+#[cfg(any(feature = "wait-actions", test))]
+mod move_path;
 pub mod updates;
 mod wait;
 #[cfg(any(feature = "wait-actions", test))]
 mod wait_actions;
 pub use locale::system_locale;
+#[cfg(any(feature = "wait-actions", test))]
+pub use move_path::move_without_replace;
 pub use wait::{WaitTarget, wait_until_free};
 #[cfg(any(feature = "wait-actions", test))]
 pub use wait_actions::confirm_free_before_action;
