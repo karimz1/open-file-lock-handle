@@ -37,6 +37,8 @@ pub enum WaitFollowUp {
     Delete,
     /// Move into this directory after checking the native target is free.
     Move(std::path::PathBuf),
+    /// Rename within the original folder using one validated filename component.
+    Rename(String),
 }
 #[derive(Clone)]
 struct WaitJob {
@@ -72,6 +74,9 @@ struct State {
     wait_outcome: Option<Result<(), Failure>>,
     wait_completed: Option<WaitJob>,
     next_wait: u64,
+    wait_destination: Option<(String, PathBuf)>,
+    next_wait_destination: u64,
+    wait_follow_up_claimed: bool,
 }
 struct Shared {
     state: Mutex<State>,
@@ -169,6 +174,9 @@ impl Service {
                 wait_outcome: None,
                 wait_completed: None,
                 next_wait: 0,
+                wait_destination: None,
+                next_wait_destination: 0,
+                wait_follow_up_claimed: false,
             }),
             recent_targets: Mutex::new(recent_targets),
             ready: Condvar::new(),
@@ -551,6 +559,7 @@ impl Service {
         }
         state.wait_completed = None;
         state.next_wait = state.next_wait.wrapping_add(1);
+        state.wait_follow_up_claimed = false;
         job.id = state.next_wait;
         state.wait_started = Some(std::time::Instant::now());
         state.wait_outcome = None;
@@ -566,40 +575,100 @@ impl Service {
         self.shared.ready.notify_one();
         status(&state)
     }
-    #[cfg(test)]
     fn wait_follow_up_with_backend(
         &self,
+        id: u64,
         follow_up: WaitFollowUp,
         backend: &mut dyn Backend,
-    ) -> Result<(), Failure> {
-        let state = self.shared.lock();
+    ) -> Result<Option<PathBuf>, Failure> {
+        let mut state = self.shared.lock();
         let job = state
             .wait_completed
             .clone()
-            .filter(|_| state.wait_outcome.as_ref().is_some_and(Result::is_ok));
+            .filter(|job| job.id == id && state.wait_outcome.as_ref().is_some_and(Result::is_ok));
         let Some(job) = job else {
             return Err(Failure::invalid("No free target"));
         };
-        drop(state);
-        let target = job
-            .path
-            .as_deref()
-            .map(Target::new)
-            .transpose()
-            .map_err(Failure::from)?;
-        oflh_platform::confirm_free_before_action(
-            backend,
-            target.as_ref(),
-            job.include_ports,
-            job.port,
-            &job.cancel,
-        )
-        .map_err(Failure::from)?;
-        match follow_up {
-            WaitFollowUp::Delete => std::fs::remove_file(&target.unwrap().path)
-                .map_err(|e| Failure::from(oflh_core::io("delete", e))),
-            _ => Ok(()),
+        if job.process.is_some() || job.path.is_none() {
+            return Err(Failure::invalid("This wait has no filesystem follow-up"));
         }
+        if state.wait_follow_up_claimed {
+            return Err(Failure::invalid(
+                "The follow-up for this wait has already been requested",
+            ));
+        }
+        state.wait_follow_up_claimed = true;
+        drop(state);
+        let result = (|| {
+            if let WaitFollowUp::Rename(name) = &follow_up {
+                crate::wait_files::validate_name(name)?;
+            }
+            let target = job
+                .path
+                .as_deref()
+                .map(Target::new)
+                .transpose()
+                .map_err(Failure::from)?;
+            oflh_platform::confirm_free_before_action(
+                backend,
+                target.as_ref(),
+                job.include_ports,
+                job.port,
+                &job.cancel,
+            )
+            .map_err(Failure::from)?;
+            let target =
+                target.ok_or_else(|| Failure::invalid("No filesystem target is waiting"))?;
+            crate::wait_files::apply(&target, follow_up, &job.cancel)
+        })();
+        if let Err(error) = &result {
+            let mut state = self.shared.lock();
+            if state
+                .wait_completed
+                .as_ref()
+                .is_some_and(|current| current.id == id)
+            {
+                state.wait_outcome = Some(Err(error.clone()));
+            }
+        }
+        result
+    }
+
+    /// Retain a folder selected by the native picker without a display-path round trip.
+    pub fn capture_wait_destination(&self, folder: PathBuf) -> Result<PathValue, Failure> {
+        let folder = std::fs::canonicalize(folder).map_err(|error| {
+            Failure::from(oflh_core::io("resolve selected destination folder", error))
+        })?;
+        if !std::fs::metadata(&folder)
+            .map_err(|error| {
+                Failure::from(oflh_core::io("inspect selected destination folder", error))
+            })?
+            .is_dir()
+        {
+            return Err(Failure::invalid("Choose a destination folder"));
+        }
+        let mut state = self.shared.lock();
+        state.next_wait_destination = state
+            .next_wait_destination
+            .checked_add(1)
+            .ok_or_else(|| Failure::invalid("Restart the application to choose another folder"))?;
+        let reference = format!("wait-folder-{}", state.next_wait_destination);
+        let value = PathValue {
+            display: display(&folder),
+            reference: reference.clone(),
+        };
+        state.wait_destination = Some((reference, folder));
+        Ok(value)
+    }
+    /// Resolve only the current picker reference, never a path supplied by the WebView.
+    pub fn wait_destination(&self, reference: &str) -> Result<PathBuf, Failure> {
+        self.shared
+            .lock()
+            .wait_destination
+            .as_ref()
+            .filter(|(key, _)| key == reference)
+            .map(|(_, path)| path.clone())
+            .ok_or_else(|| Failure::invalid("Choose the destination folder again"))
     }
 
     /// Native path retained for the final guarded reveal action.
@@ -623,73 +692,13 @@ impl Service {
             .ok_or_else(|| Failure::invalid("This wait is no longer the completed operation"))
     }
     /// Run an explicit follow-up only after another complete free scan.
-    pub fn wait_follow_up(&self, id: u64, follow_up: WaitFollowUp) -> Result<(), Failure> {
-        let state = self.shared.lock();
-        let job = state.wait_completed.clone();
-        let Some(job) = job
-            .filter(|job| job.id == id && state.wait_outcome.as_ref().is_some_and(Result::is_ok))
-        else {
-            return Err(Failure::invalid("No target is waiting to become free"));
-        };
-        if job.process.is_some() {
-            return Err(Failure::invalid(
-                "Process waits have no filesystem follow-up",
-            ));
-        }
-        drop(state);
-        let target = job
-            .path
-            .as_deref()
-            .map(Target::new)
-            .transpose()
-            .map_err(Failure::from)?;
+    pub fn wait_follow_up(
+        &self,
+        id: u64,
+        follow_up: WaitFollowUp,
+    ) -> Result<Option<PathBuf>, Failure> {
         let mut backend = oflh_platform::native().map_err(Failure::from)?;
-        oflh_platform::confirm_free_before_action(
-            &mut *backend,
-            target.as_ref(),
-            job.include_ports,
-            job.port,
-            &job.cancel,
-        )
-        .map_err(Failure::from)?;
-        let result = (|| {
-            let Some(target) = target else {
-                return Err(Failure::invalid("Port waits have no filesystem follow-up"));
-            };
-            match follow_up {
-                WaitFollowUp::None | WaitFollowUp::Reveal => Ok(()),
-                WaitFollowUp::Delete if target.directory => std::fs::remove_dir_all(&target.path)
-                    .map_err(|error| oflh_core::io("delete folder after becoming free", error))
-                    .map_err(Failure::from),
-                WaitFollowUp::Delete => std::fs::remove_file(&target.path)
-                    .map_err(|error| oflh_core::io("delete file after becoming free", error))
-                    .map_err(Failure::from),
-                WaitFollowUp::Move(destination) => {
-                    let name = target.path.file_name().ok_or_else(|| {
-                        Failure::invalid("Choose a destination for a named target")
-                    })?;
-                    let destination = destination.join(name);
-                    if destination.exists() {
-                        return Err(Failure::invalid(
-                            "The move destination already contains this name",
-                        ));
-                    }
-                    std::fs::rename(&target.path, &destination)
-                        .map_err(|error| {
-                            oflh_core::io(
-                                "move target into selected folder after becoming free",
-                                error,
-                            )
-                        })
-                        .map_err(Failure::from)
-                }
-            }
-        })();
-        if let Err(error) = &result {
-            let mut state = self.shared.lock();
-            state.wait_outcome = Some(Err(error.clone()));
-        }
-        result
+        self.wait_follow_up_with_backend(id, follow_up, &mut *backend)
     }
     /// Rescan the last successful native target without a display-string round trip.
     pub fn refresh(&self) -> Result<Status, Failure> {
@@ -707,26 +716,6 @@ impl Service {
         }
         self.enqueue(path, None)
     }
-    /// Execute the optional explicit action without blocking the Tauri command queue.
-    pub fn wait_follow_up_in_background(
-        &self,
-        id: u64,
-        follow_up: WaitFollowUp,
-    ) -> Result<(), Failure> {
-        let Self { shared, sessions } = self;
-        let service = Self {
-            shared: shared.clone(),
-            sessions: sessions.clone(),
-        };
-        std::thread::Builder::new()
-            .name("oflh-wait-follow-up".into())
-            .spawn(move || {
-                let _ = service.wait_follow_up(id, follow_up);
-            })
-            .map(|_| ())
-            .map_err(|error| Failure::from(oflh_core::io("start wait follow-up", error)))
-    }
-
     /// Cancel running and queued scans while preserving accepted results.
     pub fn cancel(&self) -> Status {
         let mut state = self.shared.lock();
@@ -2427,8 +2416,183 @@ mod tests {
         let mut recorder = HeldFixture {
             scans: Arc::new(AtomicUsize::new(0)),
         };
-        let held = service.wait_follow_up_with_backend(WaitFollowUp::Delete, &mut recorder);
+        let held = service.wait_follow_up_with_backend(1, WaitFollowUp::Delete, &mut recorder);
         assert_eq!(held.unwrap_err().kind, "wait_target_held");
         assert_eq!(std::fs::read(&path).unwrap(), b"keep");
+    }
+    fn completed_file_wait(path: &Path) -> Service {
+        let service = Service::new(Box::new(Recorder::default()), |_| {}).unwrap();
+        let mut state = service.shared.lock();
+        state.next_wait = 1;
+        state.wait_completed = Some(WaitJob {
+            id: 1,
+            process: None,
+            description: WaitTargetView {
+                kind: "file",
+                display: display(path),
+            },
+            path: Some(path.to_owned()),
+            include_ports: false,
+            port: None,
+            timeout: None,
+            cancel: Cancellation::default(),
+            started: Instant::now(),
+        });
+        state.wait_outcome = Some(Ok(()));
+        drop(state);
+        service
+    }
+    #[test]
+    fn move_and_rename_return_the_actual_result_and_cannot_be_replayed() {
+        let root = tempfile::tempdir().unwrap();
+        let original = root.path().join("Bestätigung.pdf");
+        let folder = root.path().join("destination");
+        std::fs::write(&original, b"keep").unwrap();
+        std::fs::create_dir(&folder).unwrap();
+        let service = completed_file_wait(&original);
+        let selected = service.capture_wait_destination(folder.clone()).unwrap();
+        assert!(service.wait_destination(&display(&folder)).is_err());
+        let actual = service
+            .wait_follow_up_with_backend(
+                1,
+                WaitFollowUp::Move(service.wait_destination(&selected.reference).unwrap()),
+                &mut Recorder::default(),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            actual,
+            std::fs::canonicalize(folder)
+                .unwrap()
+                .join("Bestätigung.pdf")
+        );
+        assert_eq!(std::fs::read(&actual).unwrap(), b"keep");
+        assert!(!original.exists());
+        assert!(
+            service
+                .wait_follow_up_with_backend(1, WaitFollowUp::Delete, &mut Recorder::default())
+                .is_err()
+        );
+        let service = completed_file_wait(&actual);
+        let renamed = service
+            .wait_follow_up_with_backend(
+                1,
+                WaitFollowUp::Rename("Neue Bestätigung.pdf".into()),
+                &mut Recorder::default(),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            renamed,
+            actual.parent().unwrap().join("Neue Bestätigung.pdf")
+        );
+        assert_eq!(std::fs::read(renamed).unwrap(), b"keep");
+        assert!(!actual.exists());
+    }
+    #[test]
+    fn folder_picker_references_expire_and_reject_arbitrary_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let service = completed_file_wait(&root.path().join("unused"));
+        let first = service
+            .capture_wait_destination(root.path().into())
+            .unwrap();
+        let second = service
+            .capture_wait_destination(root.path().into())
+            .unwrap();
+        assert_ne!(first.reference, second.reference);
+        assert!(service.wait_destination(&first.reference).is_err());
+        assert_eq!(
+            service.wait_destination(&second.reference).unwrap(),
+            std::fs::canonicalize(root.path()).unwrap()
+        );
+        assert!(service.wait_destination("../../other").is_err());
+    }
+    #[test]
+    fn renaming_and_moving_do_not_replace_a_destination_or_bypass_a_returning_holder() {
+        let root = tempfile::tempdir().unwrap();
+        let original = root.path().join("source.pdf");
+        let destination = root.path().join("existing.pdf");
+        std::fs::write(&original, b"source").unwrap();
+        std::fs::write(&destination, b"destination").unwrap();
+        let service = completed_file_wait(&original);
+        let failure = service
+            .wait_follow_up_with_backend(
+                1,
+                WaitFollowUp::Rename("existing.pdf".into()),
+                &mut Recorder::default(),
+            )
+            .unwrap_err();
+        assert!(failure.os_code.is_some());
+        assert_eq!(std::fs::read(&original).unwrap(), b"source");
+        assert_eq!(std::fs::read(&destination).unwrap(), b"destination");
+        for action in [
+            WaitFollowUp::Rename("changed.pdf".into()),
+            WaitFollowUp::Move(root.path().into()),
+            WaitFollowUp::Delete,
+            WaitFollowUp::Reveal,
+        ] {
+            let service = completed_file_wait(&original);
+            let error = service
+                .wait_follow_up_with_backend(
+                    1,
+                    action,
+                    &mut HeldFixture {
+                        scans: Arc::new(AtomicUsize::new(0)),
+                    },
+                )
+                .unwrap_err();
+            assert_eq!(error.kind, "wait_target_held");
+            assert_eq!(std::fs::read(&original).unwrap(), b"source");
+        }
+        for name in ["../escape.pdf", "NUL.pdf", "bad?.pdf"] {
+            let service = completed_file_wait(&original);
+            assert!(
+                service
+                    .wait_follow_up_with_backend(
+                        1,
+                        WaitFollowUp::Rename(name.into()),
+                        &mut Recorder::default()
+                    )
+                    .is_err()
+            );
+            assert_eq!(std::fs::read(&original).unwrap(), b"source");
+        }
+    }
+    #[test]
+    fn cancelled_follow_up_cannot_change_files_or_overwrite_a_new_wait_outcome() {
+        let root = tempfile::tempdir().unwrap();
+        let original = root.path().join("source.pdf");
+        let next = root.path().join("next.pdf");
+        std::fs::write(&original, b"source").unwrap();
+        std::fs::write(&next, b"next").unwrap();
+        let service = Arc::new(completed_file_wait(&original));
+        let (started_sender, started) = channel();
+        let (release, release_receiver) = channel();
+        let worker_service = service.clone();
+        let worker = std::thread::spawn(move || {
+            worker_service.wait_follow_up_with_backend(
+                1,
+                WaitFollowUp::Rename("changed.pdf".into()),
+                &mut Gated {
+                    started: started_sender,
+                    release: release_receiver,
+                },
+            )
+        });
+        started.recv_timeout(TIMEOUT).unwrap();
+        service.cancel_wait();
+        let newer = service.wait_until_free(WaitRequest {
+            path: Some(next),
+            include_ports: false,
+            port: None,
+            timeout: Some(Duration::from_secs(5)),
+        });
+        assert_ne!(newer.wait.id, 1);
+        release.send(()).unwrap();
+        assert_eq!(worker.join().unwrap().unwrap_err().kind, "cancelled");
+        assert_eq!(service.status().wait.id, newer.wait.id);
+        assert!(service.status().wait.error.is_none());
+        assert_eq!(std::fs::read(&original).unwrap(), b"source");
+        assert!(!root.path().join("changed.pdf").exists());
     }
 }

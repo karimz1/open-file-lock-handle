@@ -33,7 +33,32 @@ const de: TranslationSchema<typeof en> = {
     k_follow_up: "Nach der Freigabe",
     k_notify_only: "Nur benachrichtigen",
     k_reveal: "Im Dateimanager anzeigen",
-    k_move: "In einen Ordner verschieben…",
+    k_move: "In einen Ordner verschieben und anzeigen",
+    k_rename: "Umbenennen und anzeigen",
+    k_destination: "Zielordner",
+    k_no_destination: "Wähle vor dem Start einen Ordner aus.",
+    k_choose_destination: "Ordner auswählen…",
+    k_change_destination: "Ordner ändern…",
+    k_new_name: "Neuer Name",
+    k_name_hint:
+      "Gib die Dateiendung mit an. Die Datei bleibt im bisherigen Ordner.",
+    k_invalid_name:
+      "Gib einen anderen Dateinamen ohne Pfad, reservierte Zeichen oder Gerätenamen ein.",
+    k_result_path: "Neuer Pfad",
+    k_reveal_after_change:
+      "Nach Erfolg öffnet sich der Dateimanager an diesem Ort und markiert das Ergebnis. Bestehende Einträge werden niemals ersetzt.",
+    k_confirm_rename:
+      "Dieses ausgewählte Ziel nach einer abschließenden Freiprüfung umbenennen.",
+    k_follow_up_running: "Gewählte Folgeaktion wird ausgeführt…",
+    k_follow_up_failed: "Die Folgeaktion ist fehlgeschlagen.",
+    k_moved: "In den gewählten Ordner verschoben.",
+    k_renamed: "Umbenannt.",
+    k_deleted: "Gelöscht.",
+    k_revealed: "Im Dateimanager angezeigt.",
+    k_reveal_failed:
+      "Die Aktion war erfolgreich, aber der Dateimanager konnte das Ergebnis nicht öffnen.",
+    k_notification_failed:
+      "Die Aktion war erfolgreich, aber die Desktop-Benachrichtigung konnte nicht angezeigt werden.",
     k_delete: "Löschen",
     k_start: "Warten starten",
     k_waiting: "Warten, bis das Ziel frei ist",

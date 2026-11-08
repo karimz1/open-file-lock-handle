@@ -30,7 +30,31 @@ const en = {
     k_follow_up: "After it becomes free",
     k_notify_only: "Notify only",
     k_reveal: "Reveal in file manager",
-    k_move: "Move to a folder…",
+    k_move: "Move to a folder and show",
+    k_rename: "Rename and show",
+    k_destination: "Destination folder",
+    k_no_destination: "Choose a folder before starting.",
+    k_choose_destination: "Choose folder…",
+    k_change_destination: "Change folder…",
+    k_new_name: "New name",
+    k_name_hint: "Include the extension. The file stays in its current folder.",
+    k_invalid_name:
+      "Enter a different filename without a path, reserved characters, or a device name.",
+    k_result_path: "Resulting path",
+    k_reveal_after_change:
+      "After success, the file manager opens this location and selects the result. Existing items are never replaced.",
+    k_confirm_rename:
+      "Rename this selected target after a final confirming free scan.",
+    k_follow_up_running: "Completing the selected action…",
+    k_follow_up_failed: "The follow-up failed.",
+    k_moved: "Moved to the selected folder.",
+    k_renamed: "Renamed.",
+    k_deleted: "Deleted.",
+    k_revealed: "Revealed in the file manager.",
+    k_reveal_failed:
+      "The action succeeded, but the file manager could not open the result.",
+    k_notification_failed:
+      "The action succeeded, but the desktop notification could not be shown.",
     k_delete: "Delete",
     k_start: "Start waiting",
     k_waiting: "Waiting until the target is free",

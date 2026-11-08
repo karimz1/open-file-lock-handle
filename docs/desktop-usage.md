@@ -413,9 +413,23 @@ accepted inspection. Only one wait runs at a time.
 
 When a confirming scan reports no matching holders, OFLH shows a desktop
 notification and brings the window forward. You can instead select reveal,
-delete or move before starting; move asks for a destination first. A fresh scan
+delete, move or rename before starting. For a move, choose the destination folder
+in the dialog and review the resulting path before starting. For a rename,
+enter one filename, including its extension, in the current folder. Paths,
+reserved device names and invalid filename characters are rejected. A fresh scan
 runs immediately before the selected action and refuses it if a holder returns.
-Moving and deletion require an explicit checkbox for the displayed target and
-never happen just because a wait completed. Starting a new wait resets the
+Moving, renaming and deletion require an explicit checkbox for the displayed
+target and never happen just because a wait completed. Changing the destination
+or name resets this confirmation. Existing destination entries are never
+replaced. Moves across filesystems are not copied automatically; if unsupported,
+the original remains in place and the action reports an error.
+
+After a successful move or rename, OFLH opens the new location in the file
+manager and selects the result, keeping focus there. The status and desktop
+notification name the actual resulting path only after the action completes.
+If opening the file manager fails, the status still shows the successful
+filesystem action and new path, with a separate warning.
+
+Starting a new wait resets the
 follow-up to **Notify only**. Notifications and follow-ups belong to the
 specific wait; cancelled or replaced results cannot complete a newer wait.

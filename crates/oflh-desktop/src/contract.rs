@@ -180,6 +180,18 @@ pub struct WaitStatus {
     pub outcome: Option<&'static str>,
     pub error: Option<Failure>,
 }
+/// Finished filesystem action; a reveal failure does not undo a successful move.
+#[derive(Clone, Debug, Serialize)]
+pub struct WaitFollowUpResult {
+    /// Completed action name (`reveal`, `move`, `rename`, or `delete`).
+    pub action: String,
+    /// Actual resulting display path, absent after deletion; never an action input.
+    pub path: Option<String>,
+    /// File manager could not open the result although the filesystem action succeeded.
+    pub reveal_error: Option<Failure>,
+    /// Optional desktop notification failed after the filesystem action completed.
+    pub notification_error: Option<Failure>,
+}
 
 /// Live work counters, distinct from the accepted snapshot's result counts.
 #[derive(Clone, Debug, Serialize)]

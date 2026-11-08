@@ -3095,6 +3095,49 @@ kbd.shortcut {
   gap: 14px;
   margin: 18px 0 8px;
 }
+.wait-field-label {
+  font-weight: 550;
+  font-size: 0.9231rem;
+}
+.wait-destination,
+.wait-result-preview {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.wait-destination-picker {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.wait-destination-picker p {
+  flex: 1 1 220px;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.wait-destination-picker button {
+  flex: none;
+}
+.wait-result-preview p {
+  overflow-wrap: anywhere;
+  margin: 6px 0 0;
+}
+.wait-field > .hint,
+.wait-field > .danger-text {
+  font-size: 0.8462rem;
+  line-height: 1.5;
+}
+.wait-completion-warning {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 0.8462rem;
+}
 .wait-field {
   display: grid;
   gap: 7px;

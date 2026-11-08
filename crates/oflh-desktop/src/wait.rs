@@ -2,7 +2,12 @@
 use crate::contract::*;
 
 /// Notify only after a validated file/port release or captured process exit.
-pub fn notify_free(app: &tauri::AppHandle, title: &str, body: &str) -> Result<(), Failure> {
+pub fn notify_free(
+    app: &tauri::AppHandle,
+    title: &str,
+    body: &str,
+    focus: bool,
+) -> Result<(), Failure> {
     use tauri::Manager;
     use tauri_plugin_notification::NotificationExt;
     app.notification()
@@ -13,12 +18,40 @@ pub fn notify_free(app: &tauri::AppHandle, title: &str, body: &str) -> Result<()
         .map_err(|error| {
             Failure::invalid(oflh_core::safe(&format!("Show free notification: {error}")))
         })?;
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_webview_window("main")
+        && focus
+    {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
     }
     Ok(())
+}
+/// Announce the finished action and its actual destination, rather than an early free scan.
+pub fn follow_up_notification(locale: &str, action: &str, path: &str) -> (&'static str, String) {
+    let title = if locale.starts_with("de") {
+        match action {
+            "move" => "OFLH: Verschoben",
+            "rename" => "OFLH: Umbenannt",
+            "delete" => "OFLH: Gelöscht",
+            _ => "OFLH: Im Dateimanager angezeigt",
+        }
+    } else if locale.starts_with("zh") {
+        match action {
+            "move" => "OFLH：已移动",
+            "rename" => "OFLH：已重命名",
+            "delete" => "OFLH：已删除",
+            _ => "OFLH：已在文件管理器中显示",
+        }
+    } else {
+        match action {
+            "move" => "OFLH: Moved",
+            "rename" => "OFLH: Renamed",
+            "delete" => "OFLH: Deleted",
+            _ => "OFLH: Revealed in file manager",
+        }
+    };
+    (title, path.to_owned())
 }
 
 /// Localized desktop toast naming the completed selection and its scope.
@@ -59,6 +92,21 @@ pub fn notification_message(locale: &str, target: &WaitTargetView) -> (&'static 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn follow_up_notifications_name_the_completed_action_and_actual_destination() {
+        for (locale, moved, renamed) in [
+            ("en-GB", "Moved", "Renamed"),
+            ("de-DE", "Verschoben", "Umbenannt"),
+            ("zh-CN", "已移动", "已重命名"),
+        ] {
+            let path = "/build/destination/Bestätigung neu.pdf";
+            for (action, expected) in [("move", moved), ("rename", renamed)] {
+                let (title, body) = follow_up_notification(locale, action, path);
+                assert!(title.contains(expected));
+                assert_eq!(body, path);
+            }
+        }
+    }
     #[test]
     fn notification_text_identifies_the_completed_process_and_target() {
         let target = WaitTargetView {

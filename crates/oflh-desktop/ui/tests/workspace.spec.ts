@@ -250,6 +250,55 @@ test.beforeEach(async ({ page }) => {
             });
           }
           if (command === "notify_wait_free") return;
+          if (command === "choose_wait_destination") {
+            const folders = (window as any).__waitFolders;
+            const folder = folders
+              ? (folders.shift() ?? null)
+              : { display: "/build/destination", reference: "folder-1" };
+            if (folder) (window as any).__chosenWaitFolder = folder;
+            return folder;
+          }
+          if (command === "wait_follow_up") {
+            if ((window as any).__holdWaitFollowUp)
+              await new Promise<void>((resolve) => {
+                (window as any).__releaseWaitFollowUp = resolve;
+              });
+            if ((window as any).__failWaitFollowUp)
+              throw {
+                kind: "io",
+                message: "Synthetic move failure",
+                os_code: 5,
+              };
+            const folder = (window as any).__chosenWaitFolder;
+            if (
+              args.action === "move" &&
+              args.destination !== folder?.reference
+            )
+              throw new Error("Unknown native folder reference");
+            const path =
+              args.action === "move"
+                ? `${folder.display}/Bestellbestätigung .pdf`
+                : args.action === "rename"
+                  ? `/build/documents/${args.newName}`
+                  : args.action === "delete"
+                    ? null
+                    : "/build/documents/Bestellbestätigung .pdf";
+            const reveal_error = (window as any).__failWaitReveal
+              ? {
+                  kind: "io",
+                  message: "Synthetic file manager failure",
+                  os_code: 5,
+                }
+              : null;
+            if (path && !reveal_error)
+              ((window as any).__revealedWaitPaths ??= []).push(path);
+            return {
+              action: args.action,
+              path,
+              reveal_error,
+              notification_error: null,
+            };
+          }
           if (command === "focus_window") return;
           // Terminal-server fixture: several people signed in at once.
           const multi = (window as any).__multiUser as
@@ -6520,6 +6569,238 @@ test("file waiting confirms destructive follow-ups and resets them for another s
   await expect(dialog.getByLabel("After it becomes free")).toHaveValue("none");
 });
 
+async function openFileWait(
+  page: import("@playwright/test").Page,
+  flags: Record<string, unknown> = {},
+) {
+  await page.addInitScript((flags) => {
+    Object.assign(window, { __fileMatchFixture: true }, flags);
+  }, flags);
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page
+    .locator(".matching-file-list > li")
+    .first()
+    .getByRole("button", { name: "Wait for file to become free" })
+    .click();
+  return page.getByRole("dialog");
+}
+
+test("move reviews the chosen folder and awaits the real result before announcing success", async ({
+  page,
+}) => {
+  const dialog = await openFileWait(page, {
+    __emitWaitFree: true,
+    __holdWaitFollowUp: true,
+  });
+  await dialog.getByLabel("After it becomes free").selectOption("move");
+  const start = dialog.getByRole("button", { name: "Start waiting" });
+  await expect(start).toBeDisabled();
+  await dialog
+    .getByRole("button", { name: "Choose folder…", exact: true })
+    .click();
+  await expect(dialog.locator(".wait-destination")).toContainText(
+    "/build/destination",
+  );
+  await expect(dialog.locator(".wait-result-preview")).toContainText(
+    "/build/destination/Bestellbestätigung .pdf",
+  );
+  await dialog
+    .getByRole("checkbox", {
+      name: "Move this selected target after a final confirming free scan.",
+    })
+    .check();
+  await expect(start).toBeEnabled();
+  await start.click();
+  const activity = page.getByRole("region", { name: "Selected target wait" });
+  await expect(activity).toContainText("Completing the selected action…");
+  await expect(activity).not.toContainText("Moved to the selected folder.");
+  expect(
+    await page.evaluate(() => (window as any).__revealedWaitPaths ?? []),
+  ).toEqual([]);
+  await page.evaluate(() => (window as any).__releaseWaitFollowUp());
+  await expect(activity).toContainText("Moved to the selected folder.");
+  await expect(
+    activity.getByRole("button", { name: "Wait again" }),
+  ).toHaveCount(0);
+  await expect(activity).toContainText(
+    "/build/destination/Bestellbestätigung .pdf",
+  );
+  expect(
+    await page.evaluate(() => (window as any).__revealedWaitPaths),
+  ).toEqual(["/build/destination/Bestellbestätigung .pdf"]);
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  const action = calls.find((call: any) => call.command === "wait_follow_up");
+  expect(action.args.destination).toBe("folder-1");
+  expect(action.args.newName).toBeNull();
+  expect(action.args.waitId).toBe(1);
+  expect(
+    calls.filter((call: any) => call.command === "wait_follow_up"),
+  ).toHaveLength(1);
+  expect(calls.some((call: any) => call.command === "notify_wait_free")).toBe(
+    false,
+  );
+});
+
+test("folder cancellation preserves the reviewed folder and a new choice resets confirmation", async ({
+  page,
+}) => {
+  const dialog = await openFileWait(page, {
+    __waitFolders: [
+      null,
+      { display: "/build/destination", reference: "folder-1" },
+      null,
+      { display: "/build/other", reference: "folder-2" },
+    ],
+  });
+  await dialog.getByLabel("After it becomes free").selectOption("move");
+  await dialog
+    .getByRole("button", { name: "Choose folder…", exact: true })
+    .click();
+  await expect(dialog).toContainText("Choose a folder before starting.");
+  await expect(
+    dialog.getByRole("button", { name: "Start waiting" }),
+  ).toBeDisabled();
+  await dialog
+    .getByRole("button", { name: "Choose folder…", exact: true })
+    .click();
+  const confirm = dialog.getByRole("checkbox", {
+    name: "Move this selected target after a final confirming free scan.",
+  });
+  await confirm.check();
+  await dialog
+    .getByRole("button", { name: "Change folder…", exact: true })
+    .click();
+  await expect(confirm).toBeChecked();
+  await expect(dialog.locator(".wait-result-preview")).toContainText(
+    "/build/destination/",
+  );
+  await dialog
+    .getByRole("button", { name: "Change folder…", exact: true })
+    .click();
+  await expect(confirm).not.toBeChecked();
+  await expect(dialog.locator(".wait-result-preview")).toContainText(
+    "/build/other/",
+  );
+});
+
+test("rename validates the name, reviews its path and reveals the returned result", async ({
+  page,
+}) => {
+  const dialog = await openFileWait(page, { __emitWaitFree: true });
+  await dialog.getByLabel("After it becomes free").selectOption("rename");
+  const name = dialog.getByRole("textbox", { name: "New name", exact: true });
+  const start = dialog.getByRole("button", { name: "Start waiting" });
+  for (const invalid of [
+    "../escape.pdf",
+    "NUL.pdf",
+    "bad?.pdf",
+    "Bestellbestätigung .pdf",
+  ]) {
+    await name.fill(invalid);
+    await expect(name).toHaveAttribute("aria-invalid", "true");
+    await expect(start).toBeDisabled();
+  }
+  await name.fill("Bestätigung archiviert.pdf");
+  await expect(dialog.locator(".wait-result-preview")).toContainText(
+    "Bestätigung archiviert.pdf",
+  );
+  await dialog
+    .getByRole("checkbox", {
+      name: "Rename this selected target after a final confirming free scan.",
+    })
+    .check();
+  await name.fill("Bestätigung fertig.pdf");
+  await expect(start).toBeDisabled();
+  await dialog
+    .getByRole("checkbox", {
+      name: "Rename this selected target after a final confirming free scan.",
+    })
+    .check();
+  await start.click();
+  const activity = page.getByRole("region", { name: "Selected target wait" });
+  await expect(activity).toContainText("Renamed.");
+  await expect(
+    activity.getByRole("button", { name: "Wait again" }),
+  ).toHaveCount(0);
+  await expect(activity).toContainText(
+    "/build/documents/Bestätigung fertig.pdf",
+  );
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls.find((call: any) => call.command === "wait_follow_up").args.newName,
+  ).toBe("Bestätigung fertig.pdf");
+  expect(
+    await page.evaluate(() => (window as any).__revealedWaitPaths),
+  ).toEqual(["/build/documents/Bestätigung fertig.pdf"]);
+});
+
+for (const failure of ["operation", "reveal"] as const) {
+  test(`move distinguishes ${failure} failure from a completed move`, async ({
+    page,
+  }) => {
+    const dialog = await openFileWait(page, {
+      __emitWaitFree: true,
+      __failWaitFollowUp: failure === "operation",
+      __failWaitReveal: failure === "reveal",
+    });
+    await dialog.getByLabel("After it becomes free").selectOption("move");
+    await dialog
+      .getByRole("button", { name: "Choose folder…", exact: true })
+      .click();
+    await dialog
+      .getByRole("checkbox", {
+        name: "Move this selected target after a final confirming free scan.",
+      })
+      .check();
+    await dialog.getByRole("button", { name: "Start waiting" }).click();
+    const activity = page.getByRole("region", { name: "Selected target wait" });
+    if (failure === "operation") {
+      await expect(activity).toContainText("The follow-up failed.");
+      await expect(activity).not.toContainText("Moved to the selected folder.");
+    } else {
+      await expect(activity).toContainText("Moved to the selected folder.");
+      await expect(activity).toContainText(
+        "The action succeeded, but the file manager could not open the result.",
+      );
+      await expect(activity).toContainText(
+        "/build/destination/Bestellbestätigung .pdf",
+      );
+    }
+    expect(
+      await page.evaluate(() => (window as any).__revealedWaitPaths ?? []),
+    ).toEqual([]);
+  });
+}
+
+test("cancelled move waits do not run any follow-up", async ({ page }) => {
+  const dialog = await openFileWait(page);
+  await dialog.getByLabel("After it becomes free").selectOption("move");
+  await dialog
+    .getByRole("button", { name: "Choose folder…", exact: true })
+    .click();
+  await dialog
+    .getByRole("checkbox", {
+      name: "Move this selected target after a final confirming free scan.",
+    })
+    .check();
+  await dialog.getByRole("button", { name: "Start waiting" }).click();
+  await page
+    .getByRole("region", { name: "Selected target wait" })
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await expect(
+    page.getByText("Waiting cancelled.", { exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      (window as any).__testCalls.filter(
+        (call: any) => call.command === "wait_follow_up",
+      ),
+    ),
+  ).toEqual([]);
+});
+
 for (const [theme, scheme] of [
   ["light", "light"],
   ["rider", "dark"],
@@ -6677,6 +6958,56 @@ for (const [theme, scheme] of [
       ).toBeInViewport();
       await page.screenshot({
         path: `test-results/wait-theme-${theme}-${scheme}-${fontSize}.png`,
+      });
+      await dialog.getByLabel("After it becomes free").selectOption("move");
+      await page.evaluate(() => {
+        (window as any).__waitFolders = [
+          {
+            display: "/build/" + "long-destination/".repeat(12),
+            reference: "long-folder",
+          },
+        ];
+      });
+      await dialog
+        .getByRole("button", { name: "Choose folder…", exact: true })
+        .click();
+      await expect(dialog.locator(".wait-result-preview")).toContainText(
+        "Bestellbestätigung .pdf",
+      );
+      expect(
+        await dialog
+          .locator(".modal-body")
+          .evaluate(
+            (element) => element.scrollWidth <= element.clientWidth + 1,
+          ),
+      ).toBe(true);
+      await expect(
+        dialog.getByRole("button", { name: "Start waiting" }),
+      ).toBeInViewport();
+      await page.screenshot({
+        path: `test-results/wait-move-${theme}-${scheme}-${fontSize}.png`,
+      });
+      await dialog.getByLabel("After it becomes free").selectOption("rename");
+      const newName = dialog.getByRole("textbox", {
+        name: "New name",
+        exact: true,
+      });
+      await newName.fill("Bestätigung archiviert.pdf");
+      const nameColors = await readability(newName);
+      expect(nameColors.text).toBeGreaterThanOrEqual(4.5);
+      expect(nameColors.border).toBeGreaterThanOrEqual(3);
+      expect(
+        await dialog
+          .locator(".modal-body")
+          .evaluate(
+            (element) => element.scrollWidth <= element.clientWidth + 1,
+          ),
+      ).toBe(true);
+      await expect(
+        dialog.getByRole("button", { name: "Start waiting" }),
+      ).toBeInViewport();
+      await page.screenshot({
+        path: `test-results/wait-rename-${theme}-${scheme}-${fontSize}.png`,
       });
     });
   }

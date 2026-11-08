@@ -1,17 +1,42 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Hourglass, Info, TimerOff, X } from "lucide-react";
-import { api, type Status, type WaitSelection } from "./api";
+import {
+  Check,
+  ChevronDown,
+  FolderOpen,
+  Hourglass,
+  Info,
+  TimerOff,
+  X,
+} from "lucide-react";
+import {
+  api,
+  errorMessage,
+  type Status,
+  type WaitSelection,
+  type PathValue,
+  type WaitFollowUpResult,
+} from "./api";
+import {
+  validWaitName,
+  waitPathParts,
+  waitDestinationPreview,
+} from "./waitActions";
 import { Modal } from "./Modal";
 import { locale, t } from "./i18n";
 
-export type FollowUp = "none" | "reveal" | "delete" | "move";
+export type FollowUp = "none" | "reveal" | "delete" | "move" | "rename";
 interface WaitOptions {
   selection: WaitSelection;
   timeoutSeconds: number | null;
   followUp: FollowUp;
   destination: string | null;
+  newName: string | null;
   id?: number;
 }
+type FollowUpProgress =
+  | { id: number; state: "running" }
+  | { id: number; state: "done"; result: WaitFollowUpResult }
+  | { id: number; state: "failed"; message: string };
 export function elapsedLabel(ms: number) {
   const seconds = Math.floor(ms / 1000);
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
@@ -35,22 +60,56 @@ function WaitDialog({
   const [seconds, setSeconds] = useState(300);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [destination, setDestination] = useState<PathValue | null>(null);
+  const [newName, setNewName] = useState("");
   const kind = selection.target.kind;
-  const destructive = followUp === "delete" || followUp === "move";
+  const destructive =
+    followUp === "delete" || followUp === "move" || followUp === "rename";
+  const validName =
+    validWaitName(newName) && newName !== waitPathParts(selection.display).name;
+  const validAction =
+    (followUp !== "move" || destination !== null) &&
+    (followUp !== "rename" || validName);
+  const resultPreview =
+    followUp === "move" && destination
+      ? waitDestinationPreview(destination.display, selection.display)
+      : followUp === "rename" && validName
+        ? waitPathParts(selection.display).parent + newName
+        : null;
+  const chooseDestination = async () => {
+    setBusy(true);
+    try {
+      const folder = await api.chooseWaitDestination();
+      if (folder) {
+        setDestination(folder);
+        setConfirmed(false);
+      }
+    } catch (error) {
+      report(error);
+    } finally {
+      setBusy(false);
+    }
+  };
   const validTimeout =
     !deadline ||
     (Number.isInteger(seconds) && seconds >= 1 && seconds <= 86400);
   const begin = async () => {
+    if (
+      !current ||
+      busy ||
+      !validTimeout ||
+      !validAction ||
+      (destructive && !confirmed)
+    )
+      return;
     setBusy(true);
     try {
-      const destination =
-        followUp === "move" ? await api.chooseWaitDestination() : null;
-      if (followUp === "move" && !destination) return;
       await start({
         selection,
         timeoutSeconds: deadline ? seconds : null,
         followUp,
-        destination,
+        destination: followUp === "move" ? destination!.reference : null,
+        newName: followUp === "rename" ? newName : null,
       });
       close();
     } catch (error) {
@@ -99,6 +158,7 @@ function WaitDialog({
         <label className="checkbox-label">
           <input
             type="checkbox"
+            disabled={busy}
             checked={deadline}
             onChange={(event) => setDeadline(event.target.checked)}
           />
@@ -109,6 +169,7 @@ function WaitDialog({
             {t("wait.k_seconds")}
             <input
               type="number"
+              disabled={busy}
               min="1"
               max="86400"
               step="1"
@@ -127,6 +188,7 @@ function WaitDialog({
             <span className="wait-select">
               <select
                 value={followUp}
+                disabled={busy}
                 onChange={(event) => {
                   setFollowUp(event.target.value as FollowUp);
                   setConfirmed(false);
@@ -135,23 +197,85 @@ function WaitDialog({
                 <option value="none">{t("wait.k_notify_only")}</option>
                 <option value="reveal">{t("wait.k_reveal")}</option>
                 <option value="move">{t("wait.k_move")}</option>
+                <option value="rename">{t("wait.k_rename")}</option>
                 <option value="delete">{t("wait.k_delete")}</option>
               </select>
               <ChevronDown aria-hidden="true" />
             </span>
           </label>
         )}
+        {followUp === "move" && (
+          <div className="wait-destination">
+            <span className="wait-field-label">{t("wait.k_destination")}</span>
+            <div className="wait-destination-picker">
+              <p className={destination ? "mono" : "muted"}>
+                {destination?.display || t("wait.k_no_destination")}
+              </p>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void chooseDestination()}
+              >
+                <FolderOpen size={15} />
+                {t(
+                  destination
+                    ? "wait.k_change_destination"
+                    : "wait.k_choose_destination",
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+        {followUp === "rename" && (
+          <label className="wait-field">
+            {t("wait.k_new_name")}
+            <input
+              type="text"
+              aria-label={t("wait.k_new_name")}
+              disabled={busy}
+              value={newName}
+              spellCheck={false}
+              placeholder={waitPathParts(selection.display).name}
+              onChange={(event) => {
+                setNewName(event.target.value);
+                setConfirmed(false);
+              }}
+              aria-invalid={newName !== "" && !validName}
+              aria-describedby="wait-name-hint"
+            />
+            <span
+              id="wait-name-hint"
+              className={newName !== "" && !validName ? "danger-text" : "hint"}
+            >
+              {t(
+                newName !== "" && !validName
+                  ? "wait.k_invalid_name"
+                  : "wait.k_name_hint",
+              )}
+            </span>
+          </label>
+        )}
+        {resultPreview && (
+          <div className="wait-result-preview">
+            <span className="wait-field-label">{t("wait.k_result_path")}</span>
+            <p className="mono">{resultPreview}</p>
+            <p className="hint">{t("wait.k_reveal_after_change")}</p>
+          </div>
+        )}
         {destructive && (
           <label className="checkbox-label wait-confirm">
             <input
               type="checkbox"
+              disabled={busy}
               checked={confirmed}
               onChange={(event) => setConfirmed(event.target.checked)}
             />
             {t(
               followUp === "delete"
                 ? "wait.k_confirm_delete"
-                : "wait.k_confirm_move",
+                : followUp === "rename"
+                  ? "wait.k_confirm_rename"
+                  : "wait.k_confirm_move",
             )}
           </label>
         )}
@@ -168,7 +292,11 @@ function WaitDialog({
         <button
           className="primary"
           disabled={
-            !current || busy || !validTimeout || (destructive && !confirmed)
+            !current ||
+            busy ||
+            !validTimeout ||
+            !validAction ||
+            (destructive && !confirmed)
           }
           onClick={() => void begin()}
         >
@@ -201,6 +329,9 @@ export function WaitUntilFree({
   const [options, setOptions] = useState<WaitOptions | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [dismissed, setDismissed] = useState<number | null>(null);
+  const [progress, setProgress] = useState<FollowUpProgress | null>(null);
+  const liveWait = useRef(status.wait.id);
+  liveWait.current = status.wait.id;
   const completed = useRef(false);
   const ready = status.wait.outcome === "free";
   const target =
@@ -231,16 +362,29 @@ export function WaitUntilFree({
     )
       return;
     completed.current = true;
-    void (
-      options.followUp === "none"
-        ? api.notifyWaitFree(options.id, locale)
-        : api.waitFollowUp(
-            options.id,
-            options.followUp,
-            options.destination,
-            locale,
-          )
-    ).catch(report);
+    const id = options.id;
+    if (options.followUp === "none") {
+      void api.notifyWaitFree(id, locale).catch(report);
+      return;
+    }
+    setProgress({ id, state: "running" });
+    void api
+      .waitFollowUp(
+        id,
+        options.followUp,
+        options.destination,
+        options.newName,
+        locale,
+      )
+      .then((result) => {
+        if (liveWait.current === id) setProgress({ id, state: "done", result });
+      })
+      .catch((error) => {
+        if (liveWait.current === id) {
+          setProgress({ id, state: "failed", message: errorMessage(error) });
+          report(error);
+        }
+      });
   }, [ready, options, status.wait.id, report]);
   const begin = async (next: WaitOptions) => {
     const waiting = await api.waitForSelection(
@@ -249,6 +393,7 @@ export function WaitUntilFree({
     );
     completed.current = false;
     setDismissed(null);
+    setProgress(null);
     setOptions({ ...next, id: waiting.wait.id });
     onStatus(waiting);
   };
@@ -264,40 +409,76 @@ export function WaitUntilFree({
     target &&
     (status.wait.waiting || ready || failure) &&
     (status.wait.id === undefined || dismissed !== status.wait.id);
+  const activeProgress = progress?.id === status.wait.id ? progress : null;
+  const result =
+    activeProgress?.state === "done" ? activeProgress.result : null;
+  const resultLabel =
+    result &&
+    t(
+      result.action === "move"
+        ? "wait.k_moved"
+        : result.action === "rename"
+          ? "wait.k_renamed"
+          : result.action === "delete"
+            ? "wait.k_deleted"
+            : "wait.k_revealed",
+    );
+  const displayedPath = result?.path || target?.display;
   return (
     <>
       {visible && (
         <section
-          className={`wait-panel ${ready ? "free" : ""}`}
+          className={`wait-panel ${ready && activeProgress?.state !== "failed" ? "free" : ""}`}
           role="region"
           aria-label={t("wait.k_activity")}
           data-wait-panel
         >
-          {status.wait.waiting ? (
+          {status.wait.waiting || activeProgress?.state === "running" ? (
             <Hourglass size={16} />
-          ) : ready ? (
+          ) : ready && activeProgress?.state !== "failed" ? (
             <Check size={16} />
           ) : (
             <TimerOff size={16} />
           )}
           <strong role="status">
-            {status.wait.waiting
-              ? t(
-                  target.kind === "process"
-                    ? "wait.k_waiting_process"
-                    : "wait.k_waiting",
-                )
-              : ready
-                ? t(
-                    target.kind === "process"
-                      ? "wait.k_process_exited"
-                      : "wait.k_free",
-                  )
-                : failure}
+            {activeProgress?.state === "running"
+              ? t("wait.k_follow_up_running")
+              : activeProgress?.state === "failed"
+                ? t("wait.k_follow_up_failed")
+                : resultLabel ||
+                  (status.wait.waiting
+                    ? t(
+                        target.kind === "process"
+                          ? "wait.k_waiting_process"
+                          : "wait.k_waiting",
+                      )
+                    : ready
+                      ? t(
+                          target.kind === "process"
+                            ? "wait.k_process_exited"
+                            : "wait.k_free",
+                        )
+                      : failure)}
           </strong>
-          <span className="wait-resource" title={target.display}>
-            {target.display}
+          <span className="wait-resource" title={displayedPath}>
+            {displayedPath}
           </span>
+          {activeProgress?.state === "failed" && (
+            <span className="wait-completion-warning">
+              {activeProgress.message}
+            </span>
+          )}
+          {result?.reveal_error && (
+            <span className="wait-completion-warning" role="status">
+              {t("wait.k_reveal_failed")} {result.reveal_error.message}
+            </span>
+          )}
+          {result?.notification_error && (
+            <span className="wait-completion-warning" role="status">
+              {t("wait.k_notification_failed")}{" "}
+              {result.notification_error.message}
+            </span>
+          )}
           {status.wait.waiting && (
             <>
               <span className="mono">{elapsedLabel(elapsed)}</span>
@@ -312,10 +493,12 @@ export function WaitUntilFree({
           )}
           {!status.wait.waiting && (
             <>
-              {options && (
+              {options && (!result || result.action === "reveal") && (
                 <button
                   disabled={
-                    disabled || options.selection.revision !== status.revision
+                    disabled ||
+                    activeProgress?.state === "running" ||
+                    options.selection.revision !== status.revision
                   }
                   onClick={() => onChoose(options.selection)}
                 >

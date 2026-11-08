@@ -88,6 +88,12 @@ export interface WaitSelection {
   target: SelectionWaitTarget;
   display: string;
 }
+export interface WaitFollowUpResult {
+  action: "reveal" | "move" | "rename" | "delete";
+  path: string | null;
+  reveal_error: Failure | null;
+  notification_error: Failure | null;
+}
 export type Sort =
   | "relevance"
   | "name"
@@ -310,17 +316,20 @@ export const api = {
   cancelWait: () => invoke<Status>("cancel_wait"),
   notifyWaitFree: (waitId: number, locale?: string) =>
     invoke<void>("notify_wait_free", { waitId, locale: locale ?? null }),
-  chooseWaitDestination: () => invoke<string | null>("choose_wait_destination"),
+  chooseWaitDestination: () =>
+    invoke<PathValue | null>("choose_wait_destination"),
   waitFollowUp: (
     waitId: number,
-    action: "reveal" | "delete" | "move",
+    action: "reveal" | "delete" | "move" | "rename",
     destination: string | null,
+    newName: string | null,
     locale?: string,
   ) =>
-    invoke<void>("wait_follow_up", {
+    invoke<WaitFollowUpResult>("wait_follow_up", {
       waitId,
       action,
       destination,
+      newName,
       locale: locale ?? null,
     }),
   clearRecent: () => invoke<void>("clear_recent"),

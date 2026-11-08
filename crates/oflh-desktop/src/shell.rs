@@ -154,49 +154,59 @@ async fn wait_follow_up(
     app: tauri::AppHandle,
     service: Desktop<'_>,
     action: String,
-    destination: Option<PathBuf>,
+    destination: Option<String>,
+    new_name: Option<String>,
     locale: Option<String>,
     wait_id: u64,
-) -> Result<(), Failure> {
+) -> Result<WaitFollowUpResult, Failure> {
     let service = service.inner().clone();
     blocking(move || {
         let follow_up = match action.as_str() {
             "reveal" => WaitFollowUp::Reveal,
             "delete" => WaitFollowUp::Delete,
-            "move" => WaitFollowUp::Move(
-                destination.ok_or_else(|| Failure::invalid("Choose a move destination first"))?,
+            "move" => WaitFollowUp::Move(service.wait_destination(
+                &destination.ok_or_else(|| Failure::invalid("Choose a move destination first"))?,
+            )?),
+            "rename" => WaitFollowUp::Rename(
+                new_name.ok_or_else(|| Failure::invalid("Enter a new filename first"))?,
             ),
             _ => return Err(Failure::invalid("Unknown wait follow-up")),
         };
-        // Revalidate immediately before the action; native paths never enter JS.
-        let path = service.shared_wait_path(wait_id)?;
-        if action == "reveal" {
-            // Recheck the completed wait before revealing its retained native path.
-            service.wait_follow_up(wait_id, WaitFollowUp::Reveal)?;
-            app.opener()
-                .reveal_item_in_dir(&path)
-                .map_err(integration)?;
-        } else {
-            service.wait_follow_up_in_background(wait_id, follow_up)?;
-        }
-        if let Some(locale) = locale {
-            let target = service.completed_wait_target(wait_id)?;
-            let (title, body) = crate::wait::notification_message(&locale, &target);
-            crate::wait::notify_free(&app, title, &body)?;
-        }
-        Ok(())
+        let target = service.completed_wait_target(wait_id)?;
+        // This blocking worker awaits the actual result. Native paths never enter JS.
+        let path = service.wait_follow_up(wait_id, follow_up)?;
+        crate::wait_files::finish(
+            action.clone(),
+            path,
+            |path| app.opener().reveal_item_in_dir(path).map_err(integration),
+            |display_path| {
+                let Some(locale) = &locale else {
+                    return Ok(());
+                };
+                let (title, body) = crate::wait::follow_up_notification(
+                    locale,
+                    &action,
+                    display_path.unwrap_or(&target.display),
+                );
+                // Keep focus in the file manager after revealing a moved or renamed target.
+                crate::wait::notify_free(&app, title, &body, false)
+            },
+        )
     })
     .await
 }
 #[tauri::command]
-async fn choose_wait_destination(app: tauri::AppHandle) -> Result<Option<PathBuf>, Failure> {
+async fn choose_wait_destination(
+    app: tauri::AppHandle,
+    service: Desktop<'_>,
+) -> Result<Option<PathValue>, Failure> {
+    let service = service.inner().clone();
     blocking(move || {
         app.dialog()
             .file()
             .blocking_pick_folder()
-            .map(|path| path.into_path())
+            .map(|path| service.capture_wait_destination(path.into_path().map_err(integration)?))
             .transpose()
-            .map_err(integration)
     })
     .await
 }
@@ -210,7 +220,7 @@ fn notify_wait_free(
     let locale = locale.unwrap_or_default();
     let target = service.completed_wait_target(wait_id)?;
     let (title, body) = crate::wait::notification_message(&locale, &target);
-    crate::wait::notify_free(&app, title, &body)
+    crate::wait::notify_free(&app, title, &body, true)
 }
 #[tauri::command]
 fn focus_window(app: tauri::AppHandle) {
