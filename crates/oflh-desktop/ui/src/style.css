@@ -3116,6 +3116,25 @@ kbd.shortcut {
   white-space: normal;
   line-height: 1.5;
 }
+.wait-select {
+  display: block;
+  position: relative;
+  min-width: 0;
+}
+.wait-dialog .wait-select select {
+  appearance: none;
+  padding-inline-end: 2.8rem;
+}
+.wait-select > svg {
+  position: absolute;
+  inset-inline-end: 0.9rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1rem;
+  height: 1rem;
+  color: var(--muted);
+  pointer-events: none;
+}
 .matching-files .inline-actions,
 .inspector section .inline-actions {
   flex-wrap: wrap;

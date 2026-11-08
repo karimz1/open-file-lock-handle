@@ -6640,6 +6640,27 @@ for (const [theme, scheme] of [
       const followUpColors = await readability(
         dialog.getByLabel("After it becomes free"),
       );
+      const selectLayout = await dialog
+        .locator(".wait-select")
+        .evaluate((element) => {
+          const select = element.querySelector("select")!;
+          const arrow = element.querySelector("svg")!;
+          const box = select.getBoundingClientRect();
+          const icon = arrow.getBoundingClientRect();
+          return {
+            inset: box.right - icon.right,
+            textPadding: parseFloat(getComputedStyle(select).paddingRight),
+            arrowWidth: icon.width,
+            appearance: getComputedStyle(select).appearance,
+            events: getComputedStyle(arrow).pointerEvents,
+          };
+        });
+      expect(selectLayout.inset).toBeGreaterThanOrEqual(12);
+      expect(selectLayout.textPadding).toBeGreaterThan(
+        selectLayout.inset + selectLayout.arrowWidth,
+      );
+      expect(selectLayout.appearance).toBe("none");
+      expect(selectLayout.events).toBe("none");
       for (const colors of [timeoutColors, followUpColors]) {
         expect(colors.text).toBeGreaterThanOrEqual(4.5);
         expect(colors.border).toBeGreaterThanOrEqual(3);

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Hourglass, Info, TimerOff, X } from "lucide-react";
+import { Check, ChevronDown, Hourglass, Info, TimerOff, X } from "lucide-react";
 import { api, type Status, type WaitSelection } from "./api";
 import { Modal } from "./Modal";
 import { locale, t } from "./i18n";
@@ -124,18 +124,21 @@ function WaitDialog({
         {kind === "file" && (
           <label className="wait-field">
             {t("wait.k_follow_up")}
-            <select
-              value={followUp}
-              onChange={(event) => {
-                setFollowUp(event.target.value as FollowUp);
-                setConfirmed(false);
-              }}
-            >
-              <option value="none">{t("wait.k_notify_only")}</option>
-              <option value="reveal">{t("wait.k_reveal")}</option>
-              <option value="move">{t("wait.k_move")}</option>
-              <option value="delete">{t("wait.k_delete")}</option>
-            </select>
+            <span className="wait-select">
+              <select
+                value={followUp}
+                onChange={(event) => {
+                  setFollowUp(event.target.value as FollowUp);
+                  setConfirmed(false);
+                }}
+              >
+                <option value="none">{t("wait.k_notify_only")}</option>
+                <option value="reveal">{t("wait.k_reveal")}</option>
+                <option value="move">{t("wait.k_move")}</option>
+                <option value="delete">{t("wait.k_delete")}</option>
+              </select>
+              <ChevronDown aria-hidden="true" />
+            </span>
           </label>
         )}
         {destructive && (
