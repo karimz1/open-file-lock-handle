@@ -39,9 +39,9 @@ public abstract class InstallerTestBase
     /// </summary>
     protected static void InspectPage(Window window, string screenshotName)
     {
+        var brandingLine = InstallerWindowDriver.WaitForBrandingLine(window);
         InstallerWindowDriver.SaveScreenshot(window, Reports, screenshotName);
         var frame = window.BoundingRectangle;
-        var brandingLine = InstallerWindowDriver.BrandingLine(window);
         Assert.Multiple(() =>
         {
             Assert.That(InstallerWindowDriver.ShowsBrandingText(window), Is.True, $"{screenshotName}: OFLH branding must be native text.");
