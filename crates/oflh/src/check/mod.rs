@@ -75,13 +75,19 @@ pub fn run(options: Options) -> Result<Outcome, CliError> {
         options.ports,
         options.ports_path_only,
     );
-    let outcome = if oflh_core::check::is_free(&snapshot, check_target) {
-        Outcome::Free
-    } else {
-        Outcome::Held
-    };
+    let outcome = classify(&snapshot, check_target, options.ports);
     output::write(&options, &snapshot, target.as_ref(), outcome)?;
     Ok(outcome)
+}
+
+/// A port listing (`--ports` without `--port`) is held when it lists any binding;
+/// `prepare` has already removed file usages, so the path rule would always say free.
+fn classify(snapshot: &Snapshot, target: oflh_core::check::CheckTarget, ports: bool) -> Outcome {
+    let free = match target {
+        oflh_core::check::CheckTarget::Path if ports => snapshot.processes.is_empty(),
+        target => oflh_core::check::is_free(snapshot, target),
+    };
+    if free { Outcome::Free } else { Outcome::Held }
 }
 
 /// Keep the same visible evidence as a port-filtered TUI result.
@@ -197,5 +203,36 @@ mod tests {
         assert_eq!(snapshot.processes[0].ports[0].number, 3000);
         assert!(snapshot.processes[0].usages.is_empty());
         assert_eq!(snapshot.warnings, ["partial"]);
+    }
+
+    #[test]
+    fn port_listings_are_held_when_they_list_a_binding() {
+        let mut snapshot = Snapshot {
+            processes: vec![Process {
+                usages: vec![Usage::default()],
+                ports: vec![Port {
+                    protocol: Protocol::Tcp,
+                    address: "127.0.0.1".parse().unwrap(),
+                    number: 3000,
+                }],
+                ..Process::default()
+            }],
+            warnings: vec![],
+        };
+        prepare(
+            &mut snapshot,
+            &oflh_core::check::CheckTarget::Path,
+            true,
+            true,
+        );
+        assert_eq!(
+            classify(&snapshot, oflh_core::check::CheckTarget::Path, true),
+            Outcome::Held
+        );
+        snapshot.processes.clear();
+        assert_eq!(
+            classify(&snapshot, oflh_core::check::CheckTarget::Path, true),
+            Outcome::Free
+        );
     }
 }
