@@ -422,7 +422,9 @@ Moving, renaming and deletion require an explicit checkbox for the displayed
 target and never happen just because a wait completed. Changing the destination
 or name resets this confirmation. Existing destination entries are never
 replaced. Moves across filesystems are not copied automatically; if unsupported,
-the original remains in place and the action reports an error.
+the original remains in place and the action reports an error. Deletion is
+permanent: it bypasses the Recycle Bin or Trash, and a folder is deleted with
+everything in it.
 
 After a successful move or rename, OFLH opens the new location in the file
 manager and selects the result, keeping focus there. The status and desktop

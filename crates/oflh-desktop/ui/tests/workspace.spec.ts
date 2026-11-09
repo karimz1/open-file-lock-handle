@@ -6132,6 +6132,7 @@ test.describe("multi-user sessions", () => {
       await details.getByRole("button", { name: "Sign out user…" }).click();
       const dialog = page.getByRole("dialog");
       await expect(dialog).toContainText("Sign out max.muster?");
+      await expect(dialog).not.toContainText("This is your own session.");
       await expect(dialog).toContainText(
         "Unsaved work of max.muster will be lost.",
       );
@@ -6555,7 +6556,7 @@ test("file waiting confirms destructive follow-ups and resets them for another s
   await expect(start).toBeDisabled();
   await dialog
     .getByRole("checkbox", {
-      name: "Delete this target after a final confirming free scan?",
+      name: "Permanently delete this target after a final free scan. A folder is deleted with everything in it; nothing goes to the trash.",
     })
     .check();
   await expect(start).toBeEnabled();

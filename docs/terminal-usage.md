@@ -75,11 +75,16 @@ English.
 | 2 | Bad arguments or usage |
 | 3 | Inspection failed, was cancelled, or is unsupported |
 
+With `--ports` and no `--port`, the check lists port bindings: `oflh check --ports`
+is held when any local binding exists, and `oflh check --ports ./project` is held
+when a process using `./project` has one. File usages are not part of that
+listing; run `oflh check ./project` for them.
+
 With `--json`, stdout contains exactly one object. **Schema version 1** is stable;
 future versions may add fields, so consumers must ignore unknown fields. The
 `target` is `{ "kind": "path", "path": "..." }` or
-`{ "kind": "port", "port": 3000 }`. `free` is the same free/held definition that
-the wait feature will reuse. `processes[]` contains `pid`, `name`, `user`,
+`{ "kind": "port", "port": 3000 }`. `free` uses the same free/held definition as
+`oflh wait`. `processes[]` contains `pid`, `name`, `user`,
 `executable`, `usages[]`, and `ports[]`. Usages contain `path`, `relation`,
 `access`, `deleted`, and `lock` (text evidence or `null`); ports contain
 `protocol` (`tcp` or `udp`), `address`, and `number`. `warnings` contains

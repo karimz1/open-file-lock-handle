@@ -27,9 +27,6 @@ const de: TranslationSchema<typeof en> = {
     k_dismiss: "Wartestatus schließen",
     k_title: "Warten, bis frei",
     k_action: "Warten, bis frei",
-    k_description:
-      "OFLH prüft jede Sekunde erneut. Kein Prozess wird beendet. Vor jeder Folgeaktion erfolgt ein abschließender Frei-Scan.",
-    k_timeout_label: "Zeitgrenze in Sekunden (0 bedeutet keine)",
     k_follow_up: "Nach der Freigabe",
     k_notify_only: "Nur benachrichtigen",
     k_reveal: "Im Dateimanager anzeigen",
@@ -62,17 +59,14 @@ const de: TranslationSchema<typeof en> = {
     k_delete: "Löschen",
     k_start: "Warten starten",
     k_waiting: "Warten, bis das Ziel frei ist",
-    k_elapsed: "Vergangen: {{time}}",
-    k_no_timeout: "Keine Zeitgrenze",
-    k_timeout_limit: "Endet nach {{seconds}} s",
     k_free: "Das Ziel ist frei.",
     k_timeout: "Zeitgrenze erreicht, bevor das Ziel frei wurde.",
     k_held_again:
-      "Ein Nutzer ist zurückgekehrt. Keine Folgeaktion wurde ausgeführt.",
+      "Das Ziel wird wieder verwendet. Es wurde keine Folgeaktion ausgeführt.",
     k_cancelled: "Warten abgebrochen.",
     k_again: "Erneut warten",
     k_confirm_delete:
-      "Dieses Ziel nach einem abschließenden Frei-Scan löschen?",
+      "Dieses Ziel nach einer abschließenden Freiprüfung endgültig löschen. Ein Ordner wird mit seinem gesamten Inhalt gelöscht; nichts landet im Papierkorb.",
   },
   matches: {
     k_title: "Passende Dateien",
@@ -156,6 +150,8 @@ const de: TranslationSchema<typeof en> = {
     k_sign_out_note:
       "Alle Programme in dieser Sitzung werden geschlossen. Nicht gespeicherte Arbeit von {{user}} geht verloren.",
     k_sign_out_button: "{{user}} abmelden",
+    k_sign_out_own_session:
+      "Das ist deine eigene Sitzung. Du wirst abgemeldet, und OFLH wird ebenfalls geschlossen.",
     k_sign_out_processes: "Programme, die geschlossen werden",
     k_sign_out_done: "{{user}} wird abgemeldet.",
     k_share_title: "Über das Netzwerk geöffnet",

@@ -329,7 +329,9 @@ jobs:
         run: Set-DisplayResolution -Width 1920 -Height 1080 -Force
       - name: Dismiss the first-sign-in privacy screen on the ARM64 image
         # The windows-11-arm image shows "Choose privacy settings" over the
-        # desktop, which would cover every installer screenshot.
+        # desktop, which would cover every installer screenshot. Non-blocking:
+        # the next step reports a failure instead of hiding it.
+        id: arm64_privacy
         if: matrix.os == 'windows' && matrix.arch == 'arm64'
         continue-on-error: true
         shell: pwsh
@@ -337,6 +339,13 @@ jobs:
           New-Item -Force 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\OOBE' | Out-Null
           Set-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\OOBE' DisablePrivacyExperience 1 -Type DWord
           Get-Process WWAHost, CloudExperienceHostBroker, CloudExperienceHost -ErrorAction SilentlyContinue | Stop-Process -Force
+      - name: Report the ARM64 privacy screen step
+        if: matrix.os == 'windows' && matrix.arch == 'arm64' && steps.arm64_privacy.outcome != 'success'
+        env:
+          OUTCOME: ${{ steps.arm64_privacy.outcome }}
+        run: |
+          echo "::warning title=ARM64 privacy screen not dismissed::Outcome ${OUTCOME}. Installer screenshots may be covered; the installer tests still run and stay blocking."
+          echo "### ARM64 privacy screen step: $OUTCOME (non-blocking)" >> "$GITHUB_STEP_SUMMARY"
       - name: Windows installer end-to-end workflow
         if: matrix.os == 'windows'
         shell: pwsh
@@ -720,6 +729,7 @@ jobs:
         if: runner.os == 'Windows' && steps.win_session.outcome == 'failure'
         run: |
           echo "::warning title=Second RDP session unavailable::No headless client produced an Active session on this runner. Sign-out / send-message E2E is skipped here; SMB, owner, non-admin and mocked tests stay blocking."
+          echo "### Windows second session unavailable: sign-out E2E skipped (non-blocking)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Windows — SMB opens before the test
         if: runner.os == 'Windows'
@@ -789,6 +799,7 @@ jobs:
         if: runner.os == 'Linux' && steps.linux_session.outcome == 'failure'
         run: |
           echo "::warning title=logind session unavailable::PAMName=login / ssh localhost did not register a session. Sign-out E2E is skipped here; owner and non-root gating stay blocking."
+          echo "### Linux logind session unavailable: sign-out E2E skipped (non-blocking)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Linux — elevated (root) multiuser E2E
         if: runner.os == 'Linux'
@@ -830,12 +841,26 @@ jobs:
           sudo --preserve-env=OFLH_MULTIUSER_E2E,OFLH_E2E_ELEVATED,OFLH_E2E_SIGN_OUT,OFLH_E2E_USER,OFLH_E2E_FILE,OFLH_E2E_PID \
             "${{ steps.bin.outputs.path }}" --ignored --nocapture --test-threads=1
 
-      - name: macOS — non-admin pass (informational)
+      # Non-blocking: the runner user is an administrator, so this pass cannot
+      # drop privileges reliably. The next step reports its real outcome.
+      - name: macOS — non-admin pass (non-blocking)
+        id: mac_nonadmin
         if: runner.os == 'macOS'
         continue-on-error: true
         env:
           OFLH_E2E_TEST_EXE: ${{ steps.bin.outputs.path }}
         run: bash .github/scripts/multiuser/macos.sh nonadmin
+
+      - name: macOS — report the non-admin pass result
+        if: always() && runner.os == 'macOS' && steps.mac_nonadmin.outcome != 'skipped'
+        env:
+          OUTCOME: ${{ steps.mac_nonadmin.outcome }}
+        run: |
+          echo "macOS non-admin pass outcome: $OUTCOME"
+          echo "### macOS non-admin pass: $OUTCOME (non-blocking)" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$OUTCOME" != success ]; then
+            echo "::warning title=macOS non-admin pass ${OUTCOME}::non_admin_cross_user_actions_are_refused did not pass (outcome: ${OUTCOME}). The step is non-blocking; see its log."
+          fi
 
       # ── Shared cleanup / diagnostics ─────────────────────────────────────
       - name: Collect diagnostics on failure
@@ -866,3 +891,36 @@ jobs:
             Linux)   bash .github/scripts/multiuser/linux.sh cleanup ;;
             macOS)   bash .github/scripts/multiuser/macos.sh cleanup ;;
           esac
+
+  # Single status for the whole workflow; see ci.yml. Every matrix leg must
+  # succeed. Intentional skips: prune-tester-builds runs only for release
+  # branches and same-repository release PRs, and administrator_only runs skip
+  # everything except the administrator-recovery matrix.
+  result:
+    name: Desktop result
+    if: always()
+    needs:
+      - installer-dialog
+      - administrator-recovery
+      - frontend
+      - native
+      - prune-tester-builds
+      - package-smoke
+      - archive-smoke
+      - multiuser-e2e
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Require every job and matrix leg to succeed
+        env:
+          RESULT_TITLE: Desktop result
+          NEEDS: ${{ toJSON(needs) }}
+          ALLOWED_SKIPS: >-
+            ${{ inputs.administrator_only
+              && 'installer-dialog frontend native prune-tester-builds package-smoke archive-smoke multiuser-e2e'
+              || 'prune-tester-builds' }}
+        run: node .github/scripts/require-success.mjs

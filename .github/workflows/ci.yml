@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, architecture/redesign-in-rust]
+    branches: [main, architecture/redesign-in-rust, 'release/**']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -36,6 +36,8 @@ jobs:
         run: node --test .github/scripts/render-release-notes.test.mjs
       - name: Test automatic website commits and stable promotion
         run: node --test .github/scripts/sync-updater.test.cjs
+      - name: Test the workflow result aggregation
+        run: node --test .github/scripts/require-success.test.mjs
   lockfile:
     name: Cargo lockfile
     runs-on: ubuntu-24.04
@@ -185,3 +187,22 @@ jobs:
           name: inspection-summary
           path: inspection-summary.md
           retention-days: 14
+  # Single status for the whole workflow. GitHub counts a skipped job as passing
+  # in branch protection, so this job runs even after failures and fails unless
+  # every job above, including all six native matrix legs, succeeded.
+  result:
+    name: CI result
+    if: always()
+    needs: [updater, lockfile, test, inspection-summary]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Require every job and matrix leg to succeed
+        env:
+          RESULT_TITLE: CI result
+          NEEDS: ${{ toJSON(needs) }}
+        run: node .github/scripts/require-success.mjs

@@ -10,71 +10,116 @@ pub(super) fn write(
     target: Option<&oflh_core::Target>,
     outcome: Outcome,
 ) -> Result<(), CliError> {
-    if options.json {
-        let document = to_json(snapshot, target, options, outcome);
-        let stdout = std::io::stdout();
-        let mut stdout = stdout.lock();
-        stdout.write_all(document.as_bytes())?;
-        stdout.write_all(b"\n")?;
-        stdout.flush()?;
+    let mut text = if options.json {
+        to_json(snapshot, target, options, outcome)
     } else {
-        print_human(options, snapshot, target, outcome);
+        human_text(options, snapshot, target, outcome)
+    };
+    if !text.ends_with('\n') {
+        text.push('\n');
+    }
+    let stdout = std::io::stdout();
+    let mut stdout = stdout.lock();
+    // A reader such as `head` may close the pipe early; the exit code still
+    // reports the inspection outcome instead of a panic or an inspection failure.
+    match stdout
+        .write_all(text.as_bytes())
+        .and_then(|()| stdout.flush())
+    {
+        Err(error) if error.kind() != std::io::ErrorKind::BrokenPipe => return Err(error.into()),
+        _ => {}
+    }
+    if !options.json {
+        for warning in &snapshot.warnings {
+            eprintln!("oflh: warning: {}", oflh_core::safe(warning));
+        }
     }
     Ok(())
 }
 
-fn print_human(
+fn human_text(
     options: &Options,
     snapshot: &Snapshot,
     target: Option<&oflh_core::Target>,
     outcome: Outcome,
-) {
+) -> String {
     let language = options.language;
-    let target_description = if let Some(port) = options.port {
-        format!("port {port}")
-    } else if let Some(target) = target {
-        oflh_core::safe(&oflh_core::display_path(&target.path))
-    } else {
-        match language {
-            Language::English => "local ports".into(),
-            Language::German => "lokale Ports".into(),
-            Language::Chinese => "本地端口".into(),
-        }
-    };
-    match outcome {
-        Outcome::Free => match language {
-            Language::English => println!("FREE: no holders found for {target_description}"),
-            Language::German => println!("FREI: Keine Nutzer für {target_description} gefunden"),
-            Language::Chinese => println!("空闲：未发现使用 {target_description} 的进程"),
+    let mut text = String::new();
+    let holders = snapshot.processes.len();
+    let path = target.map(|target| oflh_core::safe(&oflh_core::display_path(&target.path)));
+    let line = match (outcome, options.port, &path, options.ports) {
+        (Outcome::Free, Some(port), _, _) => match language {
+            Language::English => format!("FREE: no local binding on port {port}"),
+            Language::German => format!("FREI: Keine lokale Bindung an Port {port}"),
+            Language::Chinese => format!("空闲：端口 {port} 没有本地绑定"),
         },
-        Outcome::Held => {
-            let holders = snapshot.processes.len();
-            match language {
-                Language::English => {
-                    println!("HELD: {target_description} is used by {holders} process(es)")
-                }
-                Language::German => println!(
-                    "BELEGT: {target_description} wird von {holders} Prozess(en) verwendet"
-                ),
-                Language::Chinese => {
-                    println!("已占用：{holders} 个进程正在使用 {target_description}")
-                }
+        (Outcome::Held, Some(port), _, _) => match language {
+            Language::English => format!("HELD: port {port} is bound by {holders} process(es)"),
+            Language::German => {
+                format!("BELEGT: Port {port} ist von {holders} Prozess(en) gebunden")
             }
-            for process in snapshot.processes.iter().take(5) {
-                println!(
-                    "  {} (PID {})",
-                    oflh_core::safe(&process.name),
-                    process.identity.pid
-                );
+            Language::Chinese => format!("已占用：{holders} 个进程绑定了端口 {port}"),
+        },
+        (Outcome::Free, None, None, _) => match language {
+            Language::English => "FREE: no local port bindings found".into(),
+            Language::German => "FREI: Keine lokalen Portbindungen gefunden".into(),
+            Language::Chinese => "空闲：未发现本地端口绑定".into(),
+        },
+        (Outcome::Held, None, None, _) => match language {
+            Language::English => format!("HELD: {holders} process(es) have local port bindings"),
+            Language::German => format!("BELEGT: {holders} Prozess(e) mit lokalen Portbindungen"),
+            Language::Chinese => format!("已占用：{holders} 个进程有本地端口绑定"),
+        },
+        (Outcome::Free, None, Some(path), true) => match language {
+            Language::English => {
+                format!("FREE: no processes using {path} have local port bindings")
             }
-            if holders > 5 {
-                println!("  +{} more", holders - 5);
+            Language::German => {
+                format!("FREI: Keine Prozesse, die {path} verwenden, haben lokale Portbindungen")
             }
+            Language::Chinese => format!("空闲：使用 {path} 的进程没有本地端口绑定"),
+        },
+        (Outcome::Held, None, Some(path), true) => match language {
+            Language::English => {
+                format!("HELD: {holders} process(es) using {path} have local port bindings")
+            }
+            Language::German => format!(
+                "BELEGT: {holders} Prozess(e), die {path} verwenden, haben lokale Portbindungen"
+            ),
+            Language::Chinese => format!("已占用：{holders} 个使用 {path} 的进程有本地端口绑定"),
+        },
+        (Outcome::Free, None, Some(path), false) => match language {
+            Language::English => format!("FREE: no holders found for {path}"),
+            Language::German => format!("FREI: Keine Nutzer für {path} gefunden"),
+            Language::Chinese => format!("空闲：未发现使用 {path} 的进程"),
+        },
+        (Outcome::Held, None, Some(path), false) => match language {
+            Language::English => format!("HELD: {path} is used by {holders} process(es)"),
+            Language::German => format!("BELEGT: {path} wird von {holders} Prozess(en) verwendet"),
+            Language::Chinese => format!("已占用：{holders} 个进程正在使用 {path}"),
+        },
+    };
+    text.push_str(&line);
+    text.push('\n');
+    if outcome == Outcome::Held {
+        for process in snapshot.processes.iter().take(5) {
+            let _ = writeln!(
+                text,
+                "  {} (PID {})",
+                oflh_core::safe(&process.name),
+                process.identity.pid
+            );
+        }
+        if holders > 5 {
+            let more = holders - 5;
+            let _ = match language {
+                Language::English => writeln!(text, "  +{more} more"),
+                Language::German => writeln!(text, "  +{more} weitere"),
+                Language::Chinese => writeln!(text, "  另有 {more} 个"),
+            };
         }
     }
-    for warning in &snapshot.warnings {
-        eprintln!("oflh: warning: {}", oflh_core::safe(warning));
-    }
+    text
 }
 
 fn to_json(
@@ -199,6 +244,40 @@ fn push_string(json: &mut String, value: &str) {
 mod tests {
     use super::*;
     use oflh_core::{Access, Identity, Port, Protocol, Relation, Usage};
+
+    #[test]
+    fn human_summaries_name_port_listings_and_localize_overflow() {
+        let options = Options {
+            json: false,
+            language: Language::German,
+            path: None,
+            ports: true,
+            port: None,
+            follow_port_folder: true,
+            ports_path_only: false,
+        };
+        let snapshot = Snapshot {
+            processes: (1..=7)
+                .map(|pid| Process {
+                    identity: Identity {
+                        pid,
+                        ..Identity::default()
+                    },
+                    name: format!("p{pid}"),
+                    ..Process::default()
+                })
+                .collect(),
+            warnings: vec![],
+        };
+        let text = human_text(&options, &snapshot, None, Outcome::Held);
+        assert!(
+            text.starts_with("BELEGT: 7 Prozess(e) mit lokalen Portbindungen\n"),
+            "{text}"
+        );
+        assert!(text.ends_with("  +2 weitere\n"), "{text}");
+        let free = human_text(&options, &Snapshot::default(), None, Outcome::Free);
+        assert_eq!(free, "FREI: Keine lokalen Portbindungen gefunden\n");
+    }
 
     #[test]
     fn schema_covers_empty_holder_port_and_warning_cases() {

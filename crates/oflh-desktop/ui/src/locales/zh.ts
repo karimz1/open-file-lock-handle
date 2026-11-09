@@ -26,9 +26,6 @@ const zh: TranslationSchema<typeof en> = {
     k_dismiss: "关闭等待状态",
     k_title: "等待目标空闲",
     k_action: "等待空闲",
-    k_description:
-      "OFLH 每秒重新检查一次，不会结束任何进程。执行后续操作前会再次确认目标已空闲。",
-    k_timeout_label: "超时秒数（0 表示不限制）",
     k_follow_up: "空闲后执行",
     k_notify_only: "仅通知",
     k_reveal: "在文件管理器中显示",
@@ -56,15 +53,13 @@ const zh: TranslationSchema<typeof en> = {
     k_delete: "删除",
     k_start: "开始等待",
     k_waiting: "正在等待目标空闲",
-    k_elapsed: "已等待：{{time}}",
-    k_no_timeout: "无时间限制",
-    k_timeout_limit: "在 {{seconds}} 秒后停止",
     k_free: "目标已空闲。",
     k_timeout: "目标在超时前未变为空闲。",
-    k_held_again: "占用进程再次出现，未执行后续操作。",
+    k_held_again: "目标再次被占用，未执行后续操作。",
     k_cancelled: "等待已取消。",
     k_again: "再次等待",
-    k_confirm_delete: "在最终确认空闲后删除此目标？",
+    k_confirm_delete:
+      "在最终确认空闲后永久删除此目标。文件夹会连同其全部内容一起删除，不会移到回收站。",
   },
   matches: {
     k_title: "匹配的文件",
@@ -144,6 +139,7 @@ const zh: TranslationSchema<typeof en> = {
     k_sign_out_note:
       "此会话中的所有程序都会关闭。{{user}} 未保存的工作将丢失。",
     k_sign_out_button: "注销 {{user}}",
+    k_sign_out_own_session: "这是你自己的会话。你将被注销，OFLH 也会关闭。",
     k_sign_out_processes: "将关闭的程序",
     k_sign_out_done: "正在注销 {{user}}。",
     k_share_title: "通过网络打开",
