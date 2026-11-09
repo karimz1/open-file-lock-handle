@@ -24,6 +24,8 @@
 !include FileFunc.nsh
 
 !define OFLH_WEBSITE_LABEL "oflh.karimzouine.com"
+; Evergreen WebView2 download page shown when automatic setup fails.
+!define OFLH_WEBVIEW2_DOWNLOAD_URL "https://developer.microsoft.com/microsoft-edge/webview2/"
 !define OFLH_CONTEXT_MENU_VERB "oflh-desktop.inspect"
 !define OFLH_CONTEXT_MENU_PREFERENCE "ExplorerContextMenu"
 !define OFLH_SHCNE_ASSOCCHANGED 0x08000000
@@ -64,6 +66,12 @@ LangString oflhInspectFile 2052 "检查文件"
 LangString oflhInspectFolder 1033 "Inspect folder"
 LangString oflhInspectFolder 1031 "Ordner untersuchen"
 LangString oflhInspectFolder 2052 "检查文件夹"
+
+; Shown when the embedded WebView2 bootstrapper cannot install the runtime
+; (offline, blocked download, or policy). Yes opens Microsoft's download page.
+LangString oflhWebView2MissingPrompt 1033 "OFLH Desktop needs the Microsoft Edge WebView2 Runtime. Automatic setup failed (no network, download blocked, or policy).$\r$\n$\r$\nDownload page:$\r$\nhttps://developer.microsoft.com/microsoft-edge/webview2/$\r$\n$\r$\nOpen the download page now?"
+LangString oflhWebView2MissingPrompt 1031 "OFLH Desktop braucht die Microsoft Edge WebView2 Runtime. Die automatische Installation ist fehlgeschlagen (kein Netz, Download blockiert oder Richtlinie).$\r$\n$\r$\nDownload-Seite:$\r$\nhttps://developer.microsoft.com/microsoft-edge/webview2/$\r$\n$\r$\nDownload-Seite jetzt öffnen?"
+LangString oflhWebView2MissingPrompt 2052 "OFLH Desktop 需要 Microsoft Edge WebView2 Runtime。自动安装失败（无网络、下载被阻止或策略限制）。$\r$\n$\r$\n下载页面：$\r$\nhttps://developer.microsoft.com/microsoft-edge/webview2/$\r$\n$\r$\n是否立即打开下载页面？"
 
 ; "" until the welcome page is left; then "1" (checked) or "0" (unchecked).
 Var OflhContextMenuChoice
@@ -154,6 +162,18 @@ Var OflhFrameHeight
   Pop $0
   Pop $R0
 !macroend
+
+; WebView2 is required for the desktop UI. Offer Microsoft's download page
+; when the embedded bootstrapper cannot install the runtime, then abort.
+; Silent installs skip the MessageBox and still abort with webview2AbortError.
+Function OflhWebView2InstallFailed
+  IfSilent oflh_wv2_abort
+  MessageBox MB_ICONEXCLAMATION|MB_YESNO "$(oflhWebView2MissingPrompt)" IDNO oflh_wv2_abort
+  ExecShell "open" "${OFLH_WEBVIEW2_DOWNLOAD_URL}"
+  oflh_wv2_abort:
+  Abort "$(webview2AbortError)"
+FunctionEnd
+
 Function OflhFramePanel
   !insertmacro OFLH_FRAME_PANEL
 FunctionEnd
