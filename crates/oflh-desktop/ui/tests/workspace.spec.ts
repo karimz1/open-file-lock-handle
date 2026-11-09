@@ -197,6 +197,18 @@ test.beforeEach(async ({ page }) => {
               generation: status.generation + 1,
               scanning: false,
             });
+          if (
+            command === "wait_for_selection" &&
+            args.request.delete_after &&
+            (window as any).__protectedDelete
+          )
+            throw {
+              kind: "protected_delete_target",
+              message:
+                "OFLH does not delete drive roots, home folders, or system folders",
+              os_code: null,
+              details: null,
+            };
           if (command === "wait_for_selection") {
             const waiting = (status = {
               ...status,
@@ -6441,6 +6453,7 @@ test("wait has timeout, cancellation, free notification and no automatic follow-
     revision: 1,
     target: { kind: "file", reference: "1:0:0" },
     timeout_seconds: 30,
+    delete_after: false,
   });
   expect(request.path).toBeUndefined();
   await expect(
@@ -6521,6 +6534,7 @@ test("process waiting uses its captured lifetime and offers no file follow-up", 
     revision: 1,
     target: { kind: "process", key: "4000:18446744073709551615:0" },
     timeout_seconds: null,
+    delete_after: false,
   });
   await expect
     .poll(
@@ -6568,6 +6582,19 @@ test("file waiting confirms destructive follow-ups and resets them for another s
     .click();
   await expect(dialog).toContainText("Bestellung-2.pdf");
   await expect(dialog.getByLabel("After it becomes free")).toHaveValue("none");
+});
+
+test("deleting a protected folder is refused before waiting starts", async ({
+  page,
+}) => {
+  const dialog = await openFileWait(page, { __protectedDelete: true });
+  await dialog.getByLabel("After it becomes free").selectOption("delete");
+  await dialog.getByRole("checkbox", { name: /Permanently delete/ }).check();
+  await dialog.getByRole("button", { name: "Start waiting" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "OFLH does not delete drive roots, home folders, or system folders. Choose a file or a folder inside them.",
+  );
+  await expect(page.getByLabel("Selected target wait")).toHaveCount(0);
 });
 
 async function openFileWait(

@@ -504,6 +504,9 @@ impl Service {
         let (path, process, port, description) = match request.target {
             SelectionWaitTarget::File { reference } => {
                 let path = state.dataset.path(&reference)?;
+                if request.delete_after {
+                    crate::wait_files::refuse_protected_delete(&path)?;
+                }
                 let description = WaitTargetView {
                     kind: "file",
                     display: display(&path),
@@ -1581,6 +1584,7 @@ mod tests {
                 reference: reference.into(),
             },
             timeout_seconds: None,
+            delete_after: false,
         };
         assert!(service.wait_for_selection(request(6, "7:0:0")).is_err());
         assert!(service.wait_for_selection(request(7, "6:0:0")).is_err());
@@ -1618,6 +1622,7 @@ mod tests {
             revision: 1,
             target: SelectionWaitTarget::Process { key },
             timeout_seconds: Some(30),
+            delete_after: false,
         };
         assert!(
             service
@@ -1678,6 +1683,7 @@ mod tests {
                     reference: "1:0:port-0".into(),
                 },
                 timeout_seconds: Some(5),
+                delete_after: false,
             })
             .unwrap();
         assert!(matches!(

@@ -390,6 +390,7 @@ export function WaitUntilFree({
     const waiting = await api.waitForSelection(
       next.selection,
       next.timeoutSeconds,
+      next.followUp === "delete",
     );
     completed.current = false;
     setDismissed(null);

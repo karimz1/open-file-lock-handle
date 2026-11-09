@@ -58,6 +58,13 @@ const zh: TranslationSchema<typeof en> = {
     k_held_again: "目标再次被占用，未执行后续操作。",
     k_cancelled: "等待已取消。",
     k_again: "再次等待",
+    k_protected_delete:
+      "OFLH 不会删除驱动器根目录、用户主文件夹或系统文件夹。请选择其中的文件或文件夹。",
+    k_move_unsupported:
+      "此文件系统无法在保证不替换现有项目的情况下移动或重命名。未做任何更改。",
+    k_move_cross_device:
+      "目标位于其他驱动器或文件系统。OFLH 只在同一文件系统内移动，因此未做任何更改。",
+    k_move_into_itself: "文件夹不能移动到其自身内部。请选择其他目标。",
     k_confirm_delete:
       "在最终确认空闲后永久删除此目标。文件夹会连同其全部内容一起删除，不会移到回收站。",
   },

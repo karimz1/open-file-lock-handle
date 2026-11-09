@@ -69,6 +69,15 @@ impl From<Error> for Failure {
     }
 }
 impl Failure {
+    /// A failure with a stable category the UI translates.
+    pub(crate) fn kind(kind: &str, message: impl Into<String>) -> Self {
+        Self {
+            kind: kind.into(),
+            message: message.into(),
+            os_code: None,
+            details: None,
+        }
+    }
     pub(crate) fn invalid(message: impl Into<String>) -> Self {
         Self {
             kind: "invalid_request".into(),
@@ -139,6 +148,9 @@ pub struct SelectionWaitRequest {
     pub target: SelectionWaitTarget,
     /// Deadline in seconds; absence means no deadline.
     pub timeout_seconds: Option<u64>,
+    /// The user chose "Delete" as the follow-up; protected targets are refused up front.
+    #[serde(default)]
+    pub delete_after: bool,
 }
 /// Opaque references prevent display paths and PID-only keys from becoming action inputs.
 #[derive(Clone, Debug, Deserialize)]

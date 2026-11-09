@@ -61,6 +61,14 @@ const en = {
       "The target is in use again. No follow-up action was performed.",
     k_cancelled: "Waiting cancelled.",
     k_again: "Wait again",
+    k_protected_delete:
+      "OFLH does not delete drive roots, home folders, or system folders. Choose a file or a folder inside them.",
+    k_move_unsupported:
+      "This filesystem cannot move or rename without risking replacing an existing item. Nothing was changed.",
+    k_move_cross_device:
+      "The destination is on another drive or filesystem. OFLH only moves within one filesystem, so nothing was changed.",
+    k_move_into_itself:
+      "A folder cannot be moved into itself. Choose a different destination.",
     k_confirm_delete:
       "Permanently delete this target after a final free scan. A folder is deleted with everything in it; nothing goes to the trash.",
   },
