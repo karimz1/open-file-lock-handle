@@ -41,6 +41,13 @@ fn field<'a>(json: &'a str, name: &str) -> Option<&'a str> {
 }
 
 struct Holder(Child);
+impl Holder {
+    /// Close stdin so the fixture drops its handle and exits on its own, then reap it.
+    fn release(mut self) {
+        drop(self.0.stdin.take());
+        let _ = self.0.wait();
+    }
+}
 impl Drop for Holder {
     fn drop(&mut self) {
         let _ = self.0.kill();
@@ -52,7 +59,7 @@ fn hold_file(path: &Path) -> Holder {
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "fixture_holder", "--nocapture"])
         .env("OFLH_CHECK_FIXTURE", path)
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
@@ -86,10 +93,17 @@ fn fixture_holder() {
         use std::os::windows::fs::OpenOptionsExt;
         options.share_mode(0);
     }
-    let _file = options.open(path).unwrap();
+    let file = options.open(path).unwrap();
     println!("OFLH READY");
     std::io::stdout().flush().unwrap();
-    std::thread::park_timeout(Duration::from_secs(120));
+    // Hold until the parent closes stdin (or 120 s pass), then release and exit.
+    let (closed, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = std::io::copy(&mut std::io::stdin(), &mut std::io::sink());
+        let _ = closed.send(());
+    });
+    let _ = receiver.recv_timeout(Duration::from_secs(120));
+    drop(file);
 }
 
 #[test]
@@ -193,11 +207,23 @@ fn wait_returns_when_a_child_releases_a_real_file() {
     let path = directory.path().join("wait-fixture.bin");
     fs::write(&path, b"fixture").unwrap();
     let holder = hold_file(&path);
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(700));
-        drop(holder);
-    });
-    let free = wait(&["--timeout", "30"], Some(&path));
+    let mut waiting = Command::new(env!("CARGO_BIN_EXE_oflh"))
+        .args(["wait", "--timeout", "120", "--language", "en"])
+        .arg(&path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // The holder is visible to a real scan, so the wait cannot have finished yet.
+    let held = check(&[], Some(&path));
+    assert_eq!(held.status.code(), Some(1), "{held:?}");
+    assert!(
+        waiting.try_wait().unwrap().is_none(),
+        "wait ended while held"
+    );
+    holder.release();
+    let free = waiting.wait_with_output().unwrap();
     assert_eq!(
         free.status.code(),
         Some(0),
@@ -205,6 +231,23 @@ fn wait_returns_when_a_child_releases_a_real_file() {
         String::from_utf8_lossy(&free.stderr)
     );
     assert!(String::from_utf8(free.stdout).unwrap().starts_with("FREE:"));
+}
+
+#[test]
+fn wait_timeout_names_the_remaining_holder() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("still-held.bin");
+    fs::write(&path, b"fixture").unwrap();
+    let holder = hold_file(&path);
+    let output = wait(&["--timeout", "1"], Some(&path));
+    assert_eq!(output.status.code(), Some(4));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("HELD:"), "{stderr}");
+    assert!(
+        stderr.contains(&format!("PID {}", holder.0.id())),
+        "{stderr}"
+    );
+    holder.release();
 }
 
 #[test]

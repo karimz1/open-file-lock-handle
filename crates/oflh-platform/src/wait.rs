@@ -4,12 +4,8 @@
 pub struct WaitTarget<'a> {
     /// File or folder target, absent for a global port inspection.
     pub path: Option<&'a Target>,
-    /// Collect ports along with path results.
-    pub include_ports: bool,
-    /// Exact port, if this wait concerns one local binding.
-    pub port: Option<u16>,
-    /// Interpret the port in processes that reference the current path.
-    pub scope_ports_to_path: bool,
+    /// Free/held rule; port rules also collect ports along with path results.
+    pub check: CheckTarget,
 }
 use crate::Backend;
 use oflh_core::{
@@ -43,19 +39,14 @@ pub fn wait_with_sleeper(
     loop {
         cancel.check()?;
         let snapshot = match target.path {
-            Some(path) if target.include_ports => crate::scan_with_ports(backend, path, cancel)?,
+            Some(path) if target.check.needs_ports() => {
+                crate::scan_with_ports(backend, path, cancel)?
+            }
             Some(path) => backend.scan(path, cancel)?,
             None => crate::scan_ports(cancel)?,
         };
         cancel.check()?;
-        let check = target.port.map_or(CheckTarget::Path, |port| {
-            if target.scope_ports_to_path {
-                CheckTarget::PortOnPathProcesses(port)
-            } else {
-                CheckTarget::Port(port)
-            }
-        });
-        if is_free(&snapshot, check) {
+        if is_free(&snapshot, target.check) {
             return Ok(());
         }
         options.check(started.elapsed())?;
@@ -109,9 +100,7 @@ mod tests {
             &mut fixture,
             WaitTarget {
                 path: Some(&target),
-                include_ports: false,
-                port: None,
-                scope_ports_to_path: false,
+                check: CheckTarget::Path,
             },
             Options {
                 poll_interval: Duration::ZERO,
@@ -138,9 +127,7 @@ mod tests {
                 &mut fixture,
                 WaitTarget {
                     path: Some(&target),
-                    include_ports: false,
-                    port: None,
-                    scope_ports_to_path: false
+                    check: CheckTarget::Path,
                 },
                 Options::default(),
                 Instant::now(),

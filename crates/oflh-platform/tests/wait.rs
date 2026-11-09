@@ -63,9 +63,7 @@ fn child_release_completes_wait_and_timeout_does_not_report_free() {
         backend.as_mut(),
         oflh_platform::WaitTarget {
             path: Some(&Target::new(&path).unwrap()),
-            include_ports: false,
-            port: None,
-            scope_ports_to_path: false,
+            check: oflh_core::check::CheckTarget::Path,
         },
         options,
         Instant::now(),
@@ -87,9 +85,7 @@ fn child_release_completes_wait_and_timeout_does_not_report_free() {
         backend.as_mut(),
         oflh_platform::WaitTarget {
             path: Some(&Target::new(&path).unwrap()),
-            include_ports: false,
-            port: None,
-            scope_ports_to_path: false,
+            check: oflh_core::check::CheckTarget::Path,
         },
         options,
         Instant::now(),
@@ -114,9 +110,7 @@ fn real_port_release_completes_wait() {
         backend.as_mut(),
         oflh_platform::WaitTarget {
             path: None,
-            include_ports: true,
-            port: Some(port),
-            scope_ports_to_path: false,
+            check: oflh_core::check::CheckTarget::Port(port),
         },
         options,
         Instant::now(),

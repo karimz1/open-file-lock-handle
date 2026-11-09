@@ -8,7 +8,7 @@ pub const EXIT_HELD: u8 = 1;
 pub const EXIT_USAGE: u8 = 2;
 pub const EXIT_INSPECTION_FAILED: u8 = 3;
 
-mod output;
+pub(crate) mod output;
 
 pub struct Options {
     pub json: bool,
@@ -46,57 +46,91 @@ pub enum Outcome {
     Held,
 }
 
-pub fn run(options: Options) -> Result<Outcome, CliError> {
-    let cancel = oflh_core::Cancellation::default();
-    let target = if options.ports && options.follow_port_folder {
-        None
-    } else {
-        Some(oflh_core::Target::new(
-            options.path.clone().unwrap_or_else(|| OsString::from(".")),
-        )?)
-    };
-    let mut backend = oflh_platform::native()?;
-    let mut snapshot = if let Some(target) = &target {
-        if options.ports {
-            oflh_platform::scan_with_ports(backend.as_mut(), target, &cancel)?
-        } else {
-            backend.scan(target, &cancel)?
-        }
-    } else {
-        oflh_platform::scan_ports(&cancel)?
-    };
-    let check_target = match options.port {
-        Some(port) => oflh_core::check::CheckTarget::Port(port),
-        None => oflh_core::check::CheckTarget::Path,
-    };
-    prepare(
-        &mut snapshot,
-        &check_target,
-        options.ports,
-        options.ports_path_only,
-    );
-    let outcome = classify(&snapshot, check_target, options.ports);
-    output::write(&options, &snapshot, target.as_ref(), outcome)?;
-    Ok(outcome)
+/// One inspection of the requested scope, shared by `check` and `wait` timeouts.
+pub(crate) struct Inspection {
+    pub snapshot: Snapshot,
+    pub target: Option<oflh_core::Target>,
+    pub outcome: Outcome,
 }
 
-/// A port listing (`--ports` without `--port`) is held when it lists any binding;
-/// `prepare` has already removed file usages, so the path rule would always say free.
-fn classify(snapshot: &Snapshot, target: oflh_core::check::CheckTarget, ports: bool) -> Outcome {
-    let free = match target {
-        oflh_core::check::CheckTarget::Path if ports => snapshot.processes.is_empty(),
-        target => oflh_core::check::is_free(snapshot, target),
+/// Resolve the scanned path: a port inspection without a path covers all bindings.
+pub(crate) fn resolve_target(
+    path: Option<&OsString>,
+    ports: bool,
+    follow_port_folder: bool,
+) -> Result<Option<oflh_core::Target>, CliError> {
+    if ports && follow_port_folder {
+        return Ok(None);
+    }
+    Ok(Some(oflh_core::Target::new(
+        path.cloned().unwrap_or_else(|| OsString::from(".")),
+    )?))
+}
+
+/// The free/held rule for this scope, identical for `check` and `wait`.
+pub(crate) fn check_target(
+    target: Option<&oflh_core::Target>,
+    ports: bool,
+    port: Option<u16>,
+) -> oflh_core::check::CheckTarget {
+    oflh_core::check::CheckTarget::select(target.is_some(), ports, port)
+}
+
+/// Scan once, classify before trimming, and keep the evidence a port-filtered TUI shows.
+pub(crate) fn inspect(
+    backend: &mut dyn oflh_platform::Backend,
+    target: Option<oflh_core::Target>,
+    ports: bool,
+    port: Option<u16>,
+    ports_path_only: bool,
+    cancel: &oflh_core::Cancellation,
+) -> Result<Inspection, CliError> {
+    let check = check_target(target.as_ref(), ports, port);
+    let mut snapshot = match &target {
+        Some(target) if ports => oflh_platform::scan_with_ports(backend, target, cancel)?,
+        Some(target) => backend.scan(target, cancel)?,
+        None => oflh_platform::scan_ports(cancel)?,
     };
-    if free { Outcome::Free } else { Outcome::Held }
+    let outcome = if oflh_core::check::is_free(&snapshot, check) {
+        Outcome::Free
+    } else {
+        Outcome::Held
+    };
+    prepare(&mut snapshot, port, ports, ports_path_only);
+    Ok(Inspection {
+        snapshot,
+        target,
+        outcome,
+    })
+}
+
+pub fn run(options: Options) -> Result<Outcome, CliError> {
+    let cancel = oflh_core::Cancellation::default();
+    let target = resolve_target(
+        options.path.as_ref(),
+        options.ports,
+        options.follow_port_folder,
+    )?;
+    let mut backend = oflh_platform::native()?;
+    let inspection = inspect(
+        backend.as_mut(),
+        target,
+        options.ports,
+        options.port,
+        options.ports_path_only,
+        &cancel,
+    )?;
+    output::write(
+        &options,
+        &inspection.snapshot,
+        inspection.target.as_ref(),
+        inspection.outcome,
+    )?;
+    Ok(inspection.outcome)
 }
 
 /// Keep the same visible evidence as a port-filtered TUI result.
-fn prepare(
-    snapshot: &mut Snapshot,
-    target: &oflh_core::check::CheckTarget,
-    ports: bool,
-    ports_path_only: bool,
-) {
+fn prepare(snapshot: &mut Snapshot, port: Option<u16>, ports: bool, ports_path_only: bool) {
     let owned_identities: std::collections::HashSet<_> = snapshot
         .processes
         .iter()
@@ -119,8 +153,8 @@ fn prepare(
             .retain(|process| owned_identities.contains(&process.identity));
     }
     for process in &mut snapshot.processes {
-        if let oflh_core::check::CheckTarget::Port(number) = target {
-            process.ports.retain(|port| port.number == *number);
+        if let Some(number) = port {
+            process.ports.retain(|binding| binding.number == number);
         }
         process.usages.clear();
     }
@@ -191,48 +225,12 @@ mod tests {
             ],
             warnings: vec!["partial".into()],
         };
-        prepare(
-            &mut snapshot,
-            &oflh_core::check::CheckTarget::Port(3000),
-            true,
-            true,
-        );
+        prepare(&mut snapshot, Some(3000), true, true);
         assert_eq!(snapshot.processes.len(), 1);
         assert_eq!(snapshot.processes[0].identity.pid, 10);
         assert_eq!(snapshot.processes[0].ports.len(), 1);
         assert_eq!(snapshot.processes[0].ports[0].number, 3000);
         assert!(snapshot.processes[0].usages.is_empty());
         assert_eq!(snapshot.warnings, ["partial"]);
-    }
-
-    #[test]
-    fn port_listings_are_held_when_they_list_a_binding() {
-        let mut snapshot = Snapshot {
-            processes: vec![Process {
-                usages: vec![Usage::default()],
-                ports: vec![Port {
-                    protocol: Protocol::Tcp,
-                    address: "127.0.0.1".parse().unwrap(),
-                    number: 3000,
-                }],
-                ..Process::default()
-            }],
-            warnings: vec![],
-        };
-        prepare(
-            &mut snapshot,
-            &oflh_core::check::CheckTarget::Path,
-            true,
-            true,
-        );
-        assert_eq!(
-            classify(&snapshot, oflh_core::check::CheckTarget::Path, true),
-            Outcome::Held
-        );
-        snapshot.processes.clear();
-        assert_eq!(
-            classify(&snapshot, oflh_core::check::CheckTarget::Path, true),
-            Outcome::Free
-        );
     }
 }
