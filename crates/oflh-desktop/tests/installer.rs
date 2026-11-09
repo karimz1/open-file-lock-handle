@@ -431,12 +431,10 @@ fn webview_install_mode_embeds_the_bootstrapper() {
     let template = include_str!("../windows/installer.nsi");
     // Custom template must keep Tauri's WebView2 section and mode placeholders.
     assert!(template.contains("Section WebView2"));
-    assert!(template.contains(
-        "!define INSTALLWEBVIEW2MODE \"{{install_webview2_mode}}\""
-    ));
-    assert!(template.contains(
-        "!define WEBVIEW2BOOTSTRAPPERPATH \"{{webview2_bootstrapper_path}}\""
-    ));
+    assert!(template.contains("!define INSTALLWEBVIEW2MODE \"{{install_webview2_mode}}\""));
+    assert!(
+        template.contains("!define WEBVIEW2BOOTSTRAPPERPATH \"{{webview2_bootstrapper_path}}\"")
+    );
     assert!(template.contains(
         "File \"/oname=$TEMP\\MicrosoftEdgeWebview2Setup.exe\" \"${WEBVIEW2BOOTSTRAPPERPATH}\""
     ));
@@ -466,7 +464,8 @@ fn webview2_failure_offers_the_microsoft_download_page() {
         );
         assert!(
             lang.lines().any(|line| {
-                line.starts_with("LangString webview2AbortError ") && line.contains("${PRODUCTNAME}")
+                line.starts_with("LangString webview2AbortError ")
+                    && line.contains("${PRODUCTNAME}")
             }),
             "webview2AbortError must name the product"
         );
