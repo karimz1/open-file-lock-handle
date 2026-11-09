@@ -146,6 +146,8 @@ const en = {
     k_sign_out_note:
       "Every program in this session closes. Unsaved work of {{user}} will be lost.",
     k_sign_out_button: "Sign out {{user}}",
+    k_sign_out_own_session:
+      "This is your own session. You will be signed out, and OFLH closes too.",
     k_sign_out_processes: "Programs that will close",
     k_sign_out_done: "{{user}} is being signed out.",
     k_share_title: "Open over the network",

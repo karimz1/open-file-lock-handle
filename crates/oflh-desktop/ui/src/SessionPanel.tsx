@@ -230,6 +230,11 @@ export function SessionPanel({
           <p className="danger-note sign-out-note">
             {t("sessions.k_sign_out_note", { user: signOut.session.user })}
           </p>
+          {signOut.session.own && (
+            <p className="danger-note sign-out-own">
+              {t("sessions.k_sign_out_own_session")}
+            </p>
+          )}
           <p className="owner-line">
             {ownerLine({
               user: signOut.session.user,

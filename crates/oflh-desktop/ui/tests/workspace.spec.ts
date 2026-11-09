@@ -6132,6 +6132,7 @@ test.describe("multi-user sessions", () => {
       await details.getByRole("button", { name: "Sign out user…" }).click();
       const dialog = page.getByRole("dialog");
       await expect(dialog).toContainText("Sign out max.muster?");
+      await expect(dialog).not.toContainText("This is your own session.");
       await expect(dialog).toContainText(
         "Unsaved work of max.muster will be lost.",
       );

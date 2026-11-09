@@ -150,6 +150,8 @@ const de: TranslationSchema<typeof en> = {
     k_sign_out_note:
       "Alle Programme in dieser Sitzung werden geschlossen. Nicht gespeicherte Arbeit von {{user}} geht verloren.",
     k_sign_out_button: "{{user}} abmelden",
+    k_sign_out_own_session:
+      "Das ist deine eigene Sitzung. Du wirst abgemeldet, und OFLH wird ebenfalls geschlossen.",
     k_sign_out_processes: "Programme, die geschlossen werden",
     k_sign_out_done: "{{user}} wird abgemeldet.",
     k_share_title: "Über das Netzwerk geöffnet",

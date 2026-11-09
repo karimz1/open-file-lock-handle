@@ -139,6 +139,7 @@ const zh: TranslationSchema<typeof en> = {
     k_sign_out_note:
       "此会话中的所有程序都会关闭。{{user}} 未保存的工作将丢失。",
     k_sign_out_button: "注销 {{user}}",
+    k_sign_out_own_session: "这是你自己的会话。你将被注销，OFLH 也会关闭。",
     k_sign_out_processes: "将关闭的程序",
     k_sign_out_done: "正在注销 {{user}}。",
     k_share_title: "通过网络打开",
