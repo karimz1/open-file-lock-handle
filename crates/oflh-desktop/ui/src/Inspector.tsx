@@ -3,12 +3,20 @@ import {
   Copy,
   ExternalLink,
   Files,
+  Hourglass,
   ChevronRight,
   CornerDownRight,
   X,
 } from "lucide-react";
-import { type Details, type PathValue, type Row } from "./api";
+import {
+  type Details,
+  type PathValue,
+  type Row,
+  type WaitSelection,
+} from "./api";
 import { memory } from "./state";
+import { SessionPanel } from "./SessionPanel";
+import { MatchingFiles } from "./MatchingFiles";
 import { t, tValue, type MessageKey } from "./i18n";
 export function Inspector({
   details,
@@ -23,7 +31,19 @@ export function Inspector({
   inspectFolder,
   terminateAncestor,
   terminateCurrent,
+  revision,
+  notify,
+  report,
+  target,
+  onWait,
+  waitDisabled,
 }: {
+  onWait: (selection: WaitSelection) => void;
+  waitDisabled: boolean;
+  target: string;
+  revision: number;
+  notify: (message: string) => void;
+  report: (failure: unknown) => void;
   details: Details;
   availability: "current" | "updating" | "missing";
   rowCurrent: boolean;
@@ -31,7 +51,7 @@ export function Inspector({
   close: () => void;
   copy: (field: string, reference?: string) => void;
   reveal: (reference: string) => void;
-  handles: () => void;
+  handles: (preserveSearch?: boolean) => void;
   ports: () => void;
   inspectFolder: () => void;
   terminateAncestor: (key: string, force: boolean) => void;
@@ -79,7 +99,18 @@ export function Inspector({
   });
   const ancestor = nodes.find((item) => item.key === ancestorKey);
   const currentSelected = ancestorKey === details.process.process_key;
-  const path = (label: MessageKey, value: PathValue, available = current) => (
+  const waitForFile = (value: PathValue) =>
+    onWait({
+      revision,
+      target: { kind: "file", reference: value.reference },
+      display: value.display,
+    });
+  const path = (
+    label: MessageKey,
+    value: PathValue,
+    available = current,
+    canWait = false,
+  ) => (
     <section>
       <h4>{t(label)}</h4>
       <p className="detail-path mono">
@@ -98,6 +129,15 @@ export function Inspector({
             <ExternalLink size={13} />
             {t("common.k_reveal")}
           </button>
+          {canWait && (
+            <button
+              disabled={!available || waitDisabled}
+              onClick={() => waitForFile(value)}
+            >
+              <Hourglass size={13} />
+              {t("wait.k_file_action")}
+            </button>
+          )}
         </div>
       )}
     </section>
@@ -179,11 +219,42 @@ export function Inspector({
           <h2>{details.process.name || "(unnamed)"}</h2>
           <p className="mono muted">PID {details.process.pid}</p>
         </div>
+        {row && !rowCurrent && (
+          <p className="hint detail-refresh-note" role="status">
+            {t("inspection.k_captured_observation")}
+          </p>
+        )}
+        {row?.matching_files && (
+          <MatchingFiles
+            row={row}
+            current={current && rowCurrent}
+            copy={copy}
+            reveal={reveal}
+            showAll={() => handles(true)}
+            onWait={waitForFile}
+            waitDisabled={waitDisabled}
+          />
+        )}
         <div
           className="detail-navigation"
           aria-label={t("inspection.k_process_inspection_views")}
         >
-          <button onClick={handles}>
+          {details.process.actionable && (
+            <button
+              disabled={!current || waitDisabled}
+              onClick={() =>
+                onWait({
+                  revision,
+                  target: { kind: "process", key: details.process.process_key },
+                  display: `${details.process.name} (PID ${details.process.pid})`,
+                })
+              }
+            >
+              <Hourglass size={14} />
+              {t("wait.k_process_action")}
+            </button>
+          )}
+          <button onClick={() => handles()}>
             <Files size={14} /> {t("inspector.k_matching_handles")}{" "}
             <span>{details.process.usages}</span>
             <ChevronRight size={14} />
@@ -302,8 +373,16 @@ export function Inspector({
           </div>
         </div>
         <section>
-          <h4>{t("inspector.k_account")}</h4>
-          <p>{details.process.user}</p>
+          <SessionPanel
+            details={details}
+            revision={revision}
+            current={current}
+            row={row}
+            rowCurrent={rowCurrent}
+            target={target}
+            notify={notify}
+            report={report}
+          />
           <div className="inline-actions">
             <button disabled={!current} onClick={() => copy("pid")}>
               <Copy size={13} />
@@ -315,11 +394,6 @@ export function Inspector({
             </button>
           </div>
         </section>
-        {row && !rowCurrent && (
-          <p className="hint" role="status">
-            {t("inspection.k_captured_observation")}
-          </p>
-        )}
         {row &&
           (row.port ? (
             <section>
@@ -328,8 +402,21 @@ export function Inspector({
               <p>
                 {row.port.protocol} · {tValue(row.port.state)}
               </p>
+              <button
+                disabled={!current || !rowCurrent || waitDisabled}
+                onClick={() =>
+                  onWait({
+                    revision,
+                    target: { kind: "port", reference: row.port!.reference },
+                    display: `Port ${row.port!.number}`,
+                  })
+                }
+              >
+                <Hourglass size={13} />
+                {t("wait.k_port_action")}
+              </button>
             </section>
-          ) : (
+          ) : row.matching_files ? null : (
             <>
               {path(
                 "inspector.k_selected_file_full_path",
@@ -338,6 +425,7 @@ export function Inspector({
                   reference: row.path_ref,
                 },
                 current && rowCurrent,
+                true,
               )}
               <section>
                 <h4>{t("inspector.k_file_observation")}</h4>

@@ -87,6 +87,29 @@ fn permission(error: &std::io::Error, restricted: &mut bool) {
         *restricted = true
     }
 }
+/// Every readable, still-running process. Unreadable entries are skipped:
+/// the table only feeds an informational child list.
+fn process_table() -> Result<Vec<impact::ProcessEntry>> {
+    let mut table = Vec::new();
+    for entry in fs::read_dir("/proc").map_err(|error| io("enumerate processes", error))? {
+        let Some(pid) = entry
+            .ok()
+            .and_then(|entry| entry.file_name().to_str()?.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        if let Ok(stats) = stat(pid)
+            && !stats.exited
+        {
+            table.push(impact::ProcessEntry {
+                identity: stats.identity,
+                parent: stats.parent,
+                name: stats.name,
+            })
+        }
+    }
+    Ok(table)
+}
 impl Backend for Native {
     fn scan(&mut self, target: &Target, cancel: &Cancellation) -> Result<Snapshot> {
         cancel.set_phase(InspectionPhase::Processes);
@@ -382,6 +405,24 @@ impl Backend for Native {
             Err(error) => Err(error),
         }
     }
+    fn impact(&mut self, ids: &[Identity]) -> Vec<impact::Impact> {
+        // Window ownership is not reliably exposed without a display server
+        // connection (X11 _NET_WM_PID is optional, Wayland has no equivalent).
+        children_for(process_table(), ids)
+            .into_iter()
+            .zip(ids)
+            .map(|(children, &id)| impact::Impact {
+                windows: None,
+                children,
+                service: stat(id.pid)
+                    .is_ok_and(|live| live.identity == id)
+                    .then(|| std::fs::read_to_string(format!("/proc/{}/cgroup", id.pid)).ok())
+                    .flatten()
+                    .and_then(|cgroup| impact::systemd_unit(&cgroup)),
+                critical: false,
+            })
+            .collect()
+    }
     fn terminate(&mut self, identity: Identity, force: bool, cancel: &Cancellation) -> Result<()> {
         identity.validate()?;
         cancel.check()?;
@@ -611,5 +652,22 @@ mod tests {
             mapping(b"100-200 rw-p 0000 00:13 12  /a file\\012name\n").unwrap();
         assert_eq!(process, Path::new("/a file\nname"));
         assert_eq!(ino, 12);
+    }
+    #[test]
+    fn impact_lists_a_running_child_of_this_process() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let own = stat(std::process::id()).unwrap().identity;
+        let impact = Native::default().impact(&[own]);
+        let _ = child.kill();
+        let _ = child.wait();
+        let children = impact[0].children.as_ref().unwrap();
+        assert!(children.iter().any(|c| c.identity.pid == child.id()));
+        assert_eq!(impact[0].windows, None);
+        let cgroup = std::fs::read_to_string("/proc/self/cgroup").unwrap_or_default();
+        assert_eq!(impact[0].service, impact::systemd_unit(&cgroup));
+        assert!(!impact[0].critical);
     }
 }

@@ -1,0 +1,20 @@
+  oflh  ·  Open File Lock Handle              1–16 of 83 ↕
+                          ↑↓ / PgUp PgDn scroll · Home/End
+  LINKS                                                  █
+  R  GitHub:                                             █
+  https://github.com/karimz1/open-file-lock-handle       █
+  D  Donate: https://buymeacoffee.com/karimz1            │
+  Press uppercase R or D to open in your browser.        │
+                                                         │
+                                                         │
+  VERSION development                                    │
+  Run `oflh --version` to copy the full build report.    │
+                                                         │
+  OPEN FILE LOCK HANDLE                                  │
+  1 / 2 / 3      Processes / locked files / ports        │
+  s              Ports: all ports / processes using this │
+  path                                                   │
+  p / f          Details: ports / file usages            │
+  ↑ / ↓, j       Navigate results                        │
+  ────────────────────────────────────────────────────────
+  ↑↓ scroll · R GitHub · D Donate · Esc back · q quit

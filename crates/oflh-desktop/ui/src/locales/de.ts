@@ -2,6 +2,191 @@ import type { TranslationSchema } from "../i18n/types";
 import en from "./en";
 
 const de: TranslationSchema<typeof en> = {
+  wait: {
+    k_file_action: "Auf Dateifreigabe warten",
+    k_process_action: "Auf Prozessende warten",
+    k_port_action: "Auf freien Port warten",
+    k_file_target: "Ausgewählte Datei oder Ordner",
+    k_process_target: "Ausgewählter Prozess",
+    k_port_target: "Ausgewählter Port",
+    k_file_description:
+      "Prüft nur diesen Pfad einmal pro Sekunde bei allen Prozessen. Kein Prozess wird beendet. Vor einer Folgeaktion wird erneut geprüft, ob das Ziel noch frei ist.",
+    k_process_description:
+      "Prüft einmal pro Sekunde, ob dieser erfasste Prozess beendet ist. Nichts wird beendet. Andere Prozesse können seine Dateien weiterhin verwenden.",
+    k_port_description:
+      "Prüft einmal pro Sekunde, bis keine lokalen Bindungen dieser Portnummer mehr bestehen. Kein Prozess wird beendet.",
+    k_enable_timeout: "Zeitlimit setzen",
+    k_seconds: "Zeitlimit in Sekunden",
+    k_selection_changed:
+      "Die Auswahl ist nicht mehr aktuell oder eine andere Aktion läuft. Schließe den Dialog und wähle das Ziel erneut aus.",
+    k_confirm_move:
+      "Dieses ausgewählte Ziel nach einer abschließenden Freiprüfung verschieben.",
+    k_waiting_process: "Warte auf Prozessende",
+    k_process_exited: "Der ausgewählte Prozess ist beendet.",
+    k_activity: "Warten auf ausgewähltes Ziel",
+    k_dismiss: "Wartestatus schließen",
+    k_title: "Warten, bis frei",
+    k_action: "Warten, bis frei",
+    k_follow_up: "Nach der Freigabe",
+    k_notify_only: "Nur benachrichtigen",
+    k_reveal: "Im Dateimanager anzeigen",
+    k_move: "In einen Ordner verschieben und anzeigen",
+    k_rename: "Umbenennen und anzeigen",
+    k_destination: "Zielordner",
+    k_no_destination: "Wähle vor dem Start einen Ordner aus.",
+    k_choose_destination: "Ordner auswählen…",
+    k_change_destination: "Ordner ändern…",
+    k_new_name: "Neuer Name",
+    k_name_hint:
+      "Gib die Dateiendung mit an. Die Datei bleibt im bisherigen Ordner.",
+    k_invalid_name:
+      "Gib einen anderen Dateinamen ohne Pfad, reservierte Zeichen oder Gerätenamen ein.",
+    k_result_path: "Neuer Pfad",
+    k_reveal_after_change:
+      "Nach Erfolg öffnet sich der Dateimanager an diesem Ort und markiert das Ergebnis. Bestehende Einträge werden niemals ersetzt.",
+    k_confirm_rename:
+      "Dieses ausgewählte Ziel nach einer abschließenden Freiprüfung umbenennen.",
+    k_follow_up_running: "Gewählte Folgeaktion wird ausgeführt…",
+    k_follow_up_failed: "Die Folgeaktion ist fehlgeschlagen.",
+    k_moved: "In den gewählten Ordner verschoben.",
+    k_renamed: "Umbenannt.",
+    k_deleted: "Gelöscht.",
+    k_revealed: "Im Dateimanager angezeigt.",
+    k_reveal_failed:
+      "Die Aktion war erfolgreich, aber der Dateimanager konnte das Ergebnis nicht öffnen.",
+    k_notification_failed:
+      "Die Aktion war erfolgreich, aber die Desktop-Benachrichtigung konnte nicht angezeigt werden.",
+    k_delete: "Löschen",
+    k_start: "Warten starten",
+    k_waiting: "Warten, bis das Ziel frei ist",
+    k_free: "Das Ziel ist frei.",
+    k_timeout: "Zeitgrenze erreicht, bevor das Ziel frei wurde.",
+    k_held_again:
+      "Das Ziel wird wieder verwendet. Es wurde keine Folgeaktion ausgeführt.",
+    k_cancelled: "Warten abgebrochen.",
+    k_again: "Erneut warten",
+    k_protected_delete:
+      "OFLH löscht keine Laufwerkswurzeln, Benutzerordner oder Systemordner. Wähle eine Datei oder einen Ordner darin.",
+    k_move_unsupported:
+      "Dieses Dateisystem kann nicht verschieben oder umbenennen, ohne einen vorhandenen Eintrag ersetzen zu können. Es wurde nichts geändert.",
+    k_move_cross_device:
+      "Das Ziel liegt auf einem anderen Laufwerk oder Dateisystem. OFLH verschiebt nur innerhalb eines Dateisystems, es wurde nichts geändert.",
+    k_move_into_itself:
+      "Ein Ordner kann nicht in sich selbst verschoben werden. Wähle ein anderes Ziel.",
+    k_notify_free_title: "OFLH: Ziel ist frei",
+    k_notify_free_body: "Keine Nutzer dieses Ziels mehr gefunden.",
+    k_notify_exit_title: "OFLH: Prozess beendet",
+    k_notify_exit_body:
+      "Der ausgewählte Prozess ist beendet. Andere Prozesse können seine Dateien weiterhin verwenden.",
+    k_notify_moved: "OFLH: Verschoben",
+    k_notify_renamed: "OFLH: Umbenannt",
+    k_notify_deleted: "OFLH: Gelöscht",
+    k_notify_revealed: "OFLH: Im Dateimanager angezeigt",
+    k_confirm_delete:
+      "Dieses Ziel nach einer abschließenden Freiprüfung endgültig löschen. Ein Ordner wird mit seinem gesamten Inhalt gelöscht; nichts landet im Papierkorb.",
+  },
+  matches: {
+    k_title: "Passende Dateien",
+    k_more: "+{{n}} weitere",
+    k_more_files: "{{n}} weitere passende Dateien.",
+    k_reference_one: "1 Referenz · Zugriff und Nachweise",
+    k_references: "{{n}} Referenzen · Zugriff und Nachweise",
+    k_more_references:
+      "{{n}} zusätzliche Referenzen. Details stehen unter allen passenden Dateizugriffen.",
+    k_show_all: "Alle passenden Dateizugriffe anzeigen",
+  },
+  sessions: {
+    k_user: "Benutzer",
+    k_session: "Sitzung",
+    k_owner: "Besitzer und Sitzung",
+    k_session_n: "Sitzung {{id}}",
+    k_kind_console: "Konsole",
+    k_kind_rdp: "RDP",
+    k_kind_ssh: "SSH",
+    k_kind_tty: "Terminal",
+    k_kind_x11: "X11",
+    k_kind_wayland: "Wayland",
+    k_kind_services: "Dienste",
+    k_kind_other: "Andere",
+    k_state_active: "aktiv",
+    k_state_idle: "untätig",
+    k_state_disconnected: "getrennt",
+    k_state_closing: "meldet sich ab",
+    k_state_other: "Status unbekannt",
+    k_since: "seit {{time}}",
+    k_from: "von {{client}}",
+    k_service_account: "Dienstkonto",
+    k_this_session: "deine Sitzung",
+    k_no_session: "Keine Anmeldesitzung",
+    k_send_message: "Nachricht senden…",
+    k_sign_out: "Benutzer abmelden…",
+    k_requires_admin: "Erfordert Administratorrechte",
+    k_requires_root: "Erfordert root",
+    k_requires_admin_hint:
+      "Starte OFLH als Administrator, um das zu nutzen. OFLH fordert nie selbst Rechte an.",
+    k_requires_root_hint:
+      "Starte OFLH mit sudo, um das zu nutzen. OFLH fordert nie selbst Rechte an.",
+    k_message_title: "Nachricht an {{user}} senden",
+    k_message_label: "Nachricht",
+    k_message_subject: "Bitte um Zugriff auf Datei oder Anwendung — OFLH",
+    k_message_recipient: "An: {{user}}",
+    k_message_process: "Anwendung: {{name}} (PID {{pid}})",
+    k_message_file: "Datei: {{path}}",
+    k_message_port: "Lokaler Port: {{endpoint}} ({{protocol}})",
+    k_message_target: "Untersuchtes Ziel: {{path}}",
+    k_message_file_reason:
+      "OFLH hat einen Zugriff dieser Anwendung auf die Datei in deiner Sitzung gefunden. Das beweist nicht, dass die Anwendung eine Sperre hält.",
+    k_message_port_reason:
+      "OFLH hat festgestellt, dass diese Anwendung den lokalen Port in deiner Sitzung verwendet.",
+    k_message_target_reason:
+      "OFLH hat Zugriffe dieser Anwendung auf das Ziel oder dessen Inhalte in deiner Sitzung gefunden. Eine offene Datei beweist keine Sperre.",
+    k_message_no_action:
+      "Gesendet mit Open File Lock Handle (OFLH). Durch das Senden dieser Bitte werden keine Dateien oder Anwendungen geschlossen.",
+    k_message_default_note:
+      "Kannst du bitte deine Änderungen speichern und die unten genannte Datei schließen, wenn du sie nicht mehr brauchst? Ich möchte darauf zugreifen. Danke.",
+    k_message_application_note:
+      "Kannst du bitte prüfen, ob du die unten genannte Anwendung noch brauchst? Speichere bitte deine Änderungen, bevor du sie schließt. Danke.",
+    k_message_port_note:
+      "Kannst du bitte prüfen, ob diese Anwendung den unten genannten Port noch braucht? Ich möchte ihn verwenden. Speichere bitte deine Arbeit, bevor du etwas schließt. Danke.",
+    k_message_delivery:
+      "Windows zeigt einen nativen Nachrichtendialog in der Sitzung dieses Benutzers. Der Empfänger braucht kein OFLH. Antworten sind darüber nicht möglich; Senden bestätigt nicht, dass die Nachricht gelesen wurde.",
+    k_message_own_session:
+      "Das ist deine eigene Sitzung. Die Nachricht erscheint auf deinem Desktop.",
+    k_message_preview:
+      "Empfängervorschau · Datei- und Anwendungskontext enthalten",
+    k_message_length: "{{n}} / 1000 Zeichen, einschließlich Kontext.",
+    k_message_too_long:
+      "Die vollständige Nachricht ist zu lang. Kürze deinen Text vor dem Senden; Dateipfade werden niemals stillschweigend gekürzt.",
+    k_message_stale:
+      "Die Untersuchung oder ausgewählte Datei hat sich geändert. Schließe den Entwurf und öffne ihn aus den aktuellen Ergebnissen erneut.",
+    k_message_placeholder:
+      "Bitte speichere deine Arbeit, der Server startet um 18:00 neu.",
+    k_message_send: "Senden",
+    k_message_sent: "Nachricht an {{user}} gesendet.",
+    k_sign_out_title: "{{user}} abmelden?",
+    k_sign_out_note:
+      "Alle Programme in dieser Sitzung werden geschlossen. Nicht gespeicherte Arbeit von {{user}} geht verloren.",
+    k_sign_out_button: "{{user}} abmelden",
+    k_sign_out_own_session:
+      "Das ist deine eigene Sitzung. Du wirst abgemeldet, und OFLH wird ebenfalls geschlossen.",
+    k_sign_out_processes: "Programme, die geschlossen werden",
+    k_sign_out_done: "{{user}} wird abgemeldet.",
+    k_share_title: "Über das Netzwerk geöffnet",
+    k_share_summary_one:
+      "1 Person hat das über eine Netzwerkfreigabe geöffnet.",
+    k_share_summary_many: "{{n}} Netzwerkzugriffe auf dieses Ziel.",
+    k_share_locks: "{{n}} Sperren",
+    k_share_write: "darf schreiben",
+    k_share_close: "Geöffnete Datei schließen",
+    k_share_close_title: "{{path}} für {{user}} schließen?",
+    k_share_close_note:
+      "{{user}} verliert den Zugriff auf die Datei. Nicht gespeicherte Änderungen können verloren gehen.",
+    k_share_closed: "Datei für {{user}} geschlossen.",
+    k_share_unreadable:
+      "Netzwerkzugriffe lassen sich nur mit Administratorrechten lesen.",
+    k_session_changed:
+      "Die Sitzung oder Datei hat sich seit deiner Bestätigung geändert. Es ist nichts passiert; prüfe sie erneut.",
+  },
   about: {
     k_version: "Version",
     k_commit: "Commit",
@@ -148,8 +333,6 @@ const de: TranslationSchema<typeof en> = {
   },
   filters: {
     k_access_relation: "Zugriff / Beziehung",
-    k_all_targets_are_listed_below_including_1515b80a:
-      "Alle Ziele sind unten aufgeführt, auch die durch Filter ausgeblendeten.",
     k_any_evidence: "Beliebiger Nachweis",
     k_applied_column_filters: "Gesetzte Spaltenfilter",
     k_apply_filters: "Filter anwenden",
@@ -350,6 +533,7 @@ const de: TranslationSchema<typeof en> = {
     k_system_default: "Systemstandard",
   },
   navigation: {
+    k_resize_sidebar: "Seitenleiste verbreitern oder verkleinern",
     k_collapse_sidebar: "Seitenleiste einklappen",
     k_expand_sidebar: "Seitenleiste ausklappen",
     k_next_previous_workspace: "Nächster / vorheriger Arbeitsbereich",
@@ -401,6 +585,10 @@ const de: TranslationSchema<typeof en> = {
     k_selection_copied: "Auswahl kopiert",
   },
   settings: {
+    k_open_window_maximized: "Fenster maximiert öffnen",
+    k_open_window_maximized_help:
+      "OFLH startet maximiert. Das Fenster lässt sich weiterhin wiederherstellen und in der Größe ändern. Gilt ab dem nächsten Start.",
+    k_window: "Fenster",
     k_about_oflh: "Über OFLH",
     k_appearance: "Darstellung",
     k_interface_font_size: "Schriftgröße der Oberfläche",
@@ -488,6 +676,67 @@ const de: TranslationSchema<typeof en> = {
     k_visible_columns: "Sichtbare Spalten",
   },
   termination: {
+    k_close_unavailable:
+      "Kein Fenster hat die Anfrage zum Schließen angenommen. Du kannst jetzt das sofortige Beenden prüfen.",
+    k_impact_critical:
+      "Windows braucht diesen Prozess. Wenn du ihn beendest, kann dein PC abstürzen.",
+    k_impact_service: "Ein Dienst startet es wahrscheinlich sofort neu.",
+    k_impact_group_service: "Dienst",
+    k_impact_service_restarts: "startet es eventuell neu",
+    k_impact_targets_label: "Betroffene Prozesse",
+    k_impact_windows:
+      "{{name}} wird komplett geschlossen – mit allen {{count}} offenen Fenstern, z. B. „{{title}}“.",
+    k_impact_children_one: "1 Hintergrundprozess läuft weiter.",
+    k_impact_children_other: "{{count}} Hintergrundprozesse laufen weiter.",
+    k_impact_files_one: "Auch 1 weitere geöffnete Datei wird freigegeben.",
+    k_impact_files_other:
+      "Auch {{count}} weitere geöffnete Dateien werden freigegeben.",
+    k_impact_ports_one: "Eine Verbindung über 1 Netzwerkport wird getrennt.",
+    k_impact_ports_other:
+      "Verbindungen über {{count}} Netzwerkports werden getrennt.",
+    k_impact_group_windows: "Fenster ({{count}})",
+    k_impact_group_children: "Hintergrundprozesse ({{count}})",
+    k_impact_group_files: "Dateien ({{count}})",
+    k_impact_group_ports: "Ports ({{count}})",
+    k_impact_copy: "{{value}} kopieren",
+    k_impact_details: "Details",
+    k_impact_windows_unavailable:
+      "Dieses System stellt keine Fenstertitel bereit.",
+    k_impact_children_note:
+      "Sie werden nicht beendet und laufen meist weiter. Einige können zusammen mit diesem Prozess enden.",
+    k_impact_show_all: "Alle {{count}} anzeigen",
+    k_impact_show_less: "Weniger anzeigen",
+    k_impact_not_listed: "+{{count}} weitere nicht aufgeführt",
+    k_impact_filter: "Liste filtern",
+    k_impact_filter_placeholder: "Filtern…",
+    k_impact_filter_count: "{{shown}} von {{total}}",
+    k_impact_filter_none: "Keine Treffer",
+    k_confirm_title_one: "{{name}} schließen?",
+    k_confirm_title_many: "{{count}} Prozesse schließen?",
+    k_force_title_one: "{{name}} sofort beenden?",
+    k_force_title_many: "{{count}} Prozesse sofort beenden?",
+    k_confirm_button_one: "{{name}} schließen",
+    k_confirm_button_many: "{{count}} Prozesse schließen",
+    k_force_button_one: "{{name}} sofort beenden",
+    k_force_button_many: "{{count}} Prozesse sofort beenden",
+    k_confirm_note_one:
+      "OFLH bittet das Programm, sich zu schließen. Ungespeicherte Arbeit kann verloren gehen.",
+    k_confirm_note_many:
+      "OFLH bittet jedes Programm, sich zu schließen. Ungespeicherte Arbeit kann verloren gehen.",
+    k_force_note_one:
+      "OFLH beendet es sofort, ohne dass es speichern kann. Ungespeicherte Arbeit geht verloren.",
+    k_force_note_many:
+      "OFLH beendet sie sofort, ohne dass sie speichern können. Ungespeicherte Arbeit geht verloren.",
+    k_safety_summary: "So schützt dich OFLH",
+    k_safety_listed:
+      "Alle ausgewählten Prozesse sind aufgeführt, auch durch Filter ausgeblendete.",
+    k_safety_identity:
+      "Direkt vor dem Senden prüft OFLH jeden Prozess erneut, damit nie eine wiederverwendete PID getroffen wird.",
+    k_safety_no_escalation:
+      "Schließt sich ein Programm nicht, erzwingt OFLH nichts. Dafür gibt es „Sofort beenden“.",
+    k_impact_latest_scan:
+      "Stand: letzter Scan und eine Prozessprüfung beim Öffnen dieses Dialogs.",
+    k_role_parent: "Elternprozess",
     k_retry_admin: "Mit Administratorrechten erneut versuchen …",
     k_admin_recovery:
       "Zugriff verweigert. Sie können einen erneuten Versuch für diese ursprünglichen Ziele autorisieren. Administratorrechte garantieren keinen Erfolg.",
@@ -497,16 +746,10 @@ const de: TranslationSchema<typeof en> = {
     k_normal_termination_recovery:
       "Einige Prozesse konnten nicht normal beendet werden. Mit „Beenden erzwingen“ können Sie sie ohne Aufräumen stoppen. Nicht gespeicherte Arbeit kann verloren gehen.",
     k_force_terminate: "Beenden erzwingen …",
-    k_force_terminate_7b6445b3: "Beenden erzwingen",
     k_force_terminate_parent: "Elternprozess zwangsweise beenden …",
     k_force_terminate_process: "Prozess zwangsweise beenden …",
-    k_force_terminate_processes: "Prozesse zwangsweise beenden?",
-    k_force_termination_stops_these_processes_9c247038:
-      "Beim erzwungenen Beenden können diese Prozesse keine reguläre Bereinigung durchführen. Ungespeicherte Daten können verloren gehen.",
     k_local_bindings_do_not_prove_external_re_a5cdb1ad:
       "Lokale Bindungen belegen keine Erreichbarkeit von außen. Prozesse mit unbekanntem Besitzer können nicht beendet werden.",
-    k_oflh_validates_each_captured_process_id_5e6d1cc4:
-      "OFLH überprüft die Identität jedes erfassten Prozesses erneut, bevor die Anfrage gesendet wird.",
     k_process_changed_or_already_exited_no_te_9b7e90d2:
       "Prozess geändert oder bereits beendet. Es wurde keine Beendigungsanfrage gesendet.",
     k_process_exited: "Prozess beendet",
@@ -516,15 +759,11 @@ const de: TranslationSchema<typeof en> = {
       "Anfrage gesendet · Beenden konnte nicht überprüft werden",
     k_request_sent_still_running_after_1_5_seconds:
       "Anfrage gesendet · nach 1,5 Sekunden noch aktiv",
-    k_request_these_processes_to_stop_unsaved_8b80fb41:
-      "Fordere diese Prozesse zum Beenden auf. Ungespeicherte Daten können verloren gehen. Das Beenden wird nicht erzwungen.",
     k_stopping_a_parent_may_close_its_childre_04c26acd:
       "Das Beenden eines Elternprozesses kann dessen untergeordnete Prozesse oder deine Sitzung schließen.",
     k_terminate: "Beenden …",
-    k_terminate_77517bd0: "Beenden",
     k_terminate_parent: "Elternprozess beenden …",
     k_terminate_process: "Prozess beenden …",
-    k_terminate_processes: "Prozesse beenden?",
     k_termination_request_failed: "Beendigungsanfrage fehlgeschlagen",
     k_termination_results: "Ergebnisse des Beendens",
     k_unknown_cpu_and_memory_stay_unavailable_1ca3b23b:

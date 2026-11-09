@@ -1,4 +1,5 @@
 //! Tauri transport and native desktop integrations. Inspection remains in the service.
+use crate::service::WaitFollowUp;
 use crate::{contract::*, dropped_target::DroppedTarget, service::Service};
 use serde::Serialize;
 use std::{
@@ -72,6 +73,27 @@ async fn blocking<T: Send + 'static>(
         .await
         .map_err(integration)?
 }
+/// Application icon for a row's executable as a `data:` URL, or `null` for the
+/// neutral fallback. Runs off the UI thread; results are cached per path.
+#[tauri::command]
+async fn process_icon(
+    service: Desktop<'_>,
+    revision: u32,
+    reference: String,
+) -> Result<Option<String>, Failure> {
+    static ICONS: std::sync::OnceLock<oflh_icons::IconCache> = std::sync::OnceLock::new();
+    let dataset = service.dataset(revision)?;
+    blocking(move || {
+        let Ok(path) = dataset.executable(&reference) else {
+            return Ok(None);
+        };
+        Ok(ICONS
+            .get_or_init(oflh_icons::IconCache::native)
+            .data_url(&path)
+            .map(|url| url.to_string()))
+    })
+    .await
+}
 #[tauri::command]
 fn status(service: Desktop<'_>) -> Status {
     service.status()
@@ -113,6 +135,110 @@ fn cancel(service: Desktop<'_>) -> Status {
     service.cancel()
 }
 #[tauri::command]
+fn wait_until_free(service: Desktop<'_>, request: WaitRequest) -> Status {
+    service.wait_until_free(request)
+}
+#[tauri::command]
+fn wait_for_selection(
+    service: Desktop<'_>,
+    request: SelectionWaitRequest,
+) -> Result<Status, Failure> {
+    service.wait_for_selection(request)
+}
+#[tauri::command]
+fn cancel_wait(service: Desktop<'_>) -> Status {
+    service.cancel_wait()
+}
+#[tauri::command]
+async fn wait_follow_up(
+    app: tauri::AppHandle,
+    service: Desktop<'_>,
+    action: String,
+    destination: Option<String>,
+    new_name: Option<String>,
+    notification_title: Option<String>,
+    wait_id: u64,
+) -> Result<WaitFollowUpResult, Failure> {
+    let service = service.inner().clone();
+    blocking(move || {
+        let follow_up = match action.as_str() {
+            "reveal" => WaitFollowUp::Reveal,
+            "delete" => WaitFollowUp::Delete,
+            "move" => WaitFollowUp::Move(service.wait_destination(
+                &destination.ok_or_else(|| Failure::invalid("Choose a move destination first"))?,
+            )?),
+            "rename" => WaitFollowUp::Rename(
+                new_name.ok_or_else(|| Failure::invalid("Enter a new filename first"))?,
+            ),
+            _ => return Err(Failure::invalid("Unknown wait follow-up")),
+        };
+        let target = service.completed_wait_target(wait_id)?;
+        // This blocking worker awaits the actual result. Native paths never enter JS.
+        let path = service.wait_follow_up(wait_id, follow_up)?;
+        crate::wait_files::finish(
+            action.clone(),
+            path,
+            |path| app.opener().reveal_item_in_dir(path).map_err(integration),
+            |display_path| {
+                let Some(title) = &notification_title else {
+                    return Ok(());
+                };
+                let title = crate::wait::notification_text(title);
+                let body = display_path.unwrap_or(&target.display);
+                // Keep focus in the file manager after revealing a moved or renamed target.
+                crate::wait::notify_free(&app, &title, body, false)
+            },
+        )
+    })
+    .await
+}
+#[tauri::command]
+async fn choose_wait_destination(
+    app: tauri::AppHandle,
+    service: Desktop<'_>,
+) -> Result<Option<PathValue>, Failure> {
+    let service = service.inner().clone();
+    blocking(move || {
+        app.dialog()
+            .file()
+            .blocking_pick_folder()
+            .map(|path| service.capture_wait_destination(path.into_path().map_err(integration)?))
+            .transpose()
+    })
+    .await
+}
+/// Show the translated "free" toast off the main thread; the UI supplies the
+/// localized title and explanation, the backend adds the captured target.
+#[tauri::command]
+async fn notify_wait_free(
+    app: tauri::AppHandle,
+    service: Desktop<'_>,
+    title: String,
+    body: String,
+    wait_id: u64,
+) -> Result<(), Failure> {
+    let service = service.inner().clone();
+    blocking(move || {
+        let target = service.completed_wait_target(wait_id)?;
+        let title = crate::wait::notification_text(&title);
+        let body = format!(
+            "{}\n{}",
+            target.display,
+            crate::wait::notification_text(&body)
+        );
+        crate::wait::notify_free(&app, &title, &body, true)
+    })
+    .await
+}
+#[tauri::command]
+fn focus_window(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+#[tauri::command]
 fn close_inspection(service: Desktop<'_>) -> Result<Status, Failure> {
     service.close_inspection()
 }
@@ -137,8 +263,8 @@ async fn choose(
 }
 #[tauri::command]
 async fn page(service: Desktop<'_>, revision: u32, query: TableQuery) -> Result<Page, Failure> {
-    let dataset = service.dataset(revision)?;
-    blocking(move || dataset.page(&query)).await
+    let service = service.inner().clone();
+    blocking(move || service.page(revision, &query)).await
 }
 #[tauri::command]
 async fn details(service: Desktop<'_>, revision: u32, key: String) -> Result<Details, Failure> {
@@ -210,16 +336,25 @@ async fn prepare(
     force: bool,
 ) -> Result<Confirmation, Failure> {
     let service = service.inner().clone();
-    blocking(move || service.prepare(revision, &keys, force)).await
+    blocking(move || {
+        let mut backend = oflh_platform::native().map_err(Failure::from)?;
+        service.prepare(revision, &keys, force, &mut *backend)
+    })
+    .await
 }
 #[tauri::command]
-fn prepare_ancestor(
+async fn prepare_ancestor(
     service: Desktop<'_>,
     owner: String,
     key: String,
     force: bool,
 ) -> Result<Confirmation, Failure> {
-    service.prepare_ancestor(&owner, &key, force)
+    let service = service.inner().clone();
+    blocking(move || {
+        let mut backend = oflh_platform::native().map_err(Failure::from)?;
+        service.prepare_ancestor(&owner, &key, force, &mut *backend)
+    })
+    .await
 }
 #[tauri::command]
 fn prepare_elevated(service: Desktop<'_>, ticket: String) -> Result<Confirmation, Failure> {
@@ -237,6 +372,48 @@ async fn terminate(service: Desktop<'_>, ticket: String) -> Result<Vec<ActionRes
         service.terminate(&ticket, &mut *backend)
     })
     .await
+}
+#[tauri::command]
+async fn prepare_sign_out(
+    service: Desktop<'_>,
+    revision: u32,
+    key: String,
+) -> Result<SignOutConfirmation, Failure> {
+    let service = service.inner().clone();
+    blocking(move || service.prepare_sign_out(revision, &key)).await
+}
+#[tauri::command]
+async fn sign_out(service: Desktop<'_>, ticket: String) -> Result<(), Failure> {
+    let service = service.inner().clone();
+    blocking(move || service.sign_out(&ticket)).await
+}
+#[tauri::command]
+async fn send_message(
+    service: Desktop<'_>,
+    revision: u32,
+    key: String,
+    text: String,
+) -> Result<(), Failure> {
+    let service = service.inner().clone();
+    blocking(move || service.send_message(revision, &key, &text)).await
+}
+#[tauri::command]
+async fn share_files(service: Desktop<'_>) -> Result<ShareFiles, Failure> {
+    let service = service.inner().clone();
+    blocking(move || Ok(service.share_files())).await
+}
+#[tauri::command]
+async fn prepare_close_file(
+    service: Desktop<'_>,
+    id: u32,
+) -> Result<CloseFileConfirmation, Failure> {
+    let service = service.inner().clone();
+    blocking(move || service.prepare_close_file(id)).await
+}
+#[tauri::command]
+async fn close_file(service: Desktop<'_>, ticket: String) -> Result<(), Failure> {
+    let service = service.inner().clone();
+    blocking(move || service.close_file(&ticket)).await
 }
 #[derive(Serialize)]
 struct Recent {
@@ -451,6 +628,7 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(move |app| {
             let handle = app.handle().clone();
             let app_data = app.path().app_data_dir()?;
@@ -523,6 +701,13 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
             follow_process,
             cancel,
             close_inspection,
+            wait_until_free,
+            wait_for_selection,
+            cancel_wait,
+            wait_follow_up,
+            choose_wait_destination,
+            notify_wait_free,
+            focus_window,
             choose,
             page,
             details,
@@ -539,7 +724,14 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
             remove_recent,
             open_paypal,
             clear_recent,
-            revisit
+            revisit,
+            process_icon,
+            prepare_sign_out,
+            sign_out,
+            send_message,
+            share_files,
+            prepare_close_file,
+            close_file
         ])
         .run(tauri::generate_context!())?;
     Ok(())

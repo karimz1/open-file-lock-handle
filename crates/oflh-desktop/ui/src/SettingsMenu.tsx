@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronRight,
@@ -32,6 +33,8 @@ export function SettingsMenu({
 }) {
   const [open, setOpen] = useState(false);
   const [themesOpen, setThemesOpen] = useState(false);
+  const popup = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ left: 0, bottom: 0 });
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const themeTrigger = useRef<HTMLButtonElement>(null);
@@ -66,26 +69,46 @@ export function SettingsMenu({
       focusTheme.current = false;
     }
   }, [themesOpen]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) {
       setThemesOpen(false);
       return;
     }
-    root.current
+    const place = () => {
+      const rect = trigger.current?.getBoundingClientRect();
+      if (rect)
+        setPosition({
+          left: Math.max(8, Math.min(rect.right + 4, window.innerWidth - 348)),
+          bottom: Math.max(8, window.innerHeight - rect.bottom),
+        });
+    };
+    place();
+    window.addEventListener("resize", place);
+    popup.current
       ?.querySelector<HTMLButtonElement>('[role="menuitem"]')
       ?.focus();
     const outside = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
+      if (
+        !root.current?.contains(event.target as Node) &&
+        !popup.current?.contains(event.target as Node)
+      )
+        setOpen(false);
     };
     document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      window.removeEventListener("resize", place);
+    };
   }, [open]);
   return (
     <div
       className="settings-menu"
       ref={root}
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+        if (
+          !event.currentTarget.contains(event.relatedTarget as Node | null) &&
+          !popup.current?.contains(event.relatedTarget as Node | null)
+        )
           setOpen(false);
       }}
       onKeyDown={(event) => {
@@ -121,8 +144,7 @@ export function SettingsMenu({
         event.preventDefault();
         event.stopPropagation();
         const menu =
-          document.activeElement?.closest('[role="menu"]') ??
-          root.current?.querySelector('[role="menu"]');
+          document.activeElement?.closest('[role="menu"]') ?? popup.current;
         const items = [
           ...(menu?.querySelectorAll<HTMLButtonElement>(
             ":scope > button:not(:disabled), :scope > .theme-menu-group > button",
@@ -168,168 +190,172 @@ export function SettingsMenu({
           {t("update.k_notification")}
         </span>
       )}
-      {open && (
-        <div
-          id="settings-menu"
-          className="settings-popup"
-          role="menu"
-          aria-label={t("navigation.k_settings")}
-        >
-          <button
-            role="menuitem"
-            onMouseEnter={() => setThemesOpen(false)}
-            onClick={() => {
-              close();
-              openSettings();
-            }}
-          >
-            <Settings size={15} />
-            {t("navigation.k_settings")}
-          </button>
+      {open &&
+        createPortal(
           <div
-            className="theme-menu-group"
-            onMouseEnter={() => setThemesOpen(true)}
-            onMouseLeave={() => {
-              if (!themeMenu.current?.contains(document.activeElement))
-                setThemesOpen(false);
-            }}
+            ref={popup}
+            style={position}
+            id="settings-menu"
+            className="settings-popup settings-popup-root"
+            role="menu"
+            aria-label={t("navigation.k_settings")}
           >
             <button
-              ref={themeTrigger}
               role="menuitem"
-              aria-haspopup="menu"
-              aria-expanded={themesOpen}
-              aria-controls={themesOpen ? "theme-menu" : undefined}
-              onClick={openThemes}
+              onMouseEnter={() => setThemesOpen(false)}
+              onClick={() => {
+                close();
+                openSettings();
+              }}
             >
-              <Palette size={15} />
-              {t("themes.k_themes")}
-              <ChevronRight size={15} className="menu-chevron" />
+              <Settings size={15} />
+              {t("navigation.k_settings")}
             </button>
-            {themesOpen && (
-              <div
-                id="theme-menu"
-                ref={themeMenu}
-                className="settings-popup themes-submenu"
-                role="menu"
-                aria-label={t("themes.k_themes")}
+            <div
+              className="theme-menu-group"
+              onMouseEnter={() => setThemesOpen(true)}
+              onMouseLeave={() => {
+                if (!themeMenu.current?.contains(document.activeElement))
+                  setThemesOpen(false);
+              }}
+            >
+              <button
+                ref={themeTrigger}
+                role="menuitem"
+                aria-haspopup="menu"
+                aria-expanded={themesOpen}
+                aria-controls={themesOpen ? "theme-menu" : undefined}
+                onClick={openThemes}
               >
-                {themes.map(({ id, label, colors }) => (
-                  <Fragment key={id}>
-                    {id === "light" && (
-                      <div className="settings-menu-rule" role="separator" />
-                    )}
-                    <button
-                      aria-label={t(label)}
-                      aria-describedby={
-                        id === "system" ||
-                        (theme === "system" && id === appliedTheme)
-                          ? `menu-theme-description-${id}`
-                          : undefined
-                      }
-                      role={
-                        id === "system" ? "menuitemcheckbox" : "menuitemradio"
-                      }
-                      aria-checked={
-                        id === "system"
-                          ? theme === "system"
-                          : appliedTheme === id
-                      }
-                      onClick={() => {
-                        onThemeChange(
-                          id === "system" && theme === "system"
-                            ? appliedTheme
-                            : id,
-                        );
-                        close();
-                      }}
-                    >
-                      <span
-                        className="menu-theme-swatch"
-                        aria-hidden="true"
-                        style={{
-                          background: colors[0],
-                          borderColor: colors[2],
-                        }}
-                      />
-                      <span className="menu-theme-label">
-                        {t(label)}
-                        {id === "system" && (
-                          <small id={`menu-theme-description-${id}`}>
-                            {theme === "system"
-                              ? t("themes.k_system_uses_theme", {
-                                  theme: themeLabel(appliedTheme),
-                                })
-                              : t("themes.k_follow_your_device")}
-                          </small>
-                        )}
-                        {theme === "system" && id === appliedTheme && (
-                          <small id={`menu-theme-description-${id}`}>
-                            {t("themes.k_applied_by_system")}
-                          </small>
-                        )}
-                      </span>
-                      {appliedTheme === id && (
-                        <Check
-                          size={15}
-                          className="menu-chevron"
-                          aria-hidden="true"
-                        />
+                <Palette size={15} />
+                {t("themes.k_themes")}
+                <ChevronRight size={15} className="menu-chevron" />
+              </button>
+              {themesOpen && (
+                <div
+                  id="theme-menu"
+                  ref={themeMenu}
+                  className="settings-popup themes-submenu"
+                  role="menu"
+                  aria-label={t("themes.k_themes")}
+                >
+                  {themes.map(({ id, label, colors }) => (
+                    <Fragment key={id}>
+                      {id === "light" && (
+                        <div className="settings-menu-rule" role="separator" />
                       )}
-                    </button>
-                  </Fragment>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="settings-menu-rule" role="separator" />
-          <button
-            role="menuitem"
-            onMouseEnter={() => setThemesOpen(false)}
-            onClick={() => {
-              close();
-              openAbout();
-            }}
-          >
-            <Info size={15} />
-            {t("settings.k_about_oflh")}
-          </button>
-          <button
-            role="menuitem"
-            disabled={busy || state.phase === "restart-required"}
-            onMouseEnter={() => setThemesOpen(false)}
-            onClick={() => {
-              close();
-              if (available) updates.requestUpdate();
-              else void updates.runCheck();
-            }}
-          >
-            {busy ? (
-              <LoaderCircle size={15} className="spin" />
-            ) : available ? (
-              <Download size={15} />
-            ) : (
-              <RefreshCw size={15} />
-            )}
-            {available
-              ? t("update.k_new_update_available")
-              : t(
-                  state.phase === "installing"
-                    ? "update.k_installing_update"
-                    : state.phase === "checking"
-                      ? "update.k_checking_for_updates"
-                      : state.phase === "restart-required"
-                        ? "update.k_update_installed_restart_oflh_to_finish"
-                        : "update.k_check_for_updates",
-                )}
-            {available && (
-              <span className="menu-update-count" aria-hidden="true">
-                1
-              </span>
-            )}
-          </button>
-        </div>
-      )}
+                      <button
+                        aria-label={t(label)}
+                        aria-describedby={
+                          id === "system" ||
+                          (theme === "system" && id === appliedTheme)
+                            ? `menu-theme-description-${id}`
+                            : undefined
+                        }
+                        role={
+                          id === "system" ? "menuitemcheckbox" : "menuitemradio"
+                        }
+                        aria-checked={
+                          id === "system"
+                            ? theme === "system"
+                            : appliedTheme === id
+                        }
+                        onClick={() => {
+                          onThemeChange(
+                            id === "system" && theme === "system"
+                              ? appliedTheme
+                              : id,
+                          );
+                          close();
+                        }}
+                      >
+                        <span
+                          className="menu-theme-swatch"
+                          aria-hidden="true"
+                          style={{
+                            background: colors[0],
+                            borderColor: colors[2],
+                          }}
+                        />
+                        <span className="menu-theme-label">
+                          {t(label)}
+                          {id === "system" && (
+                            <small id={`menu-theme-description-${id}`}>
+                              {theme === "system"
+                                ? t("themes.k_system_uses_theme", {
+                                    theme: themeLabel(appliedTheme),
+                                  })
+                                : t("themes.k_follow_your_device")}
+                            </small>
+                          )}
+                          {theme === "system" && id === appliedTheme && (
+                            <small id={`menu-theme-description-${id}`}>
+                              {t("themes.k_applied_by_system")}
+                            </small>
+                          )}
+                        </span>
+                        {appliedTheme === id && (
+                          <Check
+                            size={15}
+                            className="menu-chevron"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </button>
+                    </Fragment>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="settings-menu-rule" role="separator" />
+            <button
+              role="menuitem"
+              onMouseEnter={() => setThemesOpen(false)}
+              onClick={() => {
+                close();
+                openAbout();
+              }}
+            >
+              <Info size={15} />
+              {t("settings.k_about_oflh")}
+            </button>
+            <button
+              role="menuitem"
+              disabled={busy || state.phase === "restart-required"}
+              onMouseEnter={() => setThemesOpen(false)}
+              onClick={() => {
+                close();
+                if (available) updates.requestUpdate();
+                else void updates.runCheck();
+              }}
+            >
+              {busy ? (
+                <LoaderCircle size={15} className="spin" />
+              ) : available ? (
+                <Download size={15} />
+              ) : (
+                <RefreshCw size={15} />
+              )}
+              {available
+                ? t("update.k_new_update_available")
+                : t(
+                    state.phase === "installing"
+                      ? "update.k_installing_update"
+                      : state.phase === "checking"
+                        ? "update.k_checking_for_updates"
+                        : state.phase === "restart-required"
+                          ? "update.k_update_installed_restart_oflh_to_finish"
+                          : "update.k_check_for_updates",
+                  )}
+              {available && (
+                <span className="menu-update-count" aria-hidden="true">
+                  1
+                </span>
+              )}
+            </button>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

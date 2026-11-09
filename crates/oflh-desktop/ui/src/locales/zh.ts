@@ -2,6 +2,174 @@ import type { TranslationSchema } from "../i18n/types";
 import en from "./en";
 
 const zh: TranslationSchema<typeof en> = {
+  wait: {
+    k_file_action: "等待文件空闲",
+    k_process_action: "等待进程退出",
+    k_port_action: "等待端口空闲",
+    k_file_target: "所选文件或文件夹",
+    k_process_target: "所选进程",
+    k_port_target: "所选端口",
+    k_file_description:
+      "每秒检查所有进程对这个路径的使用情况。不会停止任何进程。后续操作前会再次确认目标仍为空闲。",
+    k_process_description:
+      "每秒检查这个已捕获的进程是否退出。不会停止任何程序。其他进程仍可能使用其文件。",
+    k_port_description:
+      "每秒检查，直到此端口号不存在任何本地绑定。不会停止任何进程。",
+    k_enable_timeout: "设置时限",
+    k_seconds: "时限（秒）",
+    k_selection_changed:
+      "所选结果已过期或其他操作正在运行。请关闭此对话框并重新选择目标。",
+    k_confirm_move: "在最终确认空闲后移动此所选目标。",
+    k_waiting_process: "正在等待进程退出",
+    k_process_exited: "所选进程已退出。",
+    k_activity: "等待所选目标",
+    k_dismiss: "关闭等待状态",
+    k_title: "等待目标空闲",
+    k_action: "等待空闲",
+    k_follow_up: "空闲后执行",
+    k_notify_only: "仅通知",
+    k_reveal: "在文件管理器中显示",
+    k_move: "移至文件夹并显示",
+    k_rename: "重命名并显示",
+    k_destination: "目标文件夹",
+    k_no_destination: "请在开始前选择文件夹。",
+    k_choose_destination: "选择文件夹…",
+    k_change_destination: "更改文件夹…",
+    k_new_name: "新名称",
+    k_name_hint: "请包含扩展名。文件仍保留在原文件夹中。",
+    k_invalid_name: "请输入不同的文件名，不得包含路径、保留字符或设备名称。",
+    k_result_path: "操作后的路径",
+    k_reveal_after_change:
+      "操作成功后，文件管理器将打开此位置并选中结果。不会替换现有项目。",
+    k_confirm_rename: "在最终确认空闲后重命名此所选目标。",
+    k_follow_up_running: "正在完成所选操作…",
+    k_follow_up_failed: "后续操作失败。",
+    k_moved: "已移至所选文件夹。",
+    k_renamed: "已重命名。",
+    k_deleted: "已删除。",
+    k_revealed: "已在文件管理器中显示。",
+    k_reveal_failed: "操作成功，但文件管理器无法打开结果。",
+    k_notification_failed: "操作成功，但无法显示桌面通知。",
+    k_delete: "删除",
+    k_start: "开始等待",
+    k_waiting: "正在等待目标空闲",
+    k_free: "目标已空闲。",
+    k_timeout: "目标在超时前未变为空闲。",
+    k_held_again: "目标再次被占用，未执行后续操作。",
+    k_cancelled: "等待已取消。",
+    k_again: "再次等待",
+    k_protected_delete:
+      "OFLH 不会删除驱动器根目录、用户主文件夹或系统文件夹。请选择其中的文件或文件夹。",
+    k_move_unsupported:
+      "此文件系统无法在保证不替换现有项目的情况下移动或重命名。未做任何更改。",
+    k_move_cross_device:
+      "目标位于其他驱动器或文件系统。OFLH 只在同一文件系统内移动，因此未做任何更改。",
+    k_move_into_itself: "文件夹不能移动到其自身内部。请选择其他目标。",
+    k_notify_free_title: "OFLH：目标已空闲",
+    k_notify_free_body: "未发现此目标的占用进程。",
+    k_notify_exit_title: "OFLH：进程已退出",
+    k_notify_exit_body: "所选进程已退出。其他进程仍可能使用其文件。",
+    k_notify_moved: "OFLH：已移动",
+    k_notify_renamed: "OFLH：已重命名",
+    k_notify_deleted: "OFLH：已删除",
+    k_notify_revealed: "OFLH：已在文件管理器中显示",
+    k_confirm_delete:
+      "在最终确认空闲后永久删除此目标。文件夹会连同其全部内容一起删除，不会移到回收站。",
+  },
+  matches: {
+    k_title: "匹配的文件",
+    k_more: "另有 {{n}} 个",
+    k_more_files: "另有 {{n}} 个匹配的文件。",
+    k_reference_one: "1 个引用 · 访问与证据",
+    k_references: "{{n}} 个引用 · 访问与证据",
+    k_more_references:
+      "另有 {{n}} 个引用。请查看所有匹配的文件使用情况以了解详情。",
+    k_show_all: "查看所有匹配的文件使用情况",
+  },
+  sessions: {
+    k_user: "用户",
+    k_session: "会话",
+    k_owner: "所有者和会话",
+    k_session_n: "会话 {{id}}",
+    k_kind_console: "控制台",
+    k_kind_rdp: "RDP",
+    k_kind_ssh: "SSH",
+    k_kind_tty: "终端",
+    k_kind_x11: "X11",
+    k_kind_wayland: "Wayland",
+    k_kind_services: "服务",
+    k_kind_other: "其他",
+    k_state_active: "活动",
+    k_state_idle: "空闲",
+    k_state_disconnected: "已断开",
+    k_state_closing: "正在注销",
+    k_state_other: "状态未知",
+    k_since: "自 {{time}}",
+    k_from: "来自 {{client}}",
+    k_service_account: "服务账户",
+    k_this_session: "你的会话",
+    k_no_session: "无登录会话",
+    k_send_message: "发送消息…",
+    k_sign_out: "注销用户…",
+    k_requires_admin: "需要管理员权限",
+    k_requires_root: "需要 root 权限",
+    k_requires_admin_hint:
+      "以管理员身份重新启动 OFLH 才能使用。OFLH 从不自行申请权限。",
+    k_requires_root_hint:
+      "使用 sudo 启动 OFLH 才能使用。OFLH 从不自行申请权限。",
+    k_message_title: "向 {{user}} 发送消息",
+    k_message_label: "消息",
+    k_message_subject: "文件或应用访问请求 — OFLH",
+    k_message_recipient: "收件人：{{user}}",
+    k_message_process: "应用：{{name}}（PID {{pid}}）",
+    k_message_file: "文件：{{path}}",
+    k_message_port: "本地端口：{{endpoint}}（{{protocol}}）",
+    k_message_target: "检查目标：{{path}}",
+    k_message_file_reason:
+      "OFLH 发现此应用在你的会话中引用了该文件。这并不能证明应用持有文件锁。",
+    k_message_port_reason: "OFLH 发现此应用在你的会话中使用了该本地端口。",
+    k_message_target_reason:
+      "OFLH 发现此应用在你的会话中使用了该目标或其内容。打开文件并不能证明持有文件锁。",
+    k_message_no_action:
+      "通过 Open File Lock Handle (OFLH) 发送。发送此请求不会关闭任何文件或应用。",
+    k_message_default_note:
+      "如果你不再需要下方文件，能否请你保存更改并关闭它？我需要访问该文件。谢谢。",
+    k_message_application_note:
+      "能否请你确认是否仍需使用下方应用？关闭前请保存更改。谢谢。",
+    k_message_port_note:
+      "能否请你确认此应用是否仍需使用下方端口？我需要使用该端口。关闭任何程序前请保存工作。谢谢。",
+    k_message_delivery:
+      "Windows 会在该用户的会话中显示原生消息对话框。收件人无需安装 OFLH。该消息无法直接回复；发送成功并不代表已被阅读。",
+    k_message_own_session: "这是你自己的会话。消息将显示在你的桌面上。",
+    k_message_preview: "收件人预览 · 包含文件与应用信息",
+    k_message_length: "{{n}} / 1000 个字符（含上下文）。",
+    k_message_too_long:
+      "完整消息过长。请缩短留言后再发送；文件路径不会被自动截短。",
+    k_message_stale:
+      "检查结果或所选文件已更改。请关闭此草稿，并从当前结果中重新打开。",
+    k_message_placeholder: "请保存工作，服务器将在 18:00 重启。",
+    k_message_send: "发送",
+    k_message_sent: "已向 {{user}} 发送消息。",
+    k_sign_out_title: "注销 {{user}}？",
+    k_sign_out_note:
+      "此会话中的所有程序都会关闭。{{user}} 未保存的工作将丢失。",
+    k_sign_out_button: "注销 {{user}}",
+    k_sign_out_own_session: "这是你自己的会话。你将被注销，OFLH 也会关闭。",
+    k_sign_out_processes: "将关闭的程序",
+    k_sign_out_done: "正在注销 {{user}}。",
+    k_share_title: "通过网络打开",
+    k_share_summary_one: "有 1 人通过网络共享打开了它。",
+    k_share_summary_many: "此目标有 {{n}} 个网络打开。",
+    k_share_locks: "{{n}} 个锁",
+    k_share_write: "可写入",
+    k_share_close: "关闭打开的文件",
+    k_share_close_title: "为 {{user}} 关闭 {{path}}？",
+    k_share_close_note: "{{user}} 将失去对该文件的访问。未保存的更改可能丢失。",
+    k_share_closed: "已为 {{user}} 关闭文件。",
+    k_share_unreadable: "读取网络打开需要管理员权限。",
+    k_session_changed:
+      "自你确认以来，会话或文件已更改。未执行任何操作；请重新查看。",
+  },
   about: {
     k_version: "版本",
     k_commit: "提交",
@@ -143,8 +311,6 @@ const zh: TranslationSchema<typeof en> = {
   },
   filters: {
     k_access_relation: "访问权限 / 关联类型",
-    k_all_targets_are_listed_below_including_1515b80a:
-      "下方列出了全部目标，包括被筛选器隐藏的目标。",
     k_any_evidence: "任意证据",
     k_applied_column_filters: "已应用的列筛选",
     k_apply_filters: "应用筛选",
@@ -326,6 +492,7 @@ const zh: TranslationSchema<typeof en> = {
     k_system_default: "跟随系统",
   },
   navigation: {
+    k_resize_sidebar: "调整侧栏宽度",
     k_collapse_sidebar: "收起侧栏",
     k_expand_sidebar: "展开侧栏",
     k_next_previous_workspace: "下一个 / 上一个工作区",
@@ -375,6 +542,10 @@ const zh: TranslationSchema<typeof en> = {
     k_selection_copied: "已复制所选内容",
   },
   settings: {
+    k_open_window_maximized: "以最大化方式打开窗口",
+    k_open_window_maximized_help:
+      "OFLH 启动时最大化窗口。你仍然可以还原窗口并调整其大小。下次启动时生效。",
+    k_window: "窗口",
     k_interface_zoom: "界面缩放",
     k_scale_the_whole_interface_zoom_help:
       "缩放整个界面，包括图标、按钮和间距。适用于难以看清较小界面元素的情况。",
@@ -456,6 +627,59 @@ const zh: TranslationSchema<typeof en> = {
     k_visible_columns: "可见列",
   },
   termination: {
+    k_close_unavailable:
+      "没有窗口接受关闭请求。你可以检查并确认强制退出此进程。",
+    k_impact_critical: "Windows 需要此进程。结束它可能导致电脑崩溃。",
+    k_impact_service: "某个服务很可能会立即重新启动它。",
+    k_impact_group_service: "服务",
+    k_impact_service_restarts: "可能会重新启动它",
+    k_impact_targets_label: "受影响的进程",
+    k_impact_windows:
+      "{{name}} 将完全关闭，包括全部 {{count}} 个打开的窗口，例如“{{title}}”。",
+    k_impact_children_one: "1 个后台进程会继续运行。",
+    k_impact_children_other: "{{count}} 个后台进程会继续运行。",
+    k_impact_files_one: "另外 1 个已打开的文件也会被释放。",
+    k_impact_files_other: "另外 {{count}} 个已打开的文件也会被释放。",
+    k_impact_ports_one: "1 个网络端口上的连接将断开。",
+    k_impact_ports_other: "{{count}} 个网络端口上的连接将断开。",
+    k_impact_group_windows: "窗口（{{count}}）",
+    k_impact_group_children: "后台进程（{{count}}）",
+    k_impact_group_files: "文件（{{count}}）",
+    k_impact_group_ports: "端口（{{count}}）",
+    k_impact_copy: "复制 {{value}}",
+    k_impact_details: "详情",
+    k_impact_windows_unavailable: "此系统不提供窗口标题。",
+    k_impact_children_note:
+      "子进程不会被终止，通常会继续运行，但部分可能随此进程一起退出。",
+    k_impact_show_all: "显示全部 {{count}} 项",
+    k_impact_show_less: "收起",
+    k_impact_not_listed: "另有 {{count}} 项未列出",
+    k_impact_filter: "筛选列表",
+    k_impact_filter_placeholder: "筛选…",
+    k_impact_filter_count: "{{shown}} / {{total}}",
+    k_impact_filter_none: "无匹配项",
+    k_confirm_title_one: "关闭 {{name}}？",
+    k_confirm_title_many: "关闭 {{count}} 个进程？",
+    k_force_title_one: "强制结束 {{name}}？",
+    k_force_title_many: "强制结束 {{count}} 个进程？",
+    k_confirm_button_one: "关闭 {{name}}",
+    k_confirm_button_many: "关闭 {{count}} 个进程",
+    k_force_button_one: "强制结束 {{name}}",
+    k_force_button_many: "强制结束 {{count}} 个进程",
+    k_confirm_note_one: "OFLH 会请求程序关闭。未保存的工作可能丢失。",
+    k_confirm_note_many: "OFLH 会请求每个程序关闭。未保存的工作可能丢失。",
+    k_force_note_one:
+      "OFLH 会立即结束它，不给它保存的机会。未保存的工作将会丢失。",
+    k_force_note_many:
+      "OFLH 会立即结束它们，不给它们保存的机会。未保存的工作将会丢失。",
+    k_safety_summary: "OFLH 如何确保安全",
+    k_safety_listed: "已列出所有选中的进程，包括被筛选隐藏的进程。",
+    k_safety_identity:
+      "发送前 OFLH 会再次核对每个进程，绝不会误伤被复用的 PID。",
+    k_safety_no_escalation:
+      "程序未关闭时，OFLH 不会强制结束。如需强制，请使用“强制结束”。",
+    k_impact_latest_scan: "依据最近一次扫描及打开此对话框时的进程检查。",
+    k_role_parent: "父进程",
     k_retry_admin: "以管理员权限重试…",
     k_admin_recovery:
       "权限不足。您可以授权对原始目标重试。管理员权限不保证成功。",
@@ -463,18 +687,12 @@ const zh: TranslationSchema<typeof en> = {
       "操作系统将为每个目标请求管理员授权。保留原来的终止方式。取消将停止后续请求。",
 
     k_normal_termination_recovery:
-      "部分进程无法正常终止。您可以使用强制终止，在不执行清理的情况下停止它们。未保存的工作可能会丢失。",
+      "部分进程无法正常终止。您可以使用强制终止，在不执行清理的情况下停止它们。未保存的工作可能丢失。",
     k_force_terminate: "强制终止…",
-    k_force_terminate_7b6445b3: "强制终止",
     k_force_terminate_parent: "强制终止父进程…",
     k_force_terminate_process: "强制终止进程…",
-    k_force_terminate_processes: "强制终止这些进程？",
-    k_force_termination_stops_these_processes_9c247038:
-      "强制终止会立即停止这些进程，不允许正常清理。未保存的工作可能丢失。",
     k_local_bindings_do_not_prove_external_re_a5cdb1ad:
       "本地绑定不代表可从外部访问。持有者未知时无法终止进程。",
-    k_oflh_validates_each_captured_process_id_5e6d1cc4:
-      "发送请求前，OFLH 会再次验证扫描时获取的每个进程身份。",
     k_process_changed_or_already_exited_no_te_9b7e90d2:
       "进程已变化或已退出。未发送终止请求。",
     k_process_exited: "进程已退出",
@@ -482,15 +700,11 @@ const zh: TranslationSchema<typeof en> = {
     k_request_sent_couldn_t_verify_exit: "已发送请求 · 无法确认退出",
     k_request_sent_still_running_after_1_5_seconds:
       "已发送请求 · 1.5 秒后仍在运行",
-    k_request_these_processes_to_stop_unsaved_8b80fb41:
-      "请求这些进程停止。未保存的工作可能丢失。不会自动升级为强制终止。",
     k_stopping_a_parent_may_close_its_childre_04c26acd:
       "停止父进程可能关闭其子进程或你的会话。",
     k_terminate: "终止…",
-    k_terminate_77517bd0: "终止",
     k_terminate_parent: "终止父进程…",
     k_terminate_process: "终止进程…",
-    k_terminate_processes: "终止这些进程？",
     k_termination_request_failed: "终止请求失败",
     k_termination_results: "终止结果",
     k_unknown_cpu_and_memory_stay_unavailable_1ca3b23b:

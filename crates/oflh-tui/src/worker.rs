@@ -9,6 +9,11 @@ pub enum Work {
     FollowPort(Identity, std::path::PathBuf),
     Sample(Vec<Identity>),
     Kill(Vec<Identity>, bool),
+    Wait {
+        target: Target,
+        port: Option<u16>,
+        timeout: Option<std::time::Duration>,
+    },
 }
 struct Job {
     generation: u64,
@@ -99,6 +104,30 @@ fn execute_job(backend: &mut dyn Backend, job: Job) -> Event {
                         Ok((target, PreparedSnapshot::new(snapshot, &job.cancel)?))
                     },
                 ),
+            ),
+        ),
+        Work::Wait {
+            target,
+            port,
+            timeout,
+        } => Event::Wait(
+            job.generation,
+            oflh_platform::wait_until_free(
+                backend,
+                oflh_platform::WaitTarget {
+                    path: Some(&target),
+                    // The terminal Ports view filters all local bindings by number.
+                    check: port.map_or(
+                        oflh_core::check::CheckTarget::Path,
+                        oflh_core::check::CheckTarget::Port,
+                    ),
+                },
+                oflh_core::wait::Options {
+                    timeout,
+                    ..Default::default()
+                },
+                std::time::Instant::now(),
+                &job.cancel,
             ),
         ),
         Work::Sample(identities) => {

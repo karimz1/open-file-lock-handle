@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, architecture/redesign-in-rust]
+    branches: [main, architecture/redesign-in-rust, 'release/**']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -36,6 +36,8 @@ jobs:
         run: node --test .github/scripts/render-release-notes.test.mjs
       - name: Test automatic website commits and stable promotion
         run: node --test .github/scripts/sync-updater.test.cjs
+      - name: Test the workflow result aggregation
+        run: node --test .github/scripts/require-success.test.mjs
   lockfile:
     name: Cargo lockfile
     runs-on: ubuntu-24.04
@@ -127,6 +129,12 @@ jobs:
         run: |
           mkdir -p .profile-base/crates/oflh-tui/examples tui-profiles
           cp crates/oflh-tui/examples/navigation_profile.rs .profile-base/crates/oflh-tui/examples/navigation_profile.rs
+          # The example includes src modules by path; drop any the baseline does not have yet.
+          for module in $(sed -n 's|^#\[path = "\.\./src/\(.*\)\.rs"\]$|\1|p' crates/oflh-tui/examples/navigation_profile.rs); do
+            if [ ! -f ".profile-base/crates/oflh-tui/src/$module.rs" ]; then
+              sed -i.bak "/^#\[path = \"\.\.\/src\/$module\.rs\"\]$/,+1d" .profile-base/crates/oflh-tui/examples/navigation_profile.rs
+            fi
+          done
           profile_features=()
           if grep -q '^profiling = ' .profile-base/crates/oflh-tui/Cargo.toml; then
             profile_features=(--features profiling)
@@ -158,7 +166,7 @@ jobs:
           archive: false
           path: dist/oflh-cli.*
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
   inspection-summary:
     name: Compare six native inspection profiles
     needs: test
@@ -179,3 +187,22 @@ jobs:
           name: inspection-summary
           path: inspection-summary.md
           retention-days: 14
+  # Single status for the whole workflow. GitHub counts a skipped job as passing
+  # in branch protection, so this job runs even after failures and fails unless
+  # every job above, including all six native matrix legs, succeeded.
+  result:
+    name: CI result
+    if: always()
+    needs: [updater, lockfile, test, inspection-summary]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Require every job and matrix leg to succeed
+        env:
+          RESULT_TITLE: CI result
+          NEEDS: ${{ toJSON(needs) }}
+        run: node .github/scripts/require-success.mjs

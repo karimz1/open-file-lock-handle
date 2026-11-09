@@ -2,6 +2,7 @@ import type { Row } from "./api";
 import type { ColumnKey } from "./Table";
 import { compactPath, memory } from "./state";
 import { t, tValue } from "./i18n";
+import { sessionCell } from "./sessions";
 
 /** Text actually shown in each column, including translated labels and badges. */
 export function columnText(
@@ -15,9 +16,15 @@ export function columnText(
       return row.name || t("app.k_unnamed");
     case "pid":
       return String(row.pid || "—");
+    case "user":
+      return row.user || "—";
+    case "session":
+      return sessionCell(row.session, row.session_kind);
     case "path":
       return (
-        ((handles ? row.path : compactPath(row.path, target)) ||
+        ((handles || row.matching_files
+          ? row.path
+          : compactPath(row.path, target)) ||
           t("common.k_unavailable_2c9c1f79")) +
         (row.deleted ? ` ${t("table.k_deleted")}` : "")
       );

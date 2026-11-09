@@ -7,6 +7,23 @@ import {
   compactPath,
 } from "./state";
 describe("desktop state", () => {
+  it("rejects a late wait acknowledgment and older wait results while accepting other status fields", () => {
+    const done = {
+      ...initialStatus,
+      wait: { ...initialStatus.wait, id: 2, outcome: "free" as const },
+    };
+    const acknowledgment = {
+      ...done,
+      processes: 3,
+      wait: { ...done.wait, waiting: true, outcome: null },
+    };
+    expect(acceptStatus(done, acknowledgment).wait).toBe(done.wait);
+    expect(acceptStatus(done, acknowledgment).processes).toBe(3);
+    const old = { ...acknowledgment, wait: { ...acknowledgment.wait, id: 1 } };
+    expect(acceptStatus(done, old).wait).toBe(done.wait);
+    const next = { ...acknowledgment, wait: { ...acknowledgment.wait, id: 3 } };
+    expect(acceptStatus(done, next)).toBe(next);
+  });
   it("rejects obsolete completions and late scan acknowledgments", () => {
     const scanning = { ...initialStatus, generation: 2, scanning: true };
     expect(acceptStatus(scanning, { ...initialStatus, generation: 1 })).toBe(

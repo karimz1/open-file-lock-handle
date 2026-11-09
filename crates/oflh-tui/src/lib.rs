@@ -4,6 +4,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 mod app;
 mod refresh;
+mod session;
 mod update_worker;
 pub use view::messages::{Language, LanguageError};
 mod view;
@@ -23,9 +24,11 @@ use worker::{Work, Worker};
 enum Event {
     Input(std::io::Result<TerminalEvent>),
     Scan(u64, Result<PreparedSnapshot>),
+    Wait(u64, Result<()>),
     ScopedScan(u64, Box<Result<(Target, PreparedSnapshot)>>),
     Metrics(u64, Result<Vec<(Identity, Metrics)>>),
     Killed(usize, Vec<String>),
+    Impact(Vec<Identity>, Vec<oflh_core::impact::Impact>),
     Update(std::result::Result<Option<String>, String>),
 }
 const REFRESH: Duration = Duration::from_secs(5);
@@ -52,6 +55,8 @@ pub struct StartOptions {
     pub ports_path_only: bool,
     /// Optional exact local port to search for at startup.
     pub port: Option<u16>,
+    /// Optional deadline for interactive w wait.
+    pub wait_timeout: Option<Duration>,
 }
 
 /// Run the interactive terminal with background scanning and RAII restoration.
@@ -68,10 +73,12 @@ pub fn run(
     app.language = options.language.unwrap_or_else(Language::system);
     app.update.enabled = !options.no_update_check
         && oflh_core::releases::can_check_releases(VERSION, PULL_REQUEST_URL);
+    app.configure_wait(options.wait_timeout);
     app.ports = options.ports;
     app.ports_path_only = options.ports_path_only;
     app.follow_port_folder = options.follow_port_folder;
     app.ports_requested = true;
+    app.sessions = session::Sessions::native(oflh_platform::elevation::is_elevated());
     app.port_query = options
         .port
         .map_or_else(String::new, |port| format!("port:{port}"));
@@ -85,6 +92,7 @@ pub fn run(
         None
     };
     let mut update_schedule = UpdateSchedule::new(app.update.enabled, Instant::now());
+    let impact_sender = sender.clone();
     std::thread::Builder::new()
         .name("oflh-input".into())
         .spawn(move || {
@@ -108,7 +116,7 @@ pub fn run(
         if let Some(at) = update_schedule.deadline() {
             deadline = deadline.min(at);
         }
-        if app.scanning || app.stopping {
+        if app.scanning || app.stopping || app.waiting {
             deadline = deadline.min(pulse)
         }
         if app.auto
@@ -169,6 +177,12 @@ pub fn run(
                 refresh.completed(Instant::now());
                 dirty = true
             }
+            Ok(Event::Wait(result_generation, result)) if result_generation == generation => {
+                sampling = false;
+                sample = None;
+                app.complete_wait(&result);
+                dirty = true;
+            }
             Ok(Event::ScopedScan(result_generation, result)) if result_generation == generation => {
                 sampling = false;
                 let success = result.is_ok();
@@ -222,6 +236,10 @@ pub fn run(
                 effect = Effect::Scan;
                 dirty = true
             }
+            Ok(Event::Impact(ids, impact)) => {
+                app.accept_impact(&ids, impact);
+                dirty = true
+            }
             Ok(Event::Update(result)) => {
                 if let Some(worker) = &mut updates {
                     worker.completed();
@@ -234,7 +252,7 @@ pub fn run(
         }
         match effect {
             Effect::Quit => return Ok(()),
-            Effect::Scan if !app.scanning && !app.stopping => {
+            Effect::Scan if !app.scanning && !app.stopping && !app.waiting => {
                 generation += 1;
                 sample = None;
                 sampling = false;
@@ -270,6 +288,25 @@ pub fn run(
                 }
                 dirty = true
             }
+            Effect::Wait => {
+                generation += 1;
+                sample = None;
+                sampling = false;
+                app.auto = false;
+                worker.request(
+                    generation,
+                    Work::Wait {
+                        target: app.target.clone(),
+                        port: selected_wait_port(&app),
+                        timeout: app.wait_timeout,
+                    },
+                );
+                pulse = Instant::now() + PULSE;
+            }
+            Effect::CancelWait => {
+                worker.cancel_scan();
+                app.complete_wait(&Err(Error::Cancelled));
+            }
             Effect::CancelScan => {
                 worker.cancel_scan();
                 app.status = app.language.text("Cancelling inspection…").into();
@@ -285,6 +322,27 @@ pub fn run(
                     dirty = true;
                 }
             }
+            Effect::Impact(ids) => {
+                // A fresh backend keeps this read off the scan worker, so it
+                // neither cancels nor waits for a running scan.
+                let sender = impact_sender.clone();
+                let spawned = std::thread::Builder::new()
+                    .name("oflh-impact".into())
+                    .spawn(move || {
+                        let impact = match oflh_platform::native() {
+                            Ok(mut backend) => backend.impact(&ids),
+                            Err(_) => vec![Default::default(); ids.len()],
+                        };
+                        let _ = sender.send(Event::Impact(ids, impact));
+                    });
+                if spawned.is_err() {
+                    app.impact.clear()
+                }
+            }
+            Effect::SignOut(key) => {
+                app.finish_sign_out(&key);
+                dirty = true
+            }
             Effect::None | Effect::Scan | Effect::FollowPort(..) => {}
         }
         let now = Instant::now();
@@ -295,7 +353,15 @@ pub fn run(
             app.update.begin(false);
             update_schedule.started();
         }
-        if (app.scanning || app.stopping) && now >= pulse {
+        if (app.scanning || app.stopping || app.waiting) && now >= pulse {
+            if let Some(started) = app.wait_started {
+                app.wait_elapsed = now.saturating_duration_since(started);
+                app.status = localized!(
+                    app.language,
+                    "Waiting for {seconds}s · z cancel",
+                    seconds = app.wait_elapsed.as_secs()
+                );
+            }
             if let Some(started) = app.scan_started {
                 app.scan_elapsed = now.saturating_duration_since(started);
                 app.scan_progress = worker.progress();
@@ -359,6 +425,15 @@ fn open_link(url: &'static str) -> std::io::Result<()> {
         let _ = child.wait();
     });
     Ok(())
+}
+
+fn selected_wait_port(app: &App) -> Option<u16> {
+    app.port_query
+        .split("port:")
+        .nth(1)
+        .and_then(|part| part.split_whitespace().next())
+        .and_then(|part| part.parse().ok())
+        .filter(|port| *port > 0)
 }
 
 fn scan_work(app: &App) -> Work {

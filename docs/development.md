@@ -86,6 +86,12 @@ macOS. It prints the paths of the new packages under
 | `--clean` | Run `npm ci` even if `node_modules` exists |
 | `--signed` | Also build signed updater artifacts; needs `TAURI_SIGNING_PRIVATE_KEY` |
 
+The Windows installer artwork (`crates/oflh-desktop/windows/branding/*.bmp`)
+is generated from the app logo. After changing the logo or colours, run
+`python3 crates/oflh-desktop/windows/branding/generate.py` (needs Pillow) and
+commit the new bitmaps. They are drawn at the 100% sizes MUI2 reserves, so
+NSIS stretches them slightly on high-DPI screens.
+
 Without a signing key, updater artifacts (`.sig`, `.app.tar.gz`) are turned
 off for the build, so local installers work without the release keys. When
 `TAURI_SIGNING_PRIVATE_KEY` is set, they are built as in CI.
@@ -140,8 +146,31 @@ platform backend need native runs on Linux, macOS, and Windows for both x86-64
 and ARM64, which [CI](../.github/workflows/ci.yml) provides on every pull
 request. Cross-compiling is not a substitute.
 
+Each workflow with matrix jobs ends in one status job (**CI result**,
+**Desktop result**, **Windows discovery result**, **Release result**). It runs
+even after failures and passes only when every job and every matrix leg
+succeeded; cancelled or unexpected skipped jobs fail it. Intentional skips are
+listed in the job and shown as such in its summary. Use these jobs as the
+required checks in branch protection. Non-blocking multi-user steps (Windows
+second-session sign-out, macOS non-admin pass) report their real outcome as a
+warning and in the run summary.
+
 [Regression coverage](inspection-regressions.md) lists which test guards which
 behavior.
+
+### Windows installer UI automation
+
+The desktop crate owns the [Windows installer test guide](../crates/oflh-desktop/tests/installer/README.md).
+The suite uses FlaUI.UIA3 and NUnit against real NSIS dialogs and built packages;
+it runs on interactive Windows CI runners. It checks owner-relative dialog
+placement, default cancellation, installation, reinstallation and uninstallation.
+Screenshots and TRX results are CI artifacts, not committed images.
+
+The repository [llms.txt](../llms.txt) links this guide and official framework
+references. The [website index](https://oflh.karimzouine.com/llms.txt) covers
+public downloads and user documentation. These indexes provide navigation;
+Google's [AI search guidance](https://developers.google.com/search/docs/appearance/ai-features)
+still recommends normal crawlable, helpful content rather than special AI files.
 
 ## Project layout
 

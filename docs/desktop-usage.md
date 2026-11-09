@@ -54,13 +54,18 @@ view ignores file and folder drops.
 A folder target includes everything below it, so you can open `C:\` or `/` to
 search the whole system. The sidebar switches between two views of the result:
 
-- **Processes** (`Ctrl+1`) has one row per process.
+- **Processes** (`Ctrl+1`) has one row per process. Its **Path** column shows
+  the first matching file's full path; **+N more** opens the matching files
+  in details. The executable path is listed separately in details.
 - **File usages** (`Ctrl+2`) has one row per matching file reference.
 
-Click a row to open its details panel: **Matching handles**, **Local ports**,
-and **Process ancestry**, with full paths and buttons to copy a path or reveal
-it in the file manager. Table paths are shortened to fit; the details show them
-in full.
+Click a process row to see **Matching files** near the top of details, with
+buttons to copy each path or reveal it in the file manager. Repeated references
+to the same native path appear together; expand the reference count to see
+their access and lock evidence. The preview shows up to three files and eight
+distinct observation categories per file. **View all matching file usages**
+keeps the search and filters and opens every matching reference for that process.
+**Matching handles**, **Local ports**, and **Process ancestry** remain available.
 
 An open file is not proof of a lock. Tick **Lock evidence only** to keep only
 rows with lock or sharing-conflict evidence. On Windows, reported users of a
@@ -107,6 +112,11 @@ windows do not receive Explorer launches.
 - To start an inspection from a script or shortcut, run
   `oflh-desktop.exe --inspect "<path>"`. A relative path is resolved against
   the directory you run it from.
+
+Drag the sidebar's right edge to resize it. You can also focus the divider
+with Tab and use Left/Right to change its width. Double-click the divider or
+press Home while it is focused to restore the default width. A chosen width
+is remembered separately from the collapsed state.
 
 ## Follow the parent process tree
 
@@ -169,6 +179,9 @@ filter hides; the action bar and confirmation say so.
 path, file name, process name, or PID, and **Reveal** opens the file manager at
 the native path.
 
+The toolbar button changes to **Deselect all** when all matching processes
+are selected. Clicking it clears those matches and keeps any hidden selections.
+
 ## Process actions
 
 ![OFLH Desktop process actions menu for firefox.exe on Windows, including copying a path or PID, revealing a file, matching handles, Terminate, and Force terminate](../images/oflh-desktop-windows-process-actions-menu.webp)
@@ -191,10 +204,60 @@ still belongs to the process you selected; results refresh afterwards.
 **Desktop example (Windows):** review the named processes before confirming;
 **Cancel** is the default.
 
+### What the confirmation shows
+
+Since 0.9 the confirmation also lists what ending each process affects. Open
+**Details** under a target to see every item:
+
+- **Windows** (Windows only): open top-level windows that close with the
+  program.
+- **Background processes**: running child processes. They are not ended; some
+  may exit with their parent.
+- **Files** and **Ports**: other files the process has open and the network
+  ports whose connections will drop, from the latest scan.
+- **Service**: when a Windows service, a systemd unit, or a launchd job in your
+  user domain runs the process, a warning says the service will probably
+  restart it right away. Detection is best effort.
+- On Windows, processes the system needs (for example `csrss.exe`,
+  `winlogon.exe`, or `lsass.exe`) carry a warning that ending them can crash
+  the PC.
+
+Long confirmations scroll; a slim scrollbar and faded edges show that there is
+more content. The same applies to every scrolling region in the app.
+
 If a normal termination fails or the process is still running, the results
 dialog offers **Force terminate** for just those processes, again behind a
 confirmation. Normal termination never escalates automatically, and processes
 whose identity changed or could not be checked are not offered this option.
+
+## Other users and sessions
+
+On shared Windows and Linux machines, the details of a process show its owner
+and login session: session type (console, RDP, SSH, and so on), state, and the
+remote client. The **User** and **Session** columns can be turned on in the
+process table. macOS shows the owner only.
+
+- **Sign out user…** closes every program in that session after a confirmation
+  that lists them. On Windows, signing out another user needs administrator
+  rights; on Linux it always needs root.
+- **Send message…** (Windows) shows a message in that user's session, for
+  example to ask them to save and close a file. Another user's session needs
+  administrator rights. Windows displays a native dialog; the recipient does
+  not need OFLH. The form includes an editable request and a preview of the
+  complete message, including the file (or inspected target or port), process
+  name, PID, and recipient session. File context remains included when you
+  replace the suggested request. The 1,000-character limit includes this
+  context; paths are not silently shortened. Sending does not close anything,
+  allow a reply, or confirm that the recipient read the message. When the owner
+  is your own session, the form explains that it will appear on your desktop.
+- **Open over the network** (Windows, administrator): when someone has the
+  target open through an SMB share, the panel lists them and **Close open
+  file** closes that network open.
+
+oflh checks the session or file again right before acting; if it changed,
+nothing is done.
+
+> This section depends on [#138](https://github.com/karimz1/open-file-lock-handle/pull/138).
 
 ### Administrator retry
 
@@ -270,8 +333,18 @@ keys. **Fit all columns** fits every visible column.
 The gear menu at the bottom left opens **Settings** and **Themes**. Themes are
 Light, System, Rider Dark, VS Code Dark, and OFLH Purple; **System** switches
 between Light and VS Code Dark with your OS. Settings also controls font size
-and language (English, German, Simplified Chinese, or the system language). The
-app remembers theme, font size, language, and details panel width.
+and language (English, German, Simplified Chinese, or the system language). 
+**Open window maximized** (under **Window**, off by default) starts the app
+maximized from the next launch; the window can still be restored and resized.
+The app remembers theme, font size, language, and details panel width.
+
+The process table and the confirmation show each program's real icon, read
+from the executable on Windows, the app bundle on macOS, and the `.desktop`
+entry and icon theme on Linux. Processes without one get a neutral icon.
+
+**Open window maximized** (Settings, off by default) starts the window
+maximized. It stays a normal window: the title bar's restore button returns it
+to 1280 × 800. The setting applies from the next launch.
 
 ## Updates
 
@@ -317,3 +390,48 @@ sudo pacman -Syu webkit2gtk-4.1 gtk3
 
 CI extracts and launches the archive as an unprivileged user on Ubuntu and
 Fedora (x86-64 and ARM64) and on Arch Linux (x86-64).
+
+
+## Wait until free
+
+Start waiting from a result's context menu or details:
+
+- **Wait for file to become free** watches the selected file or folder across
+  all processes. Each entry under **Matching files** has this action, so a
+  drive-root inspection can wait for one PDF without watching the whole drive.
+- **Wait for process exit** watches the selected PID and its captured birth
+  identity. Process exit does not mean its files are free; other processes may
+  still have them open. This mode only notifies and has no file follow-up.
+- **Wait for port to become free** watches the selected port number across all
+  local bindings, independently of the file inspection or search text.
+
+The dialog shows the exact target. **Set a time limit** enables a deadline of
+1 to 86,400 seconds; leaving it off waits until completion or cancellation.
+Checks run once per second on the background worker. Nothing is terminated.
+The status banner names the target and lets you cancel without changing the
+accepted inspection. Only one wait runs at a time.
+
+When a confirming scan reports no matching holders, OFLH shows a desktop
+notification and brings the window forward. You can instead select reveal,
+delete, move or rename before starting. For a move, choose the destination folder
+in the dialog and review the resulting path before starting. For a rename,
+enter one filename, including its extension, in the current folder. Paths,
+reserved device names and invalid filename characters are rejected. A fresh scan
+runs immediately before the selected action and refuses it if a holder returns.
+Moving, renaming and deletion require an explicit checkbox for the displayed
+target and never happen just because a wait completed. Changing the destination
+or name resets this confirmation. Existing destination entries are never
+replaced. Moves across filesystems are not copied automatically; if unsupported,
+the original remains in place and the action reports an error. Deletion is
+permanent: it bypasses the Recycle Bin or Trash, and a folder is deleted with
+everything in it.
+
+After a successful move or rename, OFLH opens the new location in the file
+manager and selects the result, keeping focus there. The status and desktop
+notification name the actual resulting path only after the action completes.
+If opening the file manager fails, the status still shows the successful
+filesystem action and new path, with a separate warning.
+
+Starting a new wait resets the
+follow-up to **Notify only**. Notifications and follow-ups belong to the
+specific wait; cancelled or replaced results cannot complete a newer wait.

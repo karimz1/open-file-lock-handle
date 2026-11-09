@@ -45,6 +45,9 @@ impl From<Error> for Failure {
             Error::Changed => ("identity_changed", None),
             Error::Protected => ("protected", None),
             Error::Cancelled => ("cancelled", None),
+            Error::WaitTimedOut => ("wait_timeout", None),
+            Error::WaitTargetHeld => ("wait_target_held", None),
+            Error::CloseUnavailable => ("close_unavailable", None),
             Error::Unavailable(_) => ("unavailable", None),
             Error::Io { source, .. } => (
                 match source.kind() {
@@ -66,6 +69,15 @@ impl From<Error> for Failure {
     }
 }
 impl Failure {
+    /// A failure with a stable category the UI translates.
+    pub(crate) fn kind(kind: &str, message: impl Into<String>) -> Self {
+        Self {
+            kind: kind.into(),
+            message: message.into(),
+            os_code: None,
+            details: None,
+        }
+    }
     pub(crate) fn invalid(message: impl Into<String>) -> Self {
         Self {
             kind: "invalid_request".into(),
@@ -104,6 +116,8 @@ pub struct Status {
     pub warnings: Vec<String>,
     /// Failure for this operation, if any.
     pub error: Option<Failure>,
+    /// Active or completed wait state, independent of the displayed inspection.
+    pub wait: WaitStatus,
     /// Compact Cargo workspace application version.
     pub version: &'static str,
     /// Full source commit used to build this application, when available.
@@ -112,6 +126,83 @@ pub struct Status {
     pub build_url: &'static str,
     /// Pull request that produced this build, when available.
     pub pull_request_url: &'static str,
+}
+
+#[allow(missing_docs)]
+/// Options for a bounded target wait. Native paths do not round-trip through UI strings.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WaitRequest {
+    pub path: Option<std::path::PathBuf>,
+    pub include_ports: bool,
+    pub port: Option<u16>,
+    pub timeout: Option<std::time::Duration>,
+}
+/// Wait for one captured table selection, retaining native paths and birth identities.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SelectionWaitRequest {
+    /// Accepted snapshot that owns the reference or process key.
+    pub revision: u32,
+    /// Exact resource or process selected by the user.
+    pub target: SelectionWaitTarget,
+    /// Deadline in seconds; absence means no deadline.
+    pub timeout_seconds: Option<u64>,
+    /// The user chose "Delete" as the follow-up; protected targets are refused up front.
+    #[serde(default)]
+    pub delete_after: bool,
+}
+/// Opaque references prevent display paths and PID-only keys from becoming action inputs.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SelectionWaitTarget {
+    /// All observed users of this exact native path must disappear.
+    File {
+        /// Snapshot-local native path reference.
+        reference: String,
+    },
+    /// Only this captured process lifetime must exit; no file is declared free.
+    Process {
+        /// PID plus complete birth identity.
+        key: String,
+    },
+    /// All local bindings of this selected port number must disappear.
+    Port {
+        /// Snapshot-local port reference.
+        reference: String,
+    },
+}
+/// Display-only description retained with the running or completed wait.
+#[derive(Clone, Debug, Serialize)]
+pub struct WaitTargetView {
+    /// `file`, `process`, or `port`; process completion never implies file freedom.
+    pub kind: &'static str,
+    /// Sanitized path, process name/PID, or port number.
+    pub display: String,
+}
+
+/// Serialisable waiting state; elapsed time advances between scan publications.
+#[derive(Clone, Debug, Default, Serialize)]
+#[allow(missing_docs)]
+pub struct WaitStatus {
+    pub id: u64,
+    pub target: Option<WaitTargetView>,
+    pub waiting: bool,
+    pub elapsed_ms: u64,
+    pub outcome: Option<&'static str>,
+    pub error: Option<Failure>,
+}
+/// Finished filesystem action; a reveal failure does not undo a successful move.
+#[derive(Clone, Debug, Serialize)]
+pub struct WaitFollowUpResult {
+    /// Completed action name (`reveal`, `move`, `rename`, or `delete`).
+    pub action: String,
+    /// Actual resulting display path, absent after deletion; never an action input.
+    pub path: Option<String>,
+    /// File manager could not open the result although the filesystem action succeeded.
+    pub reveal_error: Option<Failure>,
+    /// Optional desktop notification failed after the filesystem action completed.
+    pub notification_error: Option<Failure>,
 }
 
 /// Live work counters, distinct from the accepted snapshot's result counts.
@@ -253,6 +344,14 @@ pub struct Row {
     pub path: String,
     /// Opaque snapshot path reference for native actions.
     pub path_ref: String,
+    /// Bounded, query-matching file groups for a process row; absent for observations.
+    pub matching_files: Option<MatchingFiles>,
+    /// Opaque reference to the executable, used only to look up its icon.
+    pub icon_ref: String,
+    /// Login session id the process runs in, filled per page; `None` when unknown.
+    pub session: Option<String>,
+    /// Session kind name, see [`SessionView::kind`].
+    pub session_kind: Option<&'static str>,
     /// Observed association with the target file.
     pub relation: String,
     /// Observed access mode; unknown remains explicit.
@@ -273,6 +372,40 @@ pub struct Row {
     pub actionable: bool,
     /// Socket observation for port-table rows.
     pub port: Option<PortView>,
+}
+/// A bounded preview of distinct native paths matching a process-table query.
+#[derive(Clone, Debug, Serialize)]
+pub struct MatchingFiles {
+    /// First matching paths in observation order, capped at three.
+    pub files: Vec<MatchingFile>,
+    /// Total distinct native paths, including paths omitted from the preview.
+    pub total: usize,
+}
+/// Repeated observations grouped by their lossless native path.
+#[derive(Clone, Debug, Serialize)]
+pub struct MatchingFile {
+    /// Display path and snapshot-bound native action reference.
+    pub path: PathValue,
+    /// Number of references to this path matching the current query.
+    pub references: usize,
+    /// Distinct access/evidence combinations, capped at eight.
+    pub observations: Vec<FileObservation>,
+    /// References with combinations omitted from the bounded observation preview.
+    pub more_references: usize,
+}
+/// A displayed observation category; a resource user is not necessarily a lock owner.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct FileObservation {
+    /// Observed relation to the file.
+    pub relation: String,
+    /// Observed access mode, including unknown access.
+    pub access: String,
+    /// Full evidence with platform ownership limitations.
+    pub evidence: Option<String>,
+    /// Concise evidence category.
+    pub evidence_label: Option<String>,
+    /// Whether this observation refers to an unlinked path.
+    pub deleted: bool,
 }
 /// A bounded window into the sorted, filtered snapshot.
 #[derive(Clone, Debug, Serialize)]
@@ -319,6 +452,53 @@ pub struct Details {
     pub ports: usize,
     /// Whether an identity-checked owner-folder inspection can be requested.
     pub can_inspect_folder: bool,
+    /// Owning user and session.
+    pub owner: OwnerView,
+    /// Session actions and whether they need elevation; `None` without a session.
+    pub session_actions: Option<SessionActions>,
+}
+/// Why a process is listed in a confirmation.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetRole {
+    /// The process the scan attributed the file or port to.
+    #[default]
+    Holder,
+    /// An ancestor chosen from the holder's process tree.
+    Ancestor,
+}
+/// A display list capped in Rust; `more` counts entries left out.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct CappedList {
+    /// Sanitized entries, in display order.
+    pub items: Vec<String>,
+    /// Entries not included in `items`.
+    pub more: usize,
+}
+impl From<oflh_core::impact::Capped> for CappedList {
+    fn from(capped: oflh_core::impact::Capped) -> Self {
+        Self {
+            items: capped.items,
+            more: capped.more,
+        }
+    }
+}
+/// What else terminating one process may affect, read when the confirmation
+/// was prepared. Termination still targets only this process.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct TargetImpact {
+    /// Visible top-level window titles; `None` when the platform cannot list them.
+    pub windows: Option<CappedList>,
+    /// Running direct children as `name (PID n)`; `None` when unreadable.
+    pub children: Option<CappedList>,
+    /// Files the latest scan attributed to this process.
+    pub files: CappedList,
+    /// Local ports the latest scan attributed to this process.
+    pub ports: CappedList,
+    /// Service manager unit that may restart the process; best effort.
+    pub service: Option<String>,
+    /// Windows critical process: ending it stops the system.
+    pub critical: bool,
 }
 /// A process displayed in a destructive-action confirmation.
 #[derive(Clone, Debug, Serialize)]
@@ -329,6 +509,12 @@ pub struct ActionTarget {
     pub name: String,
     /// Observed PID; never sufficient on its own for an action.
     pub pid: u32,
+    /// Holder or selected ancestor.
+    pub role: TargetRole,
+    /// Best-effort side effects, collected before the confirmation is shown.
+    pub impact: TargetImpact,
+    /// Owning user and session, read when the confirmation was prepared.
+    pub owner: OwnerView,
 }
 /// Single-use confirmation receipt. The Rust service retains the actual identities.
 #[derive(Clone, Debug, Serialize)]
@@ -436,4 +622,105 @@ pub struct PortView {
     pub endpoint: String,
     /// Opaque snapshot reference for copying the exact binding.
     pub reference: String,
+}
+
+/// A login session, as shown next to a process.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct SessionView {
+    /// Native session id (WTS number or logind name).
+    pub id: String,
+    /// Signed-in account, sanitized.
+    pub user: String,
+    /// Windows domain, sanitized.
+    pub domain: Option<String>,
+    /// `console`, `rdp`, `ssh`, `tty`, `x11`, `wayland`, `services` or `other`.
+    pub kind: &'static str,
+    /// `active`, `idle`, `disconnected`, `closing` or `other`.
+    pub state: &'static str,
+    /// Remote client computer, sanitized.
+    pub client: Option<String>,
+    /// Terminal such as `pts/2`.
+    pub tty: Option<String>,
+    /// Logon time, Unix seconds.
+    pub since: Option<u64>,
+    /// Whether OFLH itself runs in this session.
+    pub own: bool,
+}
+impl SessionView {
+    pub(crate) fn new(session: &oflh_sessions::Session, own: Option<&str>) -> Self {
+        let text = |value: &Option<String>| value.as_deref().map(oflh_core::safe);
+        Self {
+            id: oflh_core::safe(&session.id),
+            user: oflh_core::safe(&session.user),
+            domain: text(&session.domain),
+            kind: session.kind.as_str(),
+            state: session.state.as_str(),
+            client: text(&session.client),
+            tty: text(&session.tty),
+            since: session.since,
+            own: own == Some(session.id.as_str()),
+        }
+    }
+}
+/// Who runs a process, and in which session.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct OwnerView {
+    /// Account name from the process token or credentials, sanitized.
+    pub user: String,
+    /// SYSTEM, LocalService, root and similar accounts.
+    pub service: bool,
+    /// The session, when the platform reports one.
+    pub session: Option<SessionView>,
+}
+/// Whether each session action can run, using `oflh_sessions::Availability` names.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionActions {
+    /// Send a message box to the session.
+    pub send_message: &'static str,
+    /// Sign the session's user out.
+    pub sign_out: &'static str,
+}
+/// Confirmation for signing a user out; the service keeps the captured session key.
+#[derive(Clone, Debug, Serialize)]
+pub struct SignOutConfirmation {
+    /// Single-use receipt.
+    pub ticket: String,
+    /// The session that will be signed out.
+    pub session: SessionView,
+    /// Processes from the latest scan that run in it, as `name (PID n)`.
+    pub processes: CappedList,
+}
+/// A file on this computer opened over an SMB share.
+#[derive(Clone, Debug, Serialize)]
+pub struct ShareFileView {
+    /// Server open-file id.
+    pub id: u32,
+    /// Local path, sanitized.
+    pub path: String,
+    /// Account that opened it, sanitized.
+    pub user: String,
+    /// Client computers, sanitized.
+    pub client: Option<String>,
+    /// Byte-range locks held.
+    pub locks: u32,
+    /// Opened for writing.
+    pub write: bool,
+}
+/// Share opens matching the current target.
+#[derive(Clone, Debug, Serialize)]
+pub struct ShareFiles {
+    /// `available`, `requires_admin` or `unsupported` for "Close open file".
+    pub close: &'static str,
+    /// Matching opens; empty when none or unreadable.
+    pub files: Vec<ShareFileView>,
+    /// Why the list could not be read (for example missing rights).
+    pub error: Option<String>,
+}
+/// Confirmation for closing a share open; the service keeps the captured key.
+#[derive(Clone, Debug, Serialize)]
+pub struct CloseFileConfirmation {
+    /// Single-use receipt.
+    pub ticket: String,
+    /// The open that will be closed.
+    pub file: ShareFileView,
 }

@@ -55,10 +55,12 @@ Details: [docs/architecture.md](docs/architecture.md),
 
 ## Things that surprise people
 
-- The CLI has no non-interactive mode. It exits with status 1 when stdin or
-  stdout is not a terminal, so you cannot capture its output with a pipe. Test
-  UI behavior through `crates/oflh-tui` unit tests, golden snapshots, or the
-  PTY tests in `crates/oflh/tests/terminal.rs`.
+- The interactive CLI exits with status 1 when stdin or stdout is not a terminal.
+  `oflh check` is the non-interactive exception for scripts, with `--json` output
+  and documented exit codes. `oflh wait` is its cancellable polling counterpart; w/z
+  wait/cancel in the TUI and `--wait-timeout` sets that interactive deadline. Test interactive UI behavior through
+  `crates/oflh-tui` unit tests, golden snapshots, or the PTY tests in
+  `crates/oflh/tests/terminal.rs`.
 - Options must come before the path; a second positional argument is an error
   (exit status 2).
 - Native tests start real processes that hold files, locks, and sockets, and

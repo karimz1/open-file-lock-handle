@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
 // Synthetic IPC fixtures are test-only. The production bundle always invokes Rust.
 const documentationScreenshotPath = (filename: string) =>
@@ -6,6 +7,12 @@ const documentationScreenshotPath = (filename: string) =>
     : `test-results/${filename}`;
 
 test.beforeEach(async ({ page }) => {
+  if (process.env.OFLH_NATIVE_ICON_PATH) {
+    const icon = readFileSync(process.env.OFLH_NATIVE_ICON_PATH, "utf8");
+    await page.addInitScript((icon) => {
+      (window as any).__nativeApplicationIcon = icon;
+    }, icon);
+  }
   await page.addInitScript(() => {
     if (!sessionStorage.getItem("theme-test-initialized")) {
       localStorage.setItem("oflh-theme", "light");
@@ -18,16 +25,18 @@ test.beforeEach(async ({ page }) => {
     const callbackEvents = new Map<number, string>();
     let callbackId = 0;
     let terminated = false;
+    let refreshCount = 0;
     const processRows = Array.from({ length: 1500 }, (_, index) => ({
       key: `${4000 + index}:18446744073709551615:0/exe`,
       process_key: `${4000 + index}:18446744073709551615:0`,
-      name: ["Code", "node", "rust-analyzer", "cargo", "FixtureWorker"][
+      name: ["Blender", "node", "rust-analyzer", "cargo", "FixtureWorker"][
         index % 5
       ],
       pid: 4000 + index,
       user: "developer",
       path: "/workspace/project/target/debug/fixture",
       path_ref: `1:${index}:exe`,
+      icon_ref: `1:${index}:exe`,
       relation: "process",
       access: "unknown",
       evidence: null,
@@ -93,6 +102,7 @@ test.beforeEach(async ({ page }) => {
         "Some processes could not be inspected because access was denied.",
       ],
       error: null,
+      wait: { waiting: false, elapsed_ms: 0, outcome: null, error: null },
       version:
         new URL(location.href).searchParams.get("version") ?? "development",
       commit: "0123456789abcdef0123456789abcdef01234567",
@@ -122,8 +132,13 @@ test.beforeEach(async ({ page }) => {
     ];
     Object.assign(window, {
       __testCalls: calls,
+      __waitFree: () => {},
       __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
       __TAURI_INTERNALS__: {
+        metadata: {
+          currentWindow: { label: "main" },
+          currentWebview: { windowLabel: "main", label: "main" },
+        },
         transformCallback(callback: (payload: unknown) => void) {
           callbacks.set(++callbackId, callback);
           return callbackId;
@@ -136,6 +151,8 @@ test.beforeEach(async ({ page }) => {
           calls.push({ command, args });
           if (command === "plugin:event|listen") {
             callbackEvents.set(args.handler, args.event);
+            if (args.event === "scan-status")
+              (window as any).__waitFree = callbacks.get(args.handler);
             return 1;
           }
           if (command === "plugin:event|unlisten") return;
@@ -180,6 +197,239 @@ test.beforeEach(async ({ page }) => {
               generation: status.generation + 1,
               scanning: false,
             });
+          if (
+            command === "wait_for_selection" &&
+            args.request.delete_after &&
+            (window as any).__protectedDelete
+          )
+            throw {
+              kind: "protected_delete_target",
+              message:
+                "OFLH does not delete drive roots, home folders, or system folders",
+              os_code: null,
+              details: null,
+            };
+          if (command === "wait_for_selection") {
+            const waiting = (status = {
+              ...status,
+              wait: {
+                ...status.wait,
+                id: ((status.wait as any).id ?? 0) + 1,
+                target: {
+                  kind: args.request.target.kind,
+                  display:
+                    args.request.target.kind === "process"
+                      ? "FixturePdfEditor (PID 4000)"
+                      : args.request.target.kind === "port"
+                        ? "Port 8080"
+                        : "/build/documents/Bestellbestätigung .pdf",
+                },
+                waiting: true,
+                elapsed_ms: 500,
+                outcome: null,
+                error: null,
+              },
+            } as typeof status);
+            if ((window as any).__emitWaitFree) {
+              const freeStatus = {
+                ...waiting,
+                wait: { ...waiting.wait, waiting: false, outcome: "free" },
+              };
+              setTimeout(() => {
+                status = freeStatus as typeof status;
+                (window as any).__waitFree({
+                  event: "scan-status",
+                  payload: freeStatus,
+                });
+              }, 100);
+            }
+            return waiting;
+          }
+          if (command === "cancel_wait") {
+            return (status = {
+              ...status,
+              wait: {
+                ...status.wait,
+                waiting: false,
+                elapsed_ms: 500,
+                outcome: "failed",
+                error: {
+                  kind: "cancelled",
+                  message: "Cancelled",
+                  os_code: null,
+                },
+              },
+            });
+          }
+          if (command === "notify_wait_free") return;
+          if (command === "choose_wait_destination") {
+            const folders = (window as any).__waitFolders;
+            const folder = folders
+              ? (folders.shift() ?? null)
+              : { display: "/build/destination", reference: "folder-1" };
+            if (folder) (window as any).__chosenWaitFolder = folder;
+            return folder;
+          }
+          if (command === "wait_follow_up") {
+            if ((window as any).__holdWaitFollowUp)
+              await new Promise<void>((resolve) => {
+                (window as any).__releaseWaitFollowUp = resolve;
+              });
+            if ((window as any).__failWaitFollowUp)
+              throw {
+                kind: "io",
+                message: "Synthetic move failure",
+                os_code: 5,
+              };
+            const folder = (window as any).__chosenWaitFolder;
+            if (
+              args.action === "move" &&
+              args.destination !== folder?.reference
+            )
+              throw new Error("Unknown native folder reference");
+            const path =
+              args.action === "move"
+                ? `${folder.display}/Bestellbestätigung .pdf`
+                : args.action === "rename"
+                  ? `/build/documents/${args.newName}`
+                  : args.action === "delete"
+                    ? null
+                    : "/build/documents/Bestellbestätigung .pdf";
+            const reveal_error = (window as any).__failWaitReveal
+              ? {
+                  kind: "io",
+                  message: "Synthetic file manager failure",
+                  os_code: 5,
+                }
+              : null;
+            if (path && !reveal_error)
+              ((window as any).__revealedWaitPaths ??= []).push(path);
+            return {
+              action: args.action,
+              path,
+              reveal_error,
+              notification_error: null,
+            };
+          }
+          if (command === "focus_window") return;
+          // Terminal-server fixture: several people signed in at once.
+          const multi = (window as any).__multiUser as
+            { elevated: boolean; os?: string } | undefined;
+          const sessionsFixture = [
+            {
+              id: "1",
+              user: "karim",
+              domain: "TS01",
+              kind: "console",
+              state: "active",
+              client: null,
+              tty: null,
+              since: Math.floor(Date.now() / 1000) - 3 * 3600,
+              own: true,
+            },
+            {
+              id: "3",
+              user: "max.muster",
+              domain: "CORP",
+              kind: "rdp",
+              state: "active",
+              client: "LAPTOP-7",
+              tty: null,
+              since: Math.floor(Date.now() / 1000) - 2 * 3600,
+              own: false,
+            },
+            {
+              id: "5",
+              user: "anna.schmidt",
+              domain: "CORP",
+              kind: "rdp",
+              state: "disconnected",
+              client: "PC-ANNA",
+              tty: null,
+              since: Math.floor(Date.now() / 1000) - 5 * 3600,
+              own: false,
+            },
+          ];
+          const ownerOf = (pid: number) => {
+            const index = pid - 4000;
+            if (index % 7 === 6)
+              return { user: "SYSTEM", service: true, session: null };
+            const session = sessionsFixture[index % 3];
+            return { user: session.user, service: false, session };
+          };
+          const gate = (own: boolean) =>
+            multi?.os === "linux"
+              ? multi.elevated
+                ? "available"
+                : "requires_root"
+              : multi?.elevated || own
+                ? "available"
+                : "requires_admin";
+          if (command === "share_files")
+            return multi && multi.os !== "linux"
+              ? {
+                  close: multi.elevated ? "available" : "requires_admin",
+                  error: null,
+                  files: ((window as any).__shareFiles ??= [
+                    {
+                      id: 71,
+                      path: "C:\\Shares\\Finance\\Q3-report.xlsx",
+                      user: "anna.schmidt",
+                      client: "PC-ANNA",
+                      locks: 2,
+                      write: true,
+                    },
+                    {
+                      id: 72,
+                      path: "C:\\Shares\\Finance\\budget.docx",
+                      user: "max.muster",
+                      client: "LAPTOP-7",
+                      locks: 0,
+                      write: false,
+                    },
+                  ]),
+                }
+              : { close: "unsupported", files: [], error: null };
+          if (command === "prepare_close_file") {
+            const file = (window as any).__shareFiles.find(
+              (item: any) => item.id === args.id,
+            );
+            return { ticket: "close-ticket", file };
+          }
+          if (command === "close_file") {
+            (window as any).__shareFiles = (window as any).__shareFiles.filter(
+              (item: any) => item.id !== 71,
+            );
+            return;
+          }
+          if (command === "prepare_sign_out") {
+            const owner = ownerOf(Number(String(args.key).split(":")[0]));
+            const session = owner.session!;
+            const items = processRows
+              .filter((row) => ownerOf(row.pid).session?.id === session.id)
+              .map((row) => `${row.name} (PID ${row.pid})`);
+            return {
+              ticket: "sign-out-ticket",
+              session,
+              processes: {
+                items: items.slice(0, 500),
+                more: Math.max(0, items.length - 500),
+              },
+            };
+          }
+          if (command === "sign_out" || command === "send_message") return;
+          if (command === "process_icon") {
+            // Blender and node have app icons; the rest use the fallback.
+            const index = Number(String(args.reference).split(":")[1]);
+            if (index === 0 && (window as any).__nativeApplicationIcon)
+              return (window as any).__nativeApplicationIcon;
+            const color = ["#e87d0d", "#3c873a"][index % 5];
+            return color
+              ? `data:image/svg+xml,${encodeURIComponent(
+                  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="${color}"/></svg>`,
+                )}`
+              : null;
+          }
           if (command === "recent") return recentTargets;
           if (command === "remove_recent") {
             recentTargets = recentTargets.filter(
@@ -264,7 +514,8 @@ test.beforeEach(async ({ page }) => {
               processes: processRows.length,
               usages: 18000,
             });
-          if (["refresh", "revisit", "choose"].includes(command))
+          if (["refresh", "revisit", "choose"].includes(command)) {
+            if (command === "refresh") refreshCount++;
             return (status = {
               ...status,
               generation: status.generation + 1,
@@ -273,6 +524,7 @@ test.beforeEach(async ({ page }) => {
                   ? status.revision + 1
                   : status.revision,
             });
+          }
           if (command === "page" && (window as any).__failNextPageForTest) {
             (window as any).__failNextPageForTest = false;
             throw {
@@ -292,7 +544,15 @@ test.beforeEach(async ({ page }) => {
           }
           const freshRow = (row: (typeof processRows)[number]) => ({
             ...row,
+            ...(multi && row.pid
+              ? {
+                  user: ownerOf(row.pid).user,
+                  session: ownerOf(row.pid).session?.id ?? "0",
+                  session_kind: ownerOf(row.pid).session?.kind ?? "services",
+                }
+              : {}),
             path_ref: row.path_ref.replace(/^\d+:/, `${args.revision}:`),
+            icon_ref: row.icon_ref.replace(/^\d+:/, `${args.revision}:`),
             port: row.port
               ? {
                   ...(row.port as any),
@@ -312,7 +572,13 @@ test.beforeEach(async ({ page }) => {
                 (!args.query.ports_path_only || row.pid > 0) &&
                 (!args.query.process_key ||
                   row.process_key === args.query.process_key) &&
-                !(terminated && row.pid === 4000),
+                !(terminated && row.pid === 4000) &&
+                !(
+                  terminated &&
+                  (window as any).__delayedPortExit &&
+                  row.pid === 0 &&
+                  refreshCount >= 2
+                ),
             );
             return {
               revision: args.revision,
@@ -321,6 +587,113 @@ test.beforeEach(async ({ page }) => {
             };
           }
           if (command === "page") {
+            if ((window as any).__fileMatchFixture) {
+              const process = processRows[0];
+              process.name = "FixturePdfEditor";
+              process.path = "/build/PdfEditor.exe";
+              const paths = [
+                "/build/documents/" +
+                  "long-folder/".repeat(5) +
+                  "Bestellbestätigung .pdf",
+                "/build/documents/Bestellung-2.pdf",
+                "/build/documents/Bestellung-3.pdf",
+                "/build/documents/Bestellung-4.pdf",
+              ];
+              const observations = [
+                {
+                  relation: "open",
+                  access: "unknown",
+                  evidence: null,
+                  evidence_label: null,
+                  deleted: false,
+                },
+                {
+                  relation: "mapped",
+                  access: "mapped",
+                  evidence: null,
+                  evidence_label: null,
+                  deleted: false,
+                },
+                {
+                  relation: "native file user",
+                  access: "unknown",
+                  evidence:
+                    "SHARING CONFLICT: delete denied; reported file user, lock owner unverified",
+                  evidence_label: "Sharing conflict; owner unverified",
+                  deleted: false,
+                },
+              ];
+              const all = paths
+                .flatMap((path, index) =>
+                  (index === 0 ? observations : [observations[0]]).map(
+                    (observation, relation) => ({
+                      ...freshRow(process),
+                      ...observation,
+                      path,
+                      key: `${process.process_key}/${index * 3 + relation}`,
+                      path_ref: `${args.revision}:0:${index * 3 + relation}`,
+                    }),
+                  ),
+                )
+                .filter(
+                  (row) =>
+                    (!args.query.text ||
+                      row.path
+                        .toLowerCase()
+                        .includes(args.query.text.toLowerCase())) &&
+                    (!args.query.locks_only || row.evidence) &&
+                    (!args.query.columns?.path ||
+                      row.path.includes(args.query.columns.path)),
+                );
+              const files = [...new Set(all.map((row) => row.path))].map(
+                (path) => {
+                  const rows = all.filter((row) => row.path === path);
+                  return {
+                    path: { display: path, reference: rows[0].path_ref },
+                    references: rows.length,
+                    observations: rows.map(
+                      ({
+                        relation,
+                        access,
+                        evidence,
+                        evidence_label,
+                        deleted,
+                      }) => ({
+                        relation,
+                        access,
+                        evidence,
+                        evidence_label,
+                        deleted,
+                      }),
+                    ),
+                    more_references: 0,
+                  };
+                },
+              );
+              const rows = args.query.handles
+                ? all
+                : all.length
+                  ? [
+                      {
+                        ...freshRow(process),
+                        path: all[0].path,
+                        path_ref: all[0].path_ref,
+                        matching_files: {
+                          files: files.slice(0, 3),
+                          total: files.length,
+                        },
+                      },
+                    ]
+                  : [];
+              return {
+                revision: args.revision,
+                total: rows.length,
+                rows: rows.slice(
+                  args.query.offset,
+                  args.query.offset + args.query.limit,
+                ),
+              };
+            }
             if ((window as any).__wideCellsForTest) {
               processRows[1400].name =
                 "OffscreenWorkerWithAnExceptionallyLongProcessName";
@@ -370,8 +743,20 @@ test.beforeEach(async ({ page }) => {
                 os_code: null,
               };
             const process = freshRow(captured);
+            const owner =
+              multi && process.pid ? ownerOf(process.pid) : undefined;
             return {
               process,
+              owner,
+              session_actions: owner?.session
+                ? {
+                    send_message:
+                      multi?.os === "linux"
+                        ? "unsupported"
+                        : gate(owner.session.own),
+                    sign_out: gate(multi?.os !== "linux" && owner.session.own),
+                  }
+                : null,
               ports: 1,
               can_inspect_folder: process?.pid !== 0,
               executable: {
@@ -414,7 +799,17 @@ test.beforeEach(async ({ page }) => {
               force: args.force,
               targets: args.keys.map((key: string) => {
                 const row = processRows.find((row) => row.process_key === key)!;
-                return { key, name: row.name, pid: row.pid };
+                return {
+                  key,
+                  name: row.name,
+                  pid: row.pid,
+                  role: "holder",
+                  owner: multi ? ownerOf(row.pid) : undefined,
+                  impact:
+                    typeof (window as any).__impact === "function"
+                      ? (window as any).__impact(row.name)
+                      : (window as any).__impact,
+                };
               }),
             };
           if (command === "prepare_elevated")
@@ -434,7 +829,14 @@ test.beforeEach(async ({ page }) => {
             return {
               ticket: "parent-ticket",
               force: args.force,
-              targets: [{ key: args.key, name: "fixture-shell", pid: 3000 }],
+              targets: [
+                {
+                  key: args.key,
+                  name: "fixture-shell",
+                  pid: 3000,
+                  role: "ancestor",
+                },
+              ],
             };
           if (command === "terminate" && (window as any).__terminationResults) {
             return (window as any).__terminationResults;
@@ -1078,7 +1480,7 @@ test("hidden selection confirmation defaults to cancel and preserves force mode"
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
   await page.getByRole("button", { name: "Terminate…", exact: true }).click();
-  await dialog.getByRole("button", { name: "Terminate", exact: true }).click();
+  await dialog.getByRole("button", { name: /^Close (?!dialog)/ }).click();
   await expect(
     page.getByText(
       "Process changed or already exited. No termination was sent.",
@@ -1100,6 +1502,279 @@ test("hidden selection confirmation defaults to cancel and preserves force mode"
       .filter((call) => call.command === "prepare")
       .map((call) => call.args.force),
   ).toEqual([true, false]);
+});
+
+const blenderImpact = {
+  windows: {
+    items: ["scene.blend - Blender", "render.blend - Blender", "Preferences"],
+    more: 0,
+  },
+  children: { items: ["python3 (PID 4100)"], more: 0 },
+  files: {
+    items: [
+      "/build/scene.blend",
+      "/build/textures/a.png",
+      "/build/textures/b.png",
+      "/build/textures/c.png",
+      "/build/textures/d.png",
+    ],
+    more: 4,
+  },
+  ports: { items: ["TCP 3000"], more: 0 },
+};
+
+test("confirmation shows one impact line and reveals capped details on demand", async ({
+  page,
+}) => {
+  await page.addInitScript(
+    (impact) => ((window as any).__impact = impact),
+    blenderImpact,
+  );
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  const summary = dialog.locator(".impact-summary");
+  await expect(summary).toHaveText(
+    "Blender closes completely, with all 3 open windows, such as “scene.blend - Blender”. 1 background process keeps running.",
+  );
+  await expect(summary.locator(".impact-warning")).toHaveText(
+    "Blender closes completely, with all 3 open windows, such as “scene.blend - Blender”.",
+  );
+  await expect(dialog.getByText("render.blend - Blender")).toBeHidden();
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  const box = await dialog.boundingBox();
+  await page.screenshot({ path: "test-results/impact-collapsed.png" });
+  await dialog.locator(".impact-details summary").first().focus();
+  await page.keyboard.press("Enter");
+  await expect(dialog.getByText("render.blend - Blender")).toBeVisible();
+  await expect(
+    dialog.getByRole("heading", { name: "Windows (3)" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("heading", { name: "Background processes (1)" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("heading", { name: "Files (9)" }),
+  ).toBeVisible();
+  await expect(
+    dialog.locator(".impact-primary", { hasText: "python3" }),
+  ).toBeVisible();
+  await expect(dialog.getByText("PID 4100")).toBeVisible();
+  // Rust kept five of nine files; expanding says the rest were not listed.
+  const showFiles = dialog.getByRole("button", { name: "Show all 9" });
+  await expect(showFiles).toHaveAttribute("aria-expanded", "false");
+  await showFiles.focus();
+  await page.keyboard.press("Enter");
+  const lessFiles = dialog.getByRole("button", { name: "Show less" });
+  await expect(lessFiles).toBeFocused();
+  await expect(lessFiles).toHaveAttribute("aria-expanded", "true");
+  await expect(dialog.getByText("+4 more not listed")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(showFiles).toBeFocused();
+  await expect(dialog.getByText("+4 more not listed")).toBeHidden();
+  // Short groups never show the control.
+  await expect(
+    dialog.getByRole("button", { name: /^Show all 3$/ }),
+  ).toHaveCount(0);
+  await expect(
+    dialog.locator(".impact-secondary[title='/build/textures/a.png']"),
+  ).toHaveText("/build/textures");
+  await dialog.getByRole("button", { name: "Copy 4100" }).focus();
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).__testCalls.some(
+          (call: any) =>
+            call.command === "copy_diagnostic" && call.args.text === "4100",
+        ),
+      ),
+    )
+    .toBe(true);
+  await dialog.locator(".impact-details summary").first().focus();
+  await expect(
+    dialog.getByText("They are not terminated and usually keep running."),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText("Based on the latest scan", { exact: false }),
+  ).toBeVisible();
+  await page.screenshot({ path: "test-results/impact-expanded.png" });
+  expect((await dialog.boundingBox())!.width).toBe(box!.width);
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+});
+
+for (const [width, height] of [
+  [800, 600],
+  [860, 560],
+]) {
+  test(`expanded impact scrolls inside the confirmation at ${width}x${height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.addInitScript(
+      (impact) =>
+        ((window as any).__impact = (name: string) =>
+          name === "Blender"
+            ? impact
+            : { ...impact, windows: { items: [`${name} – main`], more: 0 } }),
+      blenderImpact,
+    );
+    await page.goto("/");
+    const rows = page.getByRole("grid").getByRole("row");
+    await rows.nth(1).click();
+    for (let row = 2; row <= 6; row++)
+      await rows.nth(row).click({ modifiers: ["ControlOrMeta"] });
+    await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    const list = dialog.getByRole("list", { name: "Affected processes" });
+    await expect(list.locator(":scope > li")).toHaveCount(6);
+    for (const summary of await dialog.locator(".impact-details summary").all())
+      await summary.click();
+    const inViewport = async (locator: typeof dialog) => {
+      const box = (await locator.boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(height);
+    };
+    await inViewport(dialog);
+    await inViewport(dialog.locator("#dialog-title"));
+    await inViewport(
+      dialog.getByRole("button", { name: "Cancel", exact: true }),
+    );
+    await inViewport(dialog.getByRole("button", { name: /^Close (?!dialog)/ }));
+    const metrics = () =>
+      list.evaluate((node) => ({
+        top: node.scrollTop,
+        overflow: node.scrollHeight - node.clientHeight,
+        bar: (node as HTMLElement).offsetWidth - node.clientWidth,
+      }));
+    const area = dialog.locator(".confirmation-scroll");
+    const fade = (edge: "::before" | "::after") =>
+      area.evaluate(
+        (node, edge) => Number(getComputedStyle(node, edge).opacity),
+        edge,
+      );
+    await list.evaluate((node) => node.scrollTo({ top: 0 }));
+    await expect.poll(async () => (await metrics()).top).toBe(0);
+    const before = await metrics();
+    expect(before.overflow).toBeGreaterThan(0);
+    await expect(area).toHaveAttribute("data-fade-bottom", "true");
+    await expect(area).not.toHaveAttribute("data-fade-top");
+    await expect.poll(() => fade("::after")).toBe(1);
+    await expect.poll(() => fade("::before")).toBe(0);
+    // The slim thumb uses the theme's muted colour, not the faint border.
+    expect(
+      await list.evaluate(
+        (node) =>
+          getComputedStyle(node, "::-webkit-scrollbar-thumb").backgroundColor,
+      ),
+    ).not.toBe("rgba(0, 0, 0, 0)");
+    await page.screenshot({
+      path: `test-results/impact-small-${width}x${height}.png`,
+    });
+    expect(before.bar).toBeGreaterThan(0);
+    await list.focus();
+    await page.keyboard.press("PageDown");
+    await expect.poll(async () => (await metrics()).top).toBeGreaterThan(0);
+    await page.keyboard.press("End");
+    await expect
+      .poll(async () => {
+        const now = await metrics();
+        return now.overflow - now.top;
+      })
+      .toBeLessThan(2);
+    await expect(area).not.toHaveAttribute("data-fade-bottom");
+    await expect(area).toHaveAttribute("data-fade-top", "true");
+    await expect.poll(() => fade("::after")).toBe(0);
+    await page.screenshot({
+      path: `test-results/impact-small-scrolled-end-${width}x${height}.png`,
+    });
+    await inViewport(dialog.getByRole("button", { name: /^Close (?!dialog)/ }));
+    await page.keyboard.press("Tab");
+    await expect(dialog.locator(":focus")).toHaveCount(1);
+  });
+}
+
+test("short confirmation list shows no scroll fades", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const area = page.getByRole("dialog").locator(".confirmation-scroll");
+  await expect(area).toBeVisible();
+  await expect(area).not.toHaveAttribute("data-fade-bottom");
+  await expect(area).not.toHaveAttribute("data-fade-top");
+});
+
+test("service warning fits and scrolls in a small confirmation", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 860, height: 560 });
+  await page.addInitScript(
+    () =>
+      ((window as any).__impact = {
+        windows: null,
+        children: {
+          items: Array.from({ length: 8 }, (_, n) => `worker (PID ${50 + n})`),
+          more: 4,
+        },
+        files: { items: ["/var/lib/postgresql/data/pg_wal"], more: 0 },
+        ports: { items: ["TCP 127.0.0.1:5432"], more: 0 },
+        service: "postgresql.service",
+        critical: false,
+      }),
+  );
+  await page.goto("/");
+  const rows = page.getByRole("grid").getByRole("row");
+  await rows.nth(1).click();
+  for (let row = 2; row <= 4; row++)
+    await rows.nth(row).click({ modifiers: ["ControlOrMeta"] });
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.locator(".impact-summary .impact-warning").first(),
+  ).toHaveText("A service will probably restart it right away.");
+  await page.screenshot({ path: "test-results/impact-service.png" });
+  for (const summary of await dialog.locator(".impact-details summary").all())
+    await summary.click();
+  const list = dialog.getByRole("list", { name: "Affected processes" });
+  const service = list.getByRole("heading", { name: "Service" }).last();
+  await expect(
+    list.getByRole("button", { name: "Copy postgresql.service" }).first(),
+  ).toBeAttached();
+  await service.scrollIntoViewIfNeeded();
+  await expect(service).toBeInViewport();
+  const cancel = (await dialog
+    .getByRole("button", { name: "Cancel", exact: true })
+    .boundingBox())!;
+  expect(cancel.y + cancel.height).toBeLessThanOrEqual(560);
+  expect(
+    await list.evaluate((node) => node.scrollHeight - node.clientHeight),
+  ).toBeGreaterThan(0);
+  await page.screenshot({ path: "test-results/impact-service-small.png" });
+});
+
+test("confirmation without impact adds nothing to the target row", async ({
+  page,
+}) => {
+  await page.addInitScript(
+    () =>
+      ((window as any).__impact = {
+        windows: { items: ["Only window"], more: 0 },
+        children: { items: [], more: 0 },
+        files: { items: ["/build/scene.blend"], more: 0 },
+        ports: { items: [], more: 0 },
+      }),
+  );
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/PID \d+/).first()).toBeVisible();
+  await expect(dialog.locator(".impact-summary")).toHaveCount(0);
+  await expect(dialog.locator(".impact-details")).toHaveCount(0);
 });
 
 for (const initialTarget of ["/", "/?empty-target"]) {
@@ -1318,7 +1993,13 @@ test("parent termination verifies exit, clears stale details and refreshes", asy
   await expect(
     dialog.getByRole("button", { name: "Cancel", exact: true }),
   ).toBeFocused();
-  await dialog.getByRole("button", { name: "Terminate", exact: true }).click();
+  await expect(dialog.locator(".role-badge")).toHaveText("Parent");
+  await expect(
+    dialog.getByText(
+      "Stopping a parent may close its children or your session.",
+    ),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: /^Close (?!dialog)/ }).click();
   await expect(page.getByText("Waiting for process exit…")).toBeVisible();
   await expect(page.getByText("Process exited", { exact: true })).toBeVisible();
   await expect(
@@ -1404,7 +2085,7 @@ test("theme presets persist and ancestry reads from parent to highlighted proces
   await expect(ancestry.getByRole("button").nth(0)).toHaveText(/fixture-init/);
   await expect(ancestry.getByRole("button").nth(1)).toHaveText(/fixture-shell/);
   const current = ancestry.getByRole("button", {
-    name: /Code Current process 4000/,
+    name: /Blender Current process 4000/,
   });
   await expect(current).toHaveAttribute("aria-pressed", "true");
   await ancestry.getByRole("button", { name: "fixture-shell 3000" }).click();
@@ -1534,6 +2215,238 @@ test("first launch previews a theme and migrates neutral Dark", async ({
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "vscode");
   await expect(dialog).not.toBeVisible();
+});
+
+test("process search shows matching file paths and grouped references above ancestry", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__fileMatchFixture = true;
+  });
+  await page.goto("/");
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  await search.fill("bestell");
+  const row = page.getByRole("grid").getByRole("row").nth(1);
+  const path = row.locator(".path-cell");
+  await expect(path).toContainText("Bestellbestätigung .pdf");
+  await expect(path).not.toContainText("PdfEditor.exe");
+  await expect(path).toHaveCSS("white-space", "normal");
+  await row.getByRole("button", { name: "+3 more", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Process details" });
+  const files = panel.getByRole("region", {
+    name: "Matching files",
+    exact: true,
+  });
+  await expect(files).toBeInViewport();
+  await expect(files.locator(".matching-file-list > li")).toHaveCount(3);
+  const first = files.locator(".matching-file-list > li").first();
+  await expect(first).toContainText("Bestellbestätigung .pdf");
+  await first
+    .getByText("3 references · access and evidence", { exact: true })
+    .click();
+  await expect(first).toContainText("Sharing conflict; owner unverified");
+  await expect(first.locator("details li")).toHaveCount(3);
+  await first.getByRole("button", { name: "Copy path", exact: true }).click();
+  await first.getByRole("button", { name: "Reveal", exact: true }).click();
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls.find((call: any) => call.command === "copy").args.reference,
+  ).toBe("1:0:0");
+  expect(
+    calls.find((call: any) => call.command === "reveal").args.reference,
+  ).toBe("1:0:0");
+  expect(
+    await files.evaluate((element) =>
+      element.compareDocumentPosition(
+        element.parentElement!.querySelector(".ancestry")!,
+      ),
+    ),
+  ).toBe(4);
+  await page.screenshot({ path: "test-results/matching-process-files.png" });
+  await files
+    .getByRole("button", { name: "View all matching file usages", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "File usages", exact: true }),
+  ).toBeVisible();
+  await expect(search).toHaveValue("bestell");
+  await expect(page.getByRole("grid")).toHaveAttribute("aria-rowcount", "7");
+});
+
+test("a changed process search updates file details without carrying the previous path", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__fileMatchFixture = true;
+  });
+  await page.goto("/");
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  await search.fill("bestellbest");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  const files = page.getByRole("region", {
+    name: "Matching files",
+    exact: true,
+  });
+  await expect(files).toContainText("Bestellbestätigung .pdf");
+  await search.fill("Bestellung-2");
+  await expect(files).toContainText("Bestellung-2.pdf");
+  await expect(files).not.toContainText("Bestellbestätigung .pdf");
+  await expect(
+    files.getByRole("button", { name: "Copy path", exact: true }),
+  ).toBeEnabled();
+  await search.fill("absent-file");
+  await expect(page.getByRole("grid")).toHaveAttribute("aria-rowcount", "1");
+  await expect(
+    files.getByRole("button", { name: "Copy path", exact: true }),
+  ).toBeDisabled();
+});
+
+for (const [
+  locale,
+  sendLabel,
+  messageLabel,
+  delivery,
+  previewLabel,
+  ownNotice,
+] of [
+  [
+    "en",
+    "Send message…",
+    "Message",
+    "The recipient does not need OFLH.",
+    "Recipient preview",
+    "This is your own session.",
+  ],
+  [
+    "de",
+    "Nachricht senden…",
+    "Nachricht",
+    "Der Empfänger braucht kein OFLH.",
+    "Empfängervorschau",
+    "Das ist deine eigene Sitzung.",
+  ],
+  [
+    "zh",
+    "发送消息…",
+    "消息",
+    "收件人无需安装 OFLH。",
+    "收件人预览",
+    "这是你自己的会话。",
+  ],
+]) {
+  test(`native message preview retains the file context and explains delivery in ${locale}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 860, height: 560 });
+    await page.addInitScript((language) => {
+      localStorage.setItem("oflh-language", language);
+      (window as any).__fileMatchFixture = true;
+      (window as any).__multiUser = { elevated: true };
+    }, locale);
+    await page.goto("/");
+    // The same synthetic search field and grid exist in each locale.
+    await page.locator(".search-box input").fill("bestellbest");
+    await page.getByRole("grid").getByRole("row").nth(1).click();
+    await page.getByRole("button", { name: sendLabel, exact: true }).click();
+    const modal = page.getByRole("dialog");
+    await expect(modal).toContainText(delivery);
+    await expect(modal).toContainText(ownNotice);
+    const note = modal.getByRole("textbox", {
+      name: messageLabel,
+      exact: true,
+    });
+    await expect(note).not.toBeEmpty();
+    await note.fill("hey");
+    const preview = modal.locator(".session-message-preview");
+    await expect(preview.getByText(new RegExp(previewLabel))).toBeVisible();
+    await expect(preview).toContainText("Bestellbestätigung .pdf");
+    await expect(preview).toContainText("FixturePdfEditor");
+    await expect(preview).toContainText("4000");
+    await expect(preview).toContainText("hey");
+    const text = await preview.locator("pre").innerText();
+    const send = modal.locator(".modal-actions .primary");
+    await expect(send).toBeEnabled();
+    await expect(send).toBeInViewport();
+    await page.screenshot({
+      path: `test-results/native-message-${locale}.png`,
+    });
+    await send.click();
+    await expect(modal).not.toBeVisible();
+    const calls = await page.evaluate(() =>
+      (window as any).__testCalls.filter(
+        (call: any) => call.command === "send_message",
+      ),
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].args.text).toBe(text);
+    expect(calls[0].args.key).toBe("4000:18446744073709551615:0");
+    expect([...calls[0].args.text].length).toBeLessThanOrEqual(1000);
+  });
+}
+
+test("native message limits include automatic context and stale drafts cannot send", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__fileMatchFixture = true;
+    (window as any).__multiUser = { elevated: true };
+  });
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page
+    .getByRole("button", { name: "Send message…", exact: true })
+    .click();
+  const modal = page.getByRole("dialog");
+  const note = modal.getByRole("textbox", { name: "Message", exact: true });
+  const send = modal.getByRole("button", { name: "Send", exact: true });
+  await note.fill("x".repeat(1000));
+  await expect(send).toBeDisabled();
+  await expect(modal).toContainText("The full message is too long.");
+  await note.fill(" ");
+  await expect(send).toBeDisabled();
+  await note.fill("Please check this file.");
+  await expect(send).toBeEnabled();
+  // A newly accepted native snapshot must not be combined with the old draft.
+  await page.evaluate(() => {
+    (window as any).__waitFree({
+      event: "scan-status",
+      payload: {
+        generation: 2,
+        revision: 2,
+        scanning: false,
+        elapsed_ms: 0,
+        last_scan_elapsed_ms: 100,
+        progress: {
+          phase: "files",
+          processes: 1,
+          resources: 1,
+          files: 1,
+          directories: 0,
+        },
+        target: "/workspace/project",
+        processes: 1,
+        ports: 0,
+        usages: 1,
+        warnings: [],
+        error: null,
+        wait: { waiting: false, elapsed_ms: 0, outcome: null, error: null },
+        version: "development",
+        commit: "",
+        build_url: "",
+        pull_request_url: "",
+      },
+    });
+  });
+  await expect(send).toBeDisabled();
+  await expect(modal).toContainText(
+    "Close this draft and reopen it from the current results.",
+  );
+  const calls = await page.evaluate(() =>
+    (window as any).__testCalls.filter(
+      (call: any) => call.command === "send_message",
+    ),
+  );
+  expect(calls).toHaveLength(0);
 });
 
 test("single-click rows open details and panel buttons close them", async ({
@@ -1746,7 +2659,7 @@ test("termination preserves the captured owner port filter", async ({
   await page.getByRole("button", { name: "Terminate…", exact: true }).click();
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Terminate", exact: true })
+    .getByRole("button", { name: /^Close (?!dialog)/ })
     .click();
   await expect(page.getByText("Process exited", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Done", exact: true }).click();
@@ -1859,6 +2772,41 @@ for (const mode of ["install", "download"] as const) {
     }
   });
 }
+
+test("Open window maximized is off by default, persists, and maximizes on the next launch", async ({
+  page,
+}) => {
+  const maximizeCalls = async () =>
+    (await page.evaluate(() => (window as any).__testCalls)).filter(
+      (call: any) => call.command === "plugin:window|maximize",
+    );
+  await page.goto("/");
+  await page.keyboard.press("Control+,");
+  const toggle = page.getByRole("checkbox", { name: "Open window maximized" });
+  await expect(toggle).not.toBeChecked();
+  expect(await maximizeCalls()).toHaveLength(0);
+  await page.screenshot({
+    path: "test-results/open-maximized-setting.png",
+    clip: (await toggle.locator("xpath=ancestor::section[1]").boundingBox())!,
+  });
+  await toggle.check();
+  expect(
+    await page.evaluate(() => localStorage.getItem("oflh-open-maximized")),
+  ).toBe("1");
+  // The change applies from the next launch, not to the running window.
+  expect(await maximizeCalls()).toHaveLength(0);
+  await page.reload();
+  await expect.poll(async () => (await maximizeCalls()).length).toBe(1);
+  expect((await maximizeCalls())[0].args).toMatchObject({ label: "main" });
+  await page.keyboard.press("Control+,");
+  await expect(toggle).toBeChecked();
+  await toggle.uncheck();
+  await page.reload();
+  await expect(
+    page.getByRole("checkbox", { name: "Open window maximized" }),
+  ).toHaveCount(0);
+  expect(await maximizeCalls()).toHaveLength(0);
+});
 
 test("Settings reports when no update is available and links to the releases page", async ({
   page,
@@ -2051,7 +2999,7 @@ for (const [saved, resolved, background] of [
       (theme) => localStorage.setItem("oflh-theme", theme),
       saved,
     );
-    await page.route("**/src/main.tsx", (route) => route.abort());
+    await page.route(/\/src\/main\.tsx(?:\?.*)?$/, (route) => route.abort());
     await page.goto("/");
     await expect(page.locator("html")).toHaveAttribute("data-theme", resolved);
     await expect(page.locator("html")).toHaveCSS(
@@ -2569,11 +3517,11 @@ test("gear stays last in the sidebar and support actions fit the minimum window 
   expect(footerBounds.scrollWidth).toBeLessThanOrEqual(
     footerBounds.clientWidth,
   );
-  await page.getByText("Columns", { exact: true }).click();
+  await page.locator(".column-picker > summary").click();
   const columnMenu = page.getByRole("group", { name: "Visible columns" });
   const menuBounds = await columnMenu.boundingBox();
   expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(860);
-  await page.getByText("Columns", { exact: true }).click();
+  await page.locator(".column-picker > summary").click();
   for (const name of ["Settings"]) {
     const button = page
       .getByRole("navigation")
@@ -2740,7 +3688,7 @@ test("Chinese system language translates the workspace and process confirmation"
   await expect(filters.getByLabel("进程名称")).toBeVisible();
   await page.screenshot({ path: "test-results/chinese-filters.png" });
   await filters.getByRole("button", { name: "关闭", exact: true }).click();
-  await page.getByRole("row").filter({ hasText: "Code" }).first().click();
+  await page.getByRole("row").filter({ hasText: "Blender" }).first().click();
   await page.getByRole("button", { name: "终止…", exact: true }).click();
   const confirmation = page.getByRole("dialog");
   await expect(confirmation).toContainText("未保存的工作可能丢失");
@@ -2795,7 +3743,7 @@ test("normal termination recovery confirms captured targets instead of refreshin
     .fill("node");
   await page.getByRole("button", { name: "Terminate…", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "Terminate", exact: true }).click();
+  await dialog.getByRole("button", { name: /^Close (?!dialog)/ }).click();
   await expect(
     dialog.getByText(/Some processes could not be stopped normally/),
   ).toBeVisible();
@@ -2810,9 +3758,7 @@ test("normal termination recovery confirms captured targets instead of refreshin
     dialog.getByRole("button", { name: "Cancel", exact: true }),
   ).toBeFocused();
   await expect(dialog.getByText("PID 4000")).toBeVisible();
-  await expect(
-    dialog.getByText(/without allowing normal cleanup/),
-  ).toBeVisible();
+  await expect(dialog.getByText(/without letting it save/)).toBeVisible();
   const calls = await page.evaluate(() => (window as any).__testCalls);
   expect(
     calls
@@ -2851,7 +3797,7 @@ test("normal ancestor failure offers force recovery for the captured ancestor", 
     .getByRole("button", { name: "Terminate parent…", exact: true })
     .click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "Terminate", exact: true }).click();
+  await dialog.getByRole("button", { name: /^Close (?!dialog)/ }).click();
   await expect(dialog.getByText("fixture permission failure")).toBeVisible();
   await dialog
     .getByRole("button", { name: "Force terminate…", exact: true })
@@ -2901,8 +3847,7 @@ for (const force of [false, true]) {
     await page
       .getByRole("dialog")
       .getByRole("button", {
-        name: force ? "Force terminate" : "Terminate",
-        exact: true,
+        name: force ? /^Force quit / : /^Close (?!dialog)/,
       })
       .click();
     await page
@@ -2956,7 +3901,7 @@ test("confirmed administrator retry uses its new receipt and never offers repeat
     .click();
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Force terminate", exact: true })
+    .getByRole("button", { name: /^Force quit / })
     .click();
   await page
     .getByRole("button", { name: "Retry with administrator privileges…" })
@@ -2977,7 +3922,7 @@ test("confirmed administrator retry uses its new receipt and never offers repeat
   });
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Force terminate", exact: true })
+    .getByRole("button", { name: /^Force quit / })
     .click();
   await expect(
     page.getByText("Synthetic elevated permission denied"),
@@ -3213,8 +4158,7 @@ test("pointer-opened menus and termination dialogs do not pre-highlight actions,
   });
   await page.keyboard.press("Tab");
   const terminate = dialog.getByRole("button", {
-    name: "Force terminate",
-    exact: true,
+    name: /^Force quit /,
   });
   await expect(terminate).toBeFocused();
   await expect(terminate).toHaveCSS("outline-style", "solid");
@@ -3930,7 +4874,7 @@ for (const action of ["exit", "reuse"] as const)
     const details = page.getByRole("complementary", {
       name: "Process details",
     });
-    await expect(details).toContainText("Code");
+    await expect(details).toContainText("Blender");
     await enableQuietRefresh(page);
     await page.evaluate((action) => {
       (window as any).__mutateRowsForTest(action);
@@ -3944,7 +4888,7 @@ for (const action of ["exit", "reuse"] as const)
     await expect(details).toContainText("This captured process is absent");
     await expect(details).toContainText("PID 4000");
     await expect(
-      details.getByRole("heading", { name: "Code", exact: true }),
+      details.getByRole("heading", { name: "Blender", exact: true }),
     ).toBeVisible();
     await expect(
       details.getByRole("button", { name: "Terminate process…", exact: true }),
@@ -4115,7 +5059,7 @@ test("quiet refresh rejects retained matches after a new query and publishes the
   });
   await expect(page.getByText("300 results", { exact: true })).toBeVisible();
   await expect(grid.getByText("node", { exact: true }).first()).toBeVisible();
-  await expect(grid.getByText("Code", { exact: true })).toHaveCount(0);
+  await expect(grid.getByText("Blender", { exact: true })).toHaveCount(0);
 });
 
 test("a native target scan after quiet refresh locks inspection controls without a modal", async ({
@@ -4692,4 +5636,1418 @@ for (const locale of ["en", "de", "zh"]) {
     if (locale === "de")
       await page.screenshot({ path: "test-results/drop-window-de.png" });
   });
+}
+
+const manyWindows = {
+  ...blenderImpact,
+  windows: {
+    items: Array.from(
+      { length: 150 },
+      (_, index) => `scene${index + 1}.blend - Blender`,
+    ),
+    more: 0,
+  },
+};
+
+test("a group with 150 windows previews five, expands in place and filters", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 860, height: 560 });
+  await page.addInitScript(
+    (impact) => ((window as any).__impact = impact),
+    manyWindows,
+  );
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator(".impact-details summary").first().click();
+  const group = dialog.locator(".impact-group").first();
+  await expect(group.locator("li")).toHaveCount(5);
+  await expect(group.getByRole("searchbox")).toHaveCount(0);
+  await page.screenshot({ path: "test-results/impact-more-preview.png" });
+  const show = group.getByRole("button", { name: "Show all 150" });
+  await show.click();
+  await expect(group.locator("li")).toHaveCount(150);
+  const less = group.getByRole("button", { name: "Show less" });
+  await expect(less).toBeFocused();
+  // The list stays in the confirmation's scroll area; buttons stay reachable.
+  const scroll = dialog.locator(".confirmation-scroll");
+  await expect(scroll).toHaveAttribute("data-fade-bottom", "true");
+  const list = dialog.locator(".confirmation-list");
+  expect(
+    await list.evaluate((node) => node.scrollHeight > node.clientHeight),
+  ).toBe(true);
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeInViewport();
+  const filter = group.getByRole("searchbox", { name: "Filter list" });
+  await expect(filter).toBeVisible();
+  await page.screenshot({ path: "test-results/impact-more-expanded.png" });
+  await filter.fill("scene14");
+  await expect(group.locator("li")).toHaveCount(11);
+  await expect(group.getByText("11 of 150")).toBeVisible();
+  await page.screenshot({ path: "test-results/impact-more-filtered.png" });
+  await filter.fill("nothing here");
+  await expect(group.getByText("No matches")).toBeVisible();
+  // Escape clears the filter first and only then closes the dialog.
+  await page.keyboard.press("Escape");
+  await expect(filter).toHaveValue("");
+  await expect(dialog).toBeVisible();
+  await less.click();
+  await expect(group.locator("li")).toHaveCount(5);
+  await expect(show).toBeFocused();
+});
+
+for (const [locale, terminate, label, less] of [
+  ["de", "Beenden …", "Alle 150 anzeigen", "Weniger anzeigen"],
+  ["zh", "终止…", "显示全部 150 项", "收起"],
+]) {
+  test(`Show all is localized in ${locale}`, async ({ page }) => {
+    await page.addInitScript(
+      ([impact, language]) => {
+        (window as any).__impact = impact;
+        localStorage.setItem("oflh-language", language as string);
+      },
+      [manyWindows, locale] as const,
+    );
+    await page.goto("/");
+    await page.getByRole("grid").getByRole("row").nth(1).click();
+    await page.getByRole("button", { name: terminate, exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.locator(".impact-details summary").first().click();
+    await dialog.getByRole("button", { name: label }).click();
+    await expect(dialog.getByRole("button", { name: less })).toBeFocused();
+  });
+}
+
+for (const [width, height] of [
+  [860, 560],
+  [800, 600],
+]) {
+  test(`one target: plain title, short note and Show all in view at ${width}x${height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.addInitScript(
+      (impact) => ((window as any).__impact = impact),
+      manyWindows,
+    );
+    await page.goto("/");
+    await page.getByRole("grid").getByRole("row").nth(1).click();
+    await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Close Blender?" });
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByText(
+        "OFLH asks the program to close. Unsaved work may be lost.",
+      ),
+    ).toBeVisible();
+    await expect(dialog.getByText(/escalate/)).toHaveCount(0);
+    await expect(
+      dialog.getByRole("button", { name: "Close Blender", exact: true }),
+    ).toBeVisible();
+    // The safety details are one line until asked for.
+    const safety = dialog.locator(".safety-note");
+    await expect(
+      safety.getByText("including any hidden by filters", { exact: false }),
+    ).toBeHidden();
+    await dialog.locator(".impact-details summary").first().click();
+    const list = dialog.locator(".confirmation-list");
+    const show = dialog.getByRole("button", { name: "Show all 150" });
+    const listBox = (await list.boundingBox())!;
+    const showBox = (await show.boundingBox())!;
+    expect(showBox.y + showBox.height).toBeLessThanOrEqual(
+      listBox.y + listBox.height,
+    );
+    expect(await list.evaluate((node) => node.scrollTop)).toBe(0);
+    await page.screenshot({
+      path: `test-results/polish-confirm-single-${width}x${height}.png`,
+    });
+    await safety.locator("summary").click();
+    await expect(
+      safety.getByText("including any hidden by filters", { exact: false }),
+    ).toBeVisible();
+    await expect(
+      safety.getByText("does not force it", { exact: false }),
+    ).toBeVisible();
+  });
+
+  test(`several targets are counted in title and button at ${width}x${height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.addInitScript(
+      (impact) => ((window as any).__impact = impact),
+      blenderImpact,
+    );
+    await page.goto("/");
+    const rows = page.getByRole("grid").getByRole("row");
+    await rows.nth(1).click();
+    await rows.nth(2).click({ modifiers: ["Shift"] });
+    await rows.nth(3).click({ modifiers: ["Shift"] });
+    await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Close 3 processes?" });
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByText("OFLH asks each program to close.", { exact: false }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Close 3 processes", exact: true }),
+    ).toBeInViewport({ ratio: 1 });
+    await page.screenshot({
+      path: `test-results/polish-confirm-multi-${width}x${height}.png`,
+    });
+  });
+}
+
+/** True when the element overflows and its scrollbar takes real width. */
+const overflowsWithScrollbar = (node: Element) => {
+  const element = node as HTMLElement;
+  return (
+    element.scrollHeight > element.clientHeight + 1 &&
+    element.offsetWidth - element.clientWidth >= 6
+  );
+};
+
+for (const [width, height] of [
+  [800, 600],
+  [860, 560],
+]) {
+  test.describe(`scroll affordance at ${width}x${height}`, () => {
+    test.use({ viewport: { width, height } });
+
+    test("the results table shows a slim scrollbar and fades only at the bottom", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      const table = page.locator(".table-scroll").first();
+      await expect(
+        page.getByRole("grid").getByRole("row").nth(1),
+      ).toBeVisible();
+      expect(await table.evaluate(overflowsWithScrollbar)).toBe(true);
+      await expect(table).toHaveAttribute("data-fade-bottom", "");
+      await page.screenshot({
+        path: `test-results/scroll-table-${width}x${height}.png`,
+      });
+      // The sticky header stays crisp.
+      await table.evaluate((node) => (node.scrollTop = 400));
+      await expect(table).not.toHaveAttribute("data-fade-top", /.*/);
+      await table.evaluate((node) => (node.scrollTop = node.scrollHeight));
+      await expect(table).not.toHaveAttribute("data-fade-bottom", /.*/);
+    });
+
+    test("long dialogs scroll their body while the title and buttons stay visible", async ({
+      page,
+    }) => {
+      await page.addInitScript(() =>
+        localStorage.setItem("oflh-font-size", "24"),
+      );
+      await page.goto("/");
+      await page.getByRole("button", { name: "Donate", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Support OFLH" });
+      const body = dialog.locator(".modal-body");
+      expect(await body.evaluate(overflowsWithScrollbar)).toBe(true);
+      await expect(body).toHaveAttribute("data-fade-bottom", "");
+      await expect(
+        dialog.getByRole("heading", { name: "Support OFLH" }),
+      ).toBeInViewport();
+      await expect(
+        dialog.getByRole("button", { name: "Close dialog" }),
+      ).toBeInViewport();
+      await page.screenshot({
+        path: `test-results/scroll-modal-${width}x${height}.png`,
+      });
+      await body.evaluate((node) => (node.scrollTop = 60));
+      await expect(body).toHaveAttribute("data-fade-top", "");
+      await body.evaluate((node) => (node.scrollTop = node.scrollHeight));
+      await expect(body).not.toHaveAttribute("data-fade-bottom", /.*/);
+    });
+
+    test("dialog buttons outside the body never scroll away", async ({
+      page,
+    }) => {
+      await page.addInitScript(
+        (impact) => ((window as any).__impact = impact),
+        manyWindows,
+      );
+      await page.goto("/");
+      await page.getByRole("grid").getByRole("row").nth(1).click();
+      await page
+        .getByRole("button", { name: "Terminate…", exact: true })
+        .click();
+      const dialog = page.getByRole("dialog");
+      await dialog.locator(".impact-details summary").first().click();
+      const actions = dialog.locator(":scope > .modal-actions");
+      await expect(actions).toBeInViewport({ ratio: 1 });
+      await dialog.getByRole("button", { name: "Show all 150" }).click();
+      await expect(actions).toBeInViewport({ ratio: 1 });
+      await expect(
+        dialog.getByRole("button", { name: "Cancel", exact: true }),
+      ).toBeInViewport({ ratio: 1 });
+      const box = (await dialog.boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(height);
+      await page.screenshot({
+        path: `test-results/scroll-confirm-${width}x${height}.png`,
+      });
+    });
+
+    test("the inspector and sidebar use the same affordance when they overflow", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await page.getByRole("grid").getByRole("row").nth(1).click();
+      const inspector = page.locator(".inspector");
+      await expect(inspector).toBeVisible();
+      for (const region of [inspector, page.locator(".sidebar")]) {
+        const overflows = await region.evaluate(
+          (node) => node.scrollHeight > node.clientHeight + 1,
+        );
+        if (overflows) {
+          expect(await region.evaluate(overflowsWithScrollbar)).toBe(true);
+          await expect(region).toHaveAttribute("data-fade-bottom", "");
+        } else {
+          await expect(region).not.toHaveAttribute("data-fade-bottom", /.*/);
+        }
+      }
+      expect(
+        await inspector.evaluate(
+          (node) => node.scrollHeight > node.clientHeight,
+        ),
+      ).toBe(true);
+      await page.screenshot({
+        path: `test-results/scroll-inspector-${width}x${height}.png`,
+      });
+    });
+
+    test("fitting regions show no fades", async ({ page }) => {
+      await page.setViewportSize({ width: 1280, height: 1000 });
+      await page.goto("/");
+      await page.getByRole("button", { name: "Donate", exact: true }).click();
+      const body = page.getByRole("dialog").locator(".modal-body");
+      const fits = await body.evaluate(
+        (node) => node.scrollHeight <= node.clientHeight + 1,
+      );
+      expect(fits).toBe(true);
+      await expect(body).not.toHaveAttribute("data-fade-bottom", /.*/);
+      await expect(body).not.toHaveAttribute("data-fade-top", /.*/);
+      expect(await body.evaluate(overflowsWithScrollbar)).toBe(false);
+    });
+  });
+}
+
+test.describe("compact header on short windows", () => {
+  for (const [width, height] of [
+    [860, 560],
+    [800, 600],
+  ]) {
+    test(`at ${width}x${height} the table gets the room and key actions stay visible`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height });
+      await page.goto("/");
+      const grid = page.getByRole("grid");
+      await grid.getByRole("row").nth(1).click();
+      // Labels hidden by the compact layout stay the accessible names.
+      for (const name of ["Column filters", "Fit all columns"])
+        await expect(page.getByRole("button", { name })).toBeInViewport();
+      const header = page.locator(".app-header");
+      for (const control of [
+        page.getByRole("button", { name: /^Refresh/ }),
+        page.getByRole("button", { name: "Inspect", exact: true }),
+        page.getByRole("button", { name: "Close inspection" }),
+        page.getByRole("textbox", { name: "Target file or folder path" }),
+        page.getByRole("textbox", { name: "Search loaded results" }),
+        page.getByRole("button", { name: "Terminate…", exact: true }),
+      ])
+        await expect(control).toBeInViewport({ ratio: 1 });
+      await expect(
+        page.getByRole("heading", { level: 1, name: "Processes" }),
+      ).toBeAttached();
+      const gridBox = (await grid.boundingBox())!;
+      const headerBox = (await header.boundingBox())!;
+      const rows = await grid.evaluate(
+        (node) =>
+          [...node.querySelectorAll('[role="row"]')].filter((row) => {
+            const box = row.getBoundingClientRect();
+            const outer = node.getBoundingClientRect();
+            return box.top >= outer.top && box.bottom <= outer.bottom;
+          }).length - 1,
+      );
+      console.log(
+        `header ${width}x${height}: app-header ${headerBox.height}px, grid top ${gridBox.y}px, ${rows} rows`,
+      );
+      await page.screenshot({
+        path: `test-results/header-${process.env.OFLH_HEADER_BASELINE === "1" ? "before" : "after"}-${width}x${height}.png`,
+      });
+      if (process.env.OFLH_HEADER_BASELINE !== "1") {
+        expect(headerBox.height).toBeLessThanOrEqual(46);
+        expect(rows).toBeGreaterThanOrEqual(6);
+      }
+    });
+  }
+});
+
+test("tall windows keep the full page header", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Processes" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Processes referencing your target and its contents."),
+  ).toBeVisible();
+  await expect(
+    page.locator(".search-toolbar .compact-label").first(),
+  ).toBeVisible();
+});
+
+test.describe("process icons", () => {
+  for (const [width, height] of [
+    [860, 560],
+    [1280, 800],
+  ]) {
+    test(`rows and the confirmation show app icons with a neutral fallback at ${width}x${height}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height });
+      await page.goto("/");
+      const grid = page.getByRole("grid");
+      const blender = grid.getByRole("row").nth(1);
+      await expect(blender.locator("img.app-icon")).toBeVisible();
+      await expect(
+        grid.getByRole("row").nth(3).locator(".app-icon-fallback"),
+      ).toBeVisible();
+      // Icons are decorative: the row's accessible text is unchanged.
+      await expect(blender.locator("img.app-icon")).toHaveAttribute("alt", "");
+      const calls = await page.evaluate(() =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "process_icon",
+        ),
+      );
+      // Lazy: only rendered rows ask for an icon, each once.
+      expect(calls.length).toBeGreaterThan(0);
+      expect(calls.length).toBeLessThan(80);
+      expect(new Set(calls.map((call: any) => call.args.reference)).size).toBe(
+        calls.length,
+      );
+      await page.screenshot({
+        path: `test-results/icons-table-${width}x${height}.png`,
+      });
+      await blender.click();
+      await grid
+        .getByRole("row")
+        .nth(3)
+        .click({ modifiers: ["Shift"] });
+      await page
+        .getByRole("button", { name: "Terminate…", exact: true })
+        .click();
+      const dialog = page.getByRole("dialog");
+      const targets = dialog.locator(".confirmation-target");
+      await expect(targets.nth(0).locator("img.app-icon")).toBeVisible();
+      await expect(targets.nth(1).locator(".app-icon-fallback")).toBeVisible();
+      await page.screenshot({
+        path: `test-results/icons-confirm-${width}x${height}.png`,
+      });
+    });
+  }
+});
+
+test.describe("multi-user sessions", () => {
+  const setup = async (
+    page: import("@playwright/test").Page,
+    fixture: { elevated: boolean; os?: string },
+    columns = false,
+  ) => {
+    await page.addInitScript(
+      ([value, show]) => {
+        (window as any).__multiUser = value;
+        if (show) {
+          localStorage.setItem("oflh-optional-columns", "1");
+          localStorage.setItem("oflh-hidden-columns", "[]");
+        }
+      },
+      [fixture, columns] as const,
+    );
+    await page.goto("/");
+  };
+  const panel = (page: import("@playwright/test").Page) =>
+    page.getByRole("complementary", { name: "Process details" });
+  const calls = (page: import("@playwright/test").Page, command: string) =>
+    page.evaluate(
+      (name) =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === name,
+        ),
+      command,
+    );
+
+  test("user and session columns stay hidden until chosen", async ({
+    page,
+  }) => {
+    await setup(page, { elevated: true });
+    const grid = page.getByRole("grid");
+    await expect(
+      grid.getByRole("columnheader", { name: /Process/ }),
+    ).toBeVisible();
+    await expect(grid.getByRole("columnheader", { name: "User" })).toHaveCount(
+      0,
+    );
+    await expect(
+      grid.getByRole("columnheader", { name: "Session" }),
+    ).toHaveCount(0);
+  });
+
+  for (const [width, height] of [
+    [860, 560],
+    [1280, 800],
+  ]) {
+    test(`admin sees owner, session and can message and sign out at ${width}x${height}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height });
+      await setup(page, { elevated: true }, true);
+      const grid = page.getByRole("grid");
+      await expect(
+        grid.getByRole("columnheader", { name: "User" }),
+      ).toBeVisible();
+      const row = grid.getByRole("row").nth(2);
+      await expect(row).toContainText("max.muster");
+      await expect(row).toContainText("3 · RDP");
+      await page.screenshot({
+        path: `test-results/sessions-table-${width}x${height}.png`,
+      });
+      await row.click();
+      const details = panel(page);
+      await expect(details.locator(".owner-line")).toContainText(
+        /max\.muster · Session 3 \(RDP\) · active since .+ · from LAPTOP-7/,
+      );
+      await expect(page.locator(".share-panel summary")).toContainText("2");
+      await page.locator(".share-panel summary").click();
+      await page.screenshot({
+        path: `test-results/sessions-details-${width}x${height}.png`,
+      });
+      await page.locator(".share-panel summary").click();
+
+      await details.getByRole("button", { name: "Send message…" }).click();
+      const message = page.getByRole("dialog");
+      await message.getByRole("textbox").fill("Server restarts at 18:00.");
+      await message.getByRole("button", { name: "Send", exact: true }).click();
+      await expect(page.getByText("Message sent to max.muster.")).toBeVisible();
+      const sent = (await calls(page, "send_message"))[0].args.text;
+      expect(sent).toContain("Server restarts at 18:00.");
+      expect(sent).toContain("Application: node (PID 4001)");
+      expect(sent).toContain("To: max.muster · Session 3 (RDP)");
+      expect(sent).toContain("Inspected target: /workspace/project");
+
+      await details.getByRole("button", { name: "Sign out user…" }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toContainText("Sign out max.muster?");
+      await expect(dialog).not.toContainText("This is your own session.");
+      await expect(dialog).toContainText(
+        "Unsaved work of max.muster will be lost.",
+      );
+      await expect(dialog).toContainText(/Programs that will close \(\d+\)/);
+      await expect(dialog).toContainText(/node\s*PID 4001/);
+      await page.screenshot({
+        path: `test-results/sessions-signout-${width}x${height}.png`,
+      });
+      // Nothing happens until the explicit, user-named button.
+      expect(await calls(page, "sign_out")).toHaveLength(0);
+      await dialog
+        .getByRole("button", { name: "Sign out max.muster", exact: true })
+        .click();
+      await expect(
+        page.getByText("max.muster is being signed out."),
+      ).toBeVisible();
+      expect((await calls(page, "sign_out"))[0].args.ticket).toBe(
+        "sign-out-ticket",
+      );
+    });
+  }
+
+  test("termination confirmation names the other user's session", async ({
+    page,
+  }) => {
+    await setup(page, { elevated: true });
+    const grid = page.getByRole("grid");
+    await grid.getByRole("row").nth(2).click();
+    await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+    const target = page.getByRole("dialog").locator(".target-owner");
+    await expect(target).toContainText("max.muster · Session 3 (RDP)");
+    await page.screenshot({
+      path: "test-results/sessions-confirm-860x560.png",
+    });
+  });
+
+  test("without admin rights actions are disabled and explained", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 860, height: 560 });
+    await setup(page, { elevated: false });
+    await page.getByRole("grid").getByRole("row").nth(2).click();
+    const details = panel(page);
+    const signOut = details.getByRole("button", { name: /^Sign out user…/ });
+    await expect(signOut).toBeDisabled();
+    await expect(
+      details.getByRole("button", { name: /^Send message…/ }),
+    ).toBeDisabled();
+    await expect(
+      details.getByText("Requires administrator rights").first(),
+    ).toBeVisible();
+    await page.locator(".share-panel summary").click();
+    await expect(
+      page
+        .locator(".share-panel")
+        .getByRole("button", { name: /^Close open file/ })
+        .first(),
+    ).toBeDisabled();
+    await page.screenshot({
+      path: "test-results/sessions-nonadmin-860x560.png",
+    });
+    await page.locator(".share-panel summary").click();
+    // The own session never needs elevation.
+    await page.getByRole("grid").getByRole("row").nth(1).click();
+    await expect(
+      details.getByRole("button", { name: "Sign out user…" }),
+    ).toBeEnabled();
+    await expect(details.locator(".owner-line")).toContainText("your session");
+  });
+
+  test("closing a share file needs confirmation and refreshes the list", async ({
+    page,
+  }) => {
+    await setup(page, { elevated: true });
+    const shares = page.locator(".share-panel");
+    await shares.locator("summary").click();
+    await shares
+      .getByRole("listitem")
+      .filter({ hasText: "Q3-report.xlsx" })
+      .getByRole("button", { name: "Close open file" })
+      .click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("anna.schmidt loses access");
+    expect(await calls(page, "close_file")).toHaveLength(0);
+    await dialog.getByRole("button", { name: "Close open file" }).click();
+    await expect(
+      page.getByText("Closed the file for anna.schmidt."),
+    ).toBeVisible();
+    await expect(shares.getByRole("listitem")).toHaveCount(1); // admin: no requirement row
+    expect((await calls(page, "close_file"))[0].args.ticket).toBe(
+      "close-ticket",
+    );
+  });
+
+  test("linux without root offers sign-out only, disabled with a reason", async ({
+    page,
+  }) => {
+    await setup(page, { elevated: false, os: "linux" });
+    await page.getByRole("grid").getByRole("row").nth(2).click();
+    const details = panel(page);
+    await expect(
+      details.getByRole("button", { name: /^Send message/ }),
+    ).toHaveCount(0);
+    await expect(
+      details.getByRole("button", { name: /^Sign out user…/ }),
+    ).toBeDisabled();
+    await expect(details.getByText("Requires root")).toBeVisible();
+    await expect(page.locator(".share-panel")).toHaveCount(0);
+  });
+
+  test("German labels use the informal voice", async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem("oflh-language", "de"));
+    await setup(page, { elevated: false });
+    await page.getByRole("grid").getByRole("row").nth(2).click();
+    await expect(
+      page.getByText("Erfordert Administratorrechte").first(),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^Benutzer abmelden…/ }),
+    ).toBeDisabled();
+  });
+});
+
+test("issue 153: column picker dismisses outside and on Escape", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const picker = page.locator(".column-picker");
+  await picker.locator("summary").click();
+  await expect(picker).toHaveAttribute("open", "");
+  await page.getByRole("textbox", { name: "Search loaded results" }).click();
+  await expect(picker).not.toHaveAttribute("open");
+  await picker.locator("summary").click();
+  await page.keyboard.press("Escape");
+  await expect(picker).not.toHaveAttribute("open");
+  await expect(picker.locator("summary")).toBeFocused();
+});
+
+test("issue 153: selection toggles without selecting button text", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const all = page.getByRole("button", { name: "Select all", exact: true });
+  await expect(all).toBeEnabled();
+  await all.click();
+  const clear = page
+    .getByRole("button", { name: "Deselect all", exact: true })
+    .first();
+  await expect(clear).toHaveAttribute("aria-pressed", "true");
+  await clear.click();
+  await expect(all).toHaveAttribute("aria-pressed", "false");
+  await all.dblclick();
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
+});
+
+test("issue 153: sidebar resizes by pointer and keyboard and persists", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const sidebar = page.getByRole("navigation", { name: "Workspace" });
+  const separator = page.getByRole("separator", { name: "Resize sidebar" });
+  const before = (await sidebar.boundingBox())!.width;
+  const box = (await separator.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 100, box.y + box.height / 2);
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await sidebar.boundingBox())!.width)
+    .toBe(before + 100);
+  await separator.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect
+    .poll(async () => (await sidebar.boundingBox())!.width)
+    .toBe(before + 116);
+  await page.reload();
+  await expect
+    .poll(async () => (await sidebar.boundingBox())!.width)
+    .toBe(before + 116);
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(separator).toHaveCount(0);
+  await page.getByRole("button", { name: "Expand sidebar" }).click();
+  await expect
+    .poll(async () => (await sidebar.boundingBox())!.width)
+    .toBe(before + 116);
+});
+
+test("issue 153: settings popup escapes sidebar clipping", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const about = page.getByRole("menuitem", { name: "About OFLH" });
+  await expect(about).toBeVisible();
+  const hit = await about.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return element.contains(
+      document.elementFromPoint(rect.right - 5, rect.top + rect.height / 2),
+    );
+  });
+  expect(hit).toBe(true);
+  await about.click();
+  await expect(page.getByRole("dialog", { name: "About OFLH" })).toBeVisible();
+});
+
+test("issue 153: rejected window close offers confirmed force recovery", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    (window as any).__terminationResults = [
+      {
+        pid: 4000,
+        outcome: "failed",
+        error: {
+          kind: "close_unavailable",
+          message: "No window accepted a close request.",
+          os_code: null,
+        },
+      },
+    ];
+  });
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: /^Close (?!dialog)/ }).click();
+  await dialog
+    .getByRole("button", { name: "Force terminate…", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  await expect(dialog.getByText("PID 4000")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "terminate",
+        ).length,
+    ),
+  ).toBe(1);
+});
+
+test("issue 153: post-termination scans settle late socket exits then stop", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /^Ports 2/ }).click();
+  await page.evaluate(() => {
+    (window as any).__terminateSuccessfully = true;
+    (window as any).__delayedPortExit = true;
+  });
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /^Close (?!dialog)/ })
+    .click();
+  await expect(page.getByText("Process exited", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "No matching local ports" }),
+  ).toBeVisible();
+  const refreshCount = () =>
+    page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "refresh",
+        ).length,
+    );
+  await expect.poll(refreshCount).toBe(3);
+  await page.waitForTimeout(1500);
+  expect(await refreshCount()).toBe(3);
+});
+
+test("wait has timeout, cancellation, free notification and no automatic follow-up", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__fileMatchFixture = true;
+  });
+  await page.goto("/");
+  await expect(
+    page.getByRole("button", { name: "Wait until free", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page
+    .getByRole("region", { name: "Matching files", exact: true })
+    .getByRole("button", { name: "Wait for file to become free", exact: true })
+    .first()
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("Bestellbestätigung .pdf");
+  await expect(dialog.getByLabel("Set a time limit")).not.toBeChecked();
+  await dialog.getByLabel("Set a time limit").check();
+  await dialog.getByLabel("Time limit in seconds").fill("30");
+  await page.screenshot({
+    path: documentationScreenshotPath("desktop-wait-options.png"),
+  });
+  await dialog.getByRole("button", { name: "Start waiting" }).click();
+  const request = await page.evaluate(
+    () =>
+      (window as any).__testCalls.find(
+        (call: any) => call.command === "wait_for_selection",
+      ).args.request,
+  );
+  expect(request).toEqual({
+    revision: 1,
+    target: { kind: "file", reference: "1:0:0" },
+    timeout_seconds: 30,
+    delete_after: false,
+  });
+  expect(request.path).toBeUndefined();
+  await expect(
+    page.getByRole("textbox", { name: "Search loaded results" }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Refresh", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText("Updating results…", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Waiting until the target is free"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByText("Waiting cancelled.")).toBeVisible();
+  await page.evaluate(() => ((window as any).__emitWaitFree = true));
+  await page.getByRole("button", { name: "Wait again" }).click();
+  await expect(dialog.getByLabel("Set a time limit")).not.toBeChecked();
+  await dialog.getByRole("button", { name: "Start waiting" }).click();
+  await expect(page.getByText("The target is free.")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "notify_wait_free",
+        ).length,
+    ),
+  ).toBe(1);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.find(
+          (call: any) => call.command === "notify_wait_free",
+        ).args,
+    ),
+  ).toMatchObject({
+    title: "OFLH: Target is free",
+    body: "No holders of this target remain.",
+  });
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__testCalls.filter(
+          (call: any) => call.command === "wait_follow_up",
+        ).length,
+    ),
+  ).toBe(0);
+  await page.screenshot({
+    path: documentationScreenshotPath("desktop-wait-free.png"),
+  });
+});
+
+test("process waiting uses its captured lifetime and offers no file follow-up", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__fileMatchFixture = true;
+    (window as any).__emitWaitFree = true;
+  });
+  await page.goto("/");
+  await page
+    .getByRole("grid")
+    .getByRole("row")
+    .nth(1)
+    .click({ button: "right" });
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Wait for process exit", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("FixturePdfEditor (PID 4000)");
+  await expect(dialog).toContainText(
+    "Other processes may still be using its files.",
+  );
+  await expect(dialog.getByRole("combobox")).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeFocused();
+  await dialog.getByRole("button", { name: "Start waiting" }).click();
+  await expect(
+    page.getByText("The selected process has exited.", { exact: true }),
+  ).toBeVisible();
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls.find((call: any) => call.command === "wait_for_selection").args
+      .request,
+  ).toEqual({
+    revision: 1,
+    target: { kind: "process", key: "4000:18446744073709551615:0" },
+    timeout_seconds: null,
+    delete_after: false,
+  });
+  await expect
+    .poll(
+      async () =>
+        (await page.evaluate(() => (window as any).__testCalls)).filter(
+          (call: any) => call.command === "notify_wait_free",
+        ).length,
+    )
+    .toBe(1);
+  expect(
+    calls.some(
+      (call: any) =>
+        call.command === "terminate" || call.command === "wait_follow_up",
+    ),
+  ).toBe(false);
+});
+
+test("file waiting confirms destructive follow-ups and resets them for another selection", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__fileMatchFixture = true;
+  });
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  const file = page.locator(".matching-file-list > li").first();
+  await file
+    .getByRole("button", { name: "Wait for file to become free" })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("After it becomes free").selectOption("delete");
+  const start = dialog.getByRole("button", { name: "Start waiting" });
+  await expect(start).toBeDisabled();
+  await dialog
+    .getByRole("checkbox", {
+      name: "Permanently delete this target after a final free scan. A folder is deleted with everything in it; nothing goes to the trash.",
+    })
+    .check();
+  await expect(start).toBeEnabled();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page
+    .locator(".matching-file-list > li")
+    .nth(1)
+    .getByRole("button", { name: "Wait for file to become free" })
+    .click();
+  await expect(dialog).toContainText("Bestellung-2.pdf");
+  await expect(dialog.getByLabel("After it becomes free")).toHaveValue("none");
+});
+
+test("deleting a protected folder is refused before waiting starts", async ({
+  page,
+}) => {
+  const dialog = await openFileWait(page, { __protectedDelete: true });
+  await dialog.getByLabel("After it becomes free").selectOption("delete");
+  await dialog.getByRole("checkbox", { name: /Permanently delete/ }).check();
+  await dialog.getByRole("button", { name: "Start waiting" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "OFLH does not delete drive roots, home folders, or system folders. Choose a file or a folder inside them.",
+  );
+  await expect(page.getByLabel("Selected target wait")).toHaveCount(0);
+});
+
+async function openFileWait(
+  page: import("@playwright/test").Page,
+  flags: Record<string, unknown> = {},
+) {
+  await page.addInitScript((flags) => {
+    Object.assign(window, { __fileMatchFixture: true }, flags);
+  }, flags);
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page
+    .locator(".matching-file-list > li")
+    .first()
+    .getByRole("button", { name: "Wait for file to become free" })
+    .click();
+  return page.getByRole("dialog");
+}
+
+test("move reviews the chosen folder and awaits the real result before announcing success", async ({
+  page,
+}) => {
+  const dialog = await openFileWait(page, {
+    __emitWaitFree: true,
+    __holdWaitFollowUp: true,
+  });
+  await dialog.getByLabel("After it becomes free").selectOption("move");
+  const start = dialog.getByRole("button", { name: "Start waiting" });
+  await expect(start).toBeDisabled();
+  await dialog
+    .getByRole("button", { name: "Choose folder…", exact: true })
+    .click();
+  await expect(dialog.locator(".wait-destination")).toContainText(
+    "/build/destination",
+  );
+  await expect(dialog.locator(".wait-result-preview")).toContainText(
+    "/build/destination/Bestellbestätigung .pdf",
+  );
+  await dialog
+    .getByRole("checkbox", {
+      name: "Move this selected target after a final confirming free scan.",
+    })
+    .check();
+  await expect(start).toBeEnabled();
+  await start.click();
+  const activity = page.getByRole("region", { name: "Selected target wait" });
+  await expect(activity).toContainText("Completing the selected action…");
+  await expect(activity).not.toContainText("Moved to the selected folder.");
+  expect(
+    await page.evaluate(() => (window as any).__revealedWaitPaths ?? []),
+  ).toEqual([]);
+  await page.evaluate(() => (window as any).__releaseWaitFollowUp());
+  await expect(activity).toContainText("Moved to the selected folder.");
+  await expect(
+    activity.getByRole("button", { name: "Wait again" }),
+  ).toHaveCount(0);
+  await expect(activity).toContainText(
+    "/build/destination/Bestellbestätigung .pdf",
+  );
+  expect(
+    await page.evaluate(() => (window as any).__revealedWaitPaths),
+  ).toEqual(["/build/destination/Bestellbestätigung .pdf"]);
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  const action = calls.find((call: any) => call.command === "wait_follow_up");
+  expect(action.args.destination).toBe("folder-1");
+  expect(action.args.newName).toBeNull();
+  expect(action.args.waitId).toBe(1);
+  expect(
+    calls.filter((call: any) => call.command === "wait_follow_up"),
+  ).toHaveLength(1);
+  expect(calls.some((call: any) => call.command === "notify_wait_free")).toBe(
+    false,
+  );
+});
+
+test("folder cancellation preserves the reviewed folder and a new choice resets confirmation", async ({
+  page,
+}) => {
+  const dialog = await openFileWait(page, {
+    __waitFolders: [
+      null,
+      { display: "/build/destination", reference: "folder-1" },
+      null,
+      { display: "/build/other", reference: "folder-2" },
+    ],
+  });
+  await dialog.getByLabel("After it becomes free").selectOption("move");
+  await dialog
+    .getByRole("button", { name: "Choose folder…", exact: true })
+    .click();
+  await expect(dialog).toContainText("Choose a folder before starting.");
+  await expect(
+    dialog.getByRole("button", { name: "Start waiting" }),
+  ).toBeDisabled();
+  await dialog
+    .getByRole("button", { name: "Choose folder…", exact: true })
+    .click();
+  const confirm = dialog.getByRole("checkbox", {
+    name: "Move this selected target after a final confirming free scan.",
+  });
+  await confirm.check();
+  await dialog
+    .getByRole("button", { name: "Change folder…", exact: true })
+    .click();
+  await expect(confirm).toBeChecked();
+  await expect(dialog.locator(".wait-result-preview")).toContainText(
+    "/build/destination/",
+  );
+  await dialog
+    .getByRole("button", { name: "Change folder…", exact: true })
+    .click();
+  await expect(confirm).not.toBeChecked();
+  await expect(dialog.locator(".wait-result-preview")).toContainText(
+    "/build/other/",
+  );
+});
+
+test("rename validates the name, reviews its path and reveals the returned result", async ({
+  page,
+}) => {
+  const dialog = await openFileWait(page, { __emitWaitFree: true });
+  await dialog.getByLabel("After it becomes free").selectOption("rename");
+  const name = dialog.getByRole("textbox", { name: "New name", exact: true });
+  const start = dialog.getByRole("button", { name: "Start waiting" });
+  for (const invalid of [
+    "../escape.pdf",
+    "NUL.pdf",
+    "bad?.pdf",
+    "Bestellbestätigung .pdf",
+  ]) {
+    await name.fill(invalid);
+    await expect(name).toHaveAttribute("aria-invalid", "true");
+    await expect(start).toBeDisabled();
+  }
+  await name.fill("Bestätigung archiviert.pdf");
+  await expect(dialog.locator(".wait-result-preview")).toContainText(
+    "Bestätigung archiviert.pdf",
+  );
+  await dialog
+    .getByRole("checkbox", {
+      name: "Rename this selected target after a final confirming free scan.",
+    })
+    .check();
+  await name.fill("Bestätigung fertig.pdf");
+  await expect(start).toBeDisabled();
+  await dialog
+    .getByRole("checkbox", {
+      name: "Rename this selected target after a final confirming free scan.",
+    })
+    .check();
+  await start.click();
+  const activity = page.getByRole("region", { name: "Selected target wait" });
+  await expect(activity).toContainText("Renamed.");
+  await expect(
+    activity.getByRole("button", { name: "Wait again" }),
+  ).toHaveCount(0);
+  await expect(activity).toContainText(
+    "/build/documents/Bestätigung fertig.pdf",
+  );
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls.find((call: any) => call.command === "wait_follow_up").args.newName,
+  ).toBe("Bestätigung fertig.pdf");
+  expect(
+    await page.evaluate(() => (window as any).__revealedWaitPaths),
+  ).toEqual(["/build/documents/Bestätigung fertig.pdf"]);
+});
+
+for (const failure of ["operation", "reveal"] as const) {
+  test(`move distinguishes ${failure} failure from a completed move`, async ({
+    page,
+  }) => {
+    const dialog = await openFileWait(page, {
+      __emitWaitFree: true,
+      __failWaitFollowUp: failure === "operation",
+      __failWaitReveal: failure === "reveal",
+    });
+    await dialog.getByLabel("After it becomes free").selectOption("move");
+    await dialog
+      .getByRole("button", { name: "Choose folder…", exact: true })
+      .click();
+    await dialog
+      .getByRole("checkbox", {
+        name: "Move this selected target after a final confirming free scan.",
+      })
+      .check();
+    await dialog.getByRole("button", { name: "Start waiting" }).click();
+    const activity = page.getByRole("region", { name: "Selected target wait" });
+    if (failure === "operation") {
+      await expect(activity).toContainText("The follow-up failed.");
+      await expect(activity).not.toContainText("Moved to the selected folder.");
+    } else {
+      await expect(activity).toContainText("Moved to the selected folder.");
+      await expect(activity).toContainText(
+        "The action succeeded, but the file manager could not open the result.",
+      );
+      await expect(activity).toContainText(
+        "/build/destination/Bestellbestätigung .pdf",
+      );
+    }
+    expect(
+      await page.evaluate(() => (window as any).__revealedWaitPaths ?? []),
+    ).toEqual([]);
+  });
+}
+
+test("cancelled move waits do not run any follow-up", async ({ page }) => {
+  const dialog = await openFileWait(page);
+  await dialog.getByLabel("After it becomes free").selectOption("move");
+  await dialog
+    .getByRole("button", { name: "Choose folder…", exact: true })
+    .click();
+  await dialog
+    .getByRole("checkbox", {
+      name: "Move this selected target after a final confirming free scan.",
+    })
+    .check();
+  await dialog.getByRole("button", { name: "Start waiting" }).click();
+  await page
+    .getByRole("region", { name: "Selected target wait" })
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await expect(
+    page.getByText("Waiting cancelled.", { exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      (window as any).__testCalls.filter(
+        (call: any) => call.command === "wait_follow_up",
+      ),
+    ),
+  ).toEqual([]);
+});
+
+for (const [theme, scheme] of [
+  ["light", "light"],
+  ["rider", "dark"],
+  ["vscode", "dark"],
+  ["purple", "dark"],
+  ["system", "light"],
+  ["system", "dark"],
+] as const) {
+  for (const fontSize of [14, 24]) {
+    test(`message and wait forms have readable colors without horizontal scrolling in ${theme}/${scheme} at ${fontSize}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 860, height: 560 });
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.addInitScript(
+        ({ theme, fontSize }) => {
+          sessionStorage.setItem("theme-test-initialized", "1");
+          localStorage.setItem("oflh-theme", theme);
+          localStorage.setItem("oflh-font-size", String(fontSize));
+          (window as any).__fileMatchFixture = true;
+          (window as any).__multiUser = { elevated: true };
+        },
+        { theme, fontSize },
+      );
+      await page.goto("/");
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-theme",
+        theme === "system" ? (scheme === "dark" ? "vscode" : "light") : theme,
+      );
+      const readability = async (field: import("@playwright/test").Locator) =>
+        field.evaluate((element) => {
+          const style = getComputedStyle(element);
+          const canvas = document.createElement("canvas");
+          canvas.width = canvas.height = 1;
+          const context = canvas.getContext("2d")!;
+          const luminance = (color: string) => {
+            context.fillStyle = color;
+            context.fillRect(0, 0, 1, 1);
+            const [r, g, b] = [...context.getImageData(0, 0, 1, 1).data]
+              .slice(0, 3)
+              .map((value) => {
+                const channel = value / 255;
+                return channel <= 0.04045
+                  ? channel / 12.92
+                  : ((channel + 0.055) / 1.055) ** 2.4;
+              });
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          };
+          const contrast = (foreground: string, background: string) => {
+            const [light, dark] = [
+              luminance(foreground),
+              luminance(background),
+            ].sort((a, b) => b - a);
+            return (light + 0.05) / (dark + 0.05);
+          };
+          return {
+            text: contrast(style.color, style.backgroundColor),
+            border: contrast(style.borderTopColor, style.backgroundColor),
+            background: style.backgroundColor,
+            outline: style.outlineColor,
+          };
+        });
+      await page.getByRole("grid").getByRole("row").nth(1).click();
+      await page
+        .getByRole("button", { name: "Send message…", exact: true })
+        .click();
+      const dialog = page.getByRole("dialog");
+      const note = dialog.getByRole("textbox", {
+        name: "Message",
+        exact: true,
+      });
+      await note.fill("Please save and close this file when convenient.");
+      const messageColors = await readability(note);
+      expect(messageColors.text).toBeGreaterThanOrEqual(4.5);
+      expect(messageColors.border).toBeGreaterThanOrEqual(3);
+      await expect(note).toHaveCSS("outline-width", "2px");
+      await expect(dialog.locator(".session-message-context")).toContainText(
+        "Bestellbestätigung .pdf",
+      );
+      const messageBody = await dialog
+        .locator(".session-message-preview pre")
+        .innerText();
+      await expect(dialog.locator(".modal-body")).toHaveJSProperty(
+        "scrollLeft",
+        0,
+      );
+      expect(
+        await dialog
+          .locator(".modal-body")
+          .evaluate(
+            (element) => element.scrollWidth <= element.clientWidth + 1,
+          ),
+      ).toBe(true);
+      const send = dialog.getByRole("button", { name: "Send", exact: true });
+      await expect(send).toBeInViewport();
+      await page.screenshot({
+        path: `test-results/message-theme-${theme}-${scheme}-${fontSize}.png`,
+      });
+      await send.click();
+      const sent = await page.evaluate(
+        () =>
+          (window as any).__testCalls.find(
+            (call: any) => call.command === "send_message",
+          ).args.text,
+      );
+      expect(sent).toBe(messageBody);
+      expect(sent).toContain("Bestellbestätigung .pdf");
+      expect(sent).toContain("FixturePdfEditor");
+      await page
+        .locator(".matching-file-list > li")
+        .first()
+        .getByRole("button", { name: "Wait for file to become free" })
+        .click();
+      await dialog.getByLabel("Set a time limit").check();
+      const timeoutColors = await readability(
+        dialog.getByLabel("Time limit in seconds"),
+      );
+      const followUpColors = await readability(
+        dialog.getByLabel("After it becomes free"),
+      );
+      const selectLayout = await dialog
+        .locator(".wait-select")
+        .evaluate((element) => {
+          const select = element.querySelector("select")!;
+          const arrow = element.querySelector("svg")!;
+          const box = select.getBoundingClientRect();
+          const icon = arrow.getBoundingClientRect();
+          return {
+            inset: box.right - icon.right,
+            textPadding: parseFloat(getComputedStyle(select).paddingRight),
+            arrowWidth: icon.width,
+            appearance: getComputedStyle(select).appearance,
+            events: getComputedStyle(arrow).pointerEvents,
+          };
+        });
+      expect(selectLayout.inset).toBeGreaterThanOrEqual(12);
+      expect(selectLayout.textPadding).toBeGreaterThan(
+        selectLayout.inset + selectLayout.arrowWidth,
+      );
+      expect(selectLayout.appearance).toBe("none");
+      expect(selectLayout.events).toBe("none");
+      for (const colors of [timeoutColors, followUpColors]) {
+        expect(colors.text).toBeGreaterThanOrEqual(4.5);
+        expect(colors.border).toBeGreaterThanOrEqual(3);
+      }
+      expect(
+        await dialog
+          .locator(".modal-body")
+          .evaluate(
+            (element) => element.scrollWidth <= element.clientWidth + 1,
+          ),
+      ).toBe(true);
+      await expect(
+        dialog.getByRole("button", { name: "Start waiting" }),
+      ).toBeInViewport();
+      await page.screenshot({
+        path: `test-results/wait-theme-${theme}-${scheme}-${fontSize}.png`,
+      });
+      await dialog.getByLabel("After it becomes free").selectOption("move");
+      await page.evaluate(() => {
+        (window as any).__waitFolders = [
+          {
+            display: "/build/" + "long-destination/".repeat(12),
+            reference: "long-folder",
+          },
+        ];
+      });
+      await dialog
+        .getByRole("button", { name: "Choose folder…", exact: true })
+        .click();
+      await expect(dialog.locator(".wait-result-preview")).toContainText(
+        "Bestellbestätigung .pdf",
+      );
+      expect(
+        await dialog
+          .locator(".modal-body")
+          .evaluate(
+            (element) => element.scrollWidth <= element.clientWidth + 1,
+          ),
+      ).toBe(true);
+      await expect(
+        dialog.getByRole("button", { name: "Start waiting" }),
+      ).toBeInViewport();
+      await page.screenshot({
+        path: `test-results/wait-move-${theme}-${scheme}-${fontSize}.png`,
+      });
+      await dialog.getByLabel("After it becomes free").selectOption("rename");
+      const newName = dialog.getByRole("textbox", {
+        name: "New name",
+        exact: true,
+      });
+      await newName.fill("Bestätigung archiviert.pdf");
+      const nameColors = await readability(newName);
+      expect(nameColors.text).toBeGreaterThanOrEqual(4.5);
+      expect(nameColors.border).toBeGreaterThanOrEqual(3);
+      expect(
+        await dialog
+          .locator(".modal-body")
+          .evaluate(
+            (element) => element.scrollWidth <= element.clientWidth + 1,
+          ),
+      ).toBe(true);
+      await expect(
+        dialog.getByRole("button", { name: "Start waiting" }),
+      ).toBeInViewport();
+      await page.screenshot({
+        path: `test-results/wait-rename-${theme}-${scheme}-${fontSize}.png`,
+      });
+    });
+  }
 }
