@@ -71,9 +71,9 @@ stage_nonadmin() {
     OFLH_E2E_USER="${OFLH_E2E_USER:-}" \
     OFLH_E2E_FILE="${OFLH_E2E_FILE:-}" \
     OFLH_E2E_PID="${OFLH_E2E_PID:-}" \
-    "$exe" --ignored --exact non_admin_cross_user_actions_are_refused --nocapture --test-threads=1 || true
-  # The non-admin pass on macOS is soft: owner annotation is the mandatory check (elevated pass).
-  echo "::notice::macOS non-admin pass is informational; owner annotation is the mandatory check"
+    "$exe" --ignored --exact non_admin_cross_user_actions_are_refused --nocapture --test-threads=1
+  # The workflow step is non-blocking and reports this exit status; owner
+  # annotation in the elevated pass is the mandatory check.
 }
 
 stage_diagnostics() {

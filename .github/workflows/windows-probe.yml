@@ -42,3 +42,19 @@ jobs:
           path: windows-probes/*.json
           if-no-files-found: error
           retention-days: 14
+  result:
+    name: Windows discovery result
+    if: always()
+    needs: [probe]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Require both architecture legs to succeed
+        env:
+          RESULT_TITLE: Windows discovery result
+          NEEDS: ${{ toJSON(needs) }}
+        run: node .github/scripts/require-success.mjs

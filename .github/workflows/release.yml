@@ -161,3 +161,19 @@ jobs:
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: bash .github/scripts/sync-updater.sh updater-website updater-dist/latest.json "$TAG" stage
+  result:
+    name: Release result
+    if: always()
+    needs: [validate, test, desktop, homebrew, draft]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Require every release job and matrix leg to succeed
+        env:
+          RESULT_TITLE: Release result
+          NEEDS: ${{ toJSON(needs) }}
+        run: node .github/scripts/require-success.mjs

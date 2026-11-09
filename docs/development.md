@@ -146,6 +146,15 @@ platform backend need native runs on Linux, macOS, and Windows for both x86-64
 and ARM64, which [CI](../.github/workflows/ci.yml) provides on every pull
 request. Cross-compiling is not a substitute.
 
+Each workflow with matrix jobs ends in one status job (**CI result**,
+**Desktop result**, **Windows discovery result**, **Release result**). It runs
+even after failures and passes only when every job and every matrix leg
+succeeded; cancelled or unexpected skipped jobs fail it. Intentional skips are
+listed in the job and shown as such in its summary. Use these jobs as the
+required checks in branch protection. Non-blocking multi-user steps (Windows
+second-session sign-out, macOS non-admin pass) report their real outcome as a
+warning and in the run summary.
+
 [Regression coverage](inspection-regressions.md) lists which test guards which
 behavior.
 
