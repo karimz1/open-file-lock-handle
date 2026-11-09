@@ -45,6 +45,10 @@
     ],
     "createUpdaterArtifacts": true,
     "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
+      },
       "nsis": {
         "template": "windows/installer.nsi",
         "installerHooks": "windows/installer-hooks.nsh",

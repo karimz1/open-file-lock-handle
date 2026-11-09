@@ -58,6 +58,7 @@ fn every_installer_string_is_translated_for_every_installer_language() {
         "oflhUninstallText",
         "oflhInspectFile",
         "oflhInspectFolder",
+        "oflhWebView2MissingPrompt",
     ] {
         assert_eq!(strings.get(name), Some(&expected), "{name}");
     }
@@ -418,6 +419,63 @@ fn running_app_dialog_is_owned_centered_and_cancelled_by_default() {
     assert!(HOOKS.contains("IfSilent kill_${UniqueID} 0"));
     assert!(HOOKS.contains("$PassiveMode != 1"));
     assert!(HOOKS.contains("RestartManager_EndSession $R0"));
+}
+
+#[test]
+fn webview_install_mode_embeds_the_bootstrapper() {
+    let mode = bundle_config()["windows"]["webviewInstallMode"].clone();
+    assert_eq!(
+        mode,
+        serde_json::json!({ "type": "embedBootstrapper", "silent": true })
+    );
+    let template = include_str!("../windows/installer.nsi");
+    // Custom template must keep Tauri's WebView2 section and mode placeholders.
+    assert!(template.contains("Section WebView2"));
+    assert!(template.contains("!define INSTALLWEBVIEW2MODE \"{{install_webview2_mode}}\""));
+    assert!(
+        template.contains("!define WEBVIEW2BOOTSTRAPPERPATH \"{{webview2_bootstrapper_path}}\"")
+    );
+    assert!(template.contains(
+        "File \"/oname=$TEMP\\MicrosoftEdgeWebview2Setup.exe\" \"${WEBVIEW2BOOTSTRAPPERPATH}\""
+    ));
+    assert!(template.contains("!if \"${INSTALLWEBVIEW2MODE}\" == \"embedBootstrapper\""));
+}
+
+#[test]
+fn webview2_failure_offers_the_microsoft_download_page() {
+    const DOWNLOAD_PAGE: &str = "https://developer.microsoft.com/microsoft-edge/webview2/";
+    assert!(HOOKS.contains(&format!(
+        "!define OFLH_WEBVIEW2_DOWNLOAD_URL \"{DOWNLOAD_PAGE}\""
+    )));
+    assert!(HOOKS.contains("Function OflhWebView2InstallFailed"));
+    assert!(HOOKS.contains("IfSilent oflh_wv2_abort"));
+    assert!(HOOKS.contains(
+        "MessageBox MB_ICONEXCLAMATION|MB_YESNO \"$(oflhWebView2MissingPrompt)\" IDNO oflh_wv2_abort"
+    ));
+    assert!(HOOKS.contains("ExecShell \"open\" \"${OFLH_WEBVIEW2_DOWNLOAD_URL}\""));
+    assert!(HOOKS.contains("Abort \"$(webview2AbortError)\""));
+    let template = include_str!("../windows/installer.nsi");
+    assert!(template.contains("Call OflhWebView2InstallFailed"));
+    assert!(!template.contains("Abort \"$(webview2AbortError)\""));
+    for (_, _, lang) in LANGUAGE_FILES {
+        assert!(
+            lang.contains(DOWNLOAD_PAGE),
+            "language file must mention the WebView2 download page"
+        );
+        assert!(
+            lang.lines().any(|line| {
+                line.starts_with("LangString webview2AbortError ")
+                    && line.contains("${PRODUCTNAME}")
+            }),
+            "webview2AbortError must name the product"
+        );
+    }
+    for line in HOOKS
+        .lines()
+        .filter(|line| line.starts_with("LangString oflhWebView2MissingPrompt "))
+    {
+        assert!(line.contains(DOWNLOAD_PAGE), "{line}");
+    }
 }
 
 #[test]
