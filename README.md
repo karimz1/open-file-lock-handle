@@ -346,14 +346,17 @@ and can scan a whole drive quickly because it never walks the directory tree.
 Yes. `oflh check PATH` runs one non-interactive inspection; add `--json` for one
 JSON document on stdout, or use `--port PORT` for a local port. It never opens a
 terminal UI and does not require a TTY. Exit codes are **0** free, **1** held,
-**2** bad arguments, and **3** inspection failed. See the
+**2** bad arguments, and **3** inspection failed. `oflh wait PATH` polls until
+the target is free (exit **4** on `--timeout`). See the
 [terminal guide](docs/terminal-usage.md#scripting) for the stable versioned JSON
 schema and examples.
 
 ### Is it safe to run?
 
 oflh reads process and socket information from the OS. It never writes to the
-files it inspects.
+files it inspects unless you choose a follow-up in **Wait until free** in the
+desktop app (move, rename, or delete); that runs only after a final scan confirms
+the target is free and never replaces an existing file.
 Process actions always ask for confirmation with **Cancel** preselected and
 re-verify the process identity before sending anything.
 
