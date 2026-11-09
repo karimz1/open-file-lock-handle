@@ -6486,6 +6486,17 @@ test("wait has timeout, cancellation, free notification and no automatic follow-
   expect(
     await page.evaluate(
       () =>
+        (window as any).__testCalls.find(
+          (call: any) => call.command === "notify_wait_free",
+        ).args,
+    ),
+  ).toMatchObject({
+    title: "OFLH: Target is free",
+    body: "No holders of this target remain.",
+  });
+  expect(
+    await page.evaluate(
+      () =>
         (window as any).__testCalls.filter(
           (call: any) => call.command === "wait_follow_up",
         ).length,

@@ -22,9 +22,15 @@ import {
   waitDestinationPreview,
 } from "./waitActions";
 import { Modal } from "./Modal";
-import { locale, t } from "./i18n";
+import { t, type MessageKey } from "./i18n";
 
 export type FollowUp = "none" | "reveal" | "delete" | "move" | "rename";
+const followUpNotification: Record<Exclude<FollowUp, "none">, MessageKey> = {
+  reveal: "wait.k_notify_revealed",
+  delete: "wait.k_notify_deleted",
+  move: "wait.k_notify_moved",
+  rename: "wait.k_notify_renamed",
+};
 interface WaitOptions {
   selection: WaitSelection;
   timeoutSeconds: number | null;
@@ -364,7 +370,14 @@ export function WaitUntilFree({
     completed.current = true;
     const id = options.id;
     if (options.followUp === "none") {
-      void api.notifyWaitFree(id, locale).catch(report);
+      const exited = options.selection.target.kind === "process";
+      void api
+        .notifyWaitFree(
+          id,
+          t(exited ? "wait.k_notify_exit_title" : "wait.k_notify_free_title"),
+          t(exited ? "wait.k_notify_exit_body" : "wait.k_notify_free_body"),
+        )
+        .catch(report);
       return;
     }
     setProgress({ id, state: "running" });
@@ -374,7 +387,7 @@ export function WaitUntilFree({
         options.followUp,
         options.destination,
         options.newName,
-        locale,
+        t(followUpNotification[options.followUp]),
       )
       .then((result) => {
         if (liveWait.current === id) setProgress({ id, state: "done", result });

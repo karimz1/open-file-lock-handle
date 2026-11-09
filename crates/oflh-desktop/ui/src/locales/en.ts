@@ -69,6 +69,15 @@ const en = {
       "The destination is on another drive or filesystem. OFLH only moves within one filesystem, so nothing was changed.",
     k_move_into_itself:
       "A folder cannot be moved into itself. Choose a different destination.",
+    k_notify_free_title: "OFLH: Target is free",
+    k_notify_free_body: "No holders of this target remain.",
+    k_notify_exit_title: "OFLH: Process exited",
+    k_notify_exit_body:
+      "The selected process has exited. Other processes may still be using its files.",
+    k_notify_moved: "OFLH: Moved",
+    k_notify_renamed: "OFLH: Renamed",
+    k_notify_deleted: "OFLH: Deleted",
+    k_notify_revealed: "OFLH: Revealed in file manager",
     k_confirm_delete:
       "Permanently delete this target after a final free scan. A folder is deleted with everything in it; nothing goes to the trash.",
   },

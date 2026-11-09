@@ -156,7 +156,7 @@ async fn wait_follow_up(
     action: String,
     destination: Option<String>,
     new_name: Option<String>,
-    locale: Option<String>,
+    notification_title: Option<String>,
     wait_id: u64,
 ) -> Result<WaitFollowUpResult, Failure> {
     let service = service.inner().clone();
@@ -180,16 +180,13 @@ async fn wait_follow_up(
             path,
             |path| app.opener().reveal_item_in_dir(path).map_err(integration),
             |display_path| {
-                let Some(locale) = &locale else {
+                let Some(title) = &notification_title else {
                     return Ok(());
                 };
-                let (title, body) = crate::wait::follow_up_notification(
-                    locale,
-                    &action,
-                    display_path.unwrap_or(&target.display),
-                );
+                let title = crate::wait::notification_text(title);
+                let body = display_path.unwrap_or(&target.display);
                 // Keep focus in the file manager after revealing a moved or renamed target.
-                crate::wait::notify_free(&app, title, &body, false)
+                crate::wait::notify_free(&app, &title, body, false)
             },
         )
     })
@@ -210,17 +207,28 @@ async fn choose_wait_destination(
     })
     .await
 }
+/// Show the translated "free" toast off the main thread; the UI supplies the
+/// localized title and explanation, the backend adds the captured target.
 #[tauri::command]
-fn notify_wait_free(
+async fn notify_wait_free(
     app: tauri::AppHandle,
     service: Desktop<'_>,
-    locale: Option<String>,
+    title: String,
+    body: String,
     wait_id: u64,
 ) -> Result<(), Failure> {
-    let locale = locale.unwrap_or_default();
-    let target = service.completed_wait_target(wait_id)?;
-    let (title, body) = crate::wait::notification_message(&locale, &target);
-    crate::wait::notify_free(&app, title, &body, true)
+    let service = service.inner().clone();
+    blocking(move || {
+        let target = service.completed_wait_target(wait_id)?;
+        let title = crate::wait::notification_text(&title);
+        let body = format!(
+            "{}\n{}",
+            target.display,
+            crate::wait::notification_text(&body)
+        );
+        crate::wait::notify_free(&app, &title, &body, true)
+    })
+    .await
 }
 #[tauri::command]
 fn focus_window(app: tauri::AppHandle) {

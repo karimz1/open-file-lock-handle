@@ -65,6 +65,14 @@ const zh: TranslationSchema<typeof en> = {
     k_move_cross_device:
       "目标位于其他驱动器或文件系统。OFLH 只在同一文件系统内移动，因此未做任何更改。",
     k_move_into_itself: "文件夹不能移动到其自身内部。请选择其他目标。",
+    k_notify_free_title: "OFLH：目标已空闲",
+    k_notify_free_body: "未发现此目标的占用进程。",
+    k_notify_exit_title: "OFLH：进程已退出",
+    k_notify_exit_body: "所选进程已退出。其他进程仍可能使用其文件。",
+    k_notify_moved: "OFLH：已移动",
+    k_notify_renamed: "OFLH：已重命名",
+    k_notify_deleted: "OFLH：已删除",
+    k_notify_revealed: "OFLH：已在文件管理器中显示",
     k_confirm_delete:
       "在最终确认空闲后永久删除此目标。文件夹会连同其全部内容一起删除，不会移到回收站。",
   },

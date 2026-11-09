@@ -320,8 +320,8 @@ export const api = {
     }),
   focusWindow: () => invoke<void>("focus_window"),
   cancelWait: () => invoke<Status>("cancel_wait"),
-  notifyWaitFree: (waitId: number, locale?: string) =>
-    invoke<void>("notify_wait_free", { waitId, locale: locale ?? null }),
+  notifyWaitFree: (waitId: number, title: string, body: string) =>
+    invoke<void>("notify_wait_free", { waitId, title, body }),
   chooseWaitDestination: () =>
     invoke<PathValue | null>("choose_wait_destination"),
   waitFollowUp: (
@@ -329,14 +329,14 @@ export const api = {
     action: "reveal" | "delete" | "move" | "rename",
     destination: string | null,
     newName: string | null,
-    locale?: string,
+    notificationTitle: string | null,
   ) =>
     invoke<WaitFollowUpResult>("wait_follow_up", {
       waitId,
       action,
       destination,
       newName,
-      locale: locale ?? null,
+      notificationTitle,
     }),
   clearRecent: () => invoke<void>("clear_recent"),
 };
