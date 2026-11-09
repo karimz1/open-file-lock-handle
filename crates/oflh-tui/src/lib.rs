@@ -297,7 +297,6 @@ pub fn run(
                     generation,
                     Work::Wait {
                         target: app.target.clone(),
-                        include_ports: app.ports_requested,
                         port: selected_wait_port(&app),
                         timeout: app.wait_timeout,
                     },

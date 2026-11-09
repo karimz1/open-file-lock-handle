@@ -96,7 +96,8 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Argu
             }
             if argument == "--timeout" || argument == "--poll-interval" {
                 let timeout_flag = argument == "--timeout";
-                let value = arguments.next().and_then(|value| value.to_str().and_then(|value| value.parse::<u64>().ok())).filter(|seconds| *seconds > 0).ok_or_else(|| CliError::Usage(messages::choose(result.view.language.unwrap_or_else(Language::system), "--timeout and --poll-interval require whole seconds greater than zero", "--timeout und --poll-interval benötigen ganze Sekunden größer als null", "--timeout 和 --poll-interval 需要大于零的整数秒").into()))?;
+                let value = positive_seconds(arguments.next())
+                    .ok_or_else(|| seconds_usage(result.view.language))?;
                 if timeout_flag {
                     result.timeout = Some(std::time::Duration::from_secs(value));
                 } else {
@@ -194,6 +195,27 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Argu
     result.view.follow_port_folder = result.path.is_none();
     result.view.ports_path_only = result.view.ports && result.path.is_some();
     Ok(result)
+}
+
+/// Positive whole seconds, as accepted by --timeout and --poll-interval.
+fn positive_seconds(value: Option<OsString>) -> Option<u64> {
+    value?
+        .to_str()?
+        .parse::<u64>()
+        .ok()
+        .filter(|seconds| *seconds > 0)
+}
+
+fn seconds_usage(language: Option<Language>) -> CliError {
+    CliError::Usage(
+        messages::choose(
+            language.unwrap_or_else(Language::system),
+            "--timeout and --poll-interval require whole seconds greater than zero",
+            "--timeout und --poll-interval benötigen ganze Sekunden größer als null",
+            "--timeout 和 --poll-interval 需要大于零的整数秒",
+        )
+        .into(),
+    )
 }
 
 fn language_usage(language: Option<Language>) -> CliError {

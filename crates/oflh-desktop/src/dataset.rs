@@ -10,18 +10,33 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+/// One grid row kept compact (32 bytes, like the earlier tuple) because the
+/// whole result set is sorted. A process row stores its first matching
+/// observation in `usage`; its full file list is built only for the visible page.
 struct RowMatch {
     process: usize,
     usage: Option<usize>,
     score: u32,
-    // Process rows retain only query-matching observations, including lock filters.
-    files: Vec<usize>,
+    process_row: bool,
 }
-impl RowMatch {
-    fn path_index(&self) -> Option<usize> {
-        self.usage.or_else(|| self.files.first().copied())
+/// Compiled column filters, present only when at least one is set.
+struct ColumnMatcher<'a> {
+    filters: &'a ColumnFilters,
+    name: Query,
+    path: Query,
+    access: Query,
+}
+impl<'a> ColumnMatcher<'a> {
+    fn new(filters: &'a ColumnFilters) -> Option<Self> {
+        (*filters != ColumnFilters::default()).then(|| Self {
+            filters,
+            name: Query::new(&filters.name),
+            path: Query::new(&filters.path),
+            access: Query::new(&filters.access),
+        })
     }
 }
+const _: () = assert!(std::mem::size_of::<RowMatch>() <= 32);
 struct CachedQuery {
     query: TableQuery,
     rows: Arc<[RowMatch]>,
@@ -152,97 +167,140 @@ impl Dataset {
                 ));
             }
         }
-        let mut matches = self.matched_search(request)?;
-        if *filters == ColumnFilters::default() {
-            return Ok(matches);
-        }
-        let name = Query::new(&filters.name);
-        let path = Query::new(&filters.path);
-        let access = Query::new(&filters.access);
-        let mut scratch = Scratch::default();
-        let mut row_matches = |process: usize, usage: Option<usize>| {
-            let row = if request.ports {
-                self.port_row(process, usage.unwrap_or_default())
-            } else {
-                self.row(process, usage)
-            };
-            let path_text = row
-                .port
-                .as_ref()
-                .map_or(row.path.as_str(), |port| port.address.as_str());
-            let access_text = row.port.as_ref().map_or_else(
-                || format!("{} {}", row.relation, row.access),
-                |port| format!("{} {}", port.protocol, port.state),
-            );
-            let text_matches = |query: &Query, text: &str, scratch: &mut Scratch| {
-                query.is_empty()
-                    || query.matches(&[oflh_core::search::Field::new(text, false)], scratch)
-            };
-            let owner = &self.snapshot.processes[process];
-            let evidence = if request.ports {
-                None
-            } else if let Some(usage) = usage {
-                owner.usages[usage].lock.as_ref()
-            } else {
-                owner.usages.iter().find_map(|usage| usage.lock.as_ref())
-            };
-            let evidence_matches = match filters.evidence {
-                EvidenceFilter::Any => true,
-                EvidenceFilter::Present => evidence.is_some(),
-                EvidenceFilter::None => evidence.is_none(),
-                EvidenceFilter::Kernel => {
-                    matches!(evidence, Some(oflh_core::LockEvidence::Kernel(_)))
-                }
-                EvidenceFilter::Sharing => {
-                    matches!(evidence, Some(oflh_core::LockEvidence::SharingConflict(_)))
-                }
-            };
-            filters.pid.is_none_or(|pid| row.pid == pid)
-                && within_bounds(row.cpu, filters.cpu_min, filters.cpu_max)
-                && within_bounds(
-                    row.memory.map(|bytes| bytes as f64 / 1048576.0),
-                    filters.memory_min,
-                    filters.memory_max,
-                )
-                && evidence_matches
-                && text_matches(&name, &row.name, &mut scratch)
-                && text_matches(&path, path_text, &mut scratch)
-                && if !request.ports && usage.is_none() && !access.is_empty() {
-                    owner.usages.iter().any(|usage| {
-                        text_matches(
-                            &access,
-                            &format!("{} {}", usage.relation.label(), usage.access.label()),
-                            &mut scratch,
-                        )
-                    })
-                } else {
-                    text_matches(&access, &access_text, &mut scratch)
-                }
-        };
-        matches.retain_mut(|matched| {
-            if !request.ports && !request.handles {
-                matched
-                    .files
-                    .retain(|&usage| row_matches(matched.process, Some(usage)));
-                !matched.files.is_empty()
-            } else {
-                row_matches(matched.process, matched.usage)
-            }
-        });
-        // File column filters can change the first displayed path.
-        self.sort_file_matches(request, &mut matches);
-        Ok(matches)
-    }
-    /// Search in Rust using exactly the shared word-boundary/wildcard matcher.
-    fn matched_search(&self, request: &TableQuery) -> Result<Vec<RowMatch>, Failure> {
         if request.text.len() > 4096 {
             return Err(Failure::invalid("Search is limited to 4096 bytes"));
         }
-        if request.ports {
-            return Ok(self.matched_ports(request));
-        }
-        let query = Query::new(&request.text);
+        let columns = ColumnMatcher::new(filters);
         let mut scratch = Scratch::default();
+        let mut matches = if request.ports {
+            self.matched_ports(request)
+        } else {
+            self.matched_search(request, columns.as_ref(), &mut scratch)
+        };
+        if request.ports
+            && let Some(columns) = &columns
+        {
+            matches.retain(|matched| {
+                self.passes_columns(
+                    request,
+                    columns,
+                    matched.process,
+                    matched.usage,
+                    &mut scratch,
+                )
+            });
+        }
+        Ok(matches)
+    }
+    /// Whether one row passes the column filters. Process rows are checked per usage.
+    fn passes_columns(
+        &self,
+        request: &TableQuery,
+        columns: &ColumnMatcher,
+        process: usize,
+        usage: Option<usize>,
+        scratch: &mut Scratch,
+    ) -> bool {
+        let filters = columns.filters;
+        let row = if request.ports {
+            self.port_row(process, usage.unwrap_or_default())
+        } else {
+            self.row(process, usage)
+        };
+        let path_text = row
+            .port
+            .as_ref()
+            .map_or(row.path.as_str(), |port| port.address.as_str());
+        let access_text = row.port.as_ref().map_or_else(
+            || format!("{} {}", row.relation, row.access),
+            |port| format!("{} {}", port.protocol, port.state),
+        );
+        let text_matches = |query: &Query, text: &str, scratch: &mut Scratch| {
+            query.is_empty()
+                || query.matches(&[oflh_core::search::Field::new(text, false)], scratch)
+        };
+        let owner = &self.snapshot.processes[process];
+        let evidence = if request.ports {
+            None
+        } else if let Some(usage) = usage {
+            owner.usages[usage].lock.as_ref()
+        } else {
+            owner.usages.iter().find_map(|usage| usage.lock.as_ref())
+        };
+        let evidence_matches = match filters.evidence {
+            EvidenceFilter::Any => true,
+            EvidenceFilter::Present => evidence.is_some(),
+            EvidenceFilter::None => evidence.is_none(),
+            EvidenceFilter::Kernel => {
+                matches!(evidence, Some(oflh_core::LockEvidence::Kernel(_)))
+            }
+            EvidenceFilter::Sharing => {
+                matches!(evidence, Some(oflh_core::LockEvidence::SharingConflict(_)))
+            }
+        };
+        filters.pid.is_none_or(|pid| row.pid == pid)
+            && within_bounds(row.cpu, filters.cpu_min, filters.cpu_max)
+            && within_bounds(
+                row.memory.map(|bytes| bytes as f64 / 1048576.0),
+                filters.memory_min,
+                filters.memory_max,
+            )
+            && evidence_matches
+            && text_matches(&columns.name, &row.name, scratch)
+            && text_matches(&columns.path, path_text, scratch)
+            && if !request.ports && usage.is_none() && !columns.access.is_empty() {
+                owner.usages.iter().any(|usage| {
+                    text_matches(
+                        &columns.access,
+                        &format!("{} {}", usage.relation.label(), usage.access.label()),
+                        scratch,
+                    )
+                })
+            } else {
+                text_matches(&columns.access, &access_text, scratch)
+            }
+    }
+    /// Usages of one process that match the search, lock filter and column filters.
+    /// Ranking only needs the first one, so `first_only` stops there; the full list
+    /// is built for the visible page only.
+    fn process_files(
+        &self,
+        request: &TableQuery,
+        file_query: &Query,
+        columns: Option<&ColumnMatcher>,
+        process_index: usize,
+        scratch: &mut Scratch,
+        first_only: bool,
+    ) -> Vec<usize> {
+        let process = &self.snapshot.processes[process_index];
+        let mut files = Vec::new();
+        for (usage_index, fields) in self.indices[process_index].usages.iter().enumerate() {
+            if request.locks_only && process.usages[usage_index].lock.is_none() {
+                continue;
+            }
+            if !file_query.matches(fields, scratch) {
+                continue;
+            }
+            if columns.is_some_and(|columns| {
+                !self.passes_columns(request, columns, process_index, Some(usage_index), scratch)
+            }) {
+                continue;
+            }
+            files.push(usage_index);
+            if first_only {
+                break;
+            }
+        }
+        files
+    }
+    /// Search in Rust using exactly the shared word-boundary/wildcard matcher.
+    fn matched_search(
+        &self,
+        request: &TableQuery,
+        columns: Option<&ColumnMatcher>,
+        scratch: &mut Scratch,
+    ) -> Vec<RowMatch> {
+        let query = Query::new(&request.text);
         let mut matches = Vec::new();
         for (process_index, index) in self.indices.iter().enumerate() {
             let process = &self.snapshot.processes[process_index];
@@ -256,58 +314,68 @@ impl Dataset {
             {
                 continue;
             }
-            if !index.matches(&query, &mut scratch) {
+            if !index.matches(&query, scratch) {
                 continue;
             }
             // As in the TUI, metadata may satisfy terms, but all remaining terms
             // must match one observation rather than unrelated paths in the same process.
-            let file_query = query.file_terms(&index.metadata, &mut scratch);
+            let file_query = query.file_terms(&index.metadata, scratch);
+            let relevance = request.sort == Sort::Relevance;
+            if !request.handles {
+                let first =
+                    self.process_files(request, &file_query, columns, process_index, scratch, true);
+                if let Some(&first) = first.first() {
+                    matches.push(RowMatch {
+                        process: process_index,
+                        usage: Some(first),
+                        process_row: true,
+                        score: if relevance {
+                            index.score(&query, scratch)
+                        } else {
+                            0
+                        },
+                    });
+                }
+                continue;
+            }
             // Metadata is immutable across usages. Ranking is needed only for
             // relevance ordering, and its metadata score is shared by this process.
-            let relevance = request.sort == Sort::Relevance;
-            let metadata_score = if relevance && request.handles {
-                query.score(&index.metadata, &mut scratch)
+            let metadata_score = if relevance {
+                query.score(&index.metadata, scratch)
             } else {
                 0
             };
-            let mut files = Vec::new();
             for (usage_index, fields) in index.usages.iter().enumerate() {
                 if request.locks_only && process.usages[usage_index].lock.is_none() {
                     continue;
                 }
-                if file_query.matches(fields, &mut scratch) {
-                    if !request.handles {
-                        files.push(usage_index);
-                        continue;
-                    }
-                    let score = if relevance {
-                        query.score(fields, &mut scratch).max(metadata_score)
-                    } else {
-                        0
-                    };
-                    matches.push(RowMatch {
-                        process: process_index,
-                        usage: Some(usage_index),
-                        score,
-                        files: Vec::new(),
-                    });
+                if !file_query.matches(fields, scratch)
+                    || columns.is_some_and(|columns| {
+                        !self.passes_columns(
+                            request,
+                            columns,
+                            process_index,
+                            Some(usage_index),
+                            scratch,
+                        )
+                    })
+                {
+                    continue;
                 }
-            }
-            if !files.is_empty() {
                 matches.push(RowMatch {
                     process: process_index,
-                    usage: None,
+                    usage: Some(usage_index),
+                    process_row: false,
                     score: if relevance {
-                        index.score(&query, &mut scratch)
+                        query.score(fields, scratch).max(metadata_score)
                     } else {
                         0
                     },
-                    files,
                 });
             }
         }
         self.sort_file_matches(request, &mut matches);
-        Ok(matches)
+        matches
     }
     fn sort_file_matches(&self, request: &TableQuery, matches: &mut [RowMatch]) {
         if request.ports {
@@ -321,9 +389,7 @@ impl Dataset {
                 Sort::Port | Sort::Protocol | Sort::Address => Ordering::Equal,
                 Sort::Name => first.name.cmp(&second.name),
                 Sort::Pid => first.identity.pid.cmp(&second.identity.pid),
-                Sort::Path => {
-                    row_path(first, left.path_index()).cmp(row_path(second, right.path_index()))
-                }
+                Sort::Path => row_path(first, left.usage).cmp(row_path(second, right.usage)),
                 Sort::Memory => first.memory.cmp(&second.memory),
                 Sort::Cpu => first
                     .cpu
@@ -365,7 +431,7 @@ impl Dataset {
                         process: process_index,
                         usage: Some(port_index),
                         score: 0,
-                        files: Vec::new(),
+                        process_row: false,
                     });
                 }
             }
@@ -460,8 +526,8 @@ impl Dataset {
             .map(|matched| {
                 if request.ports {
                     self.port_row(matched.process, matched.usage.unwrap_or_default())
-                } else if matched.usage.is_none() {
-                    self.process_match_row(matched)
+                } else if matched.process_row {
+                    self.process_match_row(request, matched)
                 } else {
                     self.row(matched.process, matched.usage)
                 }
@@ -473,12 +539,24 @@ impl Dataset {
             rows,
         })
     }
-    fn process_match_row(&self, matched: &RowMatch) -> Row {
-        let mut row = self.row(matched.process, matched.files.first().copied());
+    fn process_match_row(&self, request: &TableQuery, matched: &RowMatch) -> Row {
+        let mut scratch = Scratch::default();
+        let query = Query::new(&request.text);
+        let file_query = query.file_terms(&self.indices[matched.process].metadata, &mut scratch);
+        let columns = ColumnMatcher::new(&request.columns);
+        let files = self.process_files(
+            request,
+            &file_query,
+            columns.as_ref(),
+            matched.process,
+            &mut scratch,
+            false,
+        );
+        let mut row = self.row(matched.process, files.first().copied());
         // Selection and process-row focus stay stable as the matching file changes.
         row.key = format!("{}/exe", row.process_key);
-        row.usages = matched.files.len();
-        let evidence_row = matched.files.iter().find_map(|&usage| {
+        row.usages = files.len();
+        let evidence_row = files.iter().find_map(|&usage| {
             self.snapshot.processes[matched.process].usages[usage]
                 .lock
                 .as_ref()
@@ -488,14 +566,14 @@ impl Dataset {
             .as_ref()
             .and_then(|value| value.evidence.clone());
         row.evidence_label = evidence_row.and_then(|value| value.evidence_label);
-        row.matching_files = Some(self.matching_files(matched));
+        row.matching_files = Some(self.matching_files(matched.process, &files));
         row
     }
-    fn matching_files(&self, matched: &RowMatch) -> MatchingFiles {
-        let process = &self.snapshot.processes[matched.process];
+    fn matching_files(&self, process_index: usize, usages: &[usize]) -> MatchingFiles {
+        let process = &self.snapshot.processes[process_index];
         let mut paths = std::collections::HashMap::<&Path, Option<usize>>::new();
         let mut files: Vec<MatchingFile> = Vec::new();
-        for &usage_index in &matched.files {
+        for &usage_index in usages {
             let usage = &process.usages[usage_index];
             let file_index = *paths.entry(&usage.path).or_insert_with(|| {
                 if files.len() >= 3 {
@@ -504,7 +582,7 @@ impl Dataset {
                 files.push(MatchingFile {
                     path: PathValue {
                         display: display(&usage.path),
-                        reference: self.path_ref(matched.process, &usage_index.to_string()),
+                        reference: self.path_ref(process_index, &usage_index.to_string()),
                     },
                     references: 0,
                     observations: Vec::new(),
@@ -1487,8 +1565,8 @@ mod query_cache_tests {
                     let indices: std::collections::BTreeSet<_> = matches
                         .iter()
                         .map(|matched| {
-                            assert_eq!(matched.usage, handles.then_some(19));
-                            assert_eq!(matched.files, if handles { vec![] } else { vec![19] });
+                            assert_eq!(matched.usage, Some(19));
+                            assert_eq!(matched.process_row, !handles);
                             if sort == Sort::Relevance {
                                 assert!(matched.score > 0);
                             } else {

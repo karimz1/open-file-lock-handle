@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { t, type MessageKey } from "./i18n";
 export interface Failure {
   kind: string;
   message: string;
@@ -304,18 +305,23 @@ export const api = {
   recent: () => invoke<{ id: number; display: string }[]>("recent"),
   revisit: (id: number) => invoke<Status>("revisit", { id }),
   removeRecent: (id: number) => invoke<void>("remove_recent", { id }),
-  waitForSelection: (selection: WaitSelection, timeoutSeconds: number | null) =>
+  waitForSelection: (
+    selection: WaitSelection,
+    timeoutSeconds: number | null,
+    deleteAfter = false,
+  ) =>
     invoke<Status>("wait_for_selection", {
       request: {
         revision: selection.revision,
         target: selection.target,
         timeout_seconds: timeoutSeconds,
+        delete_after: deleteAfter,
       },
     }),
   focusWindow: () => invoke<void>("focus_window"),
   cancelWait: () => invoke<Status>("cancel_wait"),
-  notifyWaitFree: (waitId: number, locale?: string) =>
-    invoke<void>("notify_wait_free", { waitId, locale: locale ?? null }),
+  notifyWaitFree: (waitId: number, title: string, body: string) =>
+    invoke<void>("notify_wait_free", { waitId, title, body }),
   chooseWaitDestination: () =>
     invoke<PathValue | null>("choose_wait_destination"),
   waitFollowUp: (
@@ -323,19 +329,29 @@ export const api = {
     action: "reveal" | "delete" | "move" | "rename",
     destination: string | null,
     newName: string | null,
-    locale?: string,
+    notificationTitle: string | null,
   ) =>
     invoke<WaitFollowUpResult>("wait_follow_up", {
       waitId,
       action,
       destination,
       newName,
-      locale: locale ?? null,
+      notificationTitle,
     }),
   clearRecent: () => invoke<void>("clear_recent"),
 };
+/** Failure categories with a translated explanation instead of the native text. */
+const translatedFailures: Record<string, MessageKey> = {
+  protected_delete_target: "wait.k_protected_delete",
+  move_unsupported: "wait.k_move_unsupported",
+  move_cross_device: "wait.k_move_cross_device",
+  move_into_itself: "wait.k_move_into_itself",
+};
 export function errorMessage(error: unknown): string {
-  if (typeof error === "object" && error !== null && "message" in error)
-    return String(error.message);
+  if (typeof error === "object" && error !== null) {
+    const kind = "kind" in error ? String(error.kind) : "";
+    if (kind in translatedFailures) return t(translatedFailures[kind]);
+    if ("message" in error) return String(error.message);
+  }
   return String(error);
 }

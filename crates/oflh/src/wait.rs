@@ -36,25 +36,18 @@ impl Options {
 }
 
 pub fn run(options: Options) -> Result<(), CliError> {
-    let target = if options.ports && options.follow_port_folder {
-        None
-    } else {
-        Some(oflh_core::Target::new(
-            options.path.clone().unwrap_or_else(|| OsString::from(".")),
-        )?)
-    };
+    let ports = options.ports || options.port.is_some();
+    let target = check::resolve_target(options.path.as_ref(), ports, options.follow_port_folder)?;
     let mut backend = oflh_platform::native()?;
     let cancel = oflh_core::Cancellation::default();
     let interrupt = cancel.clone();
     ctrlc::set_handler(move || interrupt.cancel())
         .map_err(|error| CliError::Wait(format!("install wait cancellation handler: {error}")))?;
-    oflh_platform::wait_until_free(
+    let result = oflh_platform::wait_until_free(
         backend.as_mut(),
         oflh_platform::WaitTarget {
             path: target.as_ref(),
-            include_ports: options.ports || options.port.is_some(),
-            port: options.port,
-            scope_ports_to_path: false,
+            check: check::check_target(target.as_ref(), ports, options.port),
         },
         oflh_core::wait::Options {
             poll_interval: options.poll_interval,
@@ -62,7 +55,11 @@ pub fn run(options: Options) -> Result<(), CliError> {
         },
         std::time::Instant::now(),
         &cancel,
-    )?;
+    );
+    if matches!(result, Err(oflh_core::Error::WaitTimedOut)) {
+        report_remaining_holders(backend.as_mut(), &options, target, ports, &cancel);
+    }
+    result?;
     println!(
         "{}",
         crate::messages::choose(
@@ -73,6 +70,48 @@ pub fn run(options: Options) -> Result<(), CliError> {
         )
     );
     Ok(())
+}
+
+/// After a timeout, name who still holds the target on stderr; best effort.
+fn report_remaining_holders(
+    backend: &mut dyn oflh_platform::Backend,
+    options: &Options,
+    target: Option<oflh_core::Target>,
+    ports: bool,
+    cancel: &oflh_core::Cancellation,
+) {
+    let ports_path_only = ports && target.is_some();
+    let Ok(inspection) = check::inspect(
+        backend,
+        target,
+        ports,
+        options.port,
+        ports_path_only,
+        cancel,
+    ) else {
+        return;
+    };
+    if inspection.outcome == check::Outcome::Free {
+        return;
+    }
+    let summary = check::Options {
+        json: false,
+        language: options.language,
+        path: options.path.clone(),
+        ports,
+        port: options.port,
+        follow_port_folder: options.follow_port_folder,
+        ports_path_only,
+    };
+    eprint!(
+        "{}",
+        check::output::human_text(
+            &summary,
+            &inspection.snapshot,
+            inspection.target.as_ref(),
+            inspection.outcome,
+        )
+    );
 }
 
 pub fn error_exit_code(error: &CliError) -> u8 {

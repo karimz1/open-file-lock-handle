@@ -83,31 +83,59 @@ public sealed class InstallerWindowDriver : IDisposable
         owner.BoundingRectangle.Contains(prompt.BoundingRectangle);
 
     /// <summary>The OFLH branding line left of the buttons, or empty when none is visible.</summary>
-    public static string BrandingLine(Window window) => window
+    public static string BrandingLine(Window window) => Responsive(() => window
         .FindAllChildren(condition => condition.ByControlType(ControlType.Text))
         .Where(text => IsNativelyVisible(text) && text.Name.Contains(InstallerProduct.WebsiteLabel, StringComparison.Ordinal))
         .Select(text => text.Name)
-        .FirstOrDefault() ?? string.Empty;
+        .FirstOrDefault() ?? string.Empty);
+
+    /// <summary>
+    /// The branding line once the page has painted it. A freshly started wizard
+    /// (slow on emulated ARM64 runners) can answer UIA before its texts exist.
+    /// </summary>
+    public static string WaitForBrandingLine(Window window) =>
+        Retry.WhileNull(() => BrandingLine(window) is { Length: > 0 } line ? line : null,
+            Timeouts.Window, Timeouts.PollInterval, throwOnTimeout: false, ignoreException: true).Result ?? string.Empty;
 
     /// <summary>True when any visible text still carries NSIS's stock "Nullsoft Install System" branding.</summary>
-    public static bool ShowsStockNsisBranding(Window window) => window
+    public static bool ShowsStockNsisBranding(Window window) => Responsive(() => window
         .FindAllDescendants(condition => condition.ByControlType(ControlType.Text))
-        .Any(text => IsNativelyVisible(text) && text.Name.Contains(InstallerProduct.StockNsisBranding, StringComparison.Ordinal));
+        .Any(text => IsNativelyVisible(text) && text.Name.Contains(InstallerProduct.StockNsisBranding, StringComparison.Ordinal)));
 
-    public static bool ShowsBrandingText(Window window) => window
+    public static bool ShowsBrandingText(Window window) => Responsive(() => window
         .FindAllDescendants(condition => condition.ByName(InstallerProduct.BrandingText))
-        .Any(element => !element.IsOffscreen);
+        .Any(element => !element.IsOffscreen));
+
+    // UIA_E_TIMEOUT (0x800705B4): the target window was too busy to answer, for
+    // example while the uninstaller is still starting. Only this error is retried.
+    private const int UiaTimeout = unchecked((int)0x800705B4);
+
+    private static T Responsive<T>(Func<T> read)
+    {
+        var deadline = DateTime.UtcNow + Timeouts.Window;
+        while (true)
+        {
+            try
+            {
+                return read();
+            }
+            catch (COMException error) when (error.HResult == UiaTimeout && DateTime.UtcNow < deadline)
+            {
+                Thread.Sleep(Timeouts.PollInterval);
+            }
+        }
+    }
 
     /// <summary>Visible static-text paragraphs; used to check that text sits in a padded container.</summary>
     /// <remarks>
     /// UIA reports MUI's hidden header texts as on-screen, so visibility is
     /// taken from the native window style instead.
     /// </remarks>
-    public static IReadOnlyList<(string Text, Rectangle Bounds)> Paragraphs(Window window) => CurrentPage(window)
+    public static IReadOnlyList<(string Text, Rectangle Bounds)> Paragraphs(Window window) => Responsive(() => CurrentPage(window)
         .FindAllDescendants(condition => condition.ByControlType(ControlType.Text))
         .Where(text => text.Name.Length > MinimumParagraphLength && !IsBrandingLine(text, window) && IsNativelyVisible(text))
         .Select(text => (text.Name, text.BoundingRectangle))
-        .ToList();
+        .ToList());
 
     // NSIS hosts each wizard page in a child dialog; the outer window keeps the
     // header texts of other pages, merely covered by full-height pages.

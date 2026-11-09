@@ -37,7 +37,7 @@ pub(super) fn write(
     Ok(())
 }
 
-fn human_text(
+pub(crate) fn human_text(
     options: &Options,
     snapshot: &Snapshot,
     target: Option<&oflh_core::Target>,
@@ -131,17 +131,11 @@ fn to_json(
     let mut json = String::from("{\"version\":1,\"target\":{");
     if let Some(port) = options.port {
         write!(json, "\"kind\":\"port\",\"port\":{port}").unwrap_or_default();
-    } else {
+    } else if let Some(target) = target {
         json.push_str("\"kind\":\"path\",\"path\":");
-        push_string(
-            &mut json,
-            &target
-                .map_or_else(
-                    || std::path::PathBuf::from("."),
-                    |target| target.path.clone(),
-                )
-                .to_string_lossy(),
-        );
+        push_string(&mut json, &target.path.to_string_lossy());
+    } else {
+        json.push_str("\"kind\":\"ports\"");
     }
     write!(
         json,
@@ -244,6 +238,23 @@ fn push_string(json: &mut String, value: &str) {
 mod tests {
     use super::*;
     use oflh_core::{Access, Identity, Port, Protocol, Relation, Usage};
+
+    #[test]
+    fn a_port_listing_without_a_path_has_the_ports_target_kind() {
+        let options = Options {
+            json: true,
+            language: Language::English,
+            path: None,
+            ports: true,
+            port: None,
+            follow_port_folder: true,
+            ports_path_only: false,
+        };
+        assert!(
+            to_json(&Snapshot::default(), None, &options, Outcome::Free)
+                .starts_with("{\"version\":1,\"target\":{\"kind\":\"ports\"},\"free\":true,")
+        );
+    }
 
     #[test]
     fn human_summaries_name_port_listings_and_localize_overflow() {

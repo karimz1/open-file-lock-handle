@@ -82,8 +82,9 @@ listing; run `oflh check ./project` for them.
 
 With `--json`, stdout contains exactly one object. **Schema version 1** is stable;
 future versions may add fields, so consumers must ignore unknown fields. The
-`target` is `{ "kind": "path", "path": "..." }` or
-`{ "kind": "port", "port": 3000 }`. `free` uses the same free/held definition as
+`target` is `{ "kind": "path", "path": "..." }`,
+`{ "kind": "port", "port": 3000 }`, or `{ "kind": "ports" }` for
+`oflh check --ports` without a path. `free` uses the same free/held definition as
 `oflh wait`. `processes[]` contains `pid`, `name`, `user`,
 `executable`, `usages[]`, and `ports[]`. Usages contain `path`, `relation`,
 `access`, `deleted`, and `lock` (text evidence or `null`); ports contain
@@ -448,13 +449,16 @@ a backslash is an ordinary filename character.
 `oflh wait PATH` and `oflh wait --port 3000` poll the same native inspection as the
 interactive app without opening a TTY. No process is stopped. Any matching
 reported usage or binding keeps the target held; a free scan is the final
-confirmation, not process-exit detection or a watched PID.
+confirmation, not process-exit detection or a watched PID. `wait` uses the same
+free/held rule as `check` for the same options: with a path, `--port` and
+`--ports` count only bindings of processes that use that path.
 
 The default interval is one second. `--poll-interval SECONDS` changes it and
 `--timeout SECONDS` sets a deadline. Values are positive whole seconds. Signals
 such as Ctrl+C cancel cooperatively. Exit codes are **0** when a scan confirms
 free, **4** on timeout, **130** on cancellation, **2** for bad arguments, and
-**3** for inspection failures, extending the codes from `check`.
+**3** for inspection failures, extending the codes from `check`. On timeout,
+stderr also names up to five processes that still hold the target.
 
 In the interactive terminal press **w** to wait for the current target; a
 Ports view with a `port:3000` filter waits for that local binding. Press **z**

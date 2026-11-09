@@ -46,11 +46,16 @@ struct WaitJob {
     process: Option<Identity>,
     description: WaitTargetView,
     path: Option<PathBuf>,
-    include_ports: bool,
     port: Option<u16>,
     timeout: Option<std::time::Duration>,
     cancel: Cancellation,
     started: std::time::Instant,
+}
+impl WaitJob {
+    /// A port wait on a path counts only processes that also use that path.
+    fn check(&self) -> oflh_core::check::CheckTarget {
+        oflh_core::check::CheckTarget::select(self.path.is_some(), false, self.port)
+    }
 }
 struct State {
     generation: u32,
@@ -229,9 +234,7 @@ impl Service {
                                     &mut *backend,
                                     oflh_platform::WaitTarget {
                                         path: path.as_ref(),
-                                        include_ports: wait.include_ports,
-                                        port: wait.port,
-                                        scope_ports_to_path: wait.path.is_some(),
+                                        check: wait.check(),
                                     },
                                     options,
                                     wait.started,
@@ -472,7 +475,6 @@ impl Service {
                 process: None,
                 description,
                 path: request.path,
-                include_ports: request.include_ports,
                 port: request.port,
                 timeout: request.timeout,
                 cancel: Cancellation::default(),
@@ -502,6 +504,9 @@ impl Service {
         let (path, process, port, description) = match request.target {
             SelectionWaitTarget::File { reference } => {
                 let path = state.dataset.path(&reference)?;
+                if request.delete_after {
+                    crate::wait_files::refuse_protected_delete(&path)?;
+                }
                 let description = WaitTargetView {
                     kind: "file",
                     display: display(&path),
@@ -546,7 +551,6 @@ impl Service {
                 process,
                 port,
                 description,
-                include_ports: false,
                 timeout: request.timeout_seconds.map(std::time::Duration::from_secs),
                 cancel: Cancellation::default(),
                 started: std::time::Instant::now(),
@@ -612,8 +616,7 @@ impl Service {
             oflh_platform::confirm_free_before_action(
                 backend,
                 target.as_ref(),
-                job.include_ports,
-                job.port,
+                job.check(),
                 &job.cancel,
             )
             .map_err(Failure::from)?;
@@ -1581,6 +1584,7 @@ mod tests {
                 reference: reference.into(),
             },
             timeout_seconds: None,
+            delete_after: false,
         };
         assert!(service.wait_for_selection(request(6, "7:0:0")).is_err());
         assert!(service.wait_for_selection(request(7, "6:0:0")).is_err());
@@ -1618,6 +1622,7 @@ mod tests {
             revision: 1,
             target: SelectionWaitTarget::Process { key },
             timeout_seconds: Some(30),
+            delete_after: false,
         };
         assert!(
             service
@@ -1678,6 +1683,7 @@ mod tests {
                     reference: "1:0:port-0".into(),
                 },
                 timeout_seconds: Some(5),
+                delete_after: false,
             })
             .unwrap();
         assert!(matches!(
@@ -2406,7 +2412,6 @@ mod tests {
                 display: display(&path),
             },
             path: Some(path.clone()),
-            include_ports: false,
             port: None,
             timeout: None,
             cancel: Cancellation::default(),
@@ -2432,7 +2437,6 @@ mod tests {
                 display: display(path),
             },
             path: Some(path.to_owned()),
-            include_ports: false,
             port: None,
             timeout: None,
             cancel: Cancellation::default(),

@@ -279,8 +279,32 @@ jobs:
             echo 'OFLH_UPDATER_PASSWORD'
           } >> "$GITHUB_ENV"
       - name: Bundle the built executable without rebuilding
-        run: npm run tauri -- bundle --config "$RUNNER_TEMP/desktop-version.json" --no-binary-patching --bundles '${{ matrix.bundles }}'
         working-directory: crates/oflh-desktop/ui
+        shell: bash
+        run: |
+          bundle() {
+            npm run tauri -- bundle --config "$RUNNER_TEMP/desktop-version.json" --no-binary-patching --bundles '${{ matrix.bundles }}'
+          }
+          if [ '${{ matrix.os }}' != darwin ]; then
+            bundle
+            exit
+          fi
+          # hdiutil on hosted macOS runners sometimes fails with "Resource busy"
+          # while a previous image is still attached. Detach leftovers and retry
+          # only the DMG step; a real packaging error fails all three attempts.
+          dmg_dir=../../../target/release/bundle/dmg
+          for attempt in 1 2 3; do
+            if bundle; then
+              exit 0
+            fi
+            echo "::warning title=DMG bundling::attempt $attempt failed, detaching stale images and retrying"
+            hdiutil info | awk '/^\/dev\/disk/ && /\/Volumes\/(OFLH|dmg\.)/ {print $1}' | sort -u | while read -r device; do
+              hdiutil detach "$device" -force || true
+            done
+            rm -f "$dmg_dir"/rw.*.dmg
+            sleep $((attempt * 10))
+          done
+          exit 1
       - name: Validate the built application's native icon
         env:
           ICON_SMOKE_OS: ${{ matrix.os }}

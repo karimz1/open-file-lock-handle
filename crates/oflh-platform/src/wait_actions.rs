@@ -9,16 +9,15 @@ use oflh_core::{
 pub fn confirm_free_before_action(
     backend: &mut dyn Backend,
     path: Option<&Target>,
-    include_ports: bool,
-    port: Option<u16>,
+    check: CheckTarget,
     cancel: &Cancellation,
 ) -> Result<()> {
     let snapshot = match path {
-        Some(target) if include_ports => crate::scan_with_ports(backend, target, cancel)?,
+        Some(target) if check.needs_ports() => crate::scan_with_ports(backend, target, cancel)?,
         Some(target) => backend.scan(target, cancel)?,
         None => crate::scan_ports(cancel)?,
     };
-    if is_free(&snapshot, port.map_or(CheckTarget::Path, CheckTarget::Port)) {
+    if is_free(&snapshot, check) {
         Ok(())
     } else {
         Err(Error::WaitTargetHeld)

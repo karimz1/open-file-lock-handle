@@ -11,7 +11,7 @@ Key facts:
 - `oflh wait [OPTIONS] [PATH]` polls until the target is free without stopping anything. `--timeout SECONDS`, `--poll-interval SECONDS`. Exit codes: 0 free, 2 usage error, 3 inspection failed, 4 timeout, 130 cancelled.
 - Desktop 0.9: on shared Windows and Linux machines it shows the owner and login session of each process; with administrator or root rights it can sign a session out, and on Windows send a message or close a file opened over an SMB share. Each action asks first and re-checks the session. "Wait until free" can notify, reveal, move, rename, or permanently delete the target after a final free scan.
 - "Open" is not "locked": lock evidence is reported separately (Linux flock/POSIX/OFD locks, macOS F_GETLK conflicts, Windows sharing violations with the owner marked unverified).
-- Process actions verify PID plus start time before signaling and never close handles inside another process.
+- Process actions verify PID plus start time before signaling and never inject into another process to close its handles. The only file close is for a file opened over an SMB share on Windows: the server ends that remote open through the Windows file-server API (like "Open Files" in Computer Management), and the remote client may lose unsaved changes.
 - Ports: local TCP listeners and bound UDP sockets only, read from OS socket tables without running lsof, ss, or netstat.
 
 ## Docs

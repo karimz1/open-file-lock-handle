@@ -11,7 +11,6 @@ pub enum Work {
     Kill(Vec<Identity>, bool),
     Wait {
         target: Target,
-        include_ports: bool,
         port: Option<u16>,
         timeout: Option<std::time::Duration>,
     },
@@ -109,7 +108,6 @@ fn execute_job(backend: &mut dyn Backend, job: Job) -> Event {
         ),
         Work::Wait {
             target,
-            include_ports,
             port,
             timeout,
         } => Event::Wait(
@@ -118,9 +116,11 @@ fn execute_job(backend: &mut dyn Backend, job: Job) -> Event {
                 backend,
                 oflh_platform::WaitTarget {
                     path: Some(&target),
-                    include_ports,
-                    port,
-                    scope_ports_to_path: port.is_none(),
+                    // The terminal Ports view filters all local bindings by number.
+                    check: port.map_or(
+                        oflh_core::check::CheckTarget::Path,
+                        oflh_core::check::CheckTarget::Port,
+                    ),
                 },
                 oflh_core::wait::Options {
                     timeout,

@@ -65,6 +65,23 @@ const de: TranslationSchema<typeof en> = {
       "Das Ziel wird wieder verwendet. Es wurde keine Folgeaktion ausgeführt.",
     k_cancelled: "Warten abgebrochen.",
     k_again: "Erneut warten",
+    k_protected_delete:
+      "OFLH löscht keine Laufwerkswurzeln, Benutzerordner oder Systemordner. Wähle eine Datei oder einen Ordner darin.",
+    k_move_unsupported:
+      "Dieses Dateisystem kann nicht verschieben oder umbenennen, ohne einen vorhandenen Eintrag ersetzen zu können. Es wurde nichts geändert.",
+    k_move_cross_device:
+      "Das Ziel liegt auf einem anderen Laufwerk oder Dateisystem. OFLH verschiebt nur innerhalb eines Dateisystems, es wurde nichts geändert.",
+    k_move_into_itself:
+      "Ein Ordner kann nicht in sich selbst verschoben werden. Wähle ein anderes Ziel.",
+    k_notify_free_title: "OFLH: Ziel ist frei",
+    k_notify_free_body: "Keine Nutzer dieses Ziels mehr gefunden.",
+    k_notify_exit_title: "OFLH: Prozess beendet",
+    k_notify_exit_body:
+      "Der ausgewählte Prozess ist beendet. Andere Prozesse können seine Dateien weiterhin verwenden.",
+    k_notify_moved: "OFLH: Verschoben",
+    k_notify_renamed: "OFLH: Umbenannt",
+    k_notify_deleted: "OFLH: Gelöscht",
+    k_notify_revealed: "OFLH: Im Dateimanager angezeigt",
     k_confirm_delete:
       "Dieses Ziel nach einer abschließenden Freiprüfung endgültig löschen. Ein Ordner wird mit seinem gesamten Inhalt gelöscht; nichts landet im Papierkorb.",
   },
