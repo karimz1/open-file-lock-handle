@@ -6555,7 +6555,7 @@ test("file waiting confirms destructive follow-ups and resets them for another s
   await expect(start).toBeDisabled();
   await dialog
     .getByRole("checkbox", {
-      name: "Delete this target after a final confirming free scan?",
+      name: "Permanently delete this target after a final free scan. A folder is deleted with everything in it; nothing goes to the trash.",
     })
     .check();
   await expect(start).toBeEnabled();
