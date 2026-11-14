@@ -2363,6 +2363,54 @@ test("a changed process search updates file details without carrying the previou
   ).toBeDisabled();
 });
 
+test("clicking +N in a process search opens details on matching files", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__searchClearRaceFixture = true;
+  });
+  await page.setViewportSize({ width: 860, height: 560 });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page
+    .getByRole("textbox", { name: "Search loaded results" })
+    .fill("spotify");
+  const row = page.getByRole("grid").getByRole("row").nth(1);
+  const more = row.locator(".matching-files-more");
+  await expect(more).toBeVisible();
+  await expect(more).toHaveText("+3 more");
+  await more.click();
+  const panel = page.getByRole("complementary", { name: "Process details" });
+  const files = panel.getByRole("region", {
+    name: "Matching files",
+    exact: true,
+  });
+  await expect(files).toBeVisible();
+  await expect(
+    files.getByRole("heading", { name: /Matching files/ }),
+  ).toBeInViewport();
+  await expect(
+    files.getByRole("button", {
+      name: "View all matching file usages",
+      exact: true,
+    }),
+  ).toBeVisible();
+  // A second click must still bring the section into view. Opening the row
+  // first, then scrolling the panel, is what leaves +N looking like a no-op.
+  await panel.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(
+    files.getByRole("heading", { name: /Matching files/ }),
+  ).not.toBeInViewport();
+  await more.click();
+  await expect(
+    files.getByRole("heading", { name: /Matching files/ }),
+  ).toBeInViewport();
+  await expect(files).toBeFocused();
+  await expect(more).toHaveAccessibleName("Show all 4 matching files");
+});
+
 test("process search rows with matching paths keep their layout", async ({
   page,
 }) => {
