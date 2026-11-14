@@ -94,6 +94,7 @@ const de: TranslationSchema<typeof en> = {
     k_more_references:
       "{{n}} zusätzliche Referenzen. Details stehen unter allen passenden Dateizugriffen.",
     k_show_all: "Alle passenden Dateizugriffe anzeigen",
+    k_show_all_count: "Alle {{n}} passenden Dateien anzeigen",
   },
   sessions: {
     k_user: "Benutzer",

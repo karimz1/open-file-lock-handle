@@ -85,6 +85,7 @@ const zh: TranslationSchema<typeof en> = {
     k_more_references:
       "另有 {{n}} 个引用。请查看所有匹配的文件使用情况以了解详情。",
     k_show_all: "查看所有匹配的文件使用情况",
+    k_show_all_count: "显示全部 {{n}} 个匹配的文件",
   },
   sessions: {
     k_user: "用户",

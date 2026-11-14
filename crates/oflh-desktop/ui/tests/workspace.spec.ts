@@ -2293,7 +2293,9 @@ test("process search shows matching file paths and grouped references above ance
   await expect(path).toContainText("Bestellbestätigung .pdf");
   await expect(path).not.toContainText("PdfEditor.exe");
   await expect(path).toHaveCSS("white-space", "normal");
-  await row.getByRole("button", { name: "+3 more", exact: true }).click();
+  await row
+    .getByRole("button", { name: "Show all 4 matching files", exact: true })
+    .click();
   const panel = page.getByRole("complementary", { name: "Process details" });
   const files = panel.getByRole("region", {
     name: "Matching files",

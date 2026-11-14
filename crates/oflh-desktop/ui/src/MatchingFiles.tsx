@@ -23,7 +23,11 @@ export function MatchingFiles({
   const matches = row.matching_files;
   if (!matches) return null;
   return (
-    <section className="matching-files" aria-label={t("matches.k_title")}>
+    <section
+      className="matching-files"
+      aria-label={t("matches.k_title")}
+      tabIndex={-1}
+    >
       <h4>
         {t("matches.k_title")} <span className="muted">({matches.total})</span>
       </h4>
