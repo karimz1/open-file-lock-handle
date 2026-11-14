@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 // Synthetic IPC fixtures are test-only. The production bundle always invokes Rust.
 const documentationScreenshotPath = (filename: string) =>
   process.env.OFLH_UPDATE_SCREENSHOTS === "1"
@@ -542,6 +542,11 @@ test.beforeEach(async ({ page }) => {
               ((window as any).__heldPages ??= []).push(resolve);
             });
           }
+          if (command === "page" && (window as any).__pageDelayMsForTest) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, (window as any).__pageDelayMsForTest),
+            );
+          }
           const freshRow = (row: (typeof processRows)[number]) => ({
             ...row,
             ...(multi && row.pid
@@ -685,6 +690,58 @@ test.beforeEach(async ({ page }) => {
                       },
                     ]
                   : [];
+              return {
+                revision: args.revision,
+                total: rows.length,
+                rows: rows.slice(
+                  args.query.offset,
+                  args.query.offset + args.query.limit,
+                ),
+              };
+            }
+            if ((window as any).__searchClearRaceFixture) {
+              const catalog = Array.from({ length: 12 }, (_, index) => ({
+                ...processRows[index],
+                name:
+                  index === 1
+                    ? "backgroundTaskHost.exe"
+                    : index === 2
+                      ? "SpotifyLauncher.exe"
+                      : "Spotify.exe",
+                path:
+                  "C:\\Program Files\\WindowsApps\\SpotifyAB.SpotifyMusic_1.308.620.0_x64__zpdnekdrzrea0\\CachedData\\" +
+                  "long-folder-name/".repeat(4) +
+                  `spotify-${index}.dat`,
+              }));
+              const text = (args.query.text || "").toLowerCase();
+              const source = text
+                ? catalog.filter(
+                    (row) =>
+                      row.name.toLowerCase().includes(text) ||
+                      row.path.toLowerCase().includes(text),
+                  )
+                : [...catalog, ...processRows.slice(catalog.length)];
+              const rows = source.map((row) => ({
+                ...freshRow(row),
+                ...(text
+                  ? {
+                      matching_files: {
+                        files: [
+                          {
+                            path: {
+                              display: row.path,
+                              reference: row.path_ref,
+                            },
+                            references: 1,
+                            observations: [],
+                            more_references: 0,
+                          },
+                        ],
+                        total: 4 + (row.pid % 5),
+                      },
+                    }
+                  : {}),
+              }));
               return {
                 revision: args.revision,
                 total: rows.length,
@@ -2299,6 +2356,129 @@ test("a changed process search updates file details without carrying the previou
   await expect(
     files.getByRole("button", { name: "Copy path", exact: true }),
   ).toBeDisabled();
+});
+
+const watchProcessRowLayout = (page: Page) =>
+  page.locator("#results-grid").evaluate((node) => {
+    const check = () => {
+      const rows = [...node.querySelectorAll(".data-row")].map((row) => {
+        const box = row.getBoundingClientRect();
+        const path = row.querySelector(".path-cell")?.getBoundingClientRect();
+        return {
+          top: box.top,
+          bottom: box.bottom,
+          pathBottom: path?.bottom ?? box.bottom,
+        };
+      });
+      if (
+        rows.some((row, index) => {
+          const next = rows[index + 1];
+          return (
+            row.pathBottom > row.bottom + 1 ||
+            (next !== undefined && row.bottom > next.top + 1)
+          );
+        })
+      )
+        (window as any).__processRowOverlapSeen = true;
+    };
+    (window as any).__processRowOverlapSeen = false;
+    (window as any).__stopProcessRowOverlapWatch = false;
+    const observer = new MutationObserver(check);
+    observer.observe(node, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+    });
+    const loop = () => {
+      check();
+      if (!(window as any).__stopProcessRowOverlapWatch)
+        requestAnimationFrame(loop);
+      else observer.disconnect();
+    };
+    loop();
+  });
+
+const processRowLayoutBroken = (page: Page) =>
+  page.locator("#results-grid").evaluate((node) => {
+    const rows = [...node.querySelectorAll(".data-row")].map((row) => {
+      const box = row.getBoundingClientRect();
+      const path = row.querySelector(".path-cell")?.getBoundingClientRect();
+      return {
+        top: box.top,
+        bottom: box.bottom,
+        pathBottom: path?.bottom ?? box.bottom,
+      };
+    });
+    return rows.some((row, index) => {
+      const next = rows[index + 1];
+      return (
+        row.pathBottom > row.bottom + 1 ||
+        (next !== undefined && row.bottom > next.top + 1)
+      );
+    });
+  });
+
+const processRowOverlapWasSeen = (page: Page) =>
+  page.evaluate(() => {
+    (window as any).__stopProcessRowOverlapWatch = true;
+    return !!(window as any).__processRowOverlapSeen;
+  });
+
+test("process search rows with matching paths keep their layout", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__searchClearRaceFixture = true;
+  });
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  await search.fill("spotify");
+  await expect(page.locator(".matching-files-more").first()).toBeVisible();
+  await expect(page.getByRole("grid")).toHaveAttribute("aria-rowcount", "13");
+  await page.getByRole("button", { name: "Clear search" }).click();
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await expect(page.locator(".matching-files-more")).toHaveCount(0);
+  await watchProcessRowLayout(page);
+  await search.fill("spotify");
+  await expect(page.locator(".matching-files-more").first()).toBeVisible();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  expect(await processRowLayoutBroken(page)).toBe(false);
+  expect(await processRowOverlapWasSeen(page)).toBe(false);
+});
+
+test("clearing a process search quickly drops stale matches and keeps rows from overlapping", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__searchClearRaceFixture = true;
+    (window as any).__pageDelayMsForTest = 200;
+  });
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto("/");
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await watchProcessRowLayout(page);
+  await search.fill("spotify");
+  await page.getByRole("button", { name: "Clear search" }).click();
+  await expect(search).toHaveValue("");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await expect(page.locator(".matching-files-more")).toHaveCount(0);
+  expect(await processRowLayoutBroken(page)).toBe(false);
+  await search.pressSequentially("spotify", { delay: 20 });
+  await expect(page.locator(".matching-files-more").first()).toBeVisible();
+  for (let i = 0; i < 7; i++) await search.press("Backspace");
+  await expect(search).toHaveValue("");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await expect(page.locator(".matching-files-more")).toHaveCount(0);
+  expect(await processRowLayoutBroken(page)).toBe(false);
+  expect(await processRowOverlapWasSeen(page)).toBe(false);
 });
 
 for (const [

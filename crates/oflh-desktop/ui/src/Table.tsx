@@ -167,10 +167,18 @@ export function Table(props: Props) {
     getScrollElement: () => scroll.current,
     estimateSize: () => rowHeight,
     overscan: 10,
+    // Key measurements by the compiled query so wrapping matching-file paths
+    // cannot inherit short heights from the unfiltered list.
+    getItemKey: (index) => {
+      const row = displayPage?.rows[index - displayPage.offset];
+      return row ? `${queryKey}:${row.key}` : `${queryKey}:${index}`;
+    },
   });
+  // Do not remasure on query changes: measure() clears the size cache and can
+  // leave wrapping search rows at the estimated height.
   useEffect(() => {
     virtual.measure();
-  }, [props.fontSize, queryKey, props.hiddenColumns]);
+  }, [props.fontSize, props.hiddenColumns]);
   const items = virtual.getVirtualItems();
   const firstVisible = items[0]?.index ?? 0;
   const lastVisible = items.at(-1)?.index ?? firstVisible;
@@ -580,7 +588,7 @@ export function Table(props: Props) {
             const row = rowAt(item.index);
             return (
               <div
-                key={row?.key ?? item.key}
+                key={item.key}
                 id={`result-row-${item.index}`}
                 role="row"
                 data-cursor={item.index === cursor}
