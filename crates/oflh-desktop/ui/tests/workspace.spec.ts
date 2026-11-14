@@ -1,5 +1,10 @@
 import { readFileSync } from "node:fs";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
+import {
+  assertNoWatchedVirtualRowViolations,
+  assertVirtualRowsLayout,
+  watchVirtualRowLayout,
+} from "./virtualRowLayout";
 // Synthetic IPC fixtures are test-only. The production bundle always invokes Rust.
 const documentationScreenshotPath = (filename: string) =>
   process.env.OFLH_UPDATE_SCREENSHOTS === "1"
@@ -2358,72 +2363,6 @@ test("a changed process search updates file details without carrying the previou
   ).toBeDisabled();
 });
 
-const watchProcessRowLayout = (page: Page) =>
-  page.locator("#results-grid").evaluate((node) => {
-    const check = () => {
-      const rows = [...node.querySelectorAll(".data-row")].map((row) => {
-        const box = row.getBoundingClientRect();
-        const path = row.querySelector(".path-cell")?.getBoundingClientRect();
-        return {
-          top: box.top,
-          bottom: box.bottom,
-          pathBottom: path?.bottom ?? box.bottom,
-        };
-      });
-      if (
-        rows.some((row, index) => {
-          const next = rows[index + 1];
-          return (
-            row.pathBottom > row.bottom + 1 ||
-            (next !== undefined && row.bottom > next.top + 1)
-          );
-        })
-      )
-        (window as any).__processRowOverlapSeen = true;
-    };
-    (window as any).__processRowOverlapSeen = false;
-    (window as any).__stopProcessRowOverlapWatch = false;
-    const observer = new MutationObserver(check);
-    observer.observe(node, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-    });
-    const loop = () => {
-      check();
-      if (!(window as any).__stopProcessRowOverlapWatch)
-        requestAnimationFrame(loop);
-      else observer.disconnect();
-    };
-    loop();
-  });
-
-const processRowLayoutBroken = (page: Page) =>
-  page.locator("#results-grid").evaluate((node) => {
-    const rows = [...node.querySelectorAll(".data-row")].map((row) => {
-      const box = row.getBoundingClientRect();
-      const path = row.querySelector(".path-cell")?.getBoundingClientRect();
-      return {
-        top: box.top,
-        bottom: box.bottom,
-        pathBottom: path?.bottom ?? box.bottom,
-      };
-    });
-    return rows.some((row, index) => {
-      const next = rows[index + 1];
-      return (
-        row.pathBottom > row.bottom + 1 ||
-        (next !== undefined && row.bottom > next.top + 1)
-      );
-    });
-  });
-
-const processRowOverlapWasSeen = (page: Page) =>
-  page.evaluate(() => {
-    (window as any).__stopProcessRowOverlapWatch = true;
-    return !!(window as any).__processRowOverlapSeen;
-  });
-
 test("process search rows with matching paths keep their layout", async ({
   page,
 }) => {
@@ -2437,20 +2376,16 @@ test("process search rows with matching paths keep their layout", async ({
   await search.fill("spotify");
   await expect(page.locator(".matching-files-more").first()).toBeVisible();
   await expect(page.getByRole("grid")).toHaveAttribute("aria-rowcount", "13");
+  await assertVirtualRowsLayout(page);
   await page.getByRole("button", { name: "Clear search" }).click();
   await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
   await expect(page.locator(".matching-files-more")).toHaveCount(0);
-  await watchProcessRowLayout(page);
+  await assertVirtualRowsLayout(page);
+  await watchVirtualRowLayout(page);
   await search.fill("spotify");
   await expect(page.locator(".matching-files-more").first()).toBeVisible();
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      ),
-  );
-  expect(await processRowLayoutBroken(page)).toBe(false);
-  expect(await processRowOverlapWasSeen(page)).toBe(false);
+  await assertVirtualRowsLayout(page);
+  await assertNoWatchedVirtualRowViolations(page);
 });
 
 test("clearing a process search quickly drops stale matches and keeps rows from overlapping", async ({
@@ -2464,21 +2399,70 @@ test("clearing a process search quickly drops stale matches and keeps rows from 
   await page.goto("/");
   const search = page.getByRole("textbox", { name: "Search loaded results" });
   await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
-  await watchProcessRowLayout(page);
+  await watchVirtualRowLayout(page);
   await search.fill("spotify");
   await page.getByRole("button", { name: "Clear search" }).click();
   await expect(search).toHaveValue("");
   await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
   await expect(page.locator(".matching-files-more")).toHaveCount(0);
-  expect(await processRowLayoutBroken(page)).toBe(false);
+  await assertVirtualRowsLayout(page);
   await search.pressSequentially("spotify", { delay: 20 });
   await expect(page.locator(".matching-files-more").first()).toBeVisible();
+  await assertVirtualRowsLayout(page);
   for (let i = 0; i < 7; i++) await search.press("Backspace");
   await expect(search).toHaveValue("");
   await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
   await expect(page.locator(".matching-files-more")).toHaveCount(0);
-  expect(await processRowLayoutBroken(page)).toBe(false);
-  expect(await processRowOverlapWasSeen(page)).toBe(false);
+  await assertVirtualRowsLayout(page);
+  // A second search after short rows were measured is the overlap case in #169.
+  await search.fill("spotify");
+  await expect(page.locator(".matching-files-more").first()).toBeVisible();
+  await assertVirtualRowsLayout(page);
+  await assertNoWatchedVirtualRowViolations(page);
+});
+
+test("virtual process rows keep their boxes through search, font, columns and resize", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__searchClearRaceFixture = true;
+  });
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  await watchVirtualRowLayout(page);
+  await search.fill("spotify");
+  await expect(page.locator(".matching-files-more").first()).toBeVisible();
+  await assertVirtualRowsLayout(page);
+  await page.getByRole("button", { name: "Clear search" }).click();
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await assertVirtualRowsLayout(page);
+  await search.fill("spotify");
+  await expect(page.locator(".matching-files-more").first()).toBeVisible();
+  await assertVirtualRowsLayout(page);
+  await page.keyboard.press("Control+,");
+  await page
+    .getByRole("combobox", { name: "Size", exact: true })
+    .selectOption("18");
+  await expect(page.locator("html")).toHaveCSS("font-size", "18px");
+  await page.keyboard.press("Control+1");
+  await expect(page.locator(".matching-files-more").first()).toBeVisible();
+  await assertVirtualRowsLayout(page);
+  await page.locator("details.column-picker > summary").click();
+  await page
+    .getByRole("group", { name: "Visible columns" })
+    .getByLabel("CPU", { exact: true })
+    .uncheck();
+  await expect(
+    page.getByRole("grid").getByRole("columnheader", { name: "CPU" }),
+  ).toHaveCount(0);
+  await page.locator("details.column-picker > summary").click();
+  await assertVirtualRowsLayout(page);
+  await page.setViewportSize({ width: 860, height: 560 });
+  await expect(page.locator(".matching-files-more").first()).toBeVisible();
+  await assertVirtualRowsLayout(page);
+  await assertNoWatchedVirtualRowViolations(page);
 });
 
 for (const [

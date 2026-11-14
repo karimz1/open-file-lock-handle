@@ -162,23 +162,21 @@ export function Table(props: Props) {
   const template = columns.map((column) => `${widthFor(column)}px`).join(" ");
   const minWidth = columns.reduce((sum, column) => sum + widthFor(column), 0);
   const rowHeight = Math.round((38 * props.fontSize) / 13);
+  const layoutKey = `${queryKey}:${props.fontSize}:${[...props.hiddenColumns].sort().join(",")}`;
   const virtual = useVirtualizer({
     count: displayPage?.total ?? 0,
     getScrollElement: () => scroll.current,
     estimateSize: () => rowHeight,
     overscan: 10,
-    // Key measurements by the compiled query so wrapping matching-file paths
-    // cannot inherit short heights from the unfiltered list.
+    // Key measurements by query, font size, and visible columns so wrapping
+    // paths cannot inherit short heights from a previous layout. Do not call
+    // virtual.measure() here: it clears the size cache and parks tall rows at
+    // the estimated height until a later remasure.
     getItemKey: (index) => {
       const row = displayPage?.rows[index - displayPage.offset];
-      return row ? `${queryKey}:${row.key}` : `${queryKey}:${index}`;
+      return row ? `${layoutKey}:${row.key}` : `${layoutKey}:${index}`;
     },
   });
-  // Do not remasure on query changes: measure() clears the size cache and can
-  // leave wrapping search rows at the estimated height.
-  useEffect(() => {
-    virtual.measure();
-  }, [props.fontSize, props.hiddenColumns]);
   const items = virtual.getVirtualItems();
   const firstVisible = items[0]?.index ?? 0;
   const lastVisible = items.at(-1)?.index ?? firstVisible;
