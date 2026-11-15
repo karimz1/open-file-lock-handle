@@ -30,13 +30,16 @@ It is free and open source, and runs on Windows, macOS, and Linux (x86-64 and AR
 
 [![Featured on WinFuture](https://img.shields.io/badge/Featured_on-WinFuture-1769aa)](https://winfuture.de/download/product/4227/)
 [![Listed on AlternativeTo](https://img.shields.io/badge/Listed_on-AlternativeTo-087e8b)](https://alternativeto.net/software/oflh-open-file-lock-handle/about/)
+[![Listed on pfpbase](https://img.shields.io/badge/Listed_on-pfpbase-059669)](https://pfpbase.com/developer-tools/open-file-lock-handle/)
 
 **Editorial coverage: OFLH on WinFuture (German).**
 Thank you to the WinFuture editorial team for featuring OFLH.
 [Read the article (German)](https://winfuture.de/download/product/4227/).
 
 You can also find OFLH's software listing on
-[AlternativeTo](https://alternativeto.net/software/oflh-open-file-lock-handle/about/).
+[AlternativeTo](https://alternativeto.net/software/oflh-open-file-lock-handle/about/)
+and
+[pfpbase](https://pfpbase.com/developer-tools/open-file-lock-handle/).
 
 ---
 
