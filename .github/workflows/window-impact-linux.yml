@@ -1,0 +1,48 @@
+name: Window impact (Linux)
+# The termination preview warns when ending a process also closes several
+# windows. This checks the X11 window count with synthetic fixtures under
+# Xvfb, with and without a window manager.
+on:
+  pull_request:
+    paths:
+      - 'crates/oflh-platform/src/linux.rs'
+      - 'crates/oflh-platform/src/x11.rs'
+      - 'crates/oflh-platform/tests/window_impact_x11.rs'
+      - '.github/workflows/window-impact-linux.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  x11:
+    name: X11 windows / ubuntu-24.04
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pinned Rust toolchain
+        run: rustup show
+      - name: Install X server and window manager
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth openbox x11-utils
+      - name: Synthetic X11 window fixtures without a window manager
+        run: xvfb-run -a cargo test --locked -p oflh-platform --test window_impact_x11 -- --nocapture --test-threads=1
+      - name: Synthetic X11 window fixtures with a window manager
+        if: success() || failure()
+        run: xvfb-run -a bash -c 'openbox & sleep 3; xprop -root _NET_SUPPORTING_WM_CHECK; cargo test --locked -p oflh-platform --test window_impact_x11 -- --nocapture --test-threads=1'
+  result:
+    name: Window impact (Linux) result
+    if: always()
+    needs: [x11]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Require every leg to succeed
+        env:
+          RESULT_TITLE: Window impact (Linux) result
+          NEEDS: ${{ toJSON(needs) }}
+        run: node .github/scripts/require-success.mjs
