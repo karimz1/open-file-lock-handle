@@ -40,7 +40,7 @@ sleep 3
 xprop -root _NET_SUPPORTING_WM_CHECK || true
 
 # xterm: one process, one window; its menus and IME helpers must not count.
-xterm -T OflhTerm &
+xterm -xrm "XTerm*allowTitleOps: false" -T OflhTerm &
 term=$!
 sleep 3
 screen xterm
