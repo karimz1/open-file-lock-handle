@@ -67,9 +67,14 @@ function Write-Pdf([string] $path, [string] $label) {
 # PDF-XChange Editor: one process, every document in its own window.
 try {
     choco install pdfxchangeeditor -y --no-progress | Out-Host
-    $editor = Get-ChildItem 'C:\Program Files', 'C:\Program Files (x86)' -Recurse -Filter PDFXEdit.exe -ErrorAction SilentlyContinue |
-        Select-Object -First 1 -ExpandProperty FullName
-    if (-not $editor) { throw 'PDFXEdit.exe not found after install' }
+    # V10 and older install under Tracker Software, V11 under PDF-XChange.
+    $executables = Get-ChildItem 'C:\Program Files\PDF-XChange', 'C:\Program Files\Tracker Software' -Recurse -Filter *.exe -ErrorAction SilentlyContinue
+    $executables | ForEach-Object { Write-Host "  $($_.FullName) [$($_.VersionInfo.FileDescription)]" }
+    $editor = $executables | Where-Object { $_.Name -in 'PDFXEdit.exe', 'PXCEditor.exe' -or $_.VersionInfo.FileDescription -eq 'PDF-XChange Editor' } |
+        Select-Object -First 1
+    if (-not $editor) { throw 'PDF-XChange Editor executable not found after install' }
+    $editorName = $editor.Name
+    $editor = $editor.FullName
     Write-Host "PDF-XChange Editor: $editor $((Get-Item $editor).VersionInfo.FileVersion)"
     foreach ($vendor in 'Tracker Software', 'PDF-XChange') {
         $key = "HKCU:\Software\$vendor\PDFXEditor\3.0\Settings\Docs"
@@ -89,7 +94,7 @@ try {
     }
     Start-Sleep -Seconds 10
     Save-Screen 'pdf-xchange'
-    $report = Invoke-Probe 'pdf-xchange' $documents[0] @('PDFXEdit.exe')
+    $report = Invoke-Probe 'pdf-xchange' $documents[0] @($editorName)
     Check 'pdf-xchange' ($report.Count -eq 1) "exactly one PDF-XChange process holds example.pdf (found $($report.Count))"
     $titles = @($report | ForEach-Object { $_.windows } | Where-Object { $_ })
     foreach ($name in 'example', 'invoice', 'manual', 'notes') {
@@ -100,7 +105,7 @@ try {
     $failures.Add("pdf-xchange: $_")
     Write-Host "FAIL pdf-xchange: $_"
 } finally {
-    Get-Process PDFXEdit -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process PDFXEdit, PXCEditor -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
 # File Explorer: several folder windows in one shell process.
