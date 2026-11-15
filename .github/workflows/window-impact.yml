@@ -32,10 +32,13 @@ jobs:
       - name: Synthetic window fixtures
         shell: bash
         run: cargo test --locked -p oflh-platform --test window_impact -- --nocapture --test-threads=1
+      # Real apps run even when a synthetic case fails, so both are on record.
       - name: Build window impact probe
+        if: success() || failure()
         shell: bash
         run: cargo build --release --locked -p oflh-platform --example window_impact_probe
       - name: Real multi-window apps
+        if: success() || failure()
         shell: pwsh
         run: ./.github/scripts/window-impact-apps.ps1 -Probe target/release/examples/window_impact_probe.exe -Out window-impact
       - uses: actions/upload-artifact@v7
