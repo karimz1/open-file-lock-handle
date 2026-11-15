@@ -89,6 +89,22 @@ try {
     $policy = 'HKLM:\SOFTWARE\Policies\Tracker Software\PDFXEditor\3.0\FileAssociations'
     New-Item -Force $policy | Out-Null
     New-ItemProperty -Force -Path $policy -Name 'b.AllowCheck' -PropertyType DWord -Value 0 | Out-Null
+    # Let the editor create its settings tree once, then switch documents to
+    # SDI wherever it keeps them (the vendor key moved between versions).
+    $first = Start-Process $editor -PassThru
+    Start-Sleep -Seconds 15
+    [void] $first.CloseMainWindow()
+    if (-not $first.WaitForExit(20000)) { $first | Stop-Process -Force }
+    Start-Sleep -Seconds 2
+    $settingsKeys = Get-ChildItem 'HKCU:\Software' -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.PSChildName -eq 'Settings' -and $_.Name -match 'PDFX|PDF-XChange|Tracker' }
+    $settingsKeys | ForEach-Object { Write-Host "settings key: $($_.Name)" }
+    foreach ($key in $settingsKeys) {
+        $docs = Join-Path $key.PSPath 'Docs'
+        if (-not (Test-Path $docs)) { New-Item $docs | Out-Null }
+        New-ItemProperty -Force -Path $docs -Name 'b.SingleWnd' -PropertyType DWord -Value 0 | Out-Null
+        New-ItemProperty -Force -Path $docs -Name 'b.OpenInNewWindow' -PropertyType DWord -Value 1 | Out-Null
+    }
     $documents = 'example', 'invoice', 'manual', 'notes' | ForEach-Object {
         $path = Join-Path $work "$_.pdf"
         Write-Pdf $path $_
