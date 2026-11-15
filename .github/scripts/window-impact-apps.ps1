@@ -81,6 +81,8 @@ try {
     foreach ($vendor in 'Tracker Software', 'PDF-XChange', 'PDF_XChange') {
         $settings = "HKCU:\Software\$vendor\PDFXEditor\3.0\Settings"
         New-Item -Force "$settings\Docs", "$settings\Prompts" | Out-Null
+        # SingleWnd off is the SDI mode: every document gets its own frame.
+        New-ItemProperty -Force -Path "$settings\Docs" -Name 'b.SingleWnd' -PropertyType DWord -Value 0 | Out-Null
         New-ItemProperty -Force -Path "$settings\Docs" -Name 'b.OpenInNewWindow' -PropertyType DWord -Value 1 | Out-Null
         New-ItemProperty -Force -Path "$settings\Prompts" -Name 'b.AskForDefaultApp' -PropertyType DWord -Value 0 | Out-Null
     }
@@ -111,6 +113,9 @@ try {
     $failures.Add("pdf-xchange: $_")
     Write-Host "FAIL pdf-xchange: $_"
 } finally {
+    foreach ($vendor in 'Tracker Software', 'PDF-XChange', 'PDF_XChange') {
+        reg query "HKCU\Software\$vendor\PDFXEditor\3.0\Settings\Docs" 2>$null | Out-Host
+    }
     Get-Process PDFXEdit, PXCEditor -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
