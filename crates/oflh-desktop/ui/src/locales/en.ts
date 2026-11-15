@@ -90,6 +90,7 @@ const en = {
     k_more_references:
       "{{n}} additional references. View all matching file usages for details.",
     k_show_all: "View all matching file usages",
+    k_show_all_count: "Show all {{n}} matching files",
   },
   sessions: {
     k_user: "User",

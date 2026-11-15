@@ -719,7 +719,11 @@ export function Table(props: Props) {
                             {row.matching_files &&
                               row.matching_files.total > 1 && (
                                 <button
+                                  type="button"
                                   className="inline-link matching-files-more"
+                                  aria-label={t("matches.k_show_all_count", {
+                                    n: row.matching_files.total,
+                                  })}
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     props.onOpen(row, displayPage!.revision);

@@ -345,6 +345,7 @@ export function App() {
     queryKey: string;
   } | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
+  const [revealMatches, setRevealMatches] = useState(0);
   const [details, setDetails] = useState<Details | null>(null);
   const [detailsRevision, setDetailsRevision] = useState(0);
   const [detailsMissing, setDetailsMissing] = useState(false);
@@ -1723,6 +1724,7 @@ export function App() {
                           queryKey: tableQueryKey,
                         });
                         setFocused(row.process_key);
+                        setRevealMatches((current) => current + 1);
                       }}
                       onContext={(row, revision) => {
                         if (status.scanning || revision !== status.revision) {
@@ -1776,6 +1778,7 @@ export function App() {
                         onWait={setWaitSelection}
                         waitDisabled={inspectionLocked || status.wait.waiting}
                         target={status.target}
+                        revealMatches={revealMatches}
                         key={details.process.process_key}
                         terminateCurrent={(force) =>
                           prepare(force, [details.process.process_key])

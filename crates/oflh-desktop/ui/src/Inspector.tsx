@@ -37,9 +37,11 @@ export function Inspector({
   target,
   onWait,
   waitDisabled,
+  revealMatches = 0,
 }: {
   onWait: (selection: WaitSelection) => void;
   waitDisabled: boolean;
+  revealMatches?: number;
   target: string;
   revision: number;
   notify: (message: string) => void;
@@ -86,6 +88,13 @@ export function Inspector({
       /* Keep the session preference. */
     }
   }, [width]);
+  useEffect(() => {
+    if (!revealMatches || !row?.matching_files) return;
+    const node = panel.current?.querySelector<HTMLElement>(".matching-files");
+    if (!node) return;
+    node.scrollIntoView({ block: "start", inline: "nearest" });
+    node.focus({ preventScroll: true });
+  }, [revealMatches, row?.matching_files]);
   const resize = (value: number) =>
     setWidth(Math.max(260, Math.min(maximum, value)));
   const [ancestorKey, setAncestorKey] = useState<string>(
