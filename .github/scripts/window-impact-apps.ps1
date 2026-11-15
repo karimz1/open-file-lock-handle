@@ -24,6 +24,63 @@ function Save-Screen([string] $name) {
     } catch { Write-Host "screenshot $name failed: $_" }
 }
 
+
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class OflhInput {
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+    [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hwnd, int x, int y, int w, int h, bool repaint);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+    public static void Drag(int x1, int y1, int x2, int y2) {
+        SetCursorPos(x1, y1); System.Threading.Thread.Sleep(200);
+        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); System.Threading.Thread.Sleep(200);
+        for (int i = 1; i <= 25; i++) {
+            SetCursorPos(x1 + (x2 - x1) * i / 25, y1 + (y2 - y1) * i / 25);
+            System.Threading.Thread.Sleep(30);
+        }
+        System.Threading.Thread.Sleep(300);
+        mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+    }
+}
+"@
+
+# Tear document tabs off into their own frames, the way a person makes
+# separate windows when the app's settings keep tabs.
+function Split-Tabs($process, [string[]] $names) {
+    $process.Refresh()
+    $main = $process.MainWindowHandle
+    [void] [OflhInput]::MoveWindow($main, 0, 0, 900, 600, $true)
+    [void] [OflhInput]::SetForegroundWindow($main)
+    Start-Sleep -Seconds 2
+    try {
+        Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+    } catch { Write-Host "UI Automation unavailable: $_" }
+    foreach ($name in $names) {
+        $point = $null
+        try {
+            $root = [System.Windows.Automation.AutomationElement]::FromHandle($main)
+            $condition = [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+                [System.Windows.Automation.ControlType]::TabItem)
+            $tabs = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
+            Write-Host "tabs: $(($tabs | ForEach-Object { "$($_.Current.Name)@$($_.Current.BoundingRectangle)" }) -join ', ')"
+            $tab = $tabs | Where-Object { $_.Current.Name -like "*$name*" } | Select-Object -First 1
+            if ($tab) {
+                $rect = $tab.Current.BoundingRectangle
+                $point = @([int]($rect.X + $rect.Width / 2), [int]($rect.Y + $rect.Height / 2))
+            }
+        } catch { Write-Host "UI Automation lookup failed: $_" }
+        if (-not $point) { Write-Host "tab $name not found"; continue }
+        Write-Host "dragging tab $name from $point"
+        [OflhInput]::Drag($point[0], $point[1], 960, 680)
+        Start-Sleep -Seconds 3
+        [void] [OflhInput]::SetForegroundWindow($main)
+        Start-Sleep -Seconds 1
+    }
+}
+
 function Invoke-Probe([string] $case, [string] $path, [string[]] $names) {
     $arguments = @($path) + ($names | ForEach-Object { '--name', $_ })
     $json = & $Probe @arguments
@@ -120,6 +177,10 @@ try {
         Start-Sleep -Seconds 5
     }
     Start-Sleep -Seconds 10
+    $running = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($editorName)) | Select-Object -First 1
+    Save-Screen 'pdf-xchange-tabs'
+    Split-Tabs $running @('invoice', 'manual', 'notes')
+    Start-Sleep -Seconds 5
     Save-Screen 'pdf-xchange'
     $report = Invoke-Probe 'pdf-xchange' $documents[0] @($editorName)
     Check 'pdf-xchange' ($report.Count -eq 1) "exactly one PDF-XChange process holds example.pdf (found $($report.Count))"
