@@ -1,0 +1,64 @@
+name: Window impact (Linux)
+# The termination preview warns when ending a process also closes several
+# windows. This checks the X11 window count with synthetic fixtures under
+# Xvfb, with and without a window manager.
+on:
+  pull_request:
+    paths:
+      - 'crates/oflh-platform/src/linux.rs'
+      - 'crates/oflh-platform/src/x11.rs'
+      - 'crates/oflh-platform/tests/window_impact_x11.rs'
+      - 'crates/oflh-platform/examples/window_impact_probe.rs'
+      - '.github/scripts/window-impact-apps.sh'
+      - '.github/workflows/window-impact-linux.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  x11:
+    name: X11 windows / ubuntu-24.04
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pinned Rust toolchain
+        run: rustup show
+      - name: Install X server and window manager
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth openbox x11-utils xterm mousepad dbus-x11 xdotool imagemagick
+      - name: Synthetic X11 window fixtures without a window manager
+        run: xvfb-run -a cargo test --locked -p oflh-platform --test window_impact_x11 -- --nocapture --test-threads=1
+      - name: Synthetic X11 window fixtures with a window manager
+        if: success() || failure()
+        run: xvfb-run -a bash -c 'openbox & sleep 3; xprop -root _NET_SUPPORTING_WM_CHECK; cargo test --locked -p oflh-platform --test window_impact_x11 -- --nocapture --test-threads=1'
+      # Real apps run even when a synthetic case fails, so both are on record.
+      - name: Build window impact probe
+        if: success() || failure()
+        run: cargo build --release --locked -p oflh-platform --example window_impact_probe
+      - name: Real multi-window apps
+        if: success() || failure()
+        run: xvfb-run -a -s '-screen 0 1600x1000x24' dbus-run-session -- bash .github/scripts/window-impact-apps.sh target/release/examples/window_impact_probe window-impact-linux
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: window-impact-ubuntu-24.04
+          path: window-impact-linux/
+          if-no-files-found: warn
+          retention-days: 14
+  result:
+    name: Window impact (Linux) result
+    if: always()
+    needs: [x11]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Require every leg to succeed
+        env:
+          RESULT_TITLE: Window impact (Linux) result
+          NEEDS: ${{ toJSON(needs) }}
+        run: node .github/scripts/require-success.mjs
