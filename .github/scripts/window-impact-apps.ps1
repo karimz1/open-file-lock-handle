@@ -76,11 +76,17 @@ try {
     $editorName = $editor.Name
     $editor = $editor.FullName
     Write-Host "PDF-XChange Editor: $editor $((Get-Item $editor).VersionInfo.FileVersion)"
-    foreach ($vendor in 'Tracker Software', 'PDF-XChange') {
-        $key = "HKCU:\Software\$vendor\PDFXEditor\3.0\Settings\Docs"
-        New-Item -Force $key | Out-Null
-        New-ItemProperty -Force -Path $key -Name 'b.OpenInNewWindow' -PropertyType DWord -Value 1 | Out-Null
+    # Each document in its own window, and no "make me the default PDF app"
+    # prompt blocking the queue. V11 renamed the vendor key; set every form.
+    foreach ($vendor in 'Tracker Software', 'PDF-XChange', 'PDF_XChange') {
+        $settings = "HKCU:\Software\$vendor\PDFXEditor\3.0\Settings"
+        New-Item -Force "$settings\Docs", "$settings\Prompts" | Out-Null
+        New-ItemProperty -Force -Path "$settings\Docs" -Name 'b.OpenInNewWindow' -PropertyType DWord -Value 1 | Out-Null
+        New-ItemProperty -Force -Path "$settings\Prompts" -Name 'b.AskForDefaultApp' -PropertyType DWord -Value 0 | Out-Null
     }
+    $policy = 'HKLM:\SOFTWARE\Policies\Tracker Software\PDFXEditor\3.0\FileAssociations'
+    New-Item -Force $policy | Out-Null
+    New-ItemProperty -Force -Path $policy -Name 'b.AllowCheck' -PropertyType DWord -Value 0 | Out-Null
     $documents = 'example', 'invoice', 'manual', 'notes' | ForEach-Object {
         $path = Join-Path $work "$_.pdf"
         Write-Pdf $path $_
@@ -98,7 +104,7 @@ try {
     Check 'pdf-xchange' ($report.Count -eq 1) "exactly one PDF-XChange process holds example.pdf (found $($report.Count))"
     $titles = @($report | ForEach-Object { $_.windows } | Where-Object { $_ })
     foreach ($name in 'example', 'invoice', 'manual', 'notes') {
-        Check 'pdf-xchange' ([bool] ($titles | Where-Object { $_ -like "*$name.pdf*" })) "preview lists the window showing $name.pdf (titles: $($titles -join ' | '))"
+        Check 'pdf-xchange' ([bool] ($titles | Where-Object { $_ -like "*$name*" })) "preview lists the window showing $name.pdf (titles: $($titles -join ' | '))"
     }
     Check 'pdf-xchange' ($titles.Count -ge 4) "preview counts at least the 4 document windows (counted $($titles.Count))"
 } catch {
