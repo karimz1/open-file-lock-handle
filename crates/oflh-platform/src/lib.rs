@@ -52,6 +52,8 @@ mod process_pool;
 mod unix;
 #[cfg(windows)]
 mod windows;
+#[cfg(target_os = "linux")]
+mod x11;
 
 /// Operations provided by a single worker-owned native scanner.
 pub trait Backend: Send + 'static {

@@ -406,20 +406,30 @@ impl Backend for Native {
         }
     }
     fn impact(&mut self, ids: &[Identity]) -> Vec<impact::Impact> {
-        // Window ownership is not reliably exposed without a display server
-        // connection (X11 _NET_WM_PID is optional, Wayland has no equivalent).
+        // X11 and XWayland expose window owners through EWMH. A pure Wayland
+        // client has no such property, so on a Wayland session a process
+        // without X windows stays unknown instead of "no windows".
+        let mut titles = crate::x11::window_titles();
+        let complete = crate::x11::complete_for_absent_processes();
         children_for(process_table(), ids)
             .into_iter()
             .zip(ids)
-            .map(|(children, &id)| impact::Impact {
-                windows: None,
-                children,
-                service: stat(id.pid)
-                    .is_ok_and(|live| live.identity == id)
-                    .then(|| std::fs::read_to_string(format!("/proc/{}/cgroup", id.pid)).ok())
-                    .flatten()
-                    .and_then(|cgroup| impact::systemd_unit(&cgroup)),
-                critical: false,
+            .map(|(children, &id)| {
+                let live = stat(id.pid).is_ok_and(|live| live.identity == id);
+                impact::Impact {
+                    windows: titles.as_mut().filter(|_| live).and_then(|titles| {
+                        match titles.remove(&id.pid) {
+                            Some(windows) => Some(windows),
+                            None => complete.then(Vec::new),
+                        }
+                    }),
+                    children,
+                    service: live
+                        .then(|| std::fs::read_to_string(format!("/proc/{}/cgroup", id.pid)).ok())
+                        .flatten()
+                        .and_then(|cgroup| impact::systemd_unit(&cgroup)),
+                    critical: false,
+                }
             })
             .collect()
     }
@@ -665,7 +675,8 @@ mod tests {
         let _ = child.wait();
         let children = impact[0].children.as_ref().unwrap();
         assert!(children.iter().any(|c| c.identity.pid == child.id()));
-        assert_eq!(impact[0].windows, None);
+        // This test process owns no windows, whether or not a display is reachable.
+        assert!(impact[0].windows.as_ref().is_none_or(Vec::is_empty));
         let cgroup = std::fs::read_to_string("/proc/self/cgroup").unwrap_or_default();
         assert_eq!(impact[0].service, impact::systemd_unit(&cgroup));
         assert!(!impact[0].critical);
