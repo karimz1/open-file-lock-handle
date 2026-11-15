@@ -41,4 +41,4 @@ tempfile = "3"
 cc = "1"
 
 [target.'cfg(windows)'.dev-dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_System_Ioctl"] }
+windows-sys = { version = "0.61.2", features = ["Win32_System_Ioctl", "Win32_System_LibraryLoader", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi"] }
