@@ -34,6 +34,7 @@ Key facts:
 
 - [WinFuture editorial coverage (German)](https://winfuture.de/download/product/4227/): an introduction to OFLH's desktop app, file inspection, and port lookup
 - [AlternativeTo software listing](https://alternativeto.net/software/oflh-open-file-lock-handle/about/): OFLH's entry in the software directory
+- [pfpbase software listing](https://pfpbase.com/developer-tools/open-file-lock-handle/): OFLH's entry among pfpbase developer tools
 
 ## Optional
 
