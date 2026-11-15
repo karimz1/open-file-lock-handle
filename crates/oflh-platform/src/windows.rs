@@ -410,13 +410,72 @@ fn process_table() -> Result<Vec<impact::ProcessEntry>> {
     }
     Ok(table)
 }
+/// Whether a top-level window is on screen: visible, not cloaked by its app,
+/// and either minimized or with a real size. Windows on another virtual
+/// desktop are cloaked by the shell, not the app, and still count.
+///
+/// # Safety
+/// `hwnd` must come from the OS, for example an `EnumWindows` callback.
+unsafe fn window_shown(hwnd: HWND) -> bool {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWM_CLOAKED_APP, DWMWA_CLOAKED, DwmGetWindowAttribute,
+    };
+    // SAFETY: OS-supplied window handle; the out buffers match the requested sizes.
+    unsafe {
+        if IsWindowVisible(hwnd) == 0 {
+            return false;
+        }
+        let mut cloaked = 0u32;
+        if DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAKED as u32,
+            (&mut cloaked as *mut u32).cast(),
+            size_of::<u32>() as u32,
+        ) == 0
+            && cloaked & DWM_CLOAKED_APP != 0
+        {
+            return false;
+        }
+        if IsIconic(hwnd) != 0 {
+            return true;
+        }
+        let mut rect: RECT = std::mem::zeroed();
+        GetWindowRect(hwnd, &mut rect) != 0 && rect.right > rect.left && rect.bottom > rect.top
+    }
+}
+/// Whether a top-level window is one of the app windows a person sees and
+/// that closes with the process, independent of how the app built it.
+///
+/// Counts shown windows that are unowned, owned by a window that is not shown
+/// itself (hidden or zero-size host windows), or ask for their own taskbar
+/// button. Tool windows and dialogs owned by a shown window do not count.
+///
+/// # Safety
+/// `hwnd` must come from the OS, for example an `EnumWindows` callback.
+unsafe fn is_app_window(hwnd: HWND) -> bool {
+    // SAFETY: OS-supplied window handles; the owner may be null, which is checked.
+    unsafe {
+        if !window_shown(hwnd) {
+            return false;
+        }
+        let extended = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+        if extended & WS_EX_APPWINDOW != 0 {
+            return true;
+        }
+        if extended & WS_EX_TOOLWINDOW != 0 {
+            return false;
+        }
+        let owner = GetWindow(hwnd, GW_OWNER);
+        owner.is_null() || !window_shown(owner)
+    }
+}
 unsafe extern "system" fn collect_window_title(hwnd: HWND, param: isize) -> i32 {
     // SAFETY: only called synchronously by our EnumWindows with the live map address.
     let titles = unsafe { &mut *(param as *mut HashMap<u32, Vec<String>>) };
     let mut pid = 0;
     // SAFETY: OS supplies hwnd and a writable PID slot; the title buffer length matches.
     unsafe {
-        if IsWindowVisible(hwnd) == 0 || !GetWindow(hwnd, GW_OWNER).is_null() {
+        if !is_app_window(hwnd) {
             return 1;
         }
         GetWindowThreadProcessId(hwnd, &mut pid);
@@ -431,8 +490,6 @@ unsafe extern "system" fn collect_window_title(hwnd: HWND, param: isize) -> i32 
     }
     1
 }
-/// Titles of visible, unowned top-level windows by owner PID: the windows a
-/// user sees in the taskbar and that a graceful close request reaches.
 struct ServiceManager(SC_HANDLE);
 impl Drop for ServiceManager {
     fn drop(&mut self) {
@@ -521,6 +578,8 @@ fn services_by_pid() -> std::io::Result<HashMap<u32, Vec<String>>> {
     }
 }
 
+/// Titles of the app windows a person sees, by owning PID: what closes when
+/// the process ends. See [`is_app_window`].
 fn window_titles() -> Result<HashMap<u32, Vec<String>>> {
     let mut titles = HashMap::new();
     // SAFETY: callback receives a pointer to the map, valid for synchronous EnumWindows.
