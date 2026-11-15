@@ -99,6 +99,9 @@ try {
     $settingsKeys = Get-ChildItem 'HKCU:\Software' -Recurse -ErrorAction SilentlyContinue |
         Where-Object { $_.PSChildName -eq 'Settings' -and $_.Name -match 'PDFX|PDF-XChange|Tracker' }
     $settingsKeys | ForEach-Object { Write-Host "settings key: $($_.Name)" }
+    # Record what the editor wrote, so the SDI switch can be checked.
+    reg query 'HKCU\Software\PDF-XChange\PDFEditor\Settings' /s 2>$null |
+        Select-String -Pattern 'Docs|Wnd|Window|Tab|^HKEY' | Select-Object -First 80 | Out-Host
     foreach ($key in $settingsKeys) {
         $docs = Join-Path $key.PSPath 'Docs'
         if (-not (Test-Path $docs)) { New-Item $docs | Out-Null }
