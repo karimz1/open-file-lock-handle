@@ -185,7 +185,9 @@ try {
     $report = Invoke-Probe 'pdf-xchange' $documents[0] @($editorName)
     Check 'pdf-xchange' ($report.Count -eq 1) "exactly one PDF-XChange process holds example.pdf (found $($report.Count))"
     $titles = @($report | ForEach-Object { $_.windows } | Where-Object { $_ })
-    foreach ($name in 'example', 'invoice', 'manual', 'notes') {
+    # The first frame keeps example.pdf, but PDF-XChange titles a frame after
+    # its active tab and may lag behind, so only the torn-off frames are named.
+    foreach ($name in 'invoice', 'manual', 'notes') {
         Check 'pdf-xchange' ([bool] ($titles | Where-Object { $_ -like "*$name*" })) "preview lists the window showing $name.pdf (titles: $($titles -join ' | '))"
     }
     Check 'pdf-xchange' ($titles.Count -ge 4) "preview counts at least the 4 document windows (counted $($titles.Count))"
