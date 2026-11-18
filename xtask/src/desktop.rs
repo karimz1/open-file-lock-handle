@@ -305,6 +305,43 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    fn macos_packaging_ignores_scratch_images_left_by_a_failed_dmg_attempt() {
+        // Tauri runs bundle_dmg.sh inside bundle/macos and only moves the finished
+        // image to bundle/dmg. A failed first attempt leaves its read-write scratch
+        // image (and possibly an unmoved DMG) next to the .app; the retry must still
+        // collect exactly the finished DMG from bundle/dmg.
+        let root = std::env::temp_dir().join(format!("oflh-dmg-retry-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let bundle = root.join("bundle");
+        let macos = bundle.join("macos");
+        let dmg = bundle.join("dmg");
+        fs::create_dir_all(macos.join("OFLH Desktop.app/Contents/MacOS")).unwrap();
+        fs::create_dir_all(&dmg).unwrap();
+        fs::write(
+            macos.join("OFLH Desktop.app/Contents/MacOS/oflh-desktop"),
+            b"app",
+        )
+        .unwrap();
+        fs::write(macos.join("OFLH Desktop.app.tar.gz"), b"updater archive").unwrap();
+        fs::write(
+            macos.join("OFLH Desktop.app.tar.gz.sig"),
+            b"updater signature",
+        )
+        .unwrap();
+        fs::write(macos.join("rw.4242.OFLH Desktop_0.9.0_x64.dmg"), b"scratch").unwrap();
+        fs::write(macos.join("OFLH Desktop_0.9.0_x64.dmg"), b"unmoved").unwrap();
+        fs::write(dmg.join("OFLH Desktop_0.9.0_x64.dmg"), b"finished image").unwrap();
+        let binary = root.join("binary");
+        fs::write(&binary, b"tested executable").unwrap();
+        let output = root.join("dist");
+        package(&bundle, &binary, &output, "dev", "darwin", "amd64").unwrap();
+        assert_eq!(
+            fs::read(output.join(artifact("darwin", "amd64", "dmg"))).unwrap(),
+            b"finished image"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn windows_desktop_artifact_name_identifies_the_installer() {
         assert_eq!(
             artifact("windows", "amd64", "exe"),
