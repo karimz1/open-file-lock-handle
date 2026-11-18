@@ -39,6 +39,12 @@ pub(super) fn updater_payload_extension(os: &str) -> Option<&'static str> {
         _ => None,
     }
 }
+/// Tauri runs bundle_dmg.sh inside `bundle/macos` and only moves the finished
+/// image to `bundle/dmg`. Any DMG still next to the `.app` is a scratch or
+/// unmoved image from a failed attempt, never the package to publish.
+fn is_dmg_scratch(directory: &Path) -> bool {
+    directory.file_name().is_some_and(|name| name == "macos")
+}
 fn collect(
     directory: &Path,
     found: &mut BTreeMap<String, PathBuf>,
@@ -56,6 +62,9 @@ fn collect(
             let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
                 continue;
             };
+            if extension == "dmg" && is_dmg_scratch(directory) {
+                continue;
+            }
             if allowed.contains(&extension)
                 && found.insert(extension.into(), path.clone()).is_some()
             {
