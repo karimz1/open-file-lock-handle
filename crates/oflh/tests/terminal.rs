@@ -5,8 +5,19 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+
+/// Every test in this binary shares one process. A child spawned by one test
+/// inherits the terminal fixture until it execs, so the tests take turns instead
+/// of letting a scan see those short-lived children as extra holders.
+fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
+    static SERIAL: Mutex<()> = Mutex::new(());
+    SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 #[test]
 fn native_terminal_workflow() {
+    let _serial = one_at_a_time();
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let dir = tempfile::tempdir().unwrap();
@@ -151,6 +162,7 @@ fn native_terminal_workflow() {
 /// pre-exec pause makes that window wide enough to hit on every platform.
 #[test]
 fn concurrent_child_spawns_do_not_add_fixture_holders() {
+    let _serial = one_at_a_time();
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -179,6 +191,7 @@ fn concurrent_child_spawns_do_not_add_fixture_holders() {
 }
 #[test]
 fn cli_contract() {
+    let _serial = one_at_a_time();
     let bin = env!("CARGO_BIN_EXE_oflh");
     let version = std::process::Command::new(bin)
         .arg("--version")
@@ -214,6 +227,7 @@ fn cli_contract() {
 
 #[test]
 fn language_options_and_locale_precedence_work_in_the_real_cli() {
+    let _serial = one_at_a_time();
     let binary = env!("CARGO_BIN_EXE_oflh");
     for (language, heading, terminal_error) in [
         ("en", "Usage:", "interactive terminal"),
