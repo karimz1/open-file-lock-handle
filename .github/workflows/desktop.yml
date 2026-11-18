@@ -169,9 +169,7 @@ jobs:
     needs: frontend
     name: Desktop / ${{ matrix.label }}
     runs-on: ${{ matrix.runner }}
-    # The Intel macOS cold build can consume 45 minutes before package collection
-    # and updater verification finish. Leave time for those required checks.
-    timeout-minutes: ${{ matrix.os == 'darwin' && matrix.arch == 'amd64' && 60 || 45 }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
