@@ -292,7 +292,8 @@ jobs:
           # hdiutil on hosted macOS runners sometimes fails with "Resource busy"
           # while a previous image is still attached. Detach leftovers and retry
           # only the DMG step; a real packaging error fails all three attempts.
-          dmg_dir=../../../target/release/bundle/dmg
+          # bundle_dmg.sh writes its scratch rw.*.dmg next to the .app in bundle/macos.
+          scratch_dir=../../../target/release/bundle/macos
           for attempt in 1 2 3; do
             if bundle; then
               exit 0
@@ -301,7 +302,7 @@ jobs:
             hdiutil info | awk '/^\/dev\/disk/ && /\/Volumes\/(OFLH|dmg\.)/ {print $1}' | sort -u | while read -r device; do
               hdiutil detach "$device" -force || true
             done
-            rm -f "$dmg_dir"/rw.*.dmg
+            rm -f "$scratch_dir"/*.dmg
             sleep $((attempt * 10))
           done
           exit 1
