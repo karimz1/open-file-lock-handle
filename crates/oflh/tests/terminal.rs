@@ -144,6 +144,39 @@ fn native_terminal_workflow() {
         std::thread::sleep(Duration::from_millis(20));
     }
 }
+/// Children started by another test in this binary briefly inherit every open
+/// descriptor of the test process, including the terminal fixture, until they
+/// exec. A scan that lands in that window lists them as extra holders, so the
+/// terminal workflow must not run while sibling tests spawn processes. The long
+/// pre-exec pause makes that window wide enough to hit on every platform.
+#[test]
+fn concurrent_child_spawns_do_not_add_fixture_holders() {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let stop = Instant::now() + Duration::from_secs(3);
+        let spawners: Vec<_> = (0..4)
+            .map(|_| {
+                std::thread::spawn(move || {
+                    while Instant::now() < stop {
+                        let mut command = std::process::Command::new("true");
+                        // SAFETY: the hook only sleeps, which is async-signal-safe.
+                        unsafe {
+                            command.pre_exec(|| {
+                                std::thread::sleep(Duration::from_millis(300));
+                                Ok(())
+                            });
+                        }
+                        assert!(command.status().unwrap().success());
+                    }
+                })
+            })
+            .collect();
+        for spawner in spawners {
+            spawner.join().unwrap();
+        }
+    }
+}
 #[test]
 fn cli_contract() {
     let bin = env!("CARGO_BIN_EXE_oflh");
