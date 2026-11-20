@@ -345,7 +345,13 @@ export function App() {
     queryKey: string;
   } | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
-  const [revealMatches, setRevealMatches] = useState(0);
+  // A one-shot request to scroll the details panel to the matching files of
+  // one process. The panel clears it once handled, so later row updates (for
+  // example a new search) cannot move focus out of the search box again.
+  const [revealRequest, setRevealRequest] = useState<{
+    key: string;
+  } | null>(null);
+  const clearRevealRequest = useCallback(() => setRevealRequest(null), []);
   const [details, setDetails] = useState<Details | null>(null);
   const [detailsRevision, setDetailsRevision] = useState(0);
   const [detailsMissing, setDetailsMissing] = useState(false);
@@ -463,6 +469,7 @@ export function App() {
     process_key: scope?.key,
   };
   const tableQueryKey = JSON.stringify(tableQuery);
+  useEffect(() => setRevealRequest(null), [tableQueryKey]);
   useEffect(() => {
     let active = true;
     const subscriptions = [
@@ -1724,7 +1731,8 @@ export function App() {
                           queryKey: tableQueryKey,
                         });
                         setFocused(row.process_key);
-                        setRevealMatches((current) => current + 1);
+                        if (row.matching_files)
+                          setRevealRequest({ key: row.process_key });
                       }}
                       onContext={(row, revision) => {
                         if (status.scanning || revision !== status.revision) {
@@ -1778,7 +1786,12 @@ export function App() {
                         onWait={setWaitSelection}
                         waitDisabled={inspectionLocked || status.wait.waiting}
                         target={status.target}
-                        revealMatches={revealMatches}
+                        revealMatches={
+                          revealRequest?.key === details.process.process_key
+                            ? revealRequest
+                            : null
+                        }
+                        onRevealed={clearRevealRequest}
                         key={details.process.process_key}
                         terminateCurrent={(force) =>
                           prepare(force, [details.process.process_key])

@@ -2519,6 +2519,9 @@ for (const scenario of searchFocusCases) {
     expect(log, "focus moved while typing").toEqual([]);
     await expect(search).toBeFocused();
     await expect(search).toHaveValue("spotify");
+    await page.screenshot({
+      path: `test-results/search-focus-${scenario.name.replace(/\W+/g, "-")}.png`,
+    });
   });
 }
 

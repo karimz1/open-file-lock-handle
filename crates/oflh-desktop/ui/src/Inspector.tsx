@@ -37,11 +37,13 @@ export function Inspector({
   target,
   onWait,
   waitDisabled,
-  revealMatches = 0,
+  revealMatches = null,
+  onRevealed,
 }: {
   onWait: (selection: WaitSelection) => void;
   waitDisabled: boolean;
-  revealMatches?: number;
+  revealMatches?: object | null;
+  onRevealed?: () => void;
   target: string;
   revision: number;
   notify: (message: string) => void;
@@ -94,7 +96,8 @@ export function Inspector({
     if (!node) return;
     node.scrollIntoView({ block: "start", inline: "nearest" });
     node.focus({ preventScroll: true });
-  }, [revealMatches, row?.matching_files]);
+    onRevealed?.();
+  }, [revealMatches, row?.matching_files, onRevealed]);
   const resize = (value: number) =>
     setWidth(Math.max(260, Math.min(maximum, value)));
   const [ancestorKey, setAncestorKey] = useState<string>(
