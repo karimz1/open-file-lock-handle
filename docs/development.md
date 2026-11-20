@@ -147,7 +147,7 @@ and ARM64, which [CI](../.github/workflows/ci.yml) provides on every pull
 request. Cross-compiling is not a substitute.
 
 Each workflow with matrix jobs ends in one status job (**CI result**,
-**Desktop result**, **Windows discovery result**, **Release result**). It runs
+**Desktop result**, **GUI E2E result**, **Windows discovery result**, **Release result**). It runs
 even after failures and passes only when every job and every matrix leg
 succeeded; cancelled or unexpected skipped jobs fail it. Intentional skips are
 listed in the job and shown as such in its summary. Use these jobs as the
@@ -157,6 +157,23 @@ warning and in the run summary.
 
 [Regression coverage](inspection-regressions.md) lists which test guards which
 behavior.
+
+### Desktop GUI end-to-end tests
+
+The Playwright tests above run the frontend against a mocked backend. The
+[GUI end-to-end suite](../crates/oflh-desktop/gui-e2e/README.md) drives the real
+app instead: a debug build with the test-only `gui-e2e` feature embeds a local
+WebDriver server, and WebdriverIO clicks, types and reads the real window while
+fixture processes hold files and ports. [GUI E2E](../.github/workflows/gui-e2e.yml)
+runs it on all six desktop runners and keeps screenshots of the newest run for
+three days.
+
+```sh
+npm --prefix crates/oflh-desktop/ui ci
+(cd crates/oflh-desktop/ui && npm run tauri -- build --debug --no-bundle --features gui-e2e -- --locked)
+npm --prefix crates/oflh-desktop/gui-e2e ci
+npm --prefix crates/oflh-desktop/gui-e2e test   # Linux: see the README for xvfb-run
+```
 
 ### Windows installer UI automation
 
@@ -184,10 +201,11 @@ crates/
   oflh/             the `oflh` binary: argument parsing and startup
   oflh-desktop/     desktop service (Rust) and Tauri shell
     ui/             React + TypeScript frontend, Vitest and Playwright tests
+    gui-e2e/        WebdriverIO tests that drive the real app
 xtask/              cargo xtask: check, packaging, release assembly
 docs/               user and contributor documentation
   measurements/     raw JSON from recorded benchmarks
-.github/workflows/  ci.yml, desktop.yml, release.yml, and helpers
+.github/workflows/  ci.yml, desktop.yml, gui-e2e.yml, release.yml, and helpers
 ```
 
 See [Architecture](architecture.md) for what belongs in each crate.
