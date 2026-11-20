@@ -762,36 +762,61 @@ export function App() {
       .reveal(status.revision, reference, containing)
       .catch((failure) => report(failure, operation));
   };
-  const [matchingKeys, setMatchingKeys] = useState<string[] | null>(null);
-  const selectionQuery = JSON.stringify({ ...tableQuery, offset: 0, limit: 0 });
+  // Keys of every row matching the current filters. While the keys for a
+  // new query load, the previous set stays on screen so Select all does not
+  // blink disabled on every keystroke; a click then waits for the fresh set.
+  const [matching, setMatching] = useState<{
+    scope: string;
+    query: string;
+    keys: string[];
+  } | null>(null);
+  const matchingScope = `${view}:${status.revision}`;
+  const selectionQuery = JSON.stringify({
+    view,
+    revision: status.revision,
+    query: { ...tableQuery, offset: 0, limit: 0 },
+  });
   useEffect(() => {
     let live = true;
-    setMatchingKeys(null);
-    if (status.revision && ["processes", "handles", "ports"].includes(view))
-      void api
-        .keys(status.revision, JSON.parse(selectionQuery))
-        .then((keys) => {
-          if (live) setMatchingKeys(keys);
-        })
-        .catch((failure) => {
-          if (live) report(failure);
-        });
+    if (!status.revision || !["processes", "handles", "ports"].includes(view)) {
+      setMatching(null);
+      return;
+    }
+    void api
+      .keys(status.revision, JSON.parse(selectionQuery).query)
+      .then((keys) => {
+        if (live)
+          setMatching({ scope: matchingScope, query: selectionQuery, keys });
+      })
+      .catch((failure) => {
+        if (live) report(failure);
+      });
     return () => {
       live = false;
     };
-  }, [status.revision, view, selectionQuery, report]);
+  }, [status.revision, view, selectionQuery, matchingScope, report]);
+  // Only a new search text keeps the previous keys; another view or scan
+  // starts empty as before.
+  const matchingKeys = matching?.scope === matchingScope ? matching.keys : null;
   const allMatchingSelected =
     !!matchingKeys?.length && matchingKeys.every((key) => selected.has(key));
   const toggleAll = () => {
-    if (!matchingKeys) return;
-    setSelected((current) => {
-      const next = new Set(current);
-      for (const key of matchingKeys) {
-        if (allMatchingSelected) next.delete(key);
-        else next.add(key);
-      }
-      return next;
-    });
+    const apply = (keys: string[]) =>
+      setSelected((current) => {
+        const next = new Set(current);
+        const all = keys.length > 0 && keys.every((key) => current.has(key));
+        for (const key of keys) {
+          if (all) next.delete(key);
+          else next.add(key);
+        }
+        return next;
+      });
+    if (matching?.query === selectionQuery) apply(matching.keys);
+    else
+      void api
+        .keys(status.revision, JSON.parse(selectionQuery).query)
+        .then(apply)
+        .catch(report);
   };
   const selectAll = () => {
     void api
