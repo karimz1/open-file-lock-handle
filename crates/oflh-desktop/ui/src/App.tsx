@@ -775,6 +775,7 @@ export function App() {
     keys: string[];
   } | null>(null);
   const matchingScope = `${view}:${status.revision}`;
+  const keysScope = useRef("");
   const selectionQuery = JSON.stringify({
     view,
     revision: status.revision,
@@ -791,6 +792,14 @@ export function App() {
       .then((keys) => {
         if (live)
           setMatching({ scope: matchingScope, query: selectionQuery, keys });
+        // A new filter in the same view closes details for a process that no
+        // longer matches; the selection stays, since it may include
+        // processes outside this view on purpose.
+        if (keysScope.current === matchingScope)
+          setFocused((current) =>
+            current && !keys.includes(current) ? null : current,
+          );
+        keysScope.current = matchingScope;
       })
       .catch((failure) => {
         if (live) report(failure);

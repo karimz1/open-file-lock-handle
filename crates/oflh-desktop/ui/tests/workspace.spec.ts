@@ -847,15 +847,25 @@ test.beforeEach(async ({ page }) => {
           }
           if (
             command === "select_all" &&
-            (window as any).__searchClearRaceFixture &&
+            ((window as any).__searchClearRaceFixture ||
+              (window as any).__fileMatchFixture) &&
             args.query.text
           ) {
-            // Same catalog as the page fixture: every name or path of the
-            // first 12 rows contains "spotify".
-            const text = args.query.text.toLowerCase();
-            return "spotify".includes(text)
-              ? processRows.slice(0, 12).map((row) => row.process_key)
-              : [];
+            // Match the page fixtures exactly: ask them for every row and
+            // keep the lookup out of the recorded calls.
+            const lookup = {
+              revision: args.revision,
+              query: { ...args.query, offset: 0, limit: 100000 },
+            };
+            const result = await (window as any).__TAURI_INTERNALS__.invoke(
+              "page",
+              lookup,
+            );
+            calls.splice(
+              calls.findIndex((call: any) => call.args === lookup),
+              1,
+            );
+            return [...new Set(result.rows.map((row: any) => row.process_key))];
           }
           if (command === "select_all")
             return processRows
@@ -2372,9 +2382,9 @@ test("a changed process search updates file details without carrying the previou
   ).toBeEnabled();
   await search.fill("absent-file");
   await expect(page.getByRole("grid")).toHaveAttribute("aria-rowcount", "1");
-  await expect(
-    files.getByRole("button", { name: "Copy path", exact: true }),
-  ).toBeDisabled();
+  // The process no longer matches, so its details close instead of
+  // showing a stale path.
+  await expect(files).toHaveCount(0);
 });
 
 test("clicking +N in a process search opens details on matching files", async ({
@@ -2797,6 +2807,8 @@ for (const [
     await page.goto("/");
     // The same synthetic search field and grid exist in each locale.
     await page.locator(".search-box input").fill("bestellbest");
+    // Wait for the debounced search before picking the filtered row.
+    await expect(page.getByRole("grid")).toHaveAttribute("aria-rowcount", "2");
     await page.getByRole("grid").getByRole("row").nth(1).click();
     await page.getByRole("button", { name: sendLabel, exact: true }).click();
     const modal = page.getByRole("dialog");
@@ -3543,6 +3555,8 @@ test("double-click auto-fit includes offscreen matches and preserves virtualizat
   await page
     .getByRole("textbox", { name: "Search loaded results" })
     .fill("node");
+  // The search is debounced; wait for the filtered page before fitting.
+  await expect(page.getByText("300 results", { exact: true })).toBeVisible();
   await expect(grid.getByText("4001", { exact: true })).toBeVisible();
   await process.scrollIntoViewIfNeeded();
   await process.focus();
@@ -3624,6 +3638,8 @@ test("changing filters cancels an in-flight column auto-fit", async ({
   await page
     .getByRole("textbox", { name: "Search loaded results" })
     .fill("node");
+  // The search is debounced; wait for the filtered page.
+  await expect(page.getByText("300 results", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("grid").getByText("4001", { exact: true }),
   ).toBeVisible();
@@ -5284,6 +5300,9 @@ test("quiet automatic refresh permits searching and cancellation without stealin
   );
   const search = page.getByRole("textbox", { name: "Search loaded results" });
   await search.fill("node");
+  // Debounced search (180 ms), then the page request delay once React
+  // has rendered the new query.
+  await page.clock.runFor(200);
   await page.clock.runFor(100);
   await expect(page.getByText("300 results", { exact: true })).toBeVisible();
   await expect(search).toBeFocused();
@@ -5503,6 +5522,9 @@ test("quiet refresh rejects retained matches after a new query and publishes the
   await page
     .getByRole("textbox", { name: "Search loaded results" })
     .fill("node");
+  // Debounced search (180 ms), then the page request delay once React
+  // has rendered the new query.
+  await page.clock.runFor(200);
   await page.clock.runFor(100);
   await expect(grid.locator(".data-row")).toHaveCount(0);
   await page.evaluate(() => {
