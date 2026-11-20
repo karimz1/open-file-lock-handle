@@ -201,7 +201,7 @@ const zh: TranslationSchema<typeof en> = {
     k_cwd: "工作目录",
     k_desktop: "桌面版",
     k_desktop_operation: "桌面操作",
-    k_details_for: "详情：",
+    k_details_for: "：",
     k_details_panel: "详情面板",
     k_developer_options: "开发者选项",
     k_development: "开发",
@@ -570,6 +570,9 @@ const zh: TranslationSchema<typeof en> = {
     k_file_usages: "文件使用情况",
     k_file_usages_d01933d6: "文件使用情况",
     k_file_users: "文件使用者",
+    k_file_usage_one: "文件使用情况",
+    k_file_user_one: "文件使用者",
+    k_port_one: "端口",
     k_it_can_help_with_changing_processes_or_f5538b6f:
       "适用于进程或端口不断变化的情况。检查期间结果可能变化，因此针对特定问题时，手动刷新通常更合适。",
     k_refresh: "刷新",

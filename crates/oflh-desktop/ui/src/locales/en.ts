@@ -212,7 +212,7 @@ const en = {
     k_cwd: "cwd",
     k_desktop: "Desktop",
     k_desktop_operation: "Desktop operation",
-    k_details_for: "details for",
+    k_details_for: "for",
     k_details_panel: "details panel",
     k_developer_options: "Developer options",
     k_development: "Development",
@@ -597,6 +597,9 @@ const en = {
     k_file_usages: "File usages",
     k_file_usages_d01933d6: "file usages",
     k_file_users: "file users",
+    k_file_usage_one: "file usage",
+    k_file_user_one: "file user",
+    k_port_one: "port",
     k_it_can_help_with_changing_processes_or_f5538b6f:
       "It can help with changing processes or ports. Results may change while you inspect, so manual refresh is often better for a focused check.",
     k_refresh: "Refresh",

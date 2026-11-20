@@ -2277,9 +2277,22 @@ export function App() {
           </span>
         )}
         <span className="status-metrics">
-          {status.processes} {t("status.k_file_users")} · {status.usages}{" "}
-          {t("status.k_file_usages_d01933d6")} · {status.ports}{" "}
-          {t("navigation.k_ports").toLocaleLowerCase()}
+          {status.processes}{" "}
+          {t(
+            status.processes === 1
+              ? "status.k_file_user_one"
+              : "status.k_file_users",
+          )}{" "}
+          · {status.usages}{" "}
+          {t(
+            status.usages === 1
+              ? "status.k_file_usage_one"
+              : "status.k_file_usages_d01933d6",
+          )}{" "}
+          · {status.ports}{" "}
+          {status.ports === 1
+            ? t("status.k_port_one")
+            : t("navigation.k_ports").toLocaleLowerCase()}
         </span>
         <span className="footer-end">
           <span className="footer-attribution">
