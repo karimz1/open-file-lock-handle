@@ -2413,6 +2413,115 @@ test("clicking +N in a process search opens details on matching files", async ({
   await expect(more).toHaveAccessibleName("Show all 4 matching files");
 });
 
+// Records every focus change with the stack that caused it, so a failing
+// run names the code that moved focus away from the search box.
+async function traceFocus(page: import("@playwright/test").Page) {
+  await page.evaluate(() => {
+    const log: string[] = [];
+    (window as any).__focusLog = log;
+    document.addEventListener(
+      "focusin",
+      (event) => {
+        const target = event.target as HTMLElement;
+        const name =
+          target.getAttribute("aria-label") ||
+          target.className ||
+          target.tagName;
+        const stack = (new Error().stack || "")
+          .split("\n")
+          .slice(2, 8)
+          .map((line) => line.trim())
+          .join(" | ");
+        log.push(`${target.tagName}.${name} <- ${stack}`);
+      },
+      true,
+    );
+  });
+}
+
+const searchFocusCases: {
+  name: string;
+  arrange: (page: import("@playwright/test").Page) => Promise<void>;
+  initial?: string;
+}[] = [
+  {
+    name: "after double-clicking a row",
+    arrange: async (page) => {
+      await page.getByRole("grid").getByRole("row").nth(1).dblclick();
+    },
+  },
+  {
+    name: "after double-clicking a row and deselecting it",
+    arrange: async (page) => {
+      await page.getByRole("grid").getByRole("row").nth(1).dblclick();
+      await page.getByRole("button", { name: "Deselect all" }).click();
+      await expect(
+        page.getByRole("button", { name: "Deselect all" }),
+      ).toHaveCount(0);
+    },
+  },
+  {
+    name: "after opening a row with Enter",
+    arrange: async (page) => {
+      await page.getByRole("grid").getByRole("row").nth(1).click();
+      await page.keyboard.press("Enter");
+    },
+  },
+  {
+    name: "after clicking +N in an earlier search",
+    initial: "sp",
+    arrange: async (page) => {
+      await page
+        .getByRole("textbox", { name: "Search loaded results" })
+        .fill("sp");
+      await page
+        .getByRole("grid")
+        .getByRole("row")
+        .nth(1)
+        .locator(".matching-files-more")
+        .click();
+    },
+  },
+  {
+    name: "after details were opened, closed, and another row was clicked",
+    arrange: async (page) => {
+      const row = page.getByRole("grid").getByRole("row").nth(1);
+      await row.dblclick();
+      await row.getByRole("button", { name: /^Close details/ }).click();
+      await page.getByRole("grid").getByRole("row").nth(3).click();
+    },
+  },
+  {
+    name: "after only selecting a row",
+    arrange: async (page) => {
+      await page.getByRole("grid").getByRole("row").nth(1).click();
+    },
+  },
+];
+
+for (const scenario of searchFocusCases) {
+  test(`typing a process search keeps focus ${scenario.name}`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      (window as any).__searchClearRaceFixture = true;
+    });
+    await page.goto("/");
+    await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+    await scenario.arrange(page);
+    const search = page.getByRole("textbox", { name: "Search loaded results" });
+    await search.click();
+    await search.press("End");
+    await traceFocus(page);
+    const typed = scenario.initial ? "otify" : "spotify";
+    await search.pressSequentially(typed, { delay: 60 });
+    const log = await page.evaluate(() => (window as any).__focusLog);
+    expect(log, "focus moved while typing").toEqual([]);
+    await expect(search).toBeFocused();
+    await expect(search).toHaveValue("spotify");
+  });
+}
+
 test("process search rows with matching paths keep their layout", async ({
   page,
 }) => {
