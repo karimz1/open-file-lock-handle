@@ -70,6 +70,7 @@ import { scanDuration } from "./scanDuration";
 import { normalizeTypedPath } from "./targetPath";
 import { TargetHelp } from "./TargetHelp";
 import { Inspector } from "./Inspector";
+import { useDebouncedValue } from "./useDebouncedValue";
 import { Modal } from "./Modal";
 import { SharePanel } from "./SharePanel";
 import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
@@ -455,9 +456,12 @@ export function App() {
     scanUnavailable,
     view,
   ]);
+  // The box shows every key at once; the grid and Select all follow after a
+  // short pause in typing instead of reloading on each character.
+  const searchText = useDebouncedValue(query, query ? 180 : 0);
   const tableQuery: TableQuery = {
     columns,
-    text: query,
+    text: searchText,
     sort,
     descending,
     handles: view === "handles",

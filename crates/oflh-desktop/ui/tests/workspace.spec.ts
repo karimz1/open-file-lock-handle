@@ -2527,6 +2527,9 @@ for (const scenario of searchFocusCases) {
     await traceFocus(page);
     const typed = scenario.initial ? "otify" : "spotify";
     await search.pressSequentially(typed, { delay: 60 });
+    // Let the filtered page arrive; the steal happened when it rendered.
+    await expect(page.getByText("12 results", { exact: true })).toBeVisible();
+    await page.waitForTimeout(250);
     const log = await page.evaluate(() => (window as any).__focusLog);
     expect(log, "focus moved while typing").toEqual([]);
     await expect(search).toBeFocused();
