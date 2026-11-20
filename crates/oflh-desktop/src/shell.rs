@@ -38,8 +38,14 @@ fn reveal_with_fallback(
     if containing && parent.is_none() {
         return Err(Failure::invalid("No containing folder is available"));
     }
+    // Directory handles must be opened themselves. Revealing a folder in its
+    // parent can report success while showing nothing when that parent is not
+    // enumerable, which is common for locations such as WindowsApps.
+    let open_directory = !containing && path.is_dir();
     let (primary, primary_label) = if containing {
         (open_path(parent.unwrap_or(path)), "open containing folder")
+    } else if open_directory {
+        (open_path(path), "open the folder in the file manager")
     } else {
         (reveal_item(path), "reveal target in file manager")
     };
@@ -47,6 +53,18 @@ fn reveal_with_fallback(
         Ok(()) => return Ok(()),
         Err(error) => error,
     };
+    if open_directory {
+        return Err(Failure {
+            kind: "desktop_integration".into(),
+            message: oflh_core::safe(
+                "The file manager could not open this folder. It may be inaccessible.",
+            ),
+            os_code: None,
+            details: Some(diagnostic_details(&format!(
+                "Opening the folder failed: {primary_error}"
+            ))),
+        });
+    }
     let fallback = match (containing, parent) {
         (true, Some(parent)) => reveal_item(parent),
         (false, Some(parent)) => open_path(parent),
