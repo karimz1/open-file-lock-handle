@@ -845,6 +845,18 @@ test.beforeEach(async ({ page }) => {
               ],
             };
           }
+          if (
+            command === "select_all" &&
+            (window as any).__searchClearRaceFixture &&
+            args.query.text
+          ) {
+            // Same catalog as the page fixture: every name or path of the
+            // first 12 rows contains "spotify".
+            const text = args.query.text.toLowerCase();
+            return "spotify".includes(text)
+              ? processRows.slice(0, 12).map((row) => row.process_key)
+              : [];
+          }
           if (command === "select_all")
             return processRows
               .filter(
@@ -2015,7 +2027,7 @@ test("port searches stay in Rust IPC and expose binding actions safely", async (
   await page
     .getByRole("textbox", { name: "Search loaded results" })
     .fill("port:8080");
-  await expect(page.getByText("1 results", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^1 results?$/)).toBeVisible();
   await grid.getByText("8080", { exact: true }).click({ button: "right" });
   await page
     .getByRole("button", { name: "Copy local endpoint", exact: true })
@@ -2525,6 +2537,116 @@ for (const scenario of searchFocusCases) {
   });
 }
 
+test("typing a process search keeps the toolbar mounted and Select all steady", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__searchClearRaceFixture = true;
+  });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  const selectAll = page.getByRole("button", { name: "Select all" });
+  await expect(selectAll).toBeEnabled();
+  await search.click();
+  await page.evaluate(() => {
+    const toolbar = document.querySelector(".search-toolbar")!;
+    const nodes = [
+      ...toolbar.querySelectorAll("input, button.select-all, details"),
+    ];
+    const changes: string[] = [];
+    new MutationObserver((records) => {
+      for (const record of records) {
+        const target = record.target as HTMLElement;
+        if (record.type === "attributes" && target.matches("button.select-all"))
+          changes.push(
+            `${record.attributeName}=${target.getAttribute(record.attributeName!)}`,
+          );
+        for (const node of record.removedNodes)
+          if (nodes.some((kept) => node === kept || node.contains(kept)))
+            changes.push(`removed ${(node as HTMLElement).className}`);
+      }
+    }).observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["disabled", "aria-pressed"],
+    });
+    (window as any).__toolbar = { nodes, changes };
+  });
+  await search.pressSequentially("spotify", { delay: 60 });
+  await expect(page.getByText("12 results", { exact: true })).toBeVisible();
+  await expect(selectAll).toBeEnabled();
+  const result = await page.evaluate(() => {
+    const { nodes, changes } = (window as any).__toolbar;
+    const toolbar = document.querySelector(".search-toolbar")!;
+    const current = [
+      ...toolbar.querySelectorAll("input, button.select-all, details"),
+    ];
+    return {
+      changes,
+      sameNodes: nodes.every(
+        (node: Element, index: number) => node === current[index],
+      ),
+    };
+  });
+  expect(result.changes).toEqual([]);
+  expect(result.sameNodes).toBe(true);
+});
+
+test("process search filters once typing pauses while the box updates on every key", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__searchClearRaceFixture = true;
+  });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  await search.click();
+  await page.evaluate(() => ((window as any).__testCalls.length = 0));
+  for (const [index, key] of [..."spotify"].entries()) {
+    await page.keyboard.type(key);
+    await expect(search).toHaveValue("spotify".slice(0, index + 1));
+    await page.waitForTimeout(80);
+  }
+  await expect(page.getByText("12 results", { exact: true })).toBeVisible();
+  const texts = await page.evaluate(() =>
+    (window as any).__testCalls
+      .filter(
+        (call: any) => call.command === "page" || call.command === "select_all",
+      )
+      .map((call: any) => `${call.command}:${call.args.query.text}`),
+  );
+  expect(texts.sort()).toEqual(["page:spotify", "select_all:spotify"]);
+});
+
+test("process details close when a search filters the process out and stay while it matches", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__searchClearRaceFixture = true;
+  });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  const panel = page.getByRole("complementary", { name: "Process details" });
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await expect(panel).toBeVisible();
+  await search.click();
+  await search.pressSequentially("spotify-0", { delay: 40 });
+  await expect(page.getByText(/^1 results?$/)).toBeVisible();
+  await expect(panel).toBeVisible();
+  await expect(page.getByText("1 process selected")).toBeVisible();
+  await search.fill("");
+  await search.pressSequentially("launcher", { delay: 40 });
+  await expect(page.getByText(/^1 results?$/)).toBeVisible();
+  await expect(panel).not.toBeVisible();
+  await expect(search).toBeFocused();
+  // Selection may include processes outside the view, so it stays.
+  await expect(page.getByText("1 process selected")).toBeVisible();
+});
+
 test("process search rows with matching paths keep their layout", async ({
   page,
 }) => {
@@ -2978,7 +3100,7 @@ test("termination preserves the captured owner port filter", async ({
     .getByRole("complementary", { name: "Process details" })
     .getByRole("button", { name: /^Local ports/ })
     .click();
-  await expect(page.getByText("1 results", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^1 results?$/)).toBeVisible();
   await page.evaluate(() => {
     (window as any).__terminateSuccessfully = true;
   });
