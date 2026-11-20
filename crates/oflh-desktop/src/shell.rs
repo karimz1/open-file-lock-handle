@@ -622,6 +622,10 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
     } else {
         builder.plugin(tauri_plugin_single_instance::init(take_over_launch))
     };
+    // Test builds only: the GUI end-to-end suite drives the real window through
+    // this embedded WebDriver server, which listens on 127.0.0.1 only.
+    #[cfg(feature = "gui-e2e")]
+    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
