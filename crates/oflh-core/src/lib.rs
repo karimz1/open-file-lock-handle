@@ -580,4 +580,35 @@ mod build_info_tests {
             "unexpected commit {commit:?}"
         );
     }
+
+    #[test]
+    fn discovered_commit_matches_head_and_is_not_dirty_on_a_clean_tree() {
+        if !BUILD_COMMIT.is_empty() {
+            return;
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let status = std::process::Command::new("git")
+            .current_dir(root)
+            .args(["status", "--porcelain"])
+            .output()
+            .expect("git status");
+        if !status.status.success() {
+            return;
+        }
+        if !status.stdout.is_empty() {
+            return;
+        }
+        let head = std::process::Command::new("git")
+            .current_dir(root)
+            .args(["rev-parse", "--short", "HEAD"])
+            .output()
+            .expect("git rev-parse");
+        assert!(head.status.success());
+        let head = String::from_utf8_lossy(&head.stdout).trim().to_string();
+        assert_eq!(SOURCE_COMMIT, head);
+        assert!(
+            !SOURCE_COMMIT.ends_with("-dirty"),
+            "ignored build output must not mark SOURCE_COMMIT dirty, got {SOURCE_COMMIT}"
+        );
+    }
 }

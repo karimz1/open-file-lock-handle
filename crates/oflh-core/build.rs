@@ -107,6 +107,9 @@ fn watch_git_dir(git_dir: &Path) {
 }
 
 fn is_dirty(root: &Path) -> bool {
+    // `git status --porcelain` lists modified and untracked files, but not
+    // ignored paths such as target/ or node_modules/. Those must not mark a
+    // local build dirty.
     Command::new("git")
         .args(["-C", &root.to_string_lossy(), "status", "--porcelain"])
         .output()
