@@ -4563,7 +4563,9 @@ for (const [locale, settings, star] of [
           exact: true,
         }),
       ).toBeVisible();
-      await dialog.getByRole("button", { name: "0.4.0", exact: true }).click();
+      await dialog
+        .getByRole("button", { name: "0.4.0 (0123456)", exact: true })
+        .click();
       expect(
         await page.evaluate(() =>
           (window as any).__testCalls.some(

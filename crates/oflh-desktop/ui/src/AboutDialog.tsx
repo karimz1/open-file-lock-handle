@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Copy, ExternalLink, FileSearch } from "lucide-react";
 import { api, type Status } from "./api";
+import { formatVersionLabel } from "./buildInfo";
 import { t } from "./i18n";
 import { Modal } from "./Modal";
 
@@ -72,7 +73,7 @@ export function AboutDialog({
             className="inline-link"
             onClick={() => void api.openInstalledRelease().catch(report)}
           >
-            {status.version}
+            {formatVersionLabel(status.version, status.commit)}
           </button>
         </dd>
         {status.commit && (

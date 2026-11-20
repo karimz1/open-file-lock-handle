@@ -37,7 +37,8 @@ own and refuses to overwrite a published release.
 A suffix such as `-rc.1` makes a prerelease. Prereleases are never marked
 **Latest**, so the website, the updater, and Homebrew keep pointing at the last
 stable version. Release binaries report the tag without the `v`; local builds
-report `development`.
+report the workspace version plus the git commit and still never check for
+updates.
 
 To rerun the workflow for an existing tag:
 

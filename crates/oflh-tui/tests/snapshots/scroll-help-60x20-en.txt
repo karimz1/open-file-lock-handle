@@ -7,7 +7,7 @@
   Press uppercase R or D to open in your browser.        │
                                                          │
                                                          │
-  VERSION development                                    │
+  VERSION test                                           │
   Run `oflh --version` to copy the full build report.    │
                                                          │
   OPEN FILE LOCK HANDLE                                  │

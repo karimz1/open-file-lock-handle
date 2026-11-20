@@ -47,12 +47,33 @@ cargo build --release --locked --bin oflh
 ```
 
 `cargo run` also works; `oflh` is the workspace's default member. Local builds
-report their version as `development` and never check for updates.
+report the workspace version and the git commit, for example `0.9.0-rc.1` and
+`commit abc1234`, or `abc1234-dirty` when the working tree has uncommitted
+changes. They still never check for updates.
 
 <a id="build-desktop"></a>
 <a id="desktop-development"></a>
 
 ## Desktop
+
+Use the development build script to install the frontend dependencies, build
+the desktop executable without an installer, and print the commit being built:
+
+```sh
+# Linux and macOS
+scripts/build-dev.sh
+scripts/build-dev.sh --run          # also start the app
+scripts/build-dev.sh --skip-npm-ci  # reuse an existing node_modules
+```
+
+```powershell
+# Windows (the Bypass flag is enough under the default execution policy)
+powershell -ExecutionPolicy Bypass -File scripts\build-dev.ps1
+powershell -ExecutionPolicy Bypass -File scripts\build-dev.ps1 -Run
+powershell -ExecutionPolicy Bypass -File scripts\build-dev.ps1 -SkipNpmCi
+```
+
+The same steps, if you prefer to run them yourself:
 
 ```sh
 npm --prefix crates/oflh-desktop/ui ci
@@ -60,9 +81,10 @@ npm --prefix crates/oflh-desktop/ui run tauri -- build --no-bundle -- --locked
 ./target/release/oflh-desktop
 ```
 
-This builds the frontend and the desktop executable without an installer. On
-Windows the binary is `target\release\oflh-desktop.exe`. The Tauri shell is
-behind the `oflh-desktop` crate's `desktop` feature, so plain
+On Windows the binary is `target\release\oflh-desktop.exe`. The script and
+the commands above both produce a local build that shows the workspace version
+and git commit in **About OFLH** and in `oflh-desktop --version`. The Tauri
+shell is behind the `oflh-desktop` crate's `desktop` feature, so plain
 `cargo build --workspace` and `cargo test --workspace` do not need WebKitGTK.
 
 Updater signing is only needed for release builds; see

@@ -32,6 +32,21 @@ jobs:
           node-version: '24'
       - name: Check publishing script syntax
         run: bash -n .github/scripts/sync-updater.sh
+      - name: Check development build script syntax
+        run: |
+          bash -n scripts/build-dev.sh
+          pwsh -NoProfile -Command '
+            $errors = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path (Get-Location) "scripts/build-dev.ps1"),
+              [ref]$null,
+              [ref]$errors
+            )
+            if ($errors) {
+              $errors | ForEach-Object { $_.ToString() }
+              exit 1
+            }
+          '
       - name: Test release download links and installation guidance
         run: node --test .github/scripts/render-release-notes.test.mjs
       - name: Test automatic website commits and stable promotion
