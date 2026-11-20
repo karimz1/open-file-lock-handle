@@ -7265,3 +7265,78 @@ for (const [theme, scheme] of [
     });
   }
 }
+
+test("changing language in Settings stays on the page and swaps text without a reload", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: /^Processes/ })).toBeVisible();
+  await page.keyboard.press("Control+,");
+  await expect(
+    page.getByRole("heading", { name: "Settings", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+
+  await page.evaluate(() => {
+    const marker = document.createElement("div");
+    marker.id = "language-switch-sentinel";
+    marker.hidden = true;
+    document.body.appendChild(marker);
+    (window as any).__oflhLanguageSwitchSentinel = "alive";
+  });
+  await page.screenshot({
+    path: "test-results/language-switch-settings-en.png",
+  });
+
+  const language = page.locator("#language");
+  await language.selectOption("de").catch(() => {
+    // A full reload can tear the page down before selectOption finishes.
+  });
+  // If the app reloads, the process view comes back; wait for either outcome.
+  await Promise.race([
+    page
+      .getByRole("heading", { name: "Einstellungen", exact: true })
+      .waitFor({ state: "visible" }),
+    page
+      .getByRole("heading", { name: "Settings", exact: true })
+      .waitFor({ state: "hidden" }),
+  ]).catch(() => {});
+  await page.screenshot({
+    path: "test-results/language-switch-after-change.png",
+  });
+
+  expect(
+    await page.evaluate(() => (window as any).__oflhLanguageSwitchSentinel),
+  ).toBe("alive");
+  await expect(page.locator("#language-switch-sentinel")).toHaveCount(1);
+  await expect(page.locator("html")).toHaveAttribute("lang", "de");
+  await expect(
+    page.getByRole("heading", { name: "Einstellungen", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("EINSTELLUNGEN", { exact: true })).toBeVisible();
+  await expect(language).toHaveValue("de");
+  await expect(page.getByRole("button", { name: /^Prozesse/ })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("oflh-language"))).toBe(
+    "de",
+  );
+
+  await language.selectOption("zh");
+  await expect(page.locator("#language-switch-sentinel")).toHaveCount(1);
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh");
+  await expect(
+    page.getByRole("heading", { name: "设置", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => (window as any).__oflhLanguageSwitchSentinel),
+  ).toBe("alive");
+
+  await language.selectOption("system");
+  await expect(page.locator("#language-switch-sentinel")).toHaveCount(1);
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(
+    page.getByRole("heading", { name: "Settings", exact: true }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("oflh-language"))).toBe(
+    "system",
+  );
+});
