@@ -8,4 +8,4 @@ openbox >/dev/null 2>&1 &
 manager=$!
 trap 'kill "$manager" 2>/dev/null || true' EXIT
 sleep 1
-npx wdio run wdio.conf.ts "$@"
+npm test -- "$@"

@@ -164,24 +164,90 @@ const samePath = (left: string, right: string) =>
 
 /**
  * Wait until the platform file manager shows `target` selected in its folder:
- * Explorer on Windows, Finder on macOS, the FileManager1 request on Linux.
+ * Explorer on Windows, Finder on macOS, the FileManager1 ShowItems request on Linux.
  */
 export async function expectFileManagerToReveal(target: string): Promise<void> {
+  await waitForFileManager(target, "reveal");
+}
+
+/**
+ * Wait until the file manager opens `target` as a folder, not as a selected
+ * item in its parent. After #191, directory handles use this path.
+ */
+export async function expectFileManagerToOpen(target: string): Promise<void> {
+  await waitForFileManager(target, "open");
+}
+
+function linuxFileManagerLog(): string {
+  return fs.existsSync(fileManagerLog)
+    ? fs.readFileSync(fileManagerLog, "utf8")
+    : "";
+}
+
+function finderWindows(): string[] {
+  const result = spawnSync(
+    "osascript",
+    [
+      "-e",
+      'tell application "Finder"',
+      "-e",
+      "set output to {}",
+      "-e",
+      "repeat with w in windows",
+      "-e",
+      "try",
+      "-e",
+      "set end of output to POSIX path of (target of w as alias)",
+      "-e",
+      "end try",
+      "-e",
+      "end repeat",
+      "-e",
+      "set AppleScript's text item delimiters to linefeed",
+      "-e",
+      "return output as text",
+      "-e",
+      "end tell",
+    ],
+    { encoding: "utf8", timeout: 15_000 },
+  );
+  if (result.status !== 0) {
+    throw new Error(`Could not read Finder windows: ${result.stderr}`);
+  }
+  return result.stdout
+    .split("\n")
+    .map((line) => line.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+}
+
+async function waitForFileManager(
+  target: string,
+  mode: "reveal" | "open",
+): Promise<void> {
   let seen = "";
+  const uri = pathToFileURL(target).href;
   await browser.waitUntil(
     () => {
       if (operatingSystem === "linux") {
-        seen = fs.existsSync(fileManagerLog)
-          ? fs.readFileSync(fileManagerLog, "utf8")
-          : "";
-        return seen.includes(`ShowItems ${pathToFileURL(target).href}`);
+        seen = linuxFileManagerLog();
+        return mode === "open"
+          ? seen.includes(`xdg-open ${uri}`) ||
+              seen.includes(`ShowFolders ${uri}`)
+          : seen.includes(`ShowItems ${uri}`);
       }
       if (operatingSystem === "windows") {
         const windows = explorerWindows();
         seen = JSON.stringify(windows);
-        return windows.some((window) =>
-          window.selected.some((item) => samePath(item, target)),
-        );
+        return mode === "open"
+          ? windows.some((window) => samePath(window.folder, target))
+          : windows.some((window) =>
+              window.selected.some((item) => samePath(item, target)),
+            );
+      }
+      if (mode === "open") {
+        const opened = finderWindows();
+        seen = opened.join(", ");
+        return opened.some((folder) => samePath(folder, target));
       }
       const selection = finderSelection();
       seen = selection.join(", ");
@@ -190,7 +256,7 @@ export async function expectFileManagerToReveal(target: string): Promise<void> {
     {
       timeout: 15_000,
       interval: 500,
-      timeoutMsg: `The file manager did not show ${target}. It showed: ${seen || "nothing"}`,
+      timeoutMsg: `The file manager did not ${mode} ${target}. It showed: ${seen || "nothing"}`,
     },
   );
 }

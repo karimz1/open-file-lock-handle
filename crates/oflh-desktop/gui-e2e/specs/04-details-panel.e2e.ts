@@ -4,6 +4,7 @@ import { expect } from "@wdio/globals";
 import {
   closeFileManagerWindows,
   expectClipboard,
+  expectFileManagerToOpen,
   expectFileManagerToReveal,
 } from "../support/desktop.ts";
 import { sleep } from "../support/app.ts";
@@ -12,12 +13,14 @@ import {
   startHolder,
   type Holder,
 } from "../support/fixtures.ts";
+import { itKnownFailing } from "../support/results.ts";
 import {
   $,
   $$,
   activeView,
   browser,
   click,
+  chooseOption,
   clickButton,
   inspect,
   literal,
@@ -164,10 +167,17 @@ describe("Process details panel", () => {
     await expectFileManagerToReveal(tree.folder);
   });
 
-  it("Reveal for a folder in Matching files shows the folder in the file manager", async () => {
-    await click(matchingFileButton(tree.folder, "Reveal"));
-    await expectFileManagerToReveal(tree.folder);
-  });
+  // #190: a directory handle is still revealed by selecting it in its parent, which
+  // can do nothing when that parent is not showable. After #191 this should open the
+  // folder itself; turn this back into `it` once that lands.
+  itKnownFailing(
+    190,
+    "Reveal for a folder in Matching files opens the folder itself",
+    async () => {
+      await click(matchingFileButton(tree.folder, "Reveal"));
+      await expectFileManagerToOpen(tree.folder);
+    },
+  );
 
   it("the reference summary expands and collapses", async () => {
     await openDetails(holder.pid);
@@ -277,6 +287,53 @@ describe("Process details panel", () => {
     await click(toggle);
     await waitForGone(xpath.detailsPanel);
   });
+
+  itKnownFailing(
+    194,
+    "Rename and show prefills the original name, keeps the extension, and can copy it",
+    async () => {
+      await openDetails(holder.pid);
+      await click(
+        matchingFileButton(
+          tree.file("alpha.txt"),
+          "Wait for file to become free",
+        ),
+      );
+      await waitForVisible(xpath.dialog);
+      try {
+        await chooseOption("dialog[open] select", "rename");
+        const nameField = await $('input[aria-label="New name"]');
+        await waitForVisible('input[aria-label="New name"]');
+        expect(await nameField.getValue()).toBe("alpha.txt");
+        const selected = await browser.execute(() => {
+          const field = document.querySelector<HTMLInputElement>(
+            'input[aria-label="New name"]',
+          )!;
+          return field.value.slice(
+            field.selectionStart ?? 0,
+            field.selectionEnd ?? 0,
+          );
+        });
+        expect(selected).toBe("alpha");
+        await clickButton("Copy original name", xpath.dialog);
+        await expectClipboard("alpha.txt");
+        await nameField.setValue("renamed");
+        await waitForVisible(
+          `${xpath.dialog}//*[normalize-space(text())="renamed.txt"]`,
+        );
+        await screenshot("rename keeps extension");
+      } finally {
+        if (
+          await $(xpath.dialog)
+            .isDisplayed()
+            .catch(() => false)
+        ) {
+          await click(`${xpath.dialog}//button[@aria-label="Close dialog"]`);
+          await waitForGone(xpath.dialog);
+        }
+      }
+    },
+  );
 
   it("Wait for file to become free reports when the holder closes the file", async () => {
     await openDetails(holder.pid);

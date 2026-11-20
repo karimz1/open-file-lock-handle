@@ -129,6 +129,25 @@ describe("First launch and Settings", () => {
     await waitForGone(xpath.dialog);
   });
 
+  itKnownFailing(
+    192,
+    "About shows the git commit of a local development build",
+    async () => {
+      await click('//nav//button[@aria-label="Settings"]');
+      await click(
+        '//*[@role="menuitem"][starts-with(normalize-space(.), "About OFLH")]',
+      );
+      await waitForVisible(
+        `${xpath.dialog}[.//h2[normalize-space()="About OFLH"]]`,
+      );
+      const text = await $(xpath.dialog).getText();
+      await screenshot("about shows commit");
+      await click(`${xpath.dialog}//button[@aria-label="Close dialog"]`);
+      await waitForGone(xpath.dialog);
+      expect(text).toMatch(/\b[0-9a-f]{7,}\b/);
+    },
+  );
+
   it("Donate explains the support options and closes", async () => {
     await click(xpath.titled("Choose how to support OFLH"));
     await waitForVisible(xpath.dialog);

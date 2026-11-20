@@ -27,6 +27,9 @@ describe("Ports view", () => {
 
   it("Ports lists the fixture's TCP listener with its PID", async () => {
     await switchView("Ports");
+    // The Ports grid is virtualized; a busy machine can have dozens of bindings
+    // so the fixture may be off-screen until search narrows the list.
+    await (await searchInput()).setValue(String(listener.port));
     await waitForRowWith(String(listener.pid), 60_000);
     await screenshot("ports with the fixture listener");
   });

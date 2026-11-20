@@ -77,8 +77,7 @@ export const config: WebdriverIO.Config = {
       outcome,
       detail:
         outcome === "known failing"
-          ? (knownFailures.get(test.fullTitle ?? title) ??
-            knownFailures.values().next().value)
+          ? knownFailures.get(title)
           : error
             ? String(error.message ?? error).split("\n")[0]
             : undefined,

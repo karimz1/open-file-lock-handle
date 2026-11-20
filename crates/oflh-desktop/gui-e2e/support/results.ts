@@ -25,6 +25,16 @@ export function recordResult(result: TestResult): void {
   fs.appendFileSync(resultsFile, `${JSON.stringify(result)}\n`);
 }
 
+function errorDetail(error: unknown): string {
+  return String(error)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 6)
+    .join(" — ")
+    .slice(0, 400);
+}
+
 const knownFailingMarker = /\[known failing, #(\d+)\]$/;
 const notApplicableMarker = /\[not applicable on \w+\]$/;
 
@@ -39,15 +49,14 @@ export function itKnownFailing(
   title: string,
   test: () => Promise<void>,
 ): void {
-  it(`${title} [known failing, #${issue}]`, async function () {
+  const marked = `${title} [known failing, #${issue}]`;
+  it(marked, async function () {
     try {
       await test.call(this);
     } catch (error) {
-      knownFailures.set(
-        this.test?.fullTitle() ?? title,
-        String(error).split("\n")[0],
-      );
-      console.log(`Known failing (#${issue}): ${String(error).split("\n")[0]}`);
+      const detail = errorDetail(error);
+      knownFailures.set(marked, detail);
+      console.log(`Known failing (#${issue}): ${detail}`);
       return;
     }
     throw new Error(
