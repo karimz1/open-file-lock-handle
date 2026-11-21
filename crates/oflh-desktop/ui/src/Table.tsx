@@ -753,7 +753,7 @@ export function Table(props: Props) {
                               <span className="muted">
                                 {props.query.handles
                                   ? `${tValue(row.relation)} · ${tValue(row.access)}`
-                                  : `${row.usages} ${t("status.k_file_usages_d01933d6")}`}
+                                  : `${row.usages} ${t(row.usages === 1 ? "status.k_file_usage_one" : "status.k_file_usages_d01933d6")}`}
                               </span>
                             )}
                           </div>
