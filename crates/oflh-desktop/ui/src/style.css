@@ -1938,6 +1938,17 @@ button {
 .data-row {
   font-size: 0.95rem;
 }
+/* The previous process's details while the next ones load: fade only if the
+   answer is slow, so a quick one never flickers. */
+.inspector[aria-busy="true"] {
+  opacity: 0.6;
+  transition: opacity 120ms ease-out 160ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .inspector[aria-busy="true"] {
+    transition: none;
+  }
+}
 .inspector-container {
   position: relative;
   flex: none;
