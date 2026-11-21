@@ -1487,34 +1487,55 @@ test("recent targets can be searched, removed, and cleared", async ({
     page.getByRole("heading", { name: "No recent targets" }),
   ).toBeVisible();
 });
-/** Opacity of the open dialog and of its backdrop on every frame. */
-async function sampleDialogOpacity(page: Page, run: () => Promise<void>) {
+/**
+ * Pauses the open animations of a dialog and its backdrop the moment the
+ * dialog opens, before any frame is drawn. The fade is then checked by seeking
+ * each animation instead of sampling frames, which a slow runner draws too few
+ * of.
+ */
+async function holdDialogAnimations(page: Page) {
   await page.evaluate(() => {
-    (window as any).__dialogSamples = new Promise((resolve) => {
-      const samples: { at: number; dialog: number; backdrop: number }[] = [];
-      const start = performance.now();
-      const tick = () => {
-        const dialog = document.querySelector("dialog[open]");
-        if (dialog) {
-          samples.push({
-            at: Math.round(performance.now() - start),
-            dialog: Number(getComputedStyle(dialog).opacity),
-            backdrop: Number(getComputedStyle(dialog, "::backdrop").opacity),
-          });
+    const held: Animation[] = ((window as any).__dialogAnimations = []);
+    new MutationObserver((mutations) => {
+      for (const { target } of mutations) {
+        const dialog = target as HTMLDialogElement;
+        if (dialog.tagName !== "DIALOG" || !dialog.open) continue;
+        // Reading animations resolves the new style, which starts them.
+        for (const animation of document.getAnimations()) {
+          if ((animation.effect as KeyframeEffect).target !== dialog) continue;
+          animation.pause();
+          if (!held.includes(animation)) held.push(animation);
         }
-        if (performance.now() - start < 700) requestAnimationFrame(tick);
-        else resolve(samples);
-      };
-      requestAnimationFrame(tick);
+      }
+    }).observe(document, {
+      attributes: true,
+      attributeFilter: ["open"],
+      subtree: true,
     });
   });
-  await run();
-  return page.evaluate(
-    () =>
-      (window as any).__dialogSamples as Promise<
-        { at: number; dialog: number; backdrop: number }[]
-      >,
-  );
+}
+
+/** Opacity of each held animation at its start, middle and end. */
+async function seekDialogAnimations(page: Page) {
+  return page.evaluate(() => {
+    const dialog = document.querySelector("dialog[open]")!;
+    return ((window as any).__dialogAnimations as Animation[]).map(
+      (animation) => {
+        const effect = animation.effect as KeyframeEffect;
+        const pseudo = effect.pseudoElement;
+        const duration = Number(effect.getComputedTiming().duration);
+        const opacityAt = (time: number) => {
+          animation.currentTime = time;
+          return Number(getComputedStyle(dialog, pseudo).opacity);
+        };
+        const start = opacityAt(0);
+        const middle = opacityAt(duration / 2);
+        animation.finish();
+        const end = Number(getComputedStyle(dialog, pseudo).opacity);
+        return { part: pseudo ?? "dialog", duration, start, middle, end };
+      },
+    );
+  });
 }
 
 async function openAbout(page: Page) {
@@ -1528,20 +1549,31 @@ async function openAbout(page: Page) {
 test("a dialog fades in instead of popping in", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
-  const samples = await sampleDialogOpacity(page, () => openAbout(page));
-  expect(samples.length).toBeGreaterThan(5);
-  expect(samples[0].dialog, "dialog opacity on its first frame").toBeLessThan(
-    0.9,
+  await holdDialogAnimations(page);
+  await openAbout(page);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__dialogAnimations.length))
+    .toBe(2);
+  const fades = await seekDialogAnimations(page);
+  expect(fades.map((fade) => fade.part).sort()).toEqual([
+    "::backdrop",
+    "dialog",
+  ]);
+  for (const fade of fades) {
+    expect(fade.start, `${fade.part} opacity when it opens`).toBeLessThan(0.9);
+    expect(fade.middle, `${fade.part} opacity halfway`).toBeGreaterThan(
+      fade.start,
+    );
+    expect(fade.middle, `${fade.part} opacity halfway`).toBeLessThan(1);
+    expect(fade.end, `${fade.part} opacity once open`).toBe(1);
+    // Short enough to never feel slow.
+    expect(fade.duration).toBeGreaterThan(0);
+    expect(fade.duration).toBeLessThan(400);
+  }
+  await expect(page.getByRole("dialog", { name: "About OFLH" })).toHaveCSS(
+    "opacity",
+    "1",
   );
-  expect(
-    samples[0].backdrop,
-    "backdrop opacity on its first frame",
-  ).toBeLessThan(0.9);
-  expect(samples.at(-1)!.dialog).toBe(1);
-  expect(samples.at(-1)!.backdrop).toBe(1);
-  // Short enough to never feel slow.
-  const settled = samples.find((sample) => sample.dialog === 1)!;
-  expect(settled.at - samples[0].at).toBeLessThan(400);
 });
 
 test("a dialog appears at once when the system asks for reduced motion", async ({
@@ -1550,9 +1582,21 @@ test("a dialog appears at once when the system asks for reduced motion", async (
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
-  const samples = await sampleDialogOpacity(page, () => openAbout(page));
-  expect(samples[0].dialog).toBe(1);
-  expect(samples[0].backdrop).toBe(1);
+  await holdDialogAnimations(page);
+  await openAbout(page);
+  // Any open animation would have been held when the dialog opened.
+  const opacity = await page.evaluate(async () => {
+    for (let frame = 0; frame < 2; frame += 1) {
+      await new Promise(requestAnimationFrame);
+    }
+    const dialog = document.querySelector("dialog[open]")!;
+    return {
+      held: (window as any).__dialogAnimations.length,
+      dialog: Number(getComputedStyle(dialog).opacity),
+      backdrop: Number(getComputedStyle(dialog, "::backdrop").opacity),
+    };
+  });
+  expect(opacity).toEqual({ held: 0, dialog: 1, backdrop: 1 });
 });
 
 test("the search explanation grows in smoothly instead of pushing the grid down", async ({
