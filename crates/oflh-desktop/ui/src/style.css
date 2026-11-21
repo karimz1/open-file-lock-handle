@@ -61,6 +61,27 @@ button:disabled {
   opacity: 0.45;
   cursor: default;
 }
+/* Controls that are locked for a moment (a refresh, loading details) grey out
+   only if it lasts: a locked state shorter than the delay is never seen, and
+   unlocking is immediate. */
+button,
+input,
+select {
+  transition: opacity 120ms ease-out;
+}
+button:disabled,
+[inert] button,
+[inert] input,
+[inert] select {
+  transition-delay: 250ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  button,
+  input,
+  select {
+    transition: none;
+  }
+}
 button.primary {
   background: var(--primary);
   border-color: var(--primary);
@@ -1110,6 +1131,28 @@ main {
   align-items: center;
   gap: 7px;
   min-width: 0;
+}
+/* The idle text and the busy text share one cell, so the cell is as wide as
+   the wider of the two and the footer text next to it stays put. */
+.statusbar > .status-current:first-child {
+  display: grid;
+  grid-template-columns: minmax(0, max-content);
+  align-items: center;
+}
+.status-current > * {
+  grid-area: 1 / 1;
+}
+.status-sizer::after {
+  content: attr(data-text);
+}
+.status-sizer {
+  /* Room for the progress info button and the Cancel button's chrome. */
+  padding-inline-end: calc(51.8px + 0.3em);
+  visibility: hidden;
+  max-width: 40vw;
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
 }
 .status-current-label {
   min-width: 0;
