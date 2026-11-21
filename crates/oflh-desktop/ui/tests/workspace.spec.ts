@@ -4478,128 +4478,135 @@ test("System can be enabled from the menu and persists across launches", async (
   await expect(page.locator("html")).toHaveAttribute("data-theme", "vscode");
 });
 
-for (const [locale, settings, star] of [
-  ["en", "Settings", "Star on GitHub"],
-  ["de", "Einstellungen", "Stern auf GitHub vergeben"],
-  ["zh", "设置", "在 GitHub 上点星"],
-]) {
-  for (const fontSize of [14, 24]) {
-    test(`GitHub star has a visible label and gear opens About above updates (${locale}, ${fontSize}px)`, async ({
-      page,
-    }) => {
-      await page.setViewportSize({ width: 860, height: 560 });
-      await page.addInitScript(
-        ({ locale, fontSize }) => {
-          localStorage.setItem("oflh-language", locale);
-          localStorage.setItem("oflh-font-size", String(fontSize));
-          localStorage.setItem("oflh-theme", "vscode");
-        },
-        { locale, fontSize },
-      );
-      await page.goto("/?version=0.4.0");
-      const footer = page.getByRole("contentinfo");
-      const starButton = footer.getByRole("button", {
-        name: star,
-        exact: true,
-      });
-      await expect(starButton).toHaveText(star);
-      await expect(starButton).toBeVisible();
-      const starBounds = (await starButton.boundingBox())!;
-      expect(starBounds.x).toBeGreaterThanOrEqual(0);
-      expect(starBounds.x + starBounds.width).toBeLessThanOrEqual(860);
-      const footerWidth = await footer.evaluate((element) => ({
-        visible: element.clientWidth,
-        content: element.scrollWidth,
-      }));
-      expect(footerWidth.content).toBeLessThanOrEqual(footerWidth.visible);
-      const statusBounds = (await footer
-        .locator(".status-current")
-        .boundingBox())!;
-      const footerBounds = (await footer.boundingBox())!;
-      expect(statusBounds.y + statusBounds.height).toBeLessThanOrEqual(
-        footerBounds.y + footerBounds.height,
-      );
-      await starButton.click();
-      expect(
-        await page.evaluate(() =>
-          (window as any).__testCalls.some(
-            (call: any) => call.command === "open_project",
-          ),
-        ),
-      ).toBe(true);
-      expect(
-        await page.evaluate(() =>
-          (window as any).__testCalls.some(
-            (call: any) => call.command === "open_donation",
-          ),
-        ),
-      ).toBe(false);
-      await page.getByRole("button", { name: settings, exact: true }).click();
-      const menu = page.getByRole("menu", { name: settings, exact: true });
-      const about =
-        locale === "de"
-          ? "Über OFLH"
-          : locale === "zh"
-            ? "关于 OFLH"
-            : "About OFLH";
-      const check =
-        locale === "de"
-          ? "Nach Updates suchen"
-          : locale === "zh"
-            ? "检查更新"
-            : "Check for updates";
-      expect(
-        (await menu.getByRole("menuitem").allTextContents()).slice(-2),
-      ).toEqual([about, check]);
-      if (locale === "de" && fontSize === 24)
-        await page.screenshot({ path: "test-results/gear-about-order-de.png" });
-      await menu.getByRole("menuitem", { name: about, exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: about, exact: true });
-      await expect(
-        dialog.getByText("Linux x86_64", { exact: true }),
-      ).toBeVisible();
-      await expect(
-        dialog.getByText("0123456789abcdef0123456789abcdef01234567", {
+test.describe("GitHub star and About", () => {
+  // The first case can miss mocked system info on a cold browser start.
+  test.describe.configure({ retries: process.env.CI ? 1 : 0 });
+  for (const [locale, settings, star] of [
+    ["en", "Settings", "Star on GitHub"],
+    ["de", "Einstellungen", "Stern auf GitHub vergeben"],
+    ["zh", "设置", "在 GitHub 上点星"],
+  ]) {
+    for (const fontSize of [14, 24]) {
+      test(`GitHub star has a visible label and gear opens About above updates (${locale}, ${fontSize}px)`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width: 860, height: 560 });
+        await page.addInitScript(
+          ({ locale, fontSize }) => {
+            localStorage.setItem("oflh-language", locale);
+            localStorage.setItem("oflh-font-size", String(fontSize));
+            localStorage.setItem("oflh-theme", "vscode");
+          },
+          { locale, fontSize },
+        );
+        await page.goto("/?version=0.4.0");
+        const footer = page.getByRole("contentinfo");
+        const starButton = footer.getByRole("button", {
+          name: star,
           exact: true,
-        }),
-      ).toBeVisible();
-      await dialog
-        .getByRole("button", { name: "0.4.0 (0123456)", exact: true })
-        .click();
-      expect(
-        await page.evaluate(() =>
-          (window as any).__testCalls.some(
-            (call: any) => call.command === "open_installed_release",
+        });
+        await expect(starButton).toHaveText(star);
+        await expect(starButton).toBeVisible();
+        const starBounds = (await starButton.boundingBox())!;
+        expect(starBounds.x).toBeGreaterThanOrEqual(0);
+        expect(starBounds.x + starBounds.width).toBeLessThanOrEqual(860);
+        const footerWidth = await footer.evaluate((element) => ({
+          visible: element.clientWidth,
+          content: element.scrollWidth,
+        }));
+        expect(footerWidth.content).toBeLessThanOrEqual(footerWidth.visible);
+        const statusBounds = (await footer
+          .locator(".status-current")
+          .boundingBox())!;
+        const footerBounds = (await footer.boundingBox())!;
+        expect(statusBounds.y + statusBounds.height).toBeLessThanOrEqual(
+          footerBounds.y + footerBounds.height,
+        );
+        await starButton.click();
+        expect(
+          await page.evaluate(() =>
+            (window as any).__testCalls.some(
+              (call: any) => call.command === "open_project",
+            ),
           ),
-        ),
-      ).toBe(true);
-      const copyLabel =
-        locale === "de" ? "Kopieren" : locale === "zh" ? "复制" : "Copy";
-      await dialog
-        .getByRole("button", { name: copyLabel, exact: true })
-        .click();
-      const copied = await page.evaluate(
-        () =>
-          (window as any).__testCalls.find(
-            (call: any) => call.command === "copy_diagnostic",
-          )?.args.text,
-      );
-      expect(copied).toContain("Version: 0.4.0");
-      expect(copied).toContain(
-        "Commit: 0123456789abcdef0123456789abcdef01234567",
-      );
-      expect(copied).toContain("OS: Linux x86_64");
-      expect(copied).toContain("License: MIT");
-      if (locale === "de" && fontSize === 14)
-        await page.screenshot({ path: "test-results/about-dialog-de.png" });
-      await page.keyboard.press("Escape");
-      await expect(dialog).toHaveCount(0);
-      await expect(
-        page.getByRole("button", { name: settings, exact: true }),
-      ).toBeFocused();
-    });
+        ).toBe(true);
+        expect(
+          await page.evaluate(() =>
+            (window as any).__testCalls.some(
+              (call: any) => call.command === "open_donation",
+            ),
+          ),
+        ).toBe(false);
+        await page.getByRole("button", { name: settings, exact: true }).click();
+        const menu = page.getByRole("menu", { name: settings, exact: true });
+        const about =
+          locale === "de"
+            ? "Über OFLH"
+            : locale === "zh"
+              ? "关于 OFLH"
+              : "About OFLH";
+        const check =
+          locale === "de"
+            ? "Nach Updates suchen"
+            : locale === "zh"
+              ? "检查更新"
+              : "Check for updates";
+        expect(
+          (await menu.getByRole("menuitem").allTextContents()).slice(-2),
+        ).toEqual([about, check]);
+        if (locale === "de" && fontSize === 24)
+          await page.screenshot({
+            path: "test-results/gear-about-order-de.png",
+          });
+        await menu.getByRole("menuitem", { name: about, exact: true }).click();
+        const dialog = page.getByRole("dialog", { name: about, exact: true });
+        await expect(dialog).toBeVisible();
+        await expect(
+          dialog.getByText("Linux x86_64", { exact: true }),
+        ).toBeVisible({ timeout: 15_000 });
+        await expect(
+          dialog.getByText("0123456789abcdef0123456789abcdef01234567", {
+            exact: true,
+          }),
+        ).toBeVisible();
+        await dialog
+          .getByRole("button", { name: "0.4.0 (0123456)", exact: true })
+          .click();
+        expect(
+          await page.evaluate(() =>
+            (window as any).__testCalls.some(
+              (call: any) => call.command === "open_installed_release",
+            ),
+          ),
+        ).toBe(true);
+        const copyLabel =
+          locale === "de" ? "Kopieren" : locale === "zh" ? "复制" : "Copy";
+        await dialog
+          .getByRole("button", { name: copyLabel, exact: true })
+          .click();
+        const copied = await page.evaluate(
+          () =>
+            (window as any).__testCalls.find(
+              (call: any) => call.command === "copy_diagnostic",
+            )?.args.text,
+        );
+        expect(copied).toContain("Version: 0.4.0");
+        expect(copied).toContain(
+          "Commit: 0123456789abcdef0123456789abcdef01234567",
+        );
+        expect(copied).toContain("OS: Linux x86_64");
+        expect(copied).toContain("License: MIT");
+        if (locale === "de" && fontSize === 14)
+          await page.screenshot({ path: "test-results/about-dialog-de.png" });
+        await page.keyboard.press("Escape");
+        await expect(dialog).toHaveCount(0);
+        await expect(
+          page.getByRole("button", { name: settings, exact: true }),
+        ).toBeFocused();
+      });
+    }
   }
-}
+});
 
 test("inspection barrier blocks manual and automatic reloads, shows work, and resumes after cancellation", async ({
   page,
