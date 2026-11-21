@@ -5112,6 +5112,11 @@ test("inspection barrier blocks manual and automatic reloads, shows work, and re
     ),
   ).toBe(0);
   await page.screenshot({ path: "test-results/inspection-progress.png" });
+  // The 5 s interval restarts when the scan ends. Stop the clock first, so
+  // the real time a slow runner spends between Cancel and the next step does
+  // not count towards it. The scan is still running, so the extra second
+  // pauseAt skips cannot start a reload.
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).not.toBeVisible();
   await page.clock.runFor(4900);
