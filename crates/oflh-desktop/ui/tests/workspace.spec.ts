@@ -2942,25 +2942,35 @@ test("process search filters once typing pauses while the box updates on every k
   await page.addInitScript(() => {
     (window as any).__searchClearRaceFixture = true;
   });
+  // The pause is measured on the page clock: a slow runner's real gaps
+  // between keys must not count as a pause in typing.
+  await page.clock.install();
   await page.goto("/");
   await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
   const search = page.getByRole("textbox", { name: "Search loaded results" });
   await search.click();
   await page.evaluate(() => ((window as any).__testCalls.length = 0));
+  const searches = () =>
+    page.evaluate(() =>
+      (window as any).__testCalls
+        .filter(
+          (call: any) =>
+            call.command === "page" || call.command === "select_all",
+        )
+        .map((call: any) => `${call.command}:${call.args.query.text}`)
+        .sort(),
+    );
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   for (const [index, key] of [..."spotify"].entries()) {
     await page.keyboard.type(key);
     await expect(search).toHaveValue("spotify".slice(0, index + 1));
-    await page.waitForTimeout(80);
+    await page.clock.runFor(80);
+    expect(await searches(), `after "${key}"`).toEqual([]);
   }
+  await page.clock.runFor(200);
+  await page.clock.resume();
+  await expect.poll(searches).toEqual(["page:spotify", "select_all:spotify"]);
   await expect(page.getByText("12 results", { exact: true })).toBeVisible();
-  const texts = await page.evaluate(() =>
-    (window as any).__testCalls
-      .filter(
-        (call: any) => call.command === "page" || call.command === "select_all",
-      )
-      .map((call: any) => `${call.command}:${call.args.query.text}`),
-  );
-  expect(texts.sort()).toEqual(["page:spotify", "select_all:spotify"]);
 });
 
 test("process details close when a search filters the process out and stay while it matches", async ({
