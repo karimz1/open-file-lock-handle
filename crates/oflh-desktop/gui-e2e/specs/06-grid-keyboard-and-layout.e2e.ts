@@ -1,6 +1,5 @@
 import { expect } from "@wdio/globals";
 import { expectClipboard } from "../support/desktop.ts";
-import { itKnownFailing } from "../support/results.ts";
 import {
   createFixtureTree,
   startHolder,
@@ -204,22 +203,19 @@ describe("Grid, keyboard and layout", () => {
     await click('//button[@aria-label="Close process details"]');
   });
 
-  itKnownFailing(
-    186,
-    "after Enter opened details once, arrow keys keep focus in the grid",
-    async () => {
-      await focusGrid();
-      await press("Home");
-      await press("ArrowDown");
-      await browser.pause(300);
-      const focused = await activeElementDescription();
-      if (!focused.startsWith("div[Processes using this target]")) {
-        throw new Error(
-          `Keyboard focus moved to ${focused} after opening a row with the keyboard`,
-        );
-      }
-    },
-  );
+  // #186, fixed in #187.
+  it("after Enter opened details once, arrow keys keep focus in the grid", async () => {
+    await focusGrid();
+    await press("Home");
+    await press("ArrowDown");
+    await browser.pause(300);
+    const focused = await activeElementDescription();
+    if (!focused.startsWith("div[Processes using this target]")) {
+      throw new Error(
+        `Keyboard focus moved to ${focused} after opening a row with the keyboard`,
+      );
+    }
+  });
 
   it("scrolling File usages reaches the last of many virtualized rows", async () => {
     await switchView("File usages");

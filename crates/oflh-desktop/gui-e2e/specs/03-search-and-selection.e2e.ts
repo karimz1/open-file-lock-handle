@@ -5,7 +5,6 @@ import {
   startHolder,
   type Holder,
 } from "../support/fixtures.ts";
-import { itKnownFailing } from "../support/results.ts";
 import {
   $,
   activeElementDescription,
@@ -133,26 +132,23 @@ describe("Search and selection", () => {
     await expectClipboard(new RegExp(`\\b${pids[2]}\\b`));
   });
 
-  itKnownFailing(
-    186,
-    "typing a search after double-clicking a row keeps focus and every character",
-    async () => {
-      await press("Escape");
-      await doubleClick(xpath.rowWith(String(pids[0])));
-      await waitForVisible(xpath.detailsPanel);
-      await (await searchInput()).click();
-      for (const character of "alpha") {
-        await press(character);
-        await browser.pause(150);
-      }
-      await screenshot("search typed after opening a row");
-      const focused = await activeElementDescription();
-      const value = await (await searchInput()).getValue();
-      if (focused !== "input[Search loaded results]" || value !== "alpha") {
-        throw new Error(
-          `After typing "alpha", focus is on ${focused} and the search holds "${value}"`,
-        );
-      }
-    },
-  );
+  // #186, fixed in #187.
+  it("typing a search after double-clicking a row keeps focus and every character", async () => {
+    await press("Escape");
+    await doubleClick(xpath.rowWith(String(pids[0])));
+    await waitForVisible(xpath.detailsPanel);
+    await (await searchInput()).click();
+    for (const character of "alpha") {
+      await press(character);
+      await browser.pause(150);
+    }
+    await screenshot("search typed after opening a row");
+    const focused = await activeElementDescription();
+    const value = await (await searchInput()).getValue();
+    if (focused !== "input[Search loaded results]" || value !== "alpha") {
+      throw new Error(
+        `After typing "alpha", focus is on ${focused} and the search holds "${value}"`,
+      );
+    }
+  });
 });

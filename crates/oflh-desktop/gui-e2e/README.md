@@ -60,9 +60,8 @@ request, so only the newest commit keeps screenshots.
 - `itKnownFailing(issue, title, fn)` marks a reproduced bug with an open issue.
   It passes while the bug is there and fails as soon as the test passes, with a
   reminder to turn it back into `it`. Nothing is skipped silently. Currently
-  marked: #186 (search and keyboard focus), and on Windows only #201
-  (working directory is Unavailable because the backend never fills
-  `Process.cwd`).
+  marked, on Windows only: #201 (working directory is Unavailable because the
+  backend never fills `Process.cwd`).
 - `itOn(systems, reason, title, fn)` runs only where the behavior exists (for
   example the Windows normal-close refusal) and reports "not applicable" with the
   reason elsewhere.
