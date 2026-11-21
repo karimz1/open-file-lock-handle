@@ -1392,6 +1392,28 @@ main {
 .modal[open] {
   display: flex;
   flex-direction: column;
+  animation: modal-in 140ms ease-out;
+}
+.modal[open]::backdrop {
+  animation: modal-backdrop-in 140ms ease-out;
+}
+/* Opacity only: a transform would change the dialog's measured box while it
+   opens. */
+@keyframes modal-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal[open],
+  .modal[open]::backdrop {
+    animation: none;
+  }
 }
 .modal > header,
 .modal > .modal-actions {
@@ -2314,11 +2336,34 @@ kbd.shortcut {
   margin-left: auto;
   padding: 3px 8px;
 }
+/* The explanation grows to its height instead of pushing the grid down in
+   one frame. The grid-rows animation needs no measured height; a WebView that
+   cannot animate it simply shows the line at once. */
 .search-explanation {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: search-explanation-in 140ms ease-out;
+}
+.search-explanation > div {
+  min-height: 0;
+  overflow: hidden;
+}
+.search-explanation > div > div {
   padding: 7px 20px;
   color: var(--muted);
   font-size: 0.85rem;
   border-bottom: 1px solid var(--border);
+}
+@keyframes search-explanation-in {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .search-explanation {
+    animation: none;
+  }
 }
 
 /* A separated utility group stays discoverable without boxed navigation. */
