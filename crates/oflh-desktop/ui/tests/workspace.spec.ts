@@ -884,6 +884,16 @@ test.beforeEach(async ({ page }) => {
             };
           }
           if (command === "details") {
+            if ((window as any).__detailsDelayMsForTest)
+              await new Promise((resolve) =>
+                setTimeout(resolve, (window as any).__detailsDelayMsForTest),
+              );
+            if ((window as any).__failDetailsKeysForTest?.includes(args.key))
+              throw {
+                kind: "identity_changed",
+                message: "Captured identity absent",
+                os_code: null,
+              };
             if ((window as any).__holdDetailsForTest && args.revision > 1)
               await new Promise<void>((resolve) => {
                 ((window as any).__heldDetails ??= []).push(resolve);
@@ -3222,6 +3232,73 @@ test("native message limits include automatic context and stale drafts cannot se
     ),
   );
   expect(calls).toHaveLength(0);
+});
+
+test("the details panel stays on screen while the next process loads", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  const panel = page.getByRole("complementary", { name: "Process details" });
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await grid.getByRole("row").nth(2).click();
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText("PID 4001", { exact: true })).toBeVisible();
+  const before = await grid.boundingBox();
+  await page.evaluate(() => {
+    (window as any).__detailsDelayMsForTest = 900;
+    const frames = { total: 0, withoutPanel: 0 };
+    (window as any).__panelFrames = frames;
+    const sample = () => {
+      frames.total++;
+      if (!document.querySelector(".inspector")) frames.withoutPanel++;
+      (window as any).__panelSampler = requestAnimationFrame(sample);
+    };
+    sample();
+  });
+  await page.keyboard.press("ArrowDown");
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "test-results/details-while-switching.png" });
+  // The old details are still there, marked busy and not clickable.
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText("PID 4001", { exact: true })).toBeVisible();
+  await expect(panel).toHaveAttribute("aria-busy", "true");
+  await expect(panel).toHaveJSProperty("inert", true);
+  const during = await grid.boundingBox();
+  expect(during!.width, "the grid does not jump to full width").toBe(
+    before!.width,
+  );
+  await expect(panel.getByText("PID 4002", { exact: true })).toBeVisible();
+  await expect(panel).not.toHaveAttribute("aria-busy", "true");
+  await expect(panel).toHaveJSProperty("inert", false);
+  const frames = await page.evaluate(() => {
+    cancelAnimationFrame((window as any).__panelSampler);
+    return (window as any).__panelFrames;
+  });
+  expect(frames.withoutPanel, "frames without the panel").toBe(0);
+  expect((await grid.boundingBox())!.width).toBe(before!.width);
+});
+
+test("the details panel never shows the old process once the new one cannot be loaded", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__failDetailsKeysForTest = ["4002:18446744073709551615:0"];
+  });
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  const panel = page.getByRole("complementary", { name: "Process details" });
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await grid.getByRole("row").nth(2).click();
+  await expect(panel.getByText("PID 4001", { exact: true })).toBeVisible();
+  await page.evaluate(() => ((window as any).__detailsDelayMsForTest = 300));
+  await page.keyboard.press("ArrowDown");
+  await expect(grid.getByRole("row").nth(3)).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByText("PID 4001", { exact: true })).toHaveCount(0);
 });
 
 test("single-click rows open details and panel buttons close them", async ({
