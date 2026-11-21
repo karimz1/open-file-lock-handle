@@ -153,6 +153,116 @@ function explorerWindowTitles(): string[] {
     .filter(Boolean);
 }
 
+interface AutomationExplorerWindow {
+  title: string;
+  selected: string[];
+}
+
+/**
+ * Explorer folder windows as UI Automation sees them: window title and the
+ * names of the selected items. Shell.Application only lists windows of an
+ * Explorer at the caller's integrity level, so an elevated test runner can
+ * get an empty list while the window is on screen. UI Automation can read
+ * windows of the same or a lower integrity level.
+ */
+function automationExplorerWindows(): AutomationExplorerWindow[] {
+  const script = `
+    Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+    $A = [System.Windows.Automation.AutomationElement]
+    $scope = [System.Windows.Automation.TreeScope]
+    $cabinet = New-Object System.Windows.Automation.PropertyCondition($A::ClassNameProperty, 'CabinetWClass')
+    $item = New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, [System.Windows.Automation.ControlType]::ListItem)
+    $picked = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.SelectionItemPattern]::IsSelectedProperty, $true)
+    $both = New-Object System.Windows.Automation.AndCondition($item, $picked)
+    @($A::RootElement.FindAll($scope::Children, $cabinet) | ForEach-Object {
+      [pscustomobject]@{
+        title = $_.Current.Name
+        selected = @($_.FindAll($scope::Descendants, $both) | ForEach-Object { $_.Current.Name })
+      }
+    }) | ConvertTo-Json -Depth 3 -Compress`;
+  const result = spawnSync(
+    "powershell.exe",
+    ["-STA", "-NoProfile", "-Command", script],
+    { encoding: "utf8", timeout: 20_000 },
+  );
+  const text = (result.stdout ?? "").trim();
+  lastAutomationProbe = {
+    status: result.status,
+    stderr: (result.stderr ?? "").trim().slice(0, 500),
+    stdout: text.slice(0, 2_000),
+  };
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text) as
+      AutomationExplorerWindow | AutomationExplorerWindow[];
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
+}
+
+let lastAutomationProbe:
+  { status: number | null; stderr: string; stdout: string } | undefined;
+
+/** Whether UI Automation shows `target` selected in an Explorer window of its folder. */
+function automationShowsSelected(
+  windows: AutomationExplorerWindow[],
+  target: string,
+): boolean {
+  const folder = path.win32.basename(path.win32.dirname(target)).toLowerCase();
+  const name = path.win32.basename(target).toLowerCase();
+  // Explorer hides known extensions by default.
+  const stem = path.win32.parse(target).name.toLowerCase();
+  return windows.some(
+    (window) =>
+      window.title
+        .replace(/ - File Explorer$/i, "")
+        .trim()
+        .toLowerCase() === folder &&
+      window.selected.some((item) =>
+        [name, stem].includes(item.trim().toLowerCase()),
+      ),
+  );
+}
+
+/** Facts that tell a missing window apart from a probe that cannot see it. */
+function windowsDiagnostics(): string {
+  const script = `
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $elevated = (New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $lua = (Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -ErrorAction SilentlyContinue).EnableLUA
+    $explorer = @(Get-Process explorer -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Id) session $($_.SessionId)" })
+    $shellWindows = @((New-Object -ComObject Shell.Application).Windows()).Count
+    "probe elevated=$elevated session=$((Get-Process -Id $PID).SessionId) EnableLUA=$lua explorer=[$($explorer -join ', ')] shellWindows=$shellWindows"`;
+  const result = spawnSync(
+    "powershell.exe",
+    ["-STA", "-NoProfile", "-Command", script],
+    { encoding: "utf8", timeout: 20_000 },
+  );
+  return `${(result.stdout ?? "").trim()} ${(result.stderr ?? "").trim().slice(0, 300)}`.trim();
+}
+
+/** Save the whole Windows desktop next to the WebView screenshots. */
+function captureWindowsDesktop(name: string): void {
+  const directory = path.join(artifactsDir, "screenshots");
+  fs.mkdirSync(directory, { recursive: true });
+  const file = path.join(
+    directory,
+    `${process.env.OFLH_E2E_SPEC ?? "spec"}-desktop-${name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.png`,
+  );
+  const script = `
+    Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+    $bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
+    $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $graphics.CopyFromScreen($bounds.Left, $bounds.Top, 0, 0, $bitmap.Size)
+    $bitmap.Save('${file.replace(/'/g, "''")}', [System.Drawing.Imaging.ImageFormat]::Png)`;
+  spawnSync("powershell.exe", ["-STA", "-NoProfile", "-Command", script], {
+    stdio: "ignore",
+    timeout: 20_000,
+  });
+}
+
 function finderSelection(): string[] {
   const result = spawnSync(
     "osascript",
@@ -254,44 +364,67 @@ async function waitForFileManager(
 ): Promise<void> {
   let seen = "";
   const uri = pathToFileURL(target).href;
-  await browser.waitUntil(
-    () => {
-      if (operatingSystem === "linux") {
-        seen = linuxFileManagerLog();
-        return mode === "open"
-          ? seen.includes(`xdg-open ${uri}`) ||
-              seen.includes(`ShowFolders ${uri}`)
-          : seen.includes(`ShowItems ${uri}`);
-      }
-      if (operatingSystem === "windows") {
-        const windows = explorerWindows();
-        const titles = explorerWindowTitles();
-        seen = JSON.stringify({ windows, titles, probe: lastExplorerProbe });
-        if (mode === "open") {
-          return (
-            windows.some((window) => samePath(window.folder, target)) ||
-            titles.some((title) => samePath(title, path.win32.basename(target)))
-          );
+  try {
+    await browser.waitUntil(
+      () => {
+        if (operatingSystem === "linux") {
+          seen = linuxFileManagerLog();
+          return mode === "open"
+            ? seen.includes(`xdg-open ${uri}`) ||
+                seen.includes(`ShowFolders ${uri}`)
+            : seen.includes(`ShowItems ${uri}`);
         }
-        return windows.some((window) =>
-          window.selected.some((item) => samePath(item, target)),
-        );
-      }
-      if (mode === "open") {
-        const opened = finderWindows();
-        seen = opened.join(", ");
-        return opened.some((folder) => samePath(folder, target));
-      }
-      const selection = finderSelection();
-      seen = selection.join(", ");
-      return selection.some((item) => samePath(item, target));
-    },
-    {
-      timeout: 15_000,
-      interval: 500,
-      timeoutMsg: `The file manager did not ${mode} ${target}. It showed: ${seen || "nothing"}`,
-    },
-  );
+        if (operatingSystem === "windows") {
+          const windows = explorerWindows();
+          const titles = explorerWindowTitles();
+          seen = JSON.stringify({ windows, titles, probe: lastExplorerProbe });
+          if (mode === "open") {
+            return (
+              windows.some((window) => samePath(window.folder, target)) ||
+              titles.some((title) =>
+                samePath(title, path.win32.basename(target)),
+              )
+            );
+          }
+          if (
+            windows.some((window) =>
+              window.selected.some((item) => samePath(item, target)),
+            )
+          )
+            return true;
+          const automation = automationExplorerWindows();
+          seen = JSON.stringify({
+            windows,
+            titles,
+            probe: lastExplorerProbe,
+            automation,
+            automationProbe: lastAutomationProbe,
+          });
+          return automationShowsSelected(automation, target);
+        }
+        if (mode === "open") {
+          const opened = finderWindows();
+          seen = opened.join(", ");
+          return opened.some((folder) => samePath(folder, target));
+        }
+        const selection = finderSelection();
+        seen = selection.join(", ");
+        return selection.some((item) => samePath(item, target));
+      },
+      { timeout: 20_000, interval: 500 },
+    );
+  } catch (error) {
+    // The message is built after the wait: `seen` holds the last probe.
+    let facts = "";
+    if (operatingSystem === "windows") {
+      facts = ` Diagnostics: ${windowsDiagnostics()}`;
+      captureWindowsDesktop(`${mode} ${path.win32.basename(target)}`);
+    }
+    throw new Error(
+      `The file manager did not ${mode} ${target}. It showed: ${seen || "nothing"}.${facts}`,
+      { cause: error },
+    );
+  }
 }
 
 /** Close Explorer windows opened by reveal tests so later checks start clean (Windows only). */

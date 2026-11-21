@@ -140,6 +140,10 @@ describe("Ending processes", () => {
   });
 
   it("confirming Close ends the process and removes its row", async () => {
+    // The normal close on Windows only reaches a process through its window,
+    // so make sure the fixture's window is up first. The confirmation does
+    // not name it: a single window is the expected impact and stays silent
+    // (see impactSummary in ui/src/termination.ts).
     if (operatingSystem === "windows") {
       await browser.waitUntil(
         () => closable.mainWindowTitle() === "OFLH E2E windowed holder",
@@ -152,9 +156,7 @@ describe("Ending processes", () => {
     await selectOnly(closable.pid);
     await clickButton("Terminate…");
     await expectDialogTitle(/^Close .+\?$/);
-    if (operatingSystem === "windows") {
-      expect(await dialogText()).toContain("OFLH E2E windowed holder");
-    }
+    expect(await dialogText()).toContain(`PID ${closable.pid}`);
     await click(confirmButton);
     expect(await closable.waitForExit(20_000)).toBe(true);
     await expectTerminationResult(closable.pid);

@@ -93,12 +93,26 @@ export async function doubleClick(locator: string): Promise<void> {
 export const clickButton = (name: string, within = "") =>
   click(xpath.button(name, within));
 
+/**
+ * Whether any element matching `locator` is displayed right now. Looks the
+ * element up again on every call: a reference found earlier can belong to a
+ * node React has since replaced (for example Termination results swapped for
+ * the Force quit confirmation), and a detached node never becomes visible.
+ */
+async function anyDisplayed(locator: string): Promise<boolean> {
+  for (const element of await $$(locator)) {
+    if (await element.isDisplayed().catch(() => false)) return true;
+  }
+  return false;
+}
+
 export async function waitForVisible(
   locator: string,
   timeout = 20_000,
 ): Promise<void> {
-  await $(locator).waitForDisplayed({
+  await browser.waitUntil(() => anyDisplayed(locator), {
     timeout,
+    interval: 200,
     timeoutMsg: `Not visible: ${locator}`,
   });
 }
@@ -107,9 +121,9 @@ export async function waitForGone(
   locator: string,
   timeout = 20_000,
 ): Promise<void> {
-  await $(locator).waitForDisplayed({
+  await browser.waitUntil(async () => !(await anyDisplayed(locator)), {
     timeout,
-    reverse: true,
+    interval: 200,
     timeoutMsg: `Still visible: ${locator}`,
   });
 }
