@@ -1,0 +1,94 @@
+name: Reveal probe
+# Temporary diagnostic for #202: which Explorer launch methods select a file on a hosted runner.
+on:
+  pull_request:
+    paths: ['.github/workflows/reveal-probe.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - name: Try each reveal method
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+          Add-Type @"
+          using System; using System.Runtime.InteropServices;
+          public static class Sh {
+            [DllImport("shell32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr ILCreateFromPathW(string p);
+            [DllImport("shell32.dll")] public static extern void ILFree(IntPtr p);
+            [DllImport("shell32.dll")] public static extern int SHOpenFolderAndSelectItems(IntPtr f, uint c, IntPtr[] i, uint fl);
+            [DllImport("ole32.dll")] public static extern int CoInitializeEx(IntPtr r, uint f);
+          }
+          "@
+          function Selected {
+            $shell = New-Object -ComObject Shell.Application
+            @($shell.Windows() | Where-Object { $_.Document -and $_.Document.Folder } | ForEach-Object {
+              "$($_.Document.Folder.Self.Path) => [" + (@($_.Document.SelectedItems() | ForEach-Object { $_.Path }) -join ',') + "]"
+            })
+          }
+          function CloseAll {
+            (New-Object -ComObject Shell.Application).Windows() | Where-Object { $_.Document -and $_.Document.Folder } | ForEach-Object { $_.Quit() }
+            Start-Sleep 2
+          }
+          Write-Host "elevated=" ((New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
+          Write-Host "OS" (Get-CimInstance Win32_OperatingSystem).Caption
+          $root = Join-Path $env:RUNNER_TEMP 'probe'
+          foreach ($n in 'a','b','c','d') {
+            New-Item -ItemType Directory -Force "$root\$n" | Out-Null
+            foreach ($f in 'alpha.txt','beta.txt','gamma.txt') { Set-Content "$root\$n\$f" 'x' }
+          }
+          # 1. explorer /select, from this process
+          CloseAll
+          Start-Process explorer.exe -ArgumentList "/select,`"$root\a\alpha.txt`""
+          Start-Sleep 6
+          Write-Host "1 explorer /select =" (Selected)
+          # 2. explorer /e,/select,
+          CloseAll
+          Start-Process explorer.exe -ArgumentList "/e,/select,`"$root\b\beta.txt`""
+          Start-Sleep 6
+          Write-Host "2 explorer /e,/select =" (Selected)
+          # 3. SHOpenFolderAndSelectItems on an STA thread (what tauri-plugin-opener does)
+          CloseAll
+          $ps = [powershell]::Create()
+          $rs = [runspacefactory]::CreateRunspace(); $rs.ApartmentState = 'STA'; $rs.Open(); $ps.Runspace = $rs
+          [void]$ps.AddScript({
+            param($dir, $file)
+            $folder = [Sh]::ILCreateFromPathW($dir); $item = [Sh]::ILCreateFromPathW($file)
+            $hr = [Sh]::SHOpenFolderAndSelectItems($folder, 1, @($item), 0)
+            "hr=$hr"
+          }).AddArgument("$root\c").AddArgument("$root\c\gamma.txt")
+          Write-Host "3 SHOpenFolderAndSelectItems" ($ps.Invoke())
+          Start-Sleep 6
+          Write-Host "3 selected =" (Selected)
+          # 4. Select via the Shell.Application COM object of an already open folder window
+          CloseAll
+          Start-Process explorer.exe -ArgumentList "`"$root\d`""
+          Start-Sleep 6
+          $shell = New-Object -ComObject Shell.Application
+          $w = $shell.Windows() | Where-Object { $_.Document -and $_.Document.Folder } | Select-Object -First 1
+          if ($w) {
+            $item = $w.Document.Folder.ParseName('alpha.txt')
+            $w.Document.SelectItem($item, 1 + 4 + 8 + 16)
+            Start-Sleep 2
+          }
+          Write-Host "4 Document.SelectItem =" (Selected)
+          # 5. open folder first, then explorer /select,
+          CloseAll
+          Start-Process explorer.exe -ArgumentList "`"$root\a`""
+          Start-Sleep 5
+          Start-Process explorer.exe -ArgumentList "/select,`"$root\a\beta.txt`""
+          Start-Sleep 6
+          Write-Host "5 open then /select =" (Selected)
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = New-Object System.Drawing.Bitmap([System.Windows.Forms.SystemInformation]::VirtualScreen.Width, [System.Windows.Forms.SystemInformation]::VirtualScreen.Height)
+          [System.Drawing.Graphics]::FromImage($b).CopyFromScreen(0,0,0,0,$b.Size)
+          $b.Save("$env:RUNNER_TEMP\probe.png")
+      - uses: actions/upload-artifact@v7
+        with:
+          name: reveal-probe
+          path: ${{ runner.temp }}/probe.png
+          retention-days: 1
