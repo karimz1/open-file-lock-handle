@@ -1568,15 +1568,11 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
         }
         lines.push(Line::raw(""));
         lines.push(Line::styled(
-            localized!(app.language, "VERSION {}", oflh_core::VERSION),
+            localized!(app.language, "VERSION {}", app.version),
             accent(),
         ));
-        if !oflh_core::BUILD_COMMIT.is_empty() {
-            lines.push(Line::raw(localized!(
-                app.language,
-                "Commit {}",
-                oflh_core::BUILD_COMMIT
-            )));
+        if !app.commit.is_empty() {
+            lines.push(Line::raw(localized!(app.language, "Commit {}", app.commit)));
         }
         if !oflh_core::BUILD_URL.is_empty() {
             lines.push(Line::raw(localized!(
