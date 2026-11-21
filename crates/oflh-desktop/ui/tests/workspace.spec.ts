@@ -5746,6 +5746,119 @@ test("quiet refresh rejects retained matches after a new query and publishes the
   await expect(grid.getByText("Blender", { exact: true })).toHaveCount(0);
 });
 
+const refreshControls = [
+  ".new-window-button",
+  ".sidebar .nav-section button",
+  ".target-bar button[type=submit]",
+  ".selection-toolbar button",
+];
+
+async function watchControlLook(page: import("@playwright/test").Page) {
+  await page.evaluate((selectors) => {
+    const look = { frames: 0, lowest: 1, locked: 0 };
+    (window as any).__controlLook = look;
+    const sample = () => {
+      look.frames++;
+      for (const selector of selectors)
+        for (const node of document.querySelectorAll(selector)) {
+          look.lowest = Math.min(
+            look.lowest,
+            Number(getComputedStyle(node).opacity),
+          );
+          if ((node as HTMLButtonElement).disabled || node.closest("[inert]"))
+            look.locked++;
+        }
+      (window as any).__controlLookSampler = requestAnimationFrame(sample);
+    };
+    sample();
+  }, refreshControls);
+}
+
+async function finishScan(page: import("@playwright/test").Page) {
+  await page.evaluate(() => {
+    (window as any).__holdRefreshForTest = false;
+    (window as any).__emitTestEvent("scan-status", {
+      scanning: false,
+      generation: 50,
+      revision: 50,
+    });
+  });
+}
+
+test("a short refresh locks the controls without visibly greying them", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await expect(page.getByText("1 process selected")).toBeVisible();
+  await page.evaluate(() => ((window as any).__holdRefreshForTest = true));
+  await watchControlLook(page);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.waitForTimeout(120);
+  const mid = await page.evaluate(() => ({
+    locked: (window as any).__controlLook.locked,
+  }));
+  // The controls really are locked while the scan runs.
+  expect(mid.locked).toBeGreaterThan(0);
+  await page.screenshot({ path: "test-results/refresh-short-controls.png" });
+  await page.waitForTimeout(40);
+  await finishScan(page);
+  await expect(page.getByText("Updating results")).toHaveCount(0);
+  await page.waitForTimeout(400);
+  const look = await page.evaluate(() => {
+    cancelAnimationFrame((window as any).__controlLookSampler);
+    return (window as any).__controlLook;
+  });
+  expect(look.lowest, "lowest control opacity during a short refresh").toBe(1);
+});
+
+test("a long refresh still shows the controls as unavailable", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.evaluate(() => ((window as any).__holdRefreshForTest = true));
+  await watchControlLook(page);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.waitForTimeout(900);
+  await page.screenshot({ path: "test-results/refresh-long-controls.png" });
+  await expect(page.locator(".new-window-button")).toBeDisabled();
+  const lowest = await page.evaluate(
+    () => (window as any).__controlLook.lowest,
+  );
+  expect(lowest).toBeLessThan(0.6);
+  await finishScan(page);
+  await expect(page.locator(".new-window-button")).toBeEnabled();
+  await expect
+    .poll(() =>
+      page
+        .locator(".new-window-button")
+        .evaluate((node) => getComputedStyle(node).opacity),
+    )
+    .toBe("1");
+});
+
+test("the status line does not move when a refresh starts", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const metrics = page.locator(".status-metrics");
+  const before = (await metrics.boundingBox())!;
+  await page.evaluate(() => ((window as any).__holdRefreshForTest = true));
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByText("Updating results")).toBeVisible();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: "test-results/refresh-status-line.png" });
+  const during = (await metrics.boundingBox())!;
+  expect(during.x, "status text x while updating").toBe(before.x);
+  await finishScan(page);
+  await expect(page.getByText("Updating results")).toHaveCount(0);
+  const after = (await metrics.boundingBox())!;
+  expect(after.x, "status text x after updating").toBe(before.x);
+});
+
 test("a native target scan after quiet refresh locks inspection controls without a modal", async ({
   page,
 }) => {
