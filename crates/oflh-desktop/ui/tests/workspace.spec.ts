@@ -1,10 +1,38 @@
 import { readFileSync } from "node:fs";
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import {
   assertNoWatchedVirtualRowViolations,
   assertVirtualRowsLayout,
   watchVirtualRowLayout,
 } from "./virtualRowLayout";
+
+/** Matches App.tsx: shortcut titles use ⌘ on Apple platforms and Ctrl elsewhere. */
+async function commandModifier(page: Page): Promise<"⌘" | "Ctrl"> {
+  const platform = await page.evaluate(() => navigator.platform);
+  return /Mac|iPhone|iPad/.test(platform) ? "⌘" : "Ctrl";
+}
+
+/** Wait until a box has stayed still for two consecutive reads after a resize. */
+async function stableBoundingBox(locator: Locator) {
+  let previous: { x: number; y: number; width: number; height: number } | null =
+    null;
+  await expect
+    .poll(async () => {
+      const box = await locator.boundingBox();
+      if (!box) return false;
+      const same =
+        previous !== null &&
+        previous.x === box.x &&
+        previous.y === box.y &&
+        previous.width === box.width &&
+        previous.height === box.height;
+      previous = box;
+      return same;
+    })
+    .toBe(true);
+  return previous!;
+}
+
 // Synthetic IPC fixtures are test-only. The production bundle always invokes Rust.
 const documentationScreenshotPath = (filename: string) =>
   process.env.OFLH_UPDATE_SCREENSHOTS === "1"
@@ -2167,9 +2195,10 @@ test("workspace shortcuts expose hints and respect editors and dialogs", async (
   page,
 }) => {
   await page.goto("/");
+  const modifier = await commandModifier(page);
   await expect(
     page.getByRole("button", { name: "Refresh", exact: true }),
-  ).toHaveAttribute("title", /Ctrl.*R.*F5/);
+  ).toHaveAttribute("title", new RegExp(`${modifier}.*R.*F5`));
   await page.keyboard.press("Control+3");
   await expect(
     page.getByRole("heading", { name: "Local ports" }),
@@ -2212,6 +2241,32 @@ test("workspace shortcuts expose hints and respect editors and dialogs", async (
   ).toBeVisible();
   await page.keyboard.press("Control+f");
   await expect(search).toBeFocused();
+});
+
+test("shortcut titles use the Command glyph when the platform is macOS", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      get: () => "MacIntel",
+    });
+  });
+  await page.goto("/");
+  await expect(await commandModifier(page)).toBe("⌘");
+  await expect(
+    page.getByRole("button", { name: "Refresh", exact: true }),
+  ).toHaveAttribute("title", "Refresh (⌘+R or F5)");
+  await expect(
+    page.getByRole("button", { name: "New window", exact: true }),
+  ).toHaveAttribute("title", "Open a separate OFLH window (⌘+Shift+N)");
+  const pickers = page.getByRole("group", { name: "Choose a scan target" });
+  await expect(
+    pickers.getByRole("button", { name: "Choose file" }),
+  ).toHaveAttribute("title", "Choose a file to scan (⌘+O)");
+  await expect(
+    pickers.getByRole("button", { name: "Choose folder" }),
+  ).toHaveAttribute("title", "Choose a folder to scan (⌘+Shift+O)");
 });
 
 for (const [locale, applyLabel] of [
@@ -3502,13 +3557,14 @@ test("target bar picks files or folders, accepts typed paths and explains drag a
   const pickers = page.getByRole("group", { name: "Choose a scan target" });
   const chooseFile = pickers.getByRole("button", { name: "Choose file" });
   const chooseFolder = pickers.getByRole("button", { name: "Choose folder" });
+  const modifier = await commandModifier(page);
   await expect(chooseFile).toHaveAttribute(
     "title",
-    "Choose a file to scan (Ctrl+O)",
+    `Choose a file to scan (${modifier}+O)`,
   );
   await expect(chooseFolder).toHaveAttribute(
     "title",
-    "Choose a folder to scan (Ctrl+Shift+O)",
+    `Choose a folder to scan (${modifier}+Shift+O)`,
   );
   const field = page.getByRole("textbox", {
     name: "Target file or folder path",
@@ -3649,7 +3705,7 @@ for (const locale of ["en", "de", "zh"] as const) {
     const help = page.locator(".target-help summary");
     const note = page.locator('.target-help [role="note"]');
     const grid = page.locator("#results-grid");
-    const before = await grid.boundingBox();
+    const before = await stableBoundingBox(grid);
     await help.focus();
     await page.keyboard.press("Enter");
     await expect(note).toBeVisible();
@@ -5644,9 +5700,10 @@ test("New window opens a blank instance from the toolbar and keyboard without du
 }) => {
   await page.goto("/");
   const button = page.getByRole("button", { name: "New window", exact: true });
+  const modifier = await commandModifier(page);
   await expect(button).toHaveAttribute(
     "title",
-    "Open a separate OFLH window (Ctrl+Shift+N)",
+    `Open a separate OFLH window (${modifier}+Shift+N)`,
   );
   await page.evaluate(() => {
     (window as any).__holdNewWindowForTest = true;

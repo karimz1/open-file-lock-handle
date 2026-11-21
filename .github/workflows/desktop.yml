@@ -184,7 +184,7 @@ jobs:
         run: npm run test:ui
         working-directory: crates/oflh-desktop/ui
       - uses: actions/upload-artifact@v7
-        if: ${{ always() && inputs.upload_artifacts }}
+        if: ${{ failure() || inputs.upload_artifacts }}
         with:
           name: desktop-ui-report-${{ matrix.label }}
           path: |
