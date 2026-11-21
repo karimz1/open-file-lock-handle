@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  changeLocalePreference,
+  getLocale,
+  getLocalePreference,
   resolveLocale,
   resolvePreferredLocale,
+  subscribeLocale,
+  t,
   translate,
   tValue,
 } from "./i18n";
@@ -104,5 +109,67 @@ describe("desktop locale selection", () => {
     expect(resolvePreferredLocale("en", "de-DE")).toBe("en");
     expect(resolvePreferredLocale("system", "de-DE")).toBe("de");
     expect(resolvePreferredLocale("system", "pt-PT")).toBe("en");
+  });
+});
+
+describe("in-place locale changes", () => {
+  const memory = new Map<string, string>();
+  const documentElement = { lang: "" };
+
+  beforeEach(() => {
+    memory.clear();
+    documentElement.lang = "";
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        memory.set(key, value);
+      },
+      removeItem: (key: string) => {
+        memory.delete(key);
+      },
+    });
+    vi.stubGlobal("document", { documentElement });
+    changeLocalePreference("system", "en-US");
+  });
+
+  afterEach(() => {
+    changeLocalePreference("system", "en-US");
+    vi.unstubAllGlobals();
+  });
+
+  it("updates t(), the active locale, and document lang without a reload", () => {
+    expect(t("navigation.k_settings")).toBe("Settings");
+    expect(getLocalePreference()).toBe("system");
+    expect(getLocale()).toBe("en");
+
+    changeLocalePreference("de");
+    expect(getLocale()).toBe("de");
+    expect(getLocalePreference()).toBe("de");
+    expect(t("navigation.k_settings")).toBe("Einstellungen");
+    expect(documentElement.lang).toBe("de");
+    expect(memory.get("oflh-language")).toBe("de");
+
+    changeLocalePreference("zh");
+    expect(t("navigation.k_settings")).toBe("设置");
+    expect(documentElement.lang).toBe("zh");
+    expect(memory.get("oflh-language")).toBe("zh");
+
+    changeLocalePreference("system", "de-DE");
+    expect(getLocale()).toBe("de");
+    expect(t("navigation.k_settings")).toBe("Einstellungen");
+    expect(documentElement.lang).toBe("de");
+    expect(memory.get("oflh-language")).toBe("system");
+  });
+
+  it("notifies subscribers so the UI can re-render in place", () => {
+    const seen: string[] = [];
+    const stop = subscribeLocale(() => {
+      seen.push(getLocale());
+    });
+    changeLocalePreference("de");
+    changeLocalePreference("zh");
+    stop();
+    changeLocalePreference("en");
+    expect(seen).toEqual(["de", "zh"]);
   });
 });

@@ -152,15 +152,41 @@ jobs:
           OFLH_ICON_SMOKE_EXECUTABLE: /opt/google/chrome/chrome
           OFLH_ICON_DATA_URL_FILE: ${{ runner.temp }}/oflh-native-icon.txt
         run: cargo test -p oflh-icons --test native --locked native_application_icon_is_renderable -- --ignored
-      - name: Browser end-to-end tests with a native application icon
-        env:
-          OFLH_NATIVE_ICON_PATH: ${{ runner.temp }}/oflh-native-icon.txt
+  # Playwright GUI tests on each desktop OS, not only Ubuntu.
+  frontend-e2e:
+    if: ${{ !inputs.administrator_only }}
+    name: GUI E2E / ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {label: Linux, runner: ubuntu-24.04}
+          - {label: Windows, runner: windows-2025}
+          - {label: macOS, runner: macos-15}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: crates/oflh-desktop/ui/package-lock.json
+      - run: npm ci
+        working-directory: crates/oflh-desktop/ui
+      - name: Install Chrome for Playwright
+        run: npx playwright install --with-deps chrome
+        working-directory: crates/oflh-desktop/ui
+      - name: Browser end-to-end tests
         run: npm run test:ui
         working-directory: crates/oflh-desktop/ui
       - uses: actions/upload-artifact@v7
-        if: ${{ always() && inputs.upload_artifacts }}
+        if: ${{ failure() || inputs.upload_artifacts }}
         with:
-          name: desktop-ui-report
+          name: desktop-ui-report-${{ matrix.label }}
           path: |
             crates/oflh-desktop/ui/playwright-report/
             crates/oflh-desktop/ui/test-results/
@@ -942,6 +968,7 @@ jobs:
       - installer-dialog
       - administrator-recovery
       - frontend
+      - frontend-e2e
       - native
       - prune-tester-builds
       - package-smoke
@@ -960,6 +987,6 @@ jobs:
           NEEDS: ${{ toJSON(needs) }}
           ALLOWED_SKIPS: >-
             ${{ inputs.administrator_only
-              && 'installer-dialog frontend native prune-tester-builds package-smoke archive-smoke multiuser-e2e'
+              && 'installer-dialog frontend frontend-e2e native prune-tester-builds package-smoke archive-smoke multiuser-e2e'
               || 'prune-tester-builds' }}
         run: node .github/scripts/require-success.mjs
