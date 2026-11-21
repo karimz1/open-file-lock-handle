@@ -1,9 +1,9 @@
-import { locale, type Locale } from "./i18n";
+import { getLocale, type Locale } from "./i18n";
 
 /** Static backend duration, independent of polling and native work counters. */
 export function scanDuration(
   milliseconds: number,
-  language: Locale = locale,
+  language: Locale = getLocale(),
 ): string {
   const unit =
     milliseconds < 1000

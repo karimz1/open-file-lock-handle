@@ -89,10 +89,12 @@ import { BackgroundInspection } from "./BackgroundInspection";
 import { WaitUntilFree } from "./WaitUntilFree";
 import { UpdateFeedback } from "./UpdateFeedback";
 import {
+  changeLocalePreference,
+  isLocalePreference,
   languageOptions,
-  localePreference,
   t,
   tValue,
+  useLocalePreference,
   type MessageKey,
 } from "./i18n";
 
@@ -170,6 +172,7 @@ function formatFailureDetails(failure: unknown): string {
 }
 export function App() {
   useScrollRegionFades();
+  const localePreference = useLocalePreference();
   const updates = useUpdates();
   const [showAbout, setShowAbout] = useState(false);
 
@@ -2002,15 +2005,8 @@ export function App() {
                     id="language"
                     value={localePreference}
                     onChange={(event) => {
-                      try {
-                        localStorage.setItem(
-                          "oflh-language",
-                          event.target.value,
-                        );
-                      } catch {
-                        // Apply the language for this session even without storage.
-                      }
-                      window.location.reload();
+                      if (isLocalePreference(event.target.value))
+                        changeLocalePreference(event.target.value);
                     }}
                   >
                     {languageOptions.map(({ value, label }) => (
