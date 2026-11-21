@@ -1,5 +1,4 @@
 import { expect } from "@wdio/globals";
-import { itKnownFailing } from "../support/results.ts";
 import {
   activeView,
   browser,
@@ -92,18 +91,15 @@ describe("First launch and Settings", () => {
     ).toBe("de");
   });
 
-  itKnownFailing(
-    188,
-    "switching the language keeps Settings open",
-    async () => {
-      await resetWorkspace();
-      await openSettings();
-      await chooseOption("#language", "de");
-      await browser.waitUntil(async () => (await pageLanguage()) === "de");
-      await screenshot("view after switching to German");
-      await waitForVisible("#language", 5_000);
-    },
-  );
+  // #188, fixed in #189.
+  it("switching the language keeps Settings open", async () => {
+    await resetWorkspace();
+    await openSettings();
+    await chooseOption("#language", "de");
+    await browser.waitUntil(async () => (await pageLanguage()) === "de");
+    await screenshot("view after switching to German");
+    await waitForVisible("#language", 5_000);
+  });
 
   it("switching back to English restores English labels", async () => {
     await browser.execute(() => localStorage.setItem("oflh-language", "de"));
