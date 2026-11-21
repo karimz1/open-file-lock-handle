@@ -7943,7 +7943,7 @@ test("a dialog fades in instead of popping in", async ({ page }) => {
   expect(samples.at(-1)!.backdrop).toBe(1);
   // Short enough to never feel slow.
   const settled = samples.find((sample) => sample.dialog === 1)!;
-  expect(settled.at).toBeLessThan(400);
+  expect(settled.at - samples[0].at).toBeLessThan(400);
 });
 
 test("a dialog appears at once when the system asks for reduced motion", async ({
