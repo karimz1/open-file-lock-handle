@@ -7895,6 +7895,7 @@ test("the result toolbar keeps the Maximize button on the search row at 1280 px"
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/");
   await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.screenshot({ path: "test-results/toolbar-1280.png" });
   const search = await page.locator(".search-box").boundingBox();
   const maximize = await page
     .getByRole("button", { name: "Maximize grid" })

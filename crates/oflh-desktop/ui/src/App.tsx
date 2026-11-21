@@ -733,12 +733,28 @@ export function App() {
       .then(() => setToast(t("selection.k_error_details_copied")))
       .catch(report);
   };
-  const removeRecent = (id: number) => {
+  const removeRecent = (id: number, entry?: HTMLElement | null) => {
+    const drop = () =>
+      setRecent((current) => current.filter((item) => item.id !== id));
     void api
       .removeRecent(id)
-      .then(() =>
-        setRecent((current) => current.filter((item) => item.id !== id)),
-      )
+      .then(() => {
+        if (
+          !entry ||
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ) {
+          drop();
+          return;
+        }
+        // Close the gap over a moment instead of moving every entry below it
+        // in one frame, then drop the entry from the list.
+        entry.inert = true;
+        entry.style.height = `${entry.offsetHeight}px`;
+        void entry.offsetHeight;
+        entry.classList.add("recent-leaving");
+        entry.style.height = "0px";
+        window.setTimeout(drop, 160);
+      })
       .catch(report);
   };
   const clearRecent = () => {
@@ -1995,7 +2011,14 @@ export function App() {
                             className="icon-button recent-remove"
                             aria-label={`${t("app.k_remove")} ${target.display}`}
                             title={t("history.k_remove_from_recent_targets")}
-                            onClick={() => removeRecent(target.id)}
+                            onClick={(event) =>
+                              removeRecent(
+                                target.id,
+                                event.currentTarget.closest<HTMLElement>(
+                                  ".recent-entry",
+                                ),
+                              )
+                            }
                           >
                             <Trash2 size={15} />
                           </button>

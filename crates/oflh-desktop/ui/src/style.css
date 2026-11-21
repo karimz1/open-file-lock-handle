@@ -1173,6 +1173,22 @@ main {
   min-width: 0;
   border-top: 1px solid var(--border);
 }
+/* A removed entry shrinks to nothing; the script sets the heights. Clipping
+   is only needed while it shrinks, so focus rings stay visible otherwise. */
+.recent-entry.recent-leaving {
+  overflow: hidden;
+  opacity: 0;
+  border-top-width: 0;
+  transition:
+    height 140ms ease-out,
+    opacity 120ms ease-out,
+    border-top-width 140ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .recent-entry.recent-leaving {
+    transition: none;
+  }
+}
 .recent-entry:first-child {
   border-top: 0;
 }
@@ -1905,6 +1921,9 @@ button {
 .search-box {
   min-height: 2.75rem;
   max-width: 480px;
+  /* Narrower than the 210px base so the toolbar still fits on one row with the
+     sidebar open at 1280px, instead of Maximize wrapping onto its own row. */
+  min-width: 190px;
   padding: 4px 12px;
   background: var(--bg);
   border-radius: 6px;
