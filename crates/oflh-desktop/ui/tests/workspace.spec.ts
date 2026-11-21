@@ -1451,6 +1451,71 @@ test("auto refresh pauses while context actions are open", async ({ page }) => {
   );
   expect(revealCalls).toHaveLength(1);
 });
+test("the result toolbar keeps the Maximize button on the search row at 1280 px", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.screenshot({ path: "test-results/toolbar-1280.png" });
+  const search = await page.locator(".search-box").boundingBox();
+  const maximize = await page
+    .getByRole("button", { name: "Maximize grid" })
+    .boundingBox();
+  const toolbar = await page.locator(".search-toolbar").boundingBox();
+  expect(search && maximize && toolbar).toBeTruthy();
+  expect(
+    maximize!.y,
+    "the Maximize button starts below the search box",
+  ).toBeLessThan(search!.y + search!.height / 2);
+  expect(toolbar!.height, "toolbar height").toBeLessThan(75);
+});
+
+test("removing a recent target closes the gap smoothly instead of jumping", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: /Recent targets/ })
+    .click();
+  const recentList = page.locator('.recent-list[aria-label="Recent targets"]');
+  await expect(recentList.locator(".recent-entry")).toHaveCount(12);
+  const entries = await recentList
+    .locator(".recent-target")
+    .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("title")));
+  const below = recentList.getByRole("button", {
+    name: entries[1]!,
+    exact: true,
+  });
+  await expect(below).toBeVisible();
+  await page.evaluate((title) => {
+    (window as any).__recentTops = new Promise((resolve) => {
+      const tops: number[] = [];
+      const start = performance.now();
+      const tick = () => {
+        const node = document.querySelector(`.recent-target[title="${title}"]`);
+        if (node) tops.push(node.getBoundingClientRect().top);
+        if (performance.now() - start < 900) requestAnimationFrame(tick);
+        else resolve(tops);
+      };
+      requestAnimationFrame(tick);
+    });
+  }, entries[1]!);
+  await recentList
+    .getByRole("button", { name: `Remove ${entries[0]}`, exact: true })
+    .click();
+  await expect(recentList.locator(".recent-entry")).toHaveCount(11);
+  const tops = (await page.evaluate(
+    () => (window as any).__recentTops,
+  )) as number[];
+  const moved = tops[0] - tops.at(-1)!;
+  const biggestStep = Math.max(
+    ...tops.slice(1).map((top, index) => Math.abs(top - tops[index])),
+  );
+  expect(moved, "the next entry moves up by one row").toBeGreaterThan(25);
+  expect(biggestStep, "largest move in one frame").toBeLessThan(20);
+});
 test("recent targets can be searched, removed, and cleared", async ({
   page,
 }) => {
@@ -7887,70 +7952,4 @@ test("changing language in Settings stays on the page and swaps text without a r
   expect(await page.evaluate(() => localStorage.getItem("oflh-language"))).toBe(
     "system",
   );
-});
-
-test("the result toolbar keeps the Maximize button on the search row at 1280 px", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/");
-  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
-  await page.screenshot({ path: "test-results/toolbar-1280.png" });
-  const search = await page.locator(".search-box").boundingBox();
-  const maximize = await page
-    .getByRole("button", { name: "Maximize grid" })
-    .boundingBox();
-  const toolbar = await page.locator(".search-toolbar").boundingBox();
-  expect(search && maximize && toolbar).toBeTruthy();
-  expect(
-    maximize!.y,
-    "the Maximize button starts below the search box",
-  ).toBeLessThan(search!.y + search!.height / 2);
-  expect(toolbar!.height, "toolbar height").toBeLessThan(75);
-});
-
-test("removing a recent target closes the gap smoothly instead of jumping", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: /Recent targets/ })
-    .click();
-  const recentList = page.locator('.recent-list[aria-label="Recent targets"]');
-  await expect(recentList.locator(".recent-entry")).toHaveCount(12);
-  const entries = await recentList
-    .locator(".recent-target")
-    .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("title")));
-  const below = recentList.getByRole("button", {
-    name: entries[1]!,
-    exact: true,
-  });
-  await expect(below).toBeVisible();
-  await page.evaluate((title) => {
-    (window as any).__recentTops = new Promise((resolve) => {
-      const tops: number[] = [];
-      const start = performance.now();
-      const tick = () => {
-        const node = document.querySelector(`.recent-target[title="${title}"]`);
-        if (node) tops.push(node.getBoundingClientRect().top);
-        if (performance.now() - start < 900) requestAnimationFrame(tick);
-        else resolve(tops);
-      };
-      requestAnimationFrame(tick);
-    });
-  }, entries[1]!);
-  await recentList
-    .getByRole("button", { name: `Remove ${entries[0]}`, exact: true })
-    .click();
-  await expect(recentList.locator(".recent-entry")).toHaveCount(11);
-  const tops = (await page.evaluate(
-    () => (window as any).__recentTops,
-  )) as number[];
-  const moved = tops[0] - tops.at(-1)!;
-  const biggestStep = Math.max(
-    ...tops.slice(1).map((top, index) => Math.abs(top - tops[index])),
-  );
-  expect(moved, "the next entry moves up by one row").toBeGreaterThan(25);
-  expect(biggestStep, "largest move in one frame").toBeLessThan(20);
 });
