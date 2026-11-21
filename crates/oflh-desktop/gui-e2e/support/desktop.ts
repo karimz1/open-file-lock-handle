@@ -255,6 +255,20 @@ function windowsDiagnostics(): string {
 }
 
 /** Save the whole Windows desktop next to the WebView screenshots. */
+function captureMacDesktop(label: string): void {
+  const file = path.join(
+    artifactsDir,
+    `${process.env.OFLH_E2E_SPEC ?? "spec"}-desktop-${label}.png`.replace(
+      /[^a-zA-Z0-9._-]+/g,
+      "-",
+    ),
+  );
+  spawnSync("screencapture", ["-x", file], {
+    stdio: "ignore",
+    timeout: 10_000,
+  });
+}
+
 function captureWindowsDesktop(name: string): void {
   const directory = path.join(artifactsDir, "screenshots");
   fs.mkdirSync(directory, { recursive: true });
@@ -305,12 +319,31 @@ function finderSelection(): string[] {
     .filter(Boolean);
 }
 
+function resolvedPath(value: string): string {
+  const trimmed = value.replace(/\/$/, "");
+  try {
+    return fs.realpathSync(trimmed);
+  } catch {
+    return path.normalize(trimmed);
+  }
+}
+
+/** macOS exposes some paths as both /var and /private/var (and /tmp). */
+function posixKey(value: string): string {
+  const resolved = resolvedPath(value);
+  for (const prefix of ["/var/", "/tmp/"]) {
+    if (resolved === prefix.slice(0, -1) || resolved.startsWith(prefix)) {
+      return `/private${resolved}`;
+    }
+  }
+  return resolved;
+}
+
 const samePath = (left: string, right: string) =>
   operatingSystem === "windows"
     ? path.win32.normalize(left).toLowerCase() ===
       path.win32.normalize(right).toLowerCase()
-    : path.normalize(left).replace(/\/$/, "") ===
-      path.normalize(right).replace(/\/$/, "");
+    : posixKey(left) === posixKey(right);
 
 /**
  * Wait until the platform file manager shows `target` selected in its folder:
@@ -334,39 +367,70 @@ function linuxFileManagerLog(): string {
     : "";
 }
 
+/** Last Finder probe, included in file-manager timeout messages. */
+let lastFinderProbe:
+  | { status: number | null; stderr: string; stdout: string; titles: string[] }
+  | undefined;
+
+function osascript(source: string): {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+} {
+  const result = spawnSync("osascript", ["-e", source], {
+    encoding: "utf8",
+    timeout: 15_000,
+  });
+  return {
+    status: result.status,
+    stdout: (result.stdout ?? "").trim(),
+    stderr: (result.stderr ?? "").trim(),
+  };
+}
+
+/**
+ * Paths of open Finder windows, including tab targets. `windows` can miss
+ * tabbed folder windows that `Finder windows` still reports.
+ */
 function finderWindows(): string[] {
-  const result = spawnSync(
-    "osascript",
-    [
-      "-e",
-      'tell application "Finder"',
-      "-e",
-      "set output to {}",
-      "-e",
-      "repeat with w in windows",
-      "-e",
-      "try",
-      "-e",
-      "set end of output to POSIX path of (target of w as alias)",
-      "-e",
-      "end try",
-      "-e",
-      "end repeat",
-      "-e",
-      "set AppleScript's text item delimiters to linefeed",
-      "-e",
-      "return output as text",
-      "-e",
-      "end tell",
-    ],
-    { encoding: "utf8", timeout: 15_000 },
-  );
-  if (result.status !== 0) {
-    throw new Error(`Could not read Finder windows: ${result.stderr}`);
-  }
+  const script = `
+    tell application "Finder"
+      set output to {}
+      repeat with w in Finder windows
+        try
+          set end of output to POSIX path of (target of w as alias)
+        end try
+        try
+          repeat with t in tabs of w
+            try
+              set end of output to POSIX path of (target of t as alias)
+            end try
+          end repeat
+        end try
+      end repeat
+      set AppleScript's text item delimiters to linefeed
+      return output as text
+    end tell`;
+  const result = osascript(script);
+  const titles = finderWindowTitles();
+  lastFinderProbe = { ...result, titles };
+  if (result.status !== 0) return [];
   return result.stdout
     .split("\n")
     .map((line) => line.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+}
+
+function finderWindowTitles(): string[] {
+  const result = osascript(`
+    tell application "System Events"
+      if not (exists process "Finder") then return ""
+      tell process "Finder" to return (name of every window) as text
+    end tell`);
+  if (result.status !== 0 || !result.stdout) return [];
+  return result.stdout
+    .split(/, |\n/)
+    .map((line) => line.trim())
     .filter(Boolean);
 }
 
@@ -471,8 +535,12 @@ async function waitForFileManager(
         }
         if (mode === "open") {
           const opened = finderWindows();
-          seen = opened.join(", ");
-          return opened.some((folder) => samePath(folder, target));
+          const titles = lastFinderProbe?.titles ?? [];
+          seen = JSON.stringify({ opened, titles, probe: lastFinderProbe });
+          return (
+            opened.some((folder) => samePath(folder, target)) ||
+            titles.some((title) => samePath(title, path.posix.basename(target)))
+          );
         }
         const selection = finderSelection();
         seen = selection.join(", ");
@@ -486,6 +554,9 @@ async function waitForFileManager(
     if (operatingSystem === "windows") {
       facts = ` Diagnostics: ${windowsDiagnostics()}`;
       captureWindowsDesktop(`${mode} ${path.win32.basename(target)}`);
+    }
+    if (operatingSystem === "macos") {
+      captureMacDesktop(`${mode} ${path.posix.basename(target)}`);
     }
     throw new Error(
       `The file manager did not ${mode} ${target}. It showed: ${seen || "nothing"}.${facts}`,
