@@ -176,35 +176,30 @@ describe("Process details panel", () => {
     );
   }
 
+  // Folders are opened themselves since #191, not selected in their parent.
   const revealWorkingDirectory = async () => {
     await openDetails(insideHolder.pid);
     await clickButton("Reveal", xpath.panelSection("Working directory"));
-    await expectFileManagerToReveal(tree.folder);
+    await expectFileManagerToOpen(tree.folder);
   };
   if (operatingSystem === "windows") {
     itKnownFailing(
       201,
-      "Reveal for the working directory shows the folder in the file manager",
+      "Reveal for the working directory opens the folder in the file manager",
       revealWorkingDirectory,
     );
   } else {
     it(
-      "Reveal for the working directory shows the folder in the file manager",
+      "Reveal for the working directory opens the folder in the file manager",
       revealWorkingDirectory,
     );
   }
 
-  // #190: a directory handle is still revealed by selecting it in its parent, which
-  // can do nothing when that parent is not showable. After #191 this should open the
-  // folder itself; turn this back into `it` once that lands.
-  itKnownFailing(
-    190,
-    "Reveal for a folder in Matching files opens the folder itself",
-    async () => {
-      await click(matchingFileButton(tree.folder, "Reveal"));
-      await expectFileManagerToOpen(tree.folder);
-    },
-  );
+  // #190, fixed in #191: a directory handle opens the folder itself.
+  it("Reveal for a folder in Matching files opens the folder itself", async () => {
+    await click(matchingFileButton(tree.folder, "Reveal"));
+    await expectFileManagerToOpen(tree.folder);
+  });
 
   it("the reference summary expands and collapses", async () => {
     await openDetails(holder.pid);
@@ -315,52 +310,49 @@ describe("Process details panel", () => {
     await waitForGone(xpath.detailsPanel);
   });
 
-  itKnownFailing(
-    194,
-    "Rename and show prefills the original name, keeps the extension, and can copy it",
-    async () => {
-      await openDetails(holder.pid);
-      await click(
-        matchingFileButton(
-          tree.file("alpha.txt"),
-          "Wait for file to become free",
-        ),
-      );
-      await waitForVisible(xpath.dialog);
-      try {
-        await chooseOption("dialog[open] select", "rename");
-        const nameField = await $('input[aria-label="New name"]');
-        await waitForVisible('input[aria-label="New name"]');
-        expect(await nameField.getValue()).toBe("alpha.txt");
-        const selected = await browser.execute(() => {
-          const field = document.querySelector<HTMLInputElement>(
-            'input[aria-label="New name"]',
-          )!;
-          return field.value.slice(
-            field.selectionStart ?? 0,
-            field.selectionEnd ?? 0,
-          );
-        });
-        expect(selected).toBe("alpha");
-        await clickButton("Copy original name", xpath.dialog);
-        await expectClipboard("alpha.txt");
-        await nameField.setValue("renamed");
-        await waitForVisible(
-          `${xpath.dialog}//*[normalize-space(text())="renamed.txt"]`,
+  // #194, fixed in #195.
+  it("Rename and show prefills the original name, keeps the extension, and can copy it", async () => {
+    await openDetails(holder.pid);
+    await click(
+      matchingFileButton(
+        tree.file("alpha.txt"),
+        "Wait for file to become free",
+      ),
+    );
+    await waitForVisible(xpath.dialog);
+    try {
+      await chooseOption("dialog[open] select", "rename");
+      const nameField = await $('input[aria-label="New name"]');
+      await waitForVisible('input[aria-label="New name"]');
+      expect(await nameField.getValue()).toBe("alpha.txt");
+      const selected = await browser.execute(() => {
+        const field = document.querySelector<HTMLInputElement>(
+          'input[aria-label="New name"]',
+        )!;
+        return field.value.slice(
+          field.selectionStart ?? 0,
+          field.selectionEnd ?? 0,
         );
-        await screenshot("rename keeps extension");
-      } finally {
-        if (
-          await $(xpath.dialog)
-            .isDisplayed()
-            .catch(() => false)
-        ) {
-          await click(`${xpath.dialog}//button[@aria-label="Close dialog"]`);
-          await waitForGone(xpath.dialog);
-        }
+      });
+      expect(selected).toBe("alpha");
+      await clickButton("Copy original name", xpath.dialog);
+      await expectClipboard("alpha.txt");
+      await nameField.setValue("renamed");
+      await waitForVisible(
+        `${xpath.dialog}//*[normalize-space(text())="renamed.txt"]`,
+      );
+      await screenshot("rename keeps extension");
+    } finally {
+      if (
+        await $(xpath.dialog)
+          .isDisplayed()
+          .catch(() => false)
+      ) {
+        await click(`${xpath.dialog}//button[@aria-label="Close dialog"]`);
+        await waitForGone(xpath.dialog);
       }
-    },
-  );
+    }
+  });
 
   it("Wait for file to become free reports when the holder closes the file", async () => {
     await openDetails(holder.pid);

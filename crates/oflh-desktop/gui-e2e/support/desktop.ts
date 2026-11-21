@@ -160,9 +160,9 @@ interface AutomationExplorerWindow {
 
 /**
  * Explorer folder windows as UI Automation sees them: window title and the
- * names of the selected items. Shell.Application only lists windows of an
- * Explorer at the caller's integrity level, so an elevated test runner can
- * get an empty list while the window is on screen. UI Automation can read
+ * names of the selected items. Shell.Application can return an empty list
+ * while the window is on screen, for example when the test runner and
+ * Explorer run at different integrity levels. UI Automation can read
  * windows of the same or a lower integrity level.
  */
 function automationExplorerWindows(): AutomationExplorerWindow[] {
@@ -204,6 +204,21 @@ function automationExplorerWindows(): AutomationExplorerWindow[] {
 let lastAutomationProbe:
   { status: number | null; stderr: string; stdout: string } | undefined;
 
+const explorerTitle = (window: AutomationExplorerWindow) =>
+  window.title
+    .replace(/ - File Explorer$/i, "")
+    .trim()
+    .toLowerCase();
+
+/** Whether UI Automation shows an Explorer window of the folder `target` itself. */
+function automationShowsFolder(
+  windows: AutomationExplorerWindow[],
+  target: string,
+): boolean {
+  const name = path.win32.basename(target).toLowerCase();
+  return windows.some((window) => explorerTitle(window) === name);
+}
+
 /** Whether UI Automation shows `target` selected in an Explorer window of its folder. */
 function automationShowsSelected(
   windows: AutomationExplorerWindow[],
@@ -215,10 +230,7 @@ function automationShowsSelected(
   const stem = path.win32.parse(target).name.toLowerCase();
   return windows.some(
     (window) =>
-      window.title
-        .replace(/ - File Explorer$/i, "")
-        .trim()
-        .toLowerCase() === folder &&
+      explorerTitle(window) === folder &&
       window.selected.some((item) =>
         [name, stem].includes(item.trim().toLowerCase()),
       ),
@@ -369,24 +381,31 @@ async function waitForFileManager(
       () => {
         if (operatingSystem === "linux") {
           seen = linuxFileManagerLog();
+          const lines = seen.split("\n");
+          // xdg-open gets the plain path from the opener, D-Bus calls get URIs.
           return mode === "open"
-            ? seen.includes(`xdg-open ${uri}`) ||
-                seen.includes(`ShowFolders ${uri}`)
-            : seen.includes(`ShowItems ${uri}`);
+            ? lines.some((line) =>
+                [
+                  `xdg-open ${target}`,
+                  `xdg-open ${uri}`,
+                  `ShowFolders ${uri}`,
+                ].includes(line),
+              )
+            : lines.includes(`ShowItems ${uri}`);
         }
         if (operatingSystem === "windows") {
           const windows = explorerWindows();
           const titles = explorerWindowTitles();
           seen = JSON.stringify({ windows, titles, probe: lastExplorerProbe });
           if (mode === "open") {
-            return (
+            if (
               windows.some((window) => samePath(window.folder, target)) ||
               titles.some((title) =>
                 samePath(title, path.win32.basename(target)),
               )
-            );
-          }
-          if (
+            )
+              return true;
+          } else if (
             windows.some((window) =>
               window.selected.some((item) => samePath(item, target)),
             )
@@ -400,7 +419,9 @@ async function waitForFileManager(
             automation,
             automationProbe: lastAutomationProbe,
           });
-          return automationShowsSelected(automation, target);
+          return mode === "open"
+            ? automationShowsFolder(automation, target)
+            : automationShowsSelected(automation, target);
         }
         if (mode === "open") {
           const opened = finderWindows();
@@ -427,17 +448,32 @@ async function waitForFileManager(
   }
 }
 
-/** Close Explorer windows opened by reveal tests so later checks start clean (Windows only). */
+/** Close file manager windows opened by reveal tests so later checks start clean. */
 export function closeFileManagerWindows(): void {
   if (operatingSystem === "windows") {
     spawnSync(
       "powershell.exe",
       [
+        "-STA",
         "-NoProfile",
         "-Command",
-        "(New-Object -ComObject Shell.Application).Windows() | Where-Object { $_.Document -and $_.Document.Folder } | ForEach-Object { $_.Quit() }",
+        // Shell.Application can miss an Explorer at another integrity level, so
+        // also close every folder window through UI Automation.
+        `(New-Object -ComObject Shell.Application).Windows() | Where-Object { $_.Document -and $_.Document.Folder } | ForEach-Object { $_.Quit() }
+        Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+        $A = [System.Windows.Automation.AutomationElement]
+        $cabinet = New-Object System.Windows.Automation.PropertyCondition($A::ClassNameProperty, 'CabinetWClass')
+        $A::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $cabinet) | ForEach-Object {
+          try { $_.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close() } catch {}
+        }`,
       ],
       { stdio: "ignore" },
+    );
+  } else if (operatingSystem === "macos") {
+    spawnSync(
+      "osascript",
+      ["-e", 'tell application "Finder" to close every window'],
+      { stdio: "ignore", timeout: 15_000 },
     );
   } else if (operatingSystem === "linux" && fs.existsSync(fileManagerLog)) {
     fs.rmSync(fileManagerLog);
