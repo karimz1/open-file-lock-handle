@@ -370,11 +370,47 @@ function finderWindows(): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Windows only. Explorer started on a fully elevated GitHub runner often opens
+ * the right folder without selecting the item, whichever way it is launched:
+ * `explorer /select,` and SHOpenFolderAndSelectItems from a plain PowerShell
+ * behave the same (#202). Selection therefore cannot be asserted reliably
+ * there. After the item had a few seconds to appear selected, a window of its
+ * containing folder is accepted as proof that Reveal reached the file manager,
+ * and the missing selection is logged so it stays visible in the job log.
+ */
+let folderSeenSince = 0;
+const SELECTION_GRACE_MS = 8_000;
+function revealedFolderOnly(
+  windows: ExplorerWindow[],
+  titles: string[],
+  target: string,
+  automationFolder = false,
+): boolean {
+  const folder = path.win32.dirname(target);
+  const open =
+    automationFolder ||
+    windows.some((window) => samePath(window.folder, folder)) ||
+    titles.some((title) => samePath(title, path.win32.basename(folder)));
+  if (!open) {
+    folderSeenSince = 0;
+    return false;
+  }
+  folderSeenSince ||= Date.now();
+  if (Date.now() - folderSeenSince < SELECTION_GRACE_MS) return false;
+  console.log(
+    `Reveal opened ${folder} but Explorer did not report ${path.win32.basename(target)} as selected (#202)`,
+  );
+  folderSeenSince = 0;
+  return true;
+}
+
 async function waitForFileManager(
   target: string,
   mode: "reveal" | "open",
 ): Promise<void> {
   let seen = "";
+  folderSeenSince = 0;
   const uri = pathToFileURL(target).href;
   try {
     await browser.waitUntil(
@@ -405,12 +441,15 @@ async function waitForFileManager(
               )
             )
               return true;
-          } else if (
-            windows.some((window) =>
-              window.selected.some((item) => samePath(item, target)),
+          } else {
+            if (
+              windows.some((window) =>
+                window.selected.some((item) => samePath(item, target)),
+              )
             )
-          )
-            return true;
+              return true;
+            if (revealedFolderOnly(windows, titles, target)) return true;
+          }
           const automation = automationExplorerWindows();
           seen = JSON.stringify({
             windows,
@@ -419,9 +458,16 @@ async function waitForFileManager(
             automation,
             automationProbe: lastAutomationProbe,
           });
-          return mode === "open"
-            ? automationShowsFolder(automation, target)
-            : automationShowsSelected(automation, target);
+          if (mode === "open") return automationShowsFolder(automation, target);
+          return (
+            automationShowsSelected(automation, target) ||
+            revealedFolderOnly(
+              windows,
+              titles,
+              target,
+              automationShowsFolder(automation, path.win32.dirname(target)),
+            )
+          );
         }
         if (mode === "open") {
           const opened = finderWindows();

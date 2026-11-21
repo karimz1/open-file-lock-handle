@@ -79,3 +79,13 @@ mocked browser tests or manual testing:
   form, Tab order, option changes in a native select (the tests set the value
   and dispatch `change`)
 - the Windows Explorer context menu and the installer (see `tests/installer`)
+
+## Known limits of what is asserted
+
+- Windows Reveal for a file: on GitHub's fully elevated runners Explorer opens
+  the right folder but often does not select the item, even for
+  `explorer /select,` and `SHOpenFolderAndSelectItems` run from plain PowerShell,
+  so it is not an OFLH defect (#202). The test asserts that a window of the
+  containing folder opens, accepts a selection if Explorer reports one, and logs
+  `Reveal opened ... did not report ... as selected` otherwise. Linux (D-Bus
+  `ShowItems`) and macOS (Finder selection) still assert the selection.
