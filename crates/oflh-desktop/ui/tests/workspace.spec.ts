@@ -5758,25 +5758,54 @@ const refreshControls = [
   ".selection-toolbar button",
 ];
 
+// The grey-out of locked controls starts after 250 ms. Frames in the first
+// 230 ms of a lock must look unchanged; the rest is slack for frame timing.
+const greyOutDelayMs = 230;
+
 async function watchControlLook(page: import("@playwright/test").Page) {
-  await page.evaluate((selectors) => {
-    const look = { frames: 0, lowest: 1, locked: 0 };
-    (window as any).__controlLook = look;
-    const sample = () => {
-      look.frames++;
-      for (const selector of selectors)
-        for (const node of document.querySelectorAll(selector)) {
-          look.lowest = Math.min(
-            look.lowest,
-            Number(getComputedStyle(node).opacity),
-          );
-          if ((node as HTMLButtonElement).disabled || node.closest("[inert]"))
-            look.locked++;
+  await page.evaluate(
+    ({ selectors, greyOutDelayMs }) => {
+      const look: {
+        frames: number;
+        lowest: number;
+        locked: number;
+        earlyFrames: number;
+        earlyLowest: number;
+        lockedAt?: number;
+        unlockedAt?: number;
+      } = { frames: 0, lowest: 1, locked: 0, earlyFrames: 0, earlyLowest: 1 };
+      (window as any).__controlLook = look;
+      const sample = () => {
+        const now = performance.now();
+        look.frames++;
+        let lockedNow = false;
+        let lowest = 1;
+        for (const selector of selectors)
+          for (const node of document.querySelectorAll(selector)) {
+            lowest = Math.min(lowest, Number(getComputedStyle(node).opacity));
+            if ((node as HTMLButtonElement).disabled || node.closest("[inert]"))
+              lockedNow = true;
+          }
+        look.lowest = Math.min(look.lowest, lowest);
+        if (lockedNow) {
+          look.locked++;
+          look.lockedAt ??= now;
+          if (
+            look.unlockedAt === undefined &&
+            now - look.lockedAt < greyOutDelayMs
+          ) {
+            look.earlyFrames++;
+            look.earlyLowest = Math.min(look.earlyLowest, lowest);
+          }
+        } else if (look.lockedAt !== undefined) {
+          look.unlockedAt ??= now;
         }
-      (window as any).__controlLookSampler = requestAnimationFrame(sample);
-    };
-    sample();
-  }, refreshControls);
+        (window as any).__controlLookSampler = requestAnimationFrame(sample);
+      };
+      sample();
+    },
+    { selectors: refreshControls, greyOutDelayMs },
+  );
 }
 
 async function finishScan(page: import("@playwright/test").Page) {
@@ -5799,24 +5828,47 @@ test("a short refresh locks the controls without visibly greying them", async ({
   await expect(page.getByText("1 process selected")).toBeVisible();
   await page.evaluate(() => ((window as any).__holdRefreshForTest = true));
   await watchControlLook(page);
-  await page.getByRole("button", { name: "Refresh", exact: true }).click();
-  await page.waitForTimeout(80);
-  const mid = await page.evaluate(() => ({
-    locked: (window as any).__controlLook.locked,
-  }));
-  // The controls really are locked while the scan runs.
-  expect(mid.locked).toBeGreaterThan(0);
-  await finishScan(page);
+  // Start and finish the refresh inside the page, so no test runner round
+  // trips stretch the lock.
+  const lockedMs = await page
+    .getByRole("button", { name: "Refresh", exact: true })
+    .evaluate(async (button: HTMLButtonElement) => {
+      const look = (window as any).__controlLook;
+      button.click();
+      const started = performance.now();
+      while (look.lockedAt === undefined) {
+        if (performance.now() - started > 5000)
+          throw new Error("the refresh did not lock the controls");
+        await new Promise(requestAnimationFrame);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      (window as any).__holdRefreshForTest = false;
+      (window as any).__emitTestEvent("scan-status", {
+        scanning: false,
+        generation: 50,
+        revision: 50,
+      });
+      while (look.unlockedAt === undefined) {
+        if (performance.now() - started > 5000)
+          throw new Error("the controls stayed locked after the refresh");
+        await new Promise(requestAnimationFrame);
+      }
+      return look.unlockedAt - look.lockedAt;
+    });
   await expect(page.getByText("Updating results")).toHaveCount(0);
   await page.waitForTimeout(400);
   const look = await page.evaluate(() => {
     cancelAnimationFrame((window as any).__controlLookSampler);
     return (window as any).__controlLook;
   });
-  // Well under the 250 ms before the grey-out starts; 0.95 allows for timer slack.
+  // The controls really were locked while the scan ran.
+  expect(look.earlyFrames).toBeGreaterThan(0);
+  // How long the lock lasts depends on the machine (a slow CI runner needs
+  // more time for the new page), so check what the user sees while a lock is
+  // still short instead of how long this one lasted.
   expect(
-    look.lowest,
-    "lowest control opacity during a short refresh",
+    look.earlyLowest,
+    `lowest control opacity in the first ${greyOutDelayMs} ms of a refresh (locked for ${Math.round(lockedMs)} ms)`,
   ).toBeGreaterThan(0.95);
 });
 
