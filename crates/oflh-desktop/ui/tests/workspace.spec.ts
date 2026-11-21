@@ -8015,7 +8015,10 @@ test("typing in the target path does not render the grid", async ({ page }) => {
   const counts = await countRenders(page, async () => {
     await path.pressSequentially("/tmp/a", { delay: 30 });
   });
+  // The probe must see the app render on each key, or "0" proves nothing.
+  expect(updates(counts, "App"), "App renders while typing").toBeGreaterThan(0);
   expect(updates(counts, "Table"), "Table renders while typing").toBe(0);
+  expect(updates(counts, "GridRow"), "rows render while typing").toBe(0);
   expect(updates(counts, "RowIcon"), "row icons render while typing").toBe(0);
 });
 
@@ -8039,6 +8042,7 @@ test("selecting a row renders only the rows whose state changed", async ({
   expect(updates(counts, "RowIcon"), "row icons rendered").toBeLessThanOrEqual(
     3,
   );
+  expect(updates(counts, "GridRow"), "rows rendered").toBeLessThanOrEqual(3);
 });
 
 test("scrolling does not re-render the rows that stay on screen", async ({

@@ -19,6 +19,9 @@ export async function installRenderProbe(page: Page) {
     const renders: Record<string, number> = {};
     const mounts: Record<string, number> = {};
     let active = false;
+    // The dev server renames a function that would shadow another binding
+    // (Table2, GridRow2), so compare names without a trailing number.
+    const plain = (name: string | undefined) => name?.replace(/\d+$/, "");
     const nameOf = (fiber: Fiber): string | null => {
       const type = fiber.type as
         | { displayName?: string; name?: string; type?: any; render?: any }
@@ -26,9 +29,9 @@ export async function installRenderProbe(page: Page) {
         | undefined;
       if (!type || typeof type === "string") return null;
       if (typeof type === "function")
-        return type.displayName || type.name || null;
+        return plain(type.displayName || type.name) || null;
       const inner = type.type ?? type.render;
-      return inner?.displayName || inner?.name || null;
+      return plain(inner?.displayName || inner?.name) || null;
     };
     const component = new Set([0, 1, 11, 14, 15]);
     const count = (map: Record<string, number>, name: string) => {
