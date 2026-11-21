@@ -63,7 +63,7 @@ jobs:
           # A. explorer /select with no Explorer window open
           CloseAll
           Write-Host "windows before A:" (Selected).Count
-          Start-Process explorer.exe -ArgumentList "/select,`"$rootlpha.txt`""
+          Start-Process explorer.exe -ArgumentList "/select,`"$root\a\alpha.txt`""
           WaitSel "A explorer /select (none open)" "$root\a" "alpha.txt"
           # B. SHOpenFolderAndSelectItems with no window open
           CloseAll
