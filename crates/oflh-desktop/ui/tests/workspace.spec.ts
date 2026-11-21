@@ -938,6 +938,28 @@ test.beforeEach(async ({ page }) => {
               ],
             };
           }
+          if (
+            command === "select_all" &&
+            ((window as any).__searchClearRaceFixture ||
+              (window as any).__fileMatchFixture) &&
+            args.query.text
+          ) {
+            // Match the page fixtures exactly: ask them for every row and
+            // keep the lookup out of the recorded calls.
+            const lookup = {
+              revision: args.revision,
+              query: { ...args.query, offset: 0, limit: 100000 },
+            };
+            const result = await (window as any).__TAURI_INTERNALS__.invoke(
+              "page",
+              lookup,
+            );
+            calls.splice(
+              calls.findIndex((call: any) => call.args === lookup),
+              1,
+            );
+            return [...new Set(result.rows.map((row: any) => row.process_key))];
+          }
           if (command === "select_all")
             return processRows
               .filter(
@@ -2108,7 +2130,7 @@ test("port searches stay in Rust IPC and expose binding actions safely", async (
   await page
     .getByRole("textbox", { name: "Search loaded results" })
     .fill("port:8080");
-  await expect(page.getByText("1 results", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^1 results?$/)).toBeVisible();
   await grid.getByText("8080", { exact: true }).click({ button: "right" });
   await page
     .getByRole("button", { name: "Copy local endpoint", exact: true })
@@ -2538,9 +2560,9 @@ test("a changed process search updates file details without carrying the previou
   ).toBeEnabled();
   await search.fill("absent-file");
   await expect(page.getByRole("grid")).toHaveAttribute("aria-rowcount", "1");
-  await expect(
-    files.getByRole("button", { name: "Copy path", exact: true }),
-  ).toBeDisabled();
+  // The process no longer matches, so its details close instead of
+  // showing a stale path.
+  await expect(files).toHaveCount(0);
 });
 
 test("clicking +N in a process search opens details on matching files", async ({
@@ -2589,6 +2611,231 @@ test("clicking +N in a process search opens details on matching files", async ({
   ).toBeInViewport();
   await expect(files).toBeFocused();
   await expect(more).toHaveAccessibleName("Show all 4 matching files");
+});
+
+// Records every focus change with the stack that caused it, so a failing
+// run names the code that moved focus away from the search box.
+async function traceFocus(page: import("@playwright/test").Page) {
+  await page.evaluate(() => {
+    const log: string[] = [];
+    (window as any).__focusLog = log;
+    document.addEventListener(
+      "focusin",
+      (event) => {
+        const target = event.target as HTMLElement;
+        const name =
+          target.getAttribute("aria-label") ||
+          target.className ||
+          target.tagName;
+        const stack = (new Error().stack || "")
+          .split("\n")
+          .slice(2, 8)
+          .map((line) => line.trim())
+          .join(" | ");
+        log.push(`${target.tagName}.${name} <- ${stack}`);
+      },
+      true,
+    );
+  });
+}
+
+const searchFocusCases: {
+  name: string;
+  arrange: (page: import("@playwright/test").Page) => Promise<void>;
+  initial?: string;
+}[] = [
+  {
+    name: "after double-clicking a row",
+    arrange: async (page) => {
+      await page.getByRole("grid").getByRole("row").nth(1).dblclick();
+    },
+  },
+  {
+    name: "after double-clicking a row and deselecting it",
+    arrange: async (page) => {
+      await page.getByRole("grid").getByRole("row").nth(1).dblclick();
+      await page.getByRole("button", { name: "Deselect all" }).click();
+      await expect(
+        page.getByRole("button", { name: "Deselect all" }),
+      ).toHaveCount(0);
+    },
+  },
+  {
+    name: "after opening a row with Enter",
+    arrange: async (page) => {
+      await page.getByRole("grid").getByRole("row").nth(1).click();
+      await page.keyboard.press("Enter");
+    },
+  },
+  {
+    name: "after clicking +N in an earlier search",
+    initial: "sp",
+    arrange: async (page) => {
+      await page
+        .getByRole("textbox", { name: "Search loaded results" })
+        .fill("sp");
+      await page
+        .getByRole("grid")
+        .getByRole("row")
+        .nth(1)
+        .locator(".matching-files-more")
+        .click();
+    },
+  },
+  {
+    name: "after details were opened, closed, and another row was clicked",
+    arrange: async (page) => {
+      const row = page.getByRole("grid").getByRole("row").nth(1);
+      await row.dblclick();
+      await row.getByRole("button", { name: /^Close details/ }).click();
+      await page.getByRole("grid").getByRole("row").nth(3).click();
+    },
+  },
+  {
+    name: "after only selecting a row",
+    arrange: async (page) => {
+      await page.getByRole("grid").getByRole("row").nth(1).click();
+    },
+  },
+];
+
+for (const scenario of searchFocusCases) {
+  test(`typing a process search keeps focus ${scenario.name}`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      (window as any).__searchClearRaceFixture = true;
+    });
+    await page.goto("/");
+    await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+    await scenario.arrange(page);
+    const search = page.getByRole("textbox", { name: "Search loaded results" });
+    await search.click();
+    await search.press("End");
+    await traceFocus(page);
+    const typed = scenario.initial ? "otify" : "spotify";
+    await search.pressSequentially(typed, { delay: 60 });
+    // Let the filtered page arrive; the steal happened when it rendered.
+    await expect(page.getByText("12 results", { exact: true })).toBeVisible();
+    await page.waitForTimeout(250);
+    const log = await page.evaluate(() => (window as any).__focusLog);
+    expect(log, "focus moved while typing").toEqual([]);
+    await expect(search).toBeFocused();
+    await expect(search).toHaveValue("spotify");
+    await page.screenshot({
+      path: `test-results/search-focus-${scenario.name.replace(/\W+/g, "-")}.png`,
+    });
+  });
+}
+
+test("typing a process search keeps the toolbar mounted and Select all steady", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__searchClearRaceFixture = true;
+  });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  const selectAll = page.getByRole("button", { name: "Select all" });
+  await expect(selectAll).toBeEnabled();
+  await search.click();
+  await page.evaluate(() => {
+    const toolbar = document.querySelector(".search-toolbar")!;
+    const nodes = [
+      ...toolbar.querySelectorAll("input, button.select-all, details"),
+    ];
+    const changes: string[] = [];
+    new MutationObserver((records) => {
+      for (const record of records) {
+        const target = record.target as HTMLElement;
+        if (record.type === "attributes" && target.matches("button.select-all"))
+          changes.push(
+            `${record.attributeName}=${target.getAttribute(record.attributeName!)}`,
+          );
+        for (const node of record.removedNodes)
+          if (nodes.some((kept) => node === kept || node.contains(kept)))
+            changes.push(`removed ${(node as HTMLElement).className}`);
+      }
+    }).observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["disabled", "aria-pressed"],
+    });
+    (window as any).__toolbar = { nodes, changes };
+  });
+  await search.pressSequentially("spotify", { delay: 60 });
+  await expect(page.getByText("12 results", { exact: true })).toBeVisible();
+  await expect(selectAll).toBeEnabled();
+  const result = await page.evaluate(() => {
+    const { nodes, changes } = (window as any).__toolbar;
+    const toolbar = document.querySelector(".search-toolbar")!;
+    const current = [
+      ...toolbar.querySelectorAll("input, button.select-all, details"),
+    ];
+    return {
+      changes,
+      sameNodes: nodes.every(
+        (node: Element, index: number) => node === current[index],
+      ),
+    };
+  });
+  expect(result.changes).toEqual([]);
+  expect(result.sameNodes).toBe(true);
+});
+
+test("process search filters once typing pauses while the box updates on every key", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__searchClearRaceFixture = true;
+  });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  await search.click();
+  await page.evaluate(() => ((window as any).__testCalls.length = 0));
+  for (const [index, key] of [..."spotify"].entries()) {
+    await page.keyboard.type(key);
+    await expect(search).toHaveValue("spotify".slice(0, index + 1));
+    await page.waitForTimeout(80);
+  }
+  await expect(page.getByText("12 results", { exact: true })).toBeVisible();
+  const texts = await page.evaluate(() =>
+    (window as any).__testCalls
+      .filter(
+        (call: any) => call.command === "page" || call.command === "select_all",
+      )
+      .map((call: any) => `${call.command}:${call.args.query.text}`),
+  );
+  expect(texts.sort()).toEqual(["page:spotify", "select_all:spotify"]);
+});
+
+test("process details close when a search filters the process out and stay while it matches", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__searchClearRaceFixture = true;
+  });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  const panel = page.getByRole("complementary", { name: "Process details" });
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await expect(panel).toBeVisible();
+  await search.click();
+  await search.pressSequentially("spotify-0", { delay: 40 });
+  await expect(page.getByText(/^1 results?$/)).toBeVisible();
+  await expect(panel).toBeVisible();
+  await expect(page.getByText("1 process selected")).toBeVisible();
+  await search.fill("");
+  await search.pressSequentially("launcher", { delay: 40 });
+  await expect(page.getByText(/^1 results?$/)).toBeVisible();
+  await expect(panel).not.toBeVisible();
+  await expect(search).toBeFocused();
+  // Selection may include processes outside the view, so it stays.
+  await expect(page.getByText("1 process selected")).toBeVisible();
 });
 
 test("process search rows with matching paths keep their layout", async ({
@@ -2738,9 +2985,34 @@ for (const [
     await page.goto("/");
     // The same synthetic search field and grid exist in each locale.
     await page.locator(".search-box input").fill("bestellbest");
-    await page.getByRole("grid").getByRole("row").nth(1).click();
-    await page.getByRole("button", { name: sendLabel, exact: true }).click();
+    // Wait for the debounced search before picking the filtered row.
+    await expect(page.getByRole("grid")).toHaveAttribute("aria-rowcount", "2");
+    const row = page.getByRole("grid").getByRole("row").nth(1);
+    await row.click();
+    const sendMessage = page
+      .getByRole("complementary")
+      .getByRole("button", { name: sendLabel, exact: true });
+    await expect(sendMessage).toBeEnabled();
+    // At 860x560 the details panel opens over the still-wide process row.
+    // Wait until that overlap is gone, otherwise the click hits the row.
+    await expect
+      .poll(async () => {
+        const button = await sendMessage.boundingBox();
+        const rowBox = await row.boundingBox();
+        if (!button) return "no-button";
+        if (!rowBox) return "ok";
+        const overlap = !(
+          button.x >= rowBox.x + rowBox.width ||
+          rowBox.x >= button.x + button.width ||
+          button.y >= rowBox.y + rowBox.height ||
+          rowBox.y >= button.y + button.height
+        );
+        return overlap ? "overlap" : "ok";
+      })
+      .toBe("ok");
+    await sendMessage.click();
     const modal = page.getByRole("dialog");
+    await expect(modal).toBeVisible();
     await expect(modal).toContainText(delivery);
     await expect(modal).toContainText(ownNotice);
     const note = modal.getByRole("textbox", {
@@ -3044,7 +3316,7 @@ test("termination preserves the captured owner port filter", async ({
     .getByRole("complementary", { name: "Process details" })
     .getByRole("button", { name: /^Local ports/ })
     .click();
-  await expect(page.getByText("1 results", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^1 results?$/)).toBeVisible();
   await page.evaluate(() => {
     (window as any).__terminateSuccessfully = true;
   });
@@ -3484,6 +3756,8 @@ test("double-click auto-fit includes offscreen matches and preserves virtualizat
   await page
     .getByRole("textbox", { name: "Search loaded results" })
     .fill("node");
+  // The search is debounced; wait for the filtered page before fitting.
+  await expect(page.getByText("300 results", { exact: true })).toBeVisible();
   await expect(grid.getByText("4001", { exact: true })).toBeVisible();
   await process.scrollIntoViewIfNeeded();
   await process.focus();
@@ -3565,6 +3839,8 @@ test("changing filters cancels an in-flight column auto-fit", async ({
   await page
     .getByRole("textbox", { name: "Search loaded results" })
     .fill("node");
+  // The search is debounced; wait for the filtered page.
+  await expect(page.getByText("300 results", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("grid").getByText("4001", { exact: true }),
   ).toBeVisible();
@@ -5235,6 +5511,9 @@ test("quiet automatic refresh permits searching and cancellation without stealin
   );
   const search = page.getByRole("textbox", { name: "Search loaded results" });
   await search.fill("node");
+  // Debounced search (180 ms), then the page request delay once React
+  // has rendered the new query.
+  await page.clock.runFor(200);
   await page.clock.runFor(100);
   await expect(page.getByText("300 results", { exact: true })).toBeVisible();
   await expect(search).toBeFocused();
@@ -5454,6 +5733,9 @@ test("quiet refresh rejects retained matches after a new query and publishes the
   await page
     .getByRole("textbox", { name: "Search loaded results" })
     .fill("node");
+  // Debounced search (180 ms), then the page request delay once React
+  // has rendered the new query.
+  await page.clock.runFor(200);
   await page.clock.runFor(100);
   await expect(grid.locator(".data-row")).toHaveCount(0);
   await page.evaluate(() => {

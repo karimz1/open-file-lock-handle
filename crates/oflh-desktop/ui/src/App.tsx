@@ -70,6 +70,7 @@ import { scanDuration } from "./scanDuration";
 import { normalizeTypedPath } from "./targetPath";
 import { TargetHelp } from "./TargetHelp";
 import { Inspector } from "./Inspector";
+import { useDebouncedValue } from "./useDebouncedValue";
 import { Modal } from "./Modal";
 import { SharePanel } from "./SharePanel";
 import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
@@ -348,7 +349,13 @@ export function App() {
     queryKey: string;
   } | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
-  const [revealMatches, setRevealMatches] = useState(0);
+  // A one-shot request to scroll the details panel to the matching files of
+  // one process. The panel clears it once handled, so later row updates (for
+  // example a new search) cannot move focus out of the search box again.
+  const [revealRequest, setRevealRequest] = useState<{
+    key: string;
+  } | null>(null);
+  const clearRevealRequest = useCallback(() => setRevealRequest(null), []);
   const [details, setDetails] = useState<Details | null>(null);
   const [detailsRevision, setDetailsRevision] = useState(0);
   const [detailsMissing, setDetailsMissing] = useState(false);
@@ -452,9 +459,12 @@ export function App() {
     scanUnavailable,
     view,
   ]);
+  // The box shows every key at once; the grid and Select all follow after a
+  // short pause in typing instead of reloading on each character.
+  const searchText = useDebouncedValue(query, query ? 180 : 0);
   const tableQuery: TableQuery = {
     columns,
-    text: query,
+    text: searchText,
     sort,
     descending,
     handles: view === "handles",
@@ -466,6 +476,7 @@ export function App() {
     process_key: scope?.key,
   };
   const tableQueryKey = JSON.stringify(tableQuery);
+  useEffect(() => setRevealRequest(null), [tableQueryKey]);
   useEffect(() => {
     let active = true;
     const subscriptions = [
@@ -758,36 +769,70 @@ export function App() {
       .reveal(status.revision, reference, containing)
       .catch((failure) => report(failure, operation));
   };
-  const [matchingKeys, setMatchingKeys] = useState<string[] | null>(null);
-  const selectionQuery = JSON.stringify({ ...tableQuery, offset: 0, limit: 0 });
+  // Keys of every row matching the current filters. While the keys for a
+  // new query load, the previous set stays on screen so Select all does not
+  // blink disabled on every keystroke; a click then waits for the fresh set.
+  const [matching, setMatching] = useState<{
+    scope: string;
+    query: string;
+    keys: string[];
+  } | null>(null);
+  const matchingScope = `${view}:${status.revision}`;
+  const keysScope = useRef("");
+  const selectionQuery = JSON.stringify({
+    view,
+    revision: status.revision,
+    query: { ...tableQuery, offset: 0, limit: 0 },
+  });
   useEffect(() => {
     let live = true;
-    setMatchingKeys(null);
-    if (status.revision && ["processes", "handles", "ports"].includes(view))
-      void api
-        .keys(status.revision, JSON.parse(selectionQuery))
-        .then((keys) => {
-          if (live) setMatchingKeys(keys);
-        })
-        .catch((failure) => {
-          if (live) report(failure);
-        });
+    if (!status.revision || !["processes", "handles", "ports"].includes(view)) {
+      setMatching(null);
+      return;
+    }
+    void api
+      .keys(status.revision, JSON.parse(selectionQuery).query)
+      .then((keys) => {
+        if (live)
+          setMatching({ scope: matchingScope, query: selectionQuery, keys });
+        // A new filter in the same view closes details for a process that no
+        // longer matches; the selection stays, since it may include
+        // processes outside this view on purpose.
+        if (keysScope.current === matchingScope)
+          setFocused((current) =>
+            current && !keys.includes(current) ? null : current,
+          );
+        keysScope.current = matchingScope;
+      })
+      .catch((failure) => {
+        if (live) report(failure);
+      });
     return () => {
       live = false;
     };
-  }, [status.revision, view, selectionQuery, report]);
+  }, [status.revision, view, selectionQuery, matchingScope, report]);
+  // Only a new search text keeps the previous keys; another view or scan
+  // starts empty as before.
+  const matchingKeys = matching?.scope === matchingScope ? matching.keys : null;
   const allMatchingSelected =
     !!matchingKeys?.length && matchingKeys.every((key) => selected.has(key));
   const toggleAll = () => {
-    if (!matchingKeys) return;
-    setSelected((current) => {
-      const next = new Set(current);
-      for (const key of matchingKeys) {
-        if (allMatchingSelected) next.delete(key);
-        else next.add(key);
-      }
-      return next;
-    });
+    const apply = (keys: string[]) =>
+      setSelected((current) => {
+        const next = new Set(current);
+        const all = keys.length > 0 && keys.every((key) => current.has(key));
+        for (const key of keys) {
+          if (all) next.delete(key);
+          else next.add(key);
+        }
+        return next;
+      });
+    if (matching?.query === selectionQuery) apply(matching.keys);
+    else
+      void api
+        .keys(status.revision, JSON.parse(selectionQuery).query)
+        .then(apply)
+        .catch(report);
   };
   const selectAll = () => {
     void api
@@ -1727,7 +1772,8 @@ export function App() {
                           queryKey: tableQueryKey,
                         });
                         setFocused(row.process_key);
-                        setRevealMatches((current) => current + 1);
+                        if (row.matching_files)
+                          setRevealRequest({ key: row.process_key });
                       }}
                       onContext={(row, revision) => {
                         if (status.scanning || revision !== status.revision) {
@@ -1781,7 +1827,12 @@ export function App() {
                         onWait={setWaitSelection}
                         waitDisabled={inspectionLocked || status.wait.waiting}
                         target={status.target}
-                        revealMatches={revealMatches}
+                        revealMatches={
+                          revealRequest?.key === details.process.process_key
+                            ? revealRequest
+                            : null
+                        }
+                        onRevealed={clearRevealRequest}
                         key={details.process.process_key}
                         terminateCurrent={(force) =>
                           prepare(force, [details.process.process_key])
