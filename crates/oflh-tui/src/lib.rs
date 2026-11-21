@@ -70,6 +70,7 @@ pub fn run(
     let _guard = TerminalGuard;
     crossterm::execute!(std::io::stdout(), event::EnableBracketedPaste)?;
     let mut app = App::new(target, version);
+    app.commit = oflh_core::build_commit().into();
     app.language = options.language.unwrap_or_else(Language::system);
     app.update.enabled = !options.no_update_check
         && oflh_core::releases::can_check_releases(VERSION, PULL_REQUEST_URL);

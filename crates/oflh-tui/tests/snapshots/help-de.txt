@@ -6,7 +6,7 @@
   Großes R oder D öffnet den Link im Browser.                                                    █
                                                                                                  █
                                                                                                  █
-  VERSION development                                                                            █
+  VERSION test                                                                                   █
   Mit `oflh --version` den vollständigen Buildbericht kopieren.                                  █
                                                                                                  █
   OPEN FILE LOCK HANDLE                                                                          █

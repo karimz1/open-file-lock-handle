@@ -6,7 +6,7 @@
   按大写 R 或 D 在浏览器中打开链接。                                                             █
                                                                                                  █
                                                                                                  █
-  版本 development                                                                               █
+  版本 test                                                                                      █
   运行 `oflh --version` 可复制完整构建信息。                                                     █
                                                                                                  █
   OPEN FILE LOCK HANDLE                                                                          █

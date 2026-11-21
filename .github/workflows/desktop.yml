@@ -203,6 +203,20 @@ jobs:
       - run: rustup show
       - run: npm ci && npm run build
         working-directory: crates/oflh-desktop/ui
+      - name: Install Chromium for About and version browser tests
+        working-directory: crates/oflh-desktop/ui
+        run: |
+          # Google Chrome is not installable on Linux ARM64; bundled Chromium is.
+          if [ "${{ matrix.os }}" = "linux" ]; then
+            npx playwright install --with-deps chromium
+          else
+            npx playwright install chromium
+          fi
+      - name: About and version browser tests
+        working-directory: crates/oflh-desktop/ui
+        env:
+          PLAYWRIGHT_CHANNEL: chromium
+        run: npx playwright test -g "gear opens About above updates"
       - name: Native desktop lint and regression tests
         run: |
           cargo fmt --all --check

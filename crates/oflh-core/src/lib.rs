@@ -14,16 +14,27 @@ pub const VERSION: &str = match option_env!("OFLH_VERSION") {
     None => "development",
 };
 /// Compact version for persistent, space-constrained UI labels.
+///
+/// Local builds keep [`VERSION`] as `development` so update checks stay
+/// disabled, and this label uses the workspace package version instead.
 pub fn display_version() -> &'static str {
-    VERSION
-        .split_once('+')
-        .map_or(VERSION, |(version, _)| version)
+    if VERSION == "development" {
+        env!("CARGO_PKG_VERSION")
+    } else {
+        VERSION
+            .split_once('+')
+            .map_or(VERSION, |(version, _)| version)
+    }
 }
 /// Full source commit used to build this application, when supplied by CI.
 pub const BUILD_COMMIT: &str = match option_env!("OFLH_BUILD_COMMIT") {
     Some(commit) => commit,
     None => "",
 };
+/// Git commit discovered at compile time for local builds, possibly with a
+/// `-dirty` suffix. Empty when git is unavailable and CI did not supply a
+/// commit. Prefer [`build_commit`].
+pub const SOURCE_COMMIT: &str = env!("OFLH_SOURCE_COMMIT");
 /// GitHub Actions run for this build, when built in CI.
 pub const BUILD_URL: &str = match option_env!("OFLH_BUILD_URL") {
     Some(url) => url,
@@ -35,11 +46,52 @@ pub const PULL_REQUEST_URL: &str = match option_env!("OFLH_PULL_REQUEST_URL") {
     None => "",
 };
 
+/// Commit for this binary: the CI-supplied value when present, otherwise the
+/// git commit discovered at compile time.
+pub fn build_commit() -> &'static str {
+    if !BUILD_COMMIT.is_empty() {
+        BUILD_COMMIT
+    } else {
+        SOURCE_COMMIT
+    }
+}
+
+/// Abbreviate a commit for compact UI labels, keeping a trailing `-dirty`.
+pub fn short_commit(commit: &str) -> String {
+    let dirty = commit.ends_with("-dirty");
+    let hash = commit.strip_suffix("-dirty").unwrap_or(commit);
+    if hash.is_empty() {
+        return String::new();
+    }
+    let short: String = hash.chars().take(7).collect();
+    if dirty {
+        format!("{short}-dirty")
+    } else {
+        short
+    }
+}
+
+/// Format a version and optional commit as `0.9.0-rc.1 (abc1234)` or
+/// `0.9.0-rc.1 (abc1234-dirty)`.
+pub fn format_version_label(version: &str, commit: &str) -> String {
+    if commit.is_empty() {
+        version.to_owned()
+    } else {
+        format!("{version} ({})", short_commit(commit))
+    }
+}
+
 /// Format the version and available source-control provenance for CLI output.
 pub fn version_report(application: &str) -> String {
-    let mut report = format!("{application} {VERSION}");
-    if !BUILD_COMMIT.is_empty() {
-        report.push_str(&format!("\ncommit {BUILD_COMMIT}"));
+    let heading = if VERSION == "development" {
+        display_version()
+    } else {
+        VERSION
+    };
+    let mut report = format!("{application} {heading}");
+    let commit = build_commit();
+    if !commit.is_empty() {
+        report.push_str(&format!("\ncommit {commit}"));
     }
     if !BUILD_URL.is_empty() {
         report.push_str(&format!("\nbuild {BUILD_URL}"));
@@ -457,9 +509,14 @@ mod build_info_tests {
     #[test]
     fn version_report_includes_configured_build_provenance() {
         let report = version_report("oflh");
-        assert!(report.starts_with(&format!("oflh {VERSION}")));
+        let heading = if VERSION == "development" {
+            display_version()
+        } else {
+            VERSION
+        };
+        assert!(report.starts_with(&format!("oflh {heading}")));
         for (label, value) in [
-            ("commit", BUILD_COMMIT),
+            ("commit", build_commit()),
             ("build", BUILD_URL),
             ("pull request", PULL_REQUEST_URL),
         ] {
@@ -467,11 +524,91 @@ mod build_info_tests {
                 assert!(report.contains(&format!("{label} {value}")));
             }
         }
+        if VERSION == "development" {
+            assert_eq!(display_version(), env!("CARGO_PKG_VERSION"));
+        } else {
+            assert_eq!(
+                display_version(),
+                VERSION
+                    .split_once('+')
+                    .map_or(VERSION, |(version, _)| version)
+            );
+        }
+    }
+
+    #[test]
+    fn compact_version_label_includes_short_and_dirty_commits() {
+        assert_eq!(short_commit(""), "");
+        assert_eq!(short_commit("abc1234"), "abc1234");
+        assert_eq!(short_commit("abc1234-dirty"), "abc1234-dirty");
         assert_eq!(
-            display_version(),
-            VERSION
-                .split_once('+')
-                .map_or(VERSION, |(version, _)| version)
+            short_commit("0123456789abcdef0123456789abcdef01234567"),
+            "0123456"
+        );
+        assert_eq!(
+            short_commit("0123456789abcdef0123456789abcdef01234567-dirty"),
+            "0123456-dirty"
+        );
+        assert_eq!(format_version_label("0.9.0-rc.1", ""), "0.9.0-rc.1");
+        assert_eq!(
+            format_version_label("0.9.0-rc.1", "abc1234"),
+            "0.9.0-rc.1 (abc1234)"
+        );
+        assert_eq!(
+            format_version_label(
+                "0.9.0-rc.1",
+                "0123456789abcdef0123456789abcdef01234567-dirty"
+            ),
+            "0.9.0-rc.1 (0123456-dirty)"
+        );
+    }
+
+    #[test]
+    fn build_commit_is_present_and_matches_the_expected_shape() {
+        let commit = build_commit();
+        assert!(
+            !commit.is_empty(),
+            "local and CI builds should record the source commit"
+        );
+        assert!(
+            commit
+                .strip_suffix("-dirty")
+                .unwrap_or(commit)
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+                && (7..=40).contains(&commit.strip_suffix("-dirty").unwrap_or(commit).len()),
+            "unexpected commit {commit:?}"
+        );
+    }
+
+    #[test]
+    fn discovered_commit_matches_head_and_is_not_dirty_on_a_clean_tree() {
+        if !BUILD_COMMIT.is_empty() {
+            return;
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let status = std::process::Command::new("git")
+            .current_dir(root)
+            .args(["status", "--porcelain"])
+            .output()
+            .expect("git status");
+        if !status.status.success() {
+            return;
+        }
+        if !status.stdout.is_empty() {
+            return;
+        }
+        let head = std::process::Command::new("git")
+            .current_dir(root)
+            .args(["rev-parse", "--short", "HEAD"])
+            .output()
+            .expect("git rev-parse");
+        assert!(head.status.success());
+        let head = String::from_utf8_lossy(&head.stdout).trim().to_string();
+        assert_eq!(SOURCE_COMMIT, head);
+        assert!(
+            !SOURCE_COMMIT.ends_with("-dirty"),
+            "ignored build output must not mark SOURCE_COMMIT dirty, got {SOURCE_COMMIT}"
         );
     }
 }

@@ -216,6 +216,8 @@ run it from anywhere.
 
 See [Development](docs/development.md) for cloning the repository,
 prerequisites, and build commands for the desktop and terminal apps.
+`scripts/build-dev.sh` and `scripts/build-dev.ps1` run the local desktop
+build and include the git commit in the resulting app.
 
 <a id="getting-started"></a>
 
