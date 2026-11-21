@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { api, type Page, type Row, type Sort, type TableQuery } from "./api";
 import { createPageLoader } from "./pageLoader";
+import { pageKind, staleRowsFor, virtualRowKey } from "./gridPages";
 import { columnText, columnMeasurer } from "./columnSizing";
 import { memory, compactPath } from "./state";
 import { sessionCell } from "./sessions";
@@ -41,6 +42,7 @@ export interface ColumnDefinition {
   width: number;
 }
 export type CachedPage = Page & {
+  kind?: string;
   offset: number;
   queryKey: string;
   target: string;
@@ -129,12 +131,27 @@ export function Table(props: Props) {
       : null;
   // Keep the accepted viewport during a same-target refresh. A different query
   // or target must never inherit stale matches. Actions retain the page revision.
-  const displayPage =
+  const kind = pageKind(props.query);
+  const sameQuery =
     page?.queryKey === queryKey && page.target === props.target
       ? page
       : cachedPage;
+  // Until the page for a changed query arrives, keep the previous rows on
+  // screen instead of an empty grid. They are read-only (see the rows
+  // container), and only ever from the same target and view.
+  const previousRows = sameQuery
+    ? null
+    : staleRowsFor(
+        page,
+        { queryKey, target: props.target, kind },
+        failedPage?.revision === props.revision &&
+          failedPage.target === props.target &&
+          failedPage.queryKey === queryKey,
+      );
+  const displayPage = sameQuery ?? previousRows;
+  const stale = !sameQuery && !!previousRows;
   const currentPage =
-    displayPage?.revision === props.revision ? displayPage : null;
+    !stale && displayPage?.revision === props.revision ? displayPage : null;
   const [cursor, setCursor] = useState(0);
   const viewport = useRef({ page: displayPage, cursor });
   viewport.current = { page: displayPage, cursor };
@@ -162,29 +179,34 @@ export function Table(props: Props) {
   const template = columns.map((column) => `${widthFor(column)}px`).join(" ");
   const minWidth = columns.reduce((sum, column) => sum + widthFor(column), 0);
   const rowHeight = Math.round((38 * props.fontSize) / 13);
-  const layoutKey = `${queryKey}:${props.fontSize}:${[...props.hiddenColumns].sort().join(",")}`;
+  const layoutKey = `${props.fontSize}:${[...props.hiddenColumns].sort().join(",")}`;
   const virtual = useVirtualizer({
     count: displayPage?.total ?? 0,
     getScrollElement: () => scroll.current,
     estimateSize: () => rowHeight,
     overscan: 10,
-    // Key measurements by query, font size, and visible columns so wrapping
-    // paths cannot inherit short heights from a previous layout. Do not call
-    // virtual.measure() here: it clears the size cache and parks tall rows at
-    // the estimated height until a later remasure.
-    getItemKey: (index) => {
-      const row = displayPage?.rows[index - displayPage.offset];
-      return row ? `${layoutKey}:${row.key}` : `${layoutKey}:${index}`;
-    },
+    // Key measurements by font size, visible columns, and the row's matching
+    // paths so wrapping paths cannot inherit short heights from a previous
+    // layout. The query itself is not part of the key: the same process keeps
+    // its element across a refilter. Do not call virtual.measure() here: it
+    // clears the size cache and parks tall rows at the estimated height until
+    // a later remasure.
+    getItemKey: (index) =>
+      virtualRowKey(
+        layoutKey,
+        displayPage?.rows[index - displayPage.offset],
+        index,
+      ),
   });
   const items = virtual.getVirtualItems();
   const firstVisible = items[0]?.index ?? 0;
   const lastVisible = items.at(-1)?.index ?? firstVisible;
   // Retain a page while it covers the complete visible/overscan window.
-  const offset =
-    displayPage &&
-    firstVisible >= displayPage.offset &&
-    lastVisible < displayPage.offset + displayPage.rows.length
+  const offset = stale
+    ? 0
+    : displayPage &&
+        firstVisible >= displayPage.offset &&
+        lastVisible < displayPage.offset + displayPage.rows.length
       ? displayPage.offset
       : Math.floor(firstVisible / 100) * 100;
   const pageFailed =
@@ -233,6 +255,7 @@ export function Table(props: Props) {
               ...result,
               offset,
               queryKey,
+              kind,
               target: props.target,
             };
             if (offset === 0) {
@@ -368,6 +391,8 @@ export function Table(props: Props) {
   const rowAt = (index: number) =>
     displayPage?.rows[index - displayPage.offset];
   const navigate = (event: KeyboardEvent<HTMLDivElement>) => {
+    // Rows kept from the previous query are not actionable.
+    if (stale) return;
     let index = cursor;
     if (event.key === "ArrowDown") index++;
     else if (event.key === "ArrowUp") index--;
@@ -576,6 +601,8 @@ export function Table(props: Props) {
         </div>
       ) : (
         <div
+          className={stale ? "grid-rows grid-stale" : "grid-rows"}
+          inert={stale}
           style={{
             height: virtual.getTotalSize(),
             minWidth,

@@ -889,6 +889,20 @@ main {
   margin-left: 8px;
   font-size: 0.6923rem;
 }
+.grid-rows {
+  transition: opacity 120ms ease-out;
+}
+/* Rows kept while the next query loads. The delay keeps fast answers from
+   flickering; a slow one fades the old rows to show they are on their way out. */
+.grid-rows.grid-stale {
+  opacity: 0.6;
+  transition-delay: 160ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .grid-rows {
+    transition: none;
+  }
+}
 .empty {
   display: flex;
   align-items: center;

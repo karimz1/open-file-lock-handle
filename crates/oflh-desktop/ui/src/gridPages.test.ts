@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { pageKind, staleRowsFor, virtualRowKey } from "./gridPages";
 
 const page = {
+  total: 12,
   target: "/work",
   kind: pageKind({ ports: false, handles: false }),
   queryKey: "a",
@@ -29,6 +30,9 @@ describe("staleRowsFor", () => {
       pageKind({ ports: false, handles: true }),
     ])
       expect(staleRowsFor(page, { ...wanted, kind: next }, false)).toBeNull();
+  });
+  it("has no rows to keep after an empty result", () => {
+    expect(staleRowsFor({ ...page, total: 0 }, wanted, false)).toBeNull();
   });
   it("drops the old rows once the new page failed", () => {
     expect(staleRowsFor(page, wanted, true)).toBeNull();

@@ -5848,7 +5848,10 @@ test("quiet refresh rejects retained matches after a new query and publishes the
   // has rendered the new query.
   await page.clock.runFor(200);
   await page.clock.runFor(100);
-  await expect(grid.locator(".data-row")).toHaveCount(0);
+  // The previous rows may stay visible, but they are read-only and the grid
+  // reports that the new page is still on its way.
+  await expect(grid).toHaveAttribute("aria-busy", "true");
+  await expect(grid.locator(".grid-rows")).toHaveJSProperty("inert", true);
   await page.evaluate(() => {
     (window as any).__releasePagesForTest();
   });
