@@ -221,7 +221,7 @@ fn explorer_pid() -> Result<u32> {
     let class: Vec<u16> = "Shell_TrayWnd".encode_utf16().chain(Some(0)).collect();
     // SAFETY: `class` is a NUL-terminated window class name; the title is unused.
     let hwnd = unsafe { FindWindowW(class.as_ptr(), null()) };
-    if !hwnd.is_null() {
+    if hwnd != 0 {
         let mut pid = 0;
         // SAFETY: `hwnd` is a live window; `pid` is writable.
         unsafe { GetWindowThreadProcessId(hwnd, &mut pid) };
