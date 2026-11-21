@@ -3154,6 +3154,32 @@ kbd.shortcut {
   background: var(--panel);
   font: inherit;
 }
+.wait-name-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.wait-name-row input {
+  flex: 1 1 180px;
+  width: auto;
+  min-width: 0;
+}
+.wait-name-row button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.wait-final-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  margin: 0;
+}
 .wait-confirm {
   align-items: flex-start;
   white-space: normal;

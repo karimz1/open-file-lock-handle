@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
+  Copy,
   FolderOpen,
   Hourglass,
   Info,
@@ -17,9 +18,12 @@ import {
   type WaitFollowUpResult,
 } from "./api";
 import {
+  resolveWaitNewName,
   validWaitName,
+  waitNameSelectionRange,
   waitPathParts,
   waitDestinationPreview,
+  waitRenamePreview,
 } from "./waitActions";
 import { Modal } from "./Modal";
 import { t, type MessageKey } from "./i18n";
@@ -68,20 +72,35 @@ function WaitDialog({
   const [busy, setBusy] = useState(false);
   const [destination, setDestination] = useState<PathValue | null>(null);
   const [newName, setNewName] = useState("");
+  const [copied, setCopied] = useState(false);
+  const nameInput = useRef<HTMLInputElement>(null);
+  const skipNameSelect = useRef(false);
   const kind = selection.target.kind;
+  const originalName = waitPathParts(selection.display).name;
+  const folder = Boolean(selection.directory);
+  const resolvedName = resolveWaitNewName(originalName, newName, { folder });
+  const renamePreview = waitRenamePreview(
+    waitPathParts(selection.display).parent,
+    originalName,
+    newName,
+    { folder },
+  );
   const destructive =
     followUp === "delete" || followUp === "move" || followUp === "rename";
-  const validName =
-    validWaitName(newName) && newName !== waitPathParts(selection.display).name;
+  const sameAsOriginal = resolvedName === originalName;
+  const validName = validWaitName(resolvedName) && !sameAsOriginal;
+  const malformedName = newName !== "" && !validWaitName(resolvedName);
   const validAction =
     (followUp !== "move" || destination !== null) &&
     (followUp !== "rename" || validName);
-  const resultPreview =
+  const movePreview =
     followUp === "move" && destination
       ? waitDestinationPreview(destination.display, selection.display)
-      : followUp === "rename" && validName
-        ? waitPathParts(selection.display).parent + newName
-        : null;
+      : null;
+  const selectBaseName = (input: HTMLInputElement) => {
+    const [start, end] = waitNameSelectionRange(input.value, { folder });
+    input.setSelectionRange(start, end);
+  };
   const chooseDestination = async () => {
     setBusy(true);
     try {
@@ -94,6 +113,21 @@ function WaitDialog({
       report(error);
     } finally {
       setBusy(false);
+    }
+  };
+  useEffect(() => {
+    if (followUp !== "rename") return;
+    const input = nameInput.current;
+    if (!input) return;
+    input.focus();
+    selectBaseName(input);
+  }, [followUp]);
+  const copyOriginalName = async () => {
+    try {
+      await navigator.clipboard.writeText(originalName);
+      setCopied(true);
+    } catch (error) {
+      report(error);
     }
   };
   const validTimeout =
@@ -115,7 +149,7 @@ function WaitDialog({
         timeoutSeconds: deadline ? seconds : null,
         followUp,
         destination: followUp === "move" ? destination!.reference : null,
-        newName: followUp === "rename" ? newName : null,
+        newName: followUp === "rename" ? resolvedName : null,
       });
       close();
     } catch (error) {
@@ -196,8 +230,11 @@ function WaitDialog({
                 value={followUp}
                 disabled={busy}
                 onChange={(event) => {
-                  setFollowUp(event.target.value as FollowUp);
+                  const next = event.target.value as FollowUp;
+                  setFollowUp(next);
                   setConfirmed(false);
+                  setCopied(false);
+                  if (next === "rename") setNewName(originalName);
                 }}
               >
                 <option value="none">{t("wait.k_notify_only")}</option>
@@ -233,38 +270,78 @@ function WaitDialog({
           </div>
         )}
         {followUp === "rename" && (
-          <label className="wait-field">
-            {t("wait.k_new_name")}
-            <input
-              type="text"
-              aria-label={t("wait.k_new_name")}
-              disabled={busy}
-              value={newName}
-              spellCheck={false}
-              placeholder={waitPathParts(selection.display).name}
-              onChange={(event) => {
-                setNewName(event.target.value);
-                setConfirmed(false);
-              }}
-              aria-invalid={newName !== "" && !validName}
-              aria-describedby="wait-name-hint"
-            />
+          <div className="wait-field">
+            <span className="wait-field-label">{t("wait.k_new_name")}</span>
+            <div className="wait-name-row">
+              <input
+                ref={nameInput}
+                type="text"
+                aria-label={t("wait.k_new_name")}
+                disabled={busy}
+                value={newName}
+                spellCheck={false}
+                placeholder={originalName}
+                onMouseDown={() => {
+                  skipNameSelect.current =
+                    document.activeElement === nameInput.current;
+                }}
+                onFocus={(event) => {
+                  if (skipNameSelect.current) {
+                    skipNameSelect.current = false;
+                    return;
+                  }
+                  if (event.currentTarget.value !== originalName) return;
+                  selectBaseName(event.currentTarget);
+                }}
+                onChange={(event) => {
+                  setNewName(event.target.value);
+                  setConfirmed(false);
+                  setCopied(false);
+                }}
+                aria-invalid={malformedName}
+                aria-describedby="wait-name-hint"
+              />
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void copyOriginalName()}
+              >
+                <Copy size={15} />
+                {t("wait.k_copy_original_name")}
+              </button>
+            </div>
+            {copied && (
+              <span className="hint" role="status">
+                {t("wait.k_original_name_copied")}
+              </span>
+            )}
             <span
               id="wait-name-hint"
-              className={newName !== "" && !validName ? "danger-text" : "hint"}
+              className={malformedName ? "danger-text" : "hint"}
             >
-              {t(
-                newName !== "" && !validName
-                  ? "wait.k_invalid_name"
-                  : "wait.k_name_hint",
-              )}
+              {t(malformedName ? "wait.k_invalid_name" : "wait.k_name_hint")}
             </span>
-          </label>
+            {validName && (
+              <p className="wait-final-name" role="status">
+                <span className="wait-field-label">
+                  {t("wait.k_final_name")}
+                </span>
+                <span className="mono">{renamePreview.name}</span>
+                {renamePreview.extensionRestored && (
+                  <span className="hint">{t("wait.k_extension_kept")}</span>
+                )}
+              </p>
+            )}
+          </div>
         )}
-        {resultPreview && (
+        {(movePreview || (followUp === "rename" && validName)) && (
           <div className="wait-result-preview">
             <span className="wait-field-label">{t("wait.k_result_path")}</span>
-            <p className="mono">{resultPreview}</p>
+            <p className="mono">
+              {followUp === "rename" && validName
+                ? renamePreview.path
+                : movePreview}
+            </p>
             <p className="hint">{t("wait.k_reveal_after_change")}</p>
           </div>
         )}

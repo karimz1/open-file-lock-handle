@@ -7067,16 +7067,14 @@ test("rename validates the name, reviews its path and reveals the returned resul
   await dialog.getByLabel("After it becomes free").selectOption("rename");
   const name = dialog.getByRole("textbox", { name: "New name", exact: true });
   const start = dialog.getByRole("button", { name: "Start waiting" });
-  for (const invalid of [
-    "../escape.pdf",
-    "NUL.pdf",
-    "bad?.pdf",
-    "Bestellbestätigung .pdf",
-  ]) {
+  for (const invalid of ["../escape.pdf", "NUL.pdf", "bad?.pdf"]) {
     await name.fill(invalid);
     await expect(name).toHaveAttribute("aria-invalid", "true");
     await expect(start).toBeDisabled();
   }
+  await name.fill("Bestellbestätigung .pdf");
+  await expect(name).toHaveAttribute("aria-invalid", "false");
+  await expect(start).toBeDisabled();
   await name.fill("Bestätigung archiviert.pdf");
   await expect(dialog.locator(".wait-result-preview")).toContainText(
     "Bestätigung archiviert.pdf",
@@ -7109,6 +7107,85 @@ test("rename validates the name, reviews its path and reveals the returned resul
   expect(
     await page.evaluate(() => (window as any).__revealedWaitPaths),
   ).toEqual(["/build/documents/Bestätigung fertig.pdf"]);
+});
+
+test("rename keeps the original extension, copies the original name and previews the final name", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const written: string[] = [];
+    (window as any).__copiedNames = written;
+    const clipboard = navigator.clipboard ?? ({} as Clipboard);
+    clipboard.writeText = async (text: string) => {
+      written.push(text);
+    };
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: clipboard,
+    });
+  });
+  const dialog = await openFileWait(page, { __emitWaitFree: true });
+  await dialog.getByLabel("After it becomes free").selectOption("rename");
+  const name = dialog.getByRole("textbox", { name: "New name", exact: true });
+  await page.screenshot({
+    path: documentationScreenshotPath("desktop-wait-rename-extension.png"),
+  });
+  await expect(name).toHaveValue("Bestellbestätigung .pdf");
+  await expect(name).toBeFocused();
+  expect(
+    await name.evaluate((element: HTMLInputElement) => [
+      element.selectionStart,
+      element.selectionEnd,
+    ]),
+  ).toEqual([0, "Bestellbestätigung ".length]);
+  await name.pressSequentially("Archiv");
+  await expect(name).toHaveValue("Archiv.pdf");
+  await expect(
+    dialog.getByText("Resulting name", { exact: true }),
+  ).toBeVisible();
+  await expect(dialog.getByText("Archiv.pdf", { exact: true })).toBeVisible();
+  await expect(dialog.locator(".wait-result-preview")).toContainText(
+    "/long-folder/Archiv.pdf",
+  );
+  await name.fill("OhneEndung");
+  await expect(
+    dialog.getByText("OhneEndung.pdf", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText("The original extension was kept.", { exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: documentationScreenshotPath("desktop-wait-rename-extension-kept.png"),
+  });
+  await dialog
+    .getByRole("button", { name: "Copy original name", exact: true })
+    .click();
+  expect(await page.evaluate(() => (window as any).__copiedNames)).toEqual([
+    "Bestellbestätigung .pdf",
+  ]);
+  await expect(
+    dialog.getByText("Original name copied.", { exact: true }),
+  ).toBeVisible();
+  await name.fill("Neu.docx");
+  await expect(dialog.locator(".wait-result-preview")).toContainText(
+    "Neu.docx",
+  );
+  await expect(
+    dialog.getByText("The original extension was kept.", { exact: true }),
+  ).toHaveCount(0);
+  await dialog
+    .getByRole("checkbox", {
+      name: "Rename this selected target after a final confirming free scan.",
+    })
+    .check();
+  await dialog.getByRole("button", { name: "Start waiting" }).click();
+  await expect(
+    page.getByRole("region", { name: "Selected target wait" }),
+  ).toContainText("Renamed.");
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls.find((call: any) => call.command === "wait_follow_up").args.newName,
+  ).toBe("Neu.docx");
 });
 
 for (const failure of ["operation", "reveal"] as const) {
