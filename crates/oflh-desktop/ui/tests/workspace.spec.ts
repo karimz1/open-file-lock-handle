@@ -5854,11 +5854,19 @@ test("the status line does not move when a refresh starts", async ({
   await page.waitForTimeout(500);
   await page.screenshot({ path: "test-results/refresh-status-line.png" });
   const during = (await metrics.boundingBox())!;
-  expect(during.x, "status text x while updating").toBe(before.x);
+  // Fonts differ per OS, so the reserved width may be off by a pixel or two.
+  // Without the reserved width the text moved by more than 100 px.
+  expect(
+    Math.abs(during.x - before.x),
+    "status text shift while updating",
+  ).toBeLessThan(4);
   await finishScan(page);
   await expect(page.getByText("Updating results")).toHaveCount(0);
   const after = (await metrics.boundingBox())!;
-  expect(after.x, "status text x after updating").toBe(before.x);
+  expect(
+    Math.abs(after.x - before.x),
+    "status text shift after updating",
+  ).toBeLessThan(4);
 });
 
 test("a native target scan after quiet refresh locks inspection controls without a modal", async ({
