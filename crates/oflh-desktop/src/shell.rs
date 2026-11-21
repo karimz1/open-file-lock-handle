@@ -28,21 +28,6 @@ fn diagnostic_details(error: &str) -> String {
     ))
 }
 
-/// Reveal `path` in the file manager and select it.
-///
-/// On Windows this must work when OFLH itself is elevated (#202): the
-/// opener plugin's `SHOpenFolderAndSelectItems` path often opens the
-/// folder but leaves the item unselected in that situation.
-fn reveal_item_native(_app: &tauri::AppHandle, path: &Path) -> Result<(), Failure> {
-    #[cfg(windows)]
-    {
-        oflh_platform::reveal_item(path).map_err(Failure::from)
-    }
-    #[cfg(not(windows))]
-    {
-        _app.opener().reveal_item_in_dir(path).map_err(integration)
-    }
-}
 fn reveal_with_fallback(
     path: &Path,
     containing: bool,
@@ -211,7 +196,7 @@ async fn wait_follow_up(
         crate::wait_files::finish(
             action.clone(),
             path,
-            |path| reveal_item_native(&app, path),
+            |path| app.opener().reveal_item_in_dir(path).map_err(integration),
             |display_path| {
                 let Some(title) = &notification_title else {
                     return Ok(());
@@ -352,8 +337,11 @@ async fn reveal(
                 .open_path(text, None::<&str>)
                 .map_err(|error| format!("{error}\n{error:?}"))
         };
-        let reveal_item =
-            |path: &Path| reveal_item_native(&app, path).map_err(|error| error.to_string());
+        let reveal_item = |path: &Path| {
+            app.opener()
+                .reveal_item_in_dir(path)
+                .map_err(|error| format!("{error}\n{error:?}"))
+        };
         reveal_with_fallback(&path, containing, open_path, reveal_item)
     })
     .await

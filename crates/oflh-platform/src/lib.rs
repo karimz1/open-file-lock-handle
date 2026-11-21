@@ -16,8 +16,6 @@ pub use move_path::move_without_replace;
 pub use wait::{WaitTarget, wait_until_free};
 #[cfg(any(feature = "wait-actions", test))]
 pub use wait_actions::confirm_free_before_action;
-#[cfg(windows)]
-pub use windows::reveal::reveal_item;
 /// Read the process table once and list each identity's running children.
 #[cfg(any(target_os = "linux", target_os = "macos", windows))]
 fn children_for(
