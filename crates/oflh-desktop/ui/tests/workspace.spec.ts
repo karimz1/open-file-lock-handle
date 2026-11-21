@@ -2896,6 +2896,117 @@ test("clearing a process search quickly drops stale matches and keeps rows from 
   await assertNoWatchedVirtualRowViolations(page);
 });
 
+test("the grid keeps its rows on screen while the next query loads", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  const grid = page.getByRole("grid");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await search.fill("node");
+  await expect(page.getByText("300 results", { exact: true })).toBeVisible();
+  await expect(grid).toHaveAttribute("aria-busy", "false");
+  // Remember the row elements so a refilter can be told apart from a rebuild.
+  await page.evaluate(() => {
+    document
+      .querySelectorAll(".data-row")
+      .forEach((row) => ((row as any).__sameRow = true));
+    const frames = { total: 0, empty: 0, loadingText: 0 };
+    (window as any).__gridFrames = frames;
+    const sample = () => {
+      const rows = document.querySelectorAll(".data-row").length;
+      frames.total++;
+      if (!rows) frames.empty++;
+      if (!rows && /Loading results/.test(document.body.innerText))
+        frames.loadingText++;
+      (window as any).__gridSampler = requestAnimationFrame(sample);
+    };
+    sample();
+    (window as any).__pageDelayMsForTest = 700;
+  });
+  await search.press("Backspace");
+  await expect(search).toHaveValue("nod");
+  // The debounce has fired and the page request is in flight.
+  await expect(grid).toHaveAttribute("aria-busy", "true");
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: "test-results/grid-stale-while-loading.png" });
+  const during = await page.evaluate(() => ({
+    rows: document.querySelectorAll(".data-row").length,
+    kept: document.querySelectorAll(".data-row").length
+      ? [...document.querySelectorAll(".data-row")].every(
+          (row) => (row as any).__sameRow,
+        )
+      : false,
+  }));
+  expect(during.rows, "rows stay visible while loading").toBeGreaterThan(5);
+  expect(during.kept).toBe(true);
+  await expect(grid).toHaveAttribute("aria-busy", "false");
+  await page.evaluate(() => {
+    cancelAnimationFrame((window as any).__gridSampler);
+    (window as any).__pageDelayMsForTest = 0;
+  });
+  const result = await page.evaluate(() => ({
+    frames: (window as any).__gridFrames,
+    rows: document.querySelectorAll(".data-row").length,
+    sameRows: [...document.querySelectorAll(".data-row")].filter(
+      (row) => (row as any).__sameRow,
+    ).length,
+  }));
+  expect(result.frames.empty, "frames with an empty grid").toBe(0);
+  expect(result.frames.loadingText).toBe(0);
+  // Same processes match "nod" and "node", so React should reuse their rows.
+  expect(result.sameRows).toBe(result.rows);
+});
+
+test("stale rows are read-only until the page for the new query arrives", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  const grid = page.getByRole("grid");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.evaluate(() => ((window as any).__pageDelayMsForTest = 900));
+  await search.fill("node");
+  await expect(grid).toHaveAttribute("aria-busy", "true");
+  expect(
+    await grid.locator(".data-row").count(),
+    "the previous rows are still on screen",
+  ).toBeGreaterThan(5);
+  const box = await grid.locator(".data-row").first().boundingBox();
+  expect(box).not.toBeNull();
+  // A real pointer lands on the container, not on the stale row.
+  await page.mouse.click(box!.x + 330, box!.y + box!.height / 2);
+  await page.mouse.dblclick(box!.x + 330, box!.y + box!.height / 2);
+  await grid.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("complementary", { name: "Process details" }),
+  ).toHaveCount(0);
+  await expect(page.getByText(/process(es)? selected/)).toHaveCount(0);
+  await expect(page.getByText("300 results", { exact: true })).toBeVisible();
+  await expect(grid).toHaveAttribute("aria-busy", "false");
+  await grid.getByRole("row").nth(1).click();
+  await expect(page.getByText("1 process selected")).toBeVisible();
+});
+
+test("switching views never shows the previous view's rows under new columns", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.evaluate(() => ((window as any).__pageDelayMsForTest = 800));
+  await page.keyboard.press("Control+3");
+  await expect(
+    page.getByRole("heading", { name: "Local ports" }),
+  ).toBeVisible();
+  await page.waitForTimeout(250);
+  await expect(grid.getByText("Blender")).toHaveCount(0);
+  await expect(grid.locator(".data-row")).toHaveCount(0);
+  await expect(grid.getByText("8080", { exact: false })).toBeVisible();
+});
+
 test("virtual process rows keep their boxes through search, font, columns and resize", async ({
   page,
 }) => {
