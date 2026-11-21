@@ -1487,6 +1487,112 @@ test("recent targets can be searched, removed, and cleared", async ({
     page.getByRole("heading", { name: "No recent targets" }),
   ).toBeVisible();
 });
+/** Opacity of the open dialog and of its backdrop on every frame. */
+async function sampleDialogOpacity(page: Page, run: () => Promise<void>) {
+  await page.evaluate(() => {
+    (window as any).__dialogSamples = new Promise((resolve) => {
+      const samples: { at: number; dialog: number; backdrop: number }[] = [];
+      const start = performance.now();
+      const tick = () => {
+        const dialog = document.querySelector("dialog[open]");
+        if (dialog) {
+          samples.push({
+            at: Math.round(performance.now() - start),
+            dialog: Number(getComputedStyle(dialog).opacity),
+            backdrop: Number(getComputedStyle(dialog, "::backdrop").opacity),
+          });
+        }
+        if (performance.now() - start < 700) requestAnimationFrame(tick);
+        else resolve(samples);
+      };
+      requestAnimationFrame(tick);
+    });
+  });
+  await run();
+  return page.evaluate(
+    () =>
+      (window as any).__dialogSamples as Promise<
+        { at: number; dialog: number; backdrop: number }[]
+      >,
+  );
+}
+
+async function openAbout(page: Page) {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const about = page.getByRole("menuitem", { name: "About OFLH" });
+  await expect(about).toBeVisible();
+  await about.click();
+  await expect(page.getByRole("dialog", { name: "About OFLH" })).toBeVisible();
+}
+
+test("a dialog fades in instead of popping in", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const samples = await sampleDialogOpacity(page, () => openAbout(page));
+  expect(samples.length).toBeGreaterThan(5);
+  expect(samples[0].dialog, "dialog opacity on its first frame").toBeLessThan(
+    0.9,
+  );
+  expect(
+    samples[0].backdrop,
+    "backdrop opacity on its first frame",
+  ).toBeLessThan(0.9);
+  expect(samples.at(-1)!.dialog).toBe(1);
+  expect(samples.at(-1)!.backdrop).toBe(1);
+  // Short enough to never feel slow.
+  const settled = samples.find((sample) => sample.dialog === 1)!;
+  expect(settled.at - samples[0].at).toBeLessThan(400);
+});
+
+test("a dialog appears at once when the system asks for reduced motion", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const samples = await sampleDialogOpacity(page, () => openAbout(page));
+  expect(samples[0].dialog).toBe(1);
+  expect(samples[0].backdrop).toBe(1);
+});
+
+test("the search explanation grows in smoothly instead of pushing the grid down", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  await search.click();
+  await page.evaluate(() => {
+    (window as any).__gridTops = new Promise((resolve) => {
+      const tops: number[] = [];
+      const start = performance.now();
+      const tick = () => {
+        tops.push(
+          document.querySelector("#results-grid")!.getBoundingClientRect().top,
+        );
+        if (performance.now() - start < 900) requestAnimationFrame(tick);
+        else resolve(tops);
+      };
+      requestAnimationFrame(tick);
+    });
+  });
+  await search.pressSequentially("node");
+  await expect(
+    page.getByText("Search includes full paths", { exact: false }),
+  ).toBeVisible();
+  const tops = (await page.evaluate(
+    () => (window as any).__gridTops,
+  )) as number[];
+  const total = tops.at(-1)! - tops[0];
+  const biggestStep = Math.max(
+    ...tops.slice(1).map((top, index) => Math.abs(top - tops[index])),
+  );
+  expect(
+    total,
+    "the grid moves down by the height of the explanation",
+  ).toBeGreaterThan(20);
+  expect(biggestStep, "largest move of the grid in one frame").toBeLessThan(12);
+});
 test("automatic refresh repeats at the selected interval", async ({ page }) => {
   await page.goto("/");
   await page
@@ -7887,111 +7993,4 @@ test("changing language in Settings stays on the page and swaps text without a r
   expect(await page.evaluate(() => localStorage.getItem("oflh-language"))).toBe(
     "system",
   );
-});
-
-/** Opacity of the open dialog and of its backdrop on every frame. */
-async function sampleDialogOpacity(page: Page, run: () => Promise<void>) {
-  await page.evaluate(() => {
-    (window as any).__dialogSamples = new Promise((resolve) => {
-      const samples: { at: number; dialog: number; backdrop: number }[] = [];
-      const start = performance.now();
-      const tick = () => {
-        const dialog = document.querySelector("dialog[open]");
-        if (dialog) {
-          samples.push({
-            at: Math.round(performance.now() - start),
-            dialog: Number(getComputedStyle(dialog).opacity),
-            backdrop: Number(getComputedStyle(dialog, "::backdrop").opacity),
-          });
-        }
-        if (performance.now() - start < 700) requestAnimationFrame(tick);
-        else resolve(samples);
-      };
-      requestAnimationFrame(tick);
-    });
-  });
-  await run();
-  return page.evaluate(
-    () =>
-      (window as any).__dialogSamples as Promise<
-        { at: number; dialog: number; backdrop: number }[]
-      >,
-  );
-}
-
-async function openAbout(page: Page) {
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const about = page.getByRole("menuitem", { name: "About OFLH" });
-  await expect(about).toBeVisible();
-  await about.click();
-  await expect(page.getByRole("dialog", { name: "About OFLH" })).toBeVisible();
-}
-
-test("a dialog fades in instead of popping in", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
-  const samples = await sampleDialogOpacity(page, () => openAbout(page));
-  expect(samples.length).toBeGreaterThan(5);
-  expect(samples[0].dialog, "dialog opacity on its first frame").toBeLessThan(
-    0.9,
-  );
-  expect(
-    samples[0].backdrop,
-    "backdrop opacity on its first frame",
-  ).toBeLessThan(0.9);
-  expect(samples.at(-1)!.dialog).toBe(1);
-  expect(samples.at(-1)!.backdrop).toBe(1);
-  // Short enough to never feel slow.
-  const settled = samples.find((sample) => sample.dialog === 1)!;
-  expect(settled.at - samples[0].at).toBeLessThan(400);
-});
-
-test("a dialog appears at once when the system asks for reduced motion", async ({
-  page,
-}) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/");
-  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
-  const samples = await sampleDialogOpacity(page, () => openAbout(page));
-  expect(samples[0].dialog).toBe(1);
-  expect(samples[0].backdrop).toBe(1);
-});
-
-test("the search explanation grows in smoothly instead of pushing the grid down", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
-  const search = page.getByRole("textbox", { name: "Search loaded results" });
-  await search.click();
-  await page.evaluate(() => {
-    (window as any).__gridTops = new Promise((resolve) => {
-      const tops: number[] = [];
-      const start = performance.now();
-      const tick = () => {
-        tops.push(
-          document.querySelector("#results-grid")!.getBoundingClientRect().top,
-        );
-        if (performance.now() - start < 900) requestAnimationFrame(tick);
-        else resolve(tops);
-      };
-      requestAnimationFrame(tick);
-    });
-  });
-  await search.pressSequentially("node");
-  await expect(
-    page.getByText("Search includes full paths", { exact: false }),
-  ).toBeVisible();
-  const tops = (await page.evaluate(
-    () => (window as any).__gridTops,
-  )) as number[];
-  const total = tops.at(-1)! - tops[0];
-  const biggestStep = Math.max(
-    ...tops.slice(1).map((top, index) => Math.abs(top - tops[index])),
-  );
-  expect(
-    total,
-    "the grid moves down by the height of the explanation",
-  ).toBeGreaterThan(20);
-  expect(biggestStep, "largest move of the grid in one frame").toBeLessThan(12);
 });
