@@ -41,48 +41,56 @@ jobs:
             New-Item -ItemType Directory -Force "$root\$n" | Out-Null
             foreach ($f in 'alpha.txt','beta.txt','gamma.txt') { Set-Content "$root\$n\$f" 'x' }
           }
-          # 1. explorer /select, from this process
+          function WaitSel($label, $dir, $file) {
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            while ($sw.Elapsed.TotalSeconds -lt 30) {
+              $s = Selected
+              if ($s -match [regex]::Escape($file)) { Write-Host "$label SELECTED after $([int]$sw.Elapsed.TotalSeconds)s :: $s"; return }
+              Start-Sleep 1
+            }
+            Write-Host "$label NOT selected in 30s :: $(Selected)"
+          }
+          function ShSelect($dir, $file) {
+            $ps = [powershell]::Create()
+            $rs = [runspacefactory]::CreateRunspace(); $rs.ApartmentState = 'STA'; $rs.Open(); $ps.Runspace = $rs
+            [void]$ps.AddScript({
+              param($dir, $file)
+              $folder = [Sh]::ILCreateFromPathW($dir); $item = [Sh]::ILCreateFromPathW($file)
+              "hr=" + [Sh]::SHOpenFolderAndSelectItems($folder, 1, @($item), 0)
+            }).AddArgument($dir).AddArgument($file)
+            Write-Host "SHOpenFolderAndSelectItems" ($ps.Invoke())
+          }
+          # A. explorer /select with no Explorer window open
           CloseAll
-          Start-Process explorer.exe -ArgumentList "/select,`"$root\a\alpha.txt`""
-          Start-Sleep 6
-          Write-Host "1 explorer /select =" (Selected)
-          # 2. explorer /e,/select,
+          Write-Host "windows before A:" (Selected).Count
+          Start-Process explorer.exe -ArgumentList "/select,`"$rootlpha.txt`""
+          WaitSel "A explorer /select (none open)" "$root\a" "alpha.txt"
+          # B. SHOpenFolderAndSelectItems with no window open
           CloseAll
-          Start-Process explorer.exe -ArgumentList "/e,/select,`"$root\b\beta.txt`""
-          Start-Sleep 6
-          Write-Host "2 explorer /e,/select =" (Selected)
-          # 3. SHOpenFolderAndSelectItems on an STA thread (what tauri-plugin-opener does)
-          CloseAll
-          $ps = [powershell]::Create()
-          $rs = [runspacefactory]::CreateRunspace(); $rs.ApartmentState = 'STA'; $rs.Open(); $ps.Runspace = $rs
-          [void]$ps.AddScript({
-            param($dir, $file)
-            $folder = [Sh]::ILCreateFromPathW($dir); $item = [Sh]::ILCreateFromPathW($file)
-            $hr = [Sh]::SHOpenFolderAndSelectItems($folder, 1, @($item), 0)
-            "hr=$hr"
-          }).AddArgument("$root\c").AddArgument("$root\c\gamma.txt")
-          Write-Host "3 SHOpenFolderAndSelectItems" ($ps.Invoke())
-          Start-Sleep 6
-          Write-Host "3 selected =" (Selected)
-          # 4. Select via the Shell.Application COM object of an already open folder window
+          ShSelect "$root\b" "$root\b\beta.txt"
+          WaitSel "B SHOpen (none open)" "$root\b" "beta.txt"
+          # C. unrelated window open first, then /select
           CloseAll
           Start-Process explorer.exe -ArgumentList "`"$root\d`""
-          Start-Sleep 6
-          $shell = New-Object -ComObject Shell.Application
-          $w = $shell.Windows() | Where-Object { $_.Document -and $_.Document.Folder } | Select-Object -First 1
-          if ($w) {
-            $item = $w.Document.Folder.ParseName('alpha.txt')
-            $w.Document.SelectItem($item, 1 + 4 + 8 + 16)
-            Start-Sleep 2
-          }
-          Write-Host "4 Document.SelectItem =" (Selected)
-          # 5. open folder first, then explorer /select,
-          CloseAll
-          Start-Process explorer.exe -ArgumentList "`"$root\a`""
           Start-Sleep 5
-          Start-Process explorer.exe -ArgumentList "/select,`"$root\a\beta.txt`""
-          Start-Sleep 6
-          Write-Host "5 open then /select =" (Selected)
+          Start-Process explorer.exe -ArgumentList "/select,`"$root\c\gamma.txt`""
+          WaitSel "C explorer /select (other window open)" "$root\c" "gamma.txt"
+          # D. unrelated window open first, then SHOpen
+          CloseAll
+          Start-Process explorer.exe -ArgumentList "`"$root\d`""
+          Start-Sleep 5
+          ShSelect "$root\c" "$root\c\alpha.txt"
+          WaitSel "D SHOpen (other window open)" "$root\c" "alpha.txt"
+          # E. same folder already open, then SHOpen
+          CloseAll
+          Start-Process explorer.exe -ArgumentList "`"$root\b`""
+          Start-Sleep 5
+          ShSelect "$root\b" "$root\b\gamma.txt"
+          WaitSel "E SHOpen (same folder open)" "$root\b" "gamma.txt"
+          # F. cmd.exe launch of explorer /select (non-Start-Process)
+          CloseAll
+          cmd /c start "" explorer.exe /select,"$root\a\gamma.txt"
+          WaitSel "F cmd start explorer /select (none open)" "$root\a" "gamma.txt"
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
           $b = New-Object System.Drawing.Bitmap([System.Windows.Forms.SystemInformation]::VirtualScreen.Width, [System.Windows.Forms.SystemInformation]::VirtualScreen.Height)
           [System.Drawing.Graphics]::FromImage($b).CopyFromScreen(0,0,0,0,$b.Size)
