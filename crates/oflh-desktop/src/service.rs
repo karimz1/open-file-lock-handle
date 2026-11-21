@@ -1240,7 +1240,7 @@ fn status(state: &State) -> Status {
                 .and_then(|result| result.as_ref().err().cloned()),
         },
         version: oflh_core::display_version(),
-        commit: oflh_core::BUILD_COMMIT,
+        commit: oflh_core::build_commit(),
         build_url: oflh_core::BUILD_URL,
         pull_request_url: oflh_core::PULL_REQUEST_URL,
     }
