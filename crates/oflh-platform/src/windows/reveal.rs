@@ -176,6 +176,7 @@ fn unelevated_select(path: &Path) -> Result<()> {
     startup.cb = size_of::<STARTUPINFOW>() as u32;
     startup.dwFlags = STARTF_USESHOWWINDOW;
     startup.wShowWindow = SW_SHOWNORMAL as u16;
+    // SAFETY: zero is a valid initial state for PROCESS_INFORMATION; Windows fills it on success.
     let mut info: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
     // SAFETY: `primary` is a primary token from Explorer, the application and
     // command-line buffers are NUL-terminated and live, and `info` is writable.
@@ -233,7 +234,9 @@ fn explorer_pid() -> Result<u32> {
 }
 
 fn first_explorer_in_session() -> Result<u32> {
-    let ours = session_of(unsafe { GetCurrentProcessId() })?;
+    // SAFETY: GetCurrentProcessId takes no arguments and cannot fail.
+    let current = unsafe { GetCurrentProcessId() };
+    let ours = session_of(current)?;
     let (handle, mut entry) = process_snapshot()?;
     // SAFETY: initialized structure size and live owned snapshot handle.
     let mut next = unsafe { Process32FirstW(handle.0, &mut entry) };
