@@ -13,6 +13,7 @@ import {
   startHolder,
   type Holder,
 } from "../support/fixtures.ts";
+import { operatingSystem } from "../support/platform.ts";
 import { itKnownFailing } from "../support/results.ts";
 import {
   $,
@@ -155,17 +156,43 @@ describe("Process details panel", () => {
     await expectFileManagerToReveal(executable);
   });
 
-  it("Copy path for the working directory copies the folder path", async () => {
+  // #201: Windows never fills Process.cwd, so this section says Unavailable.
+  const copyWorkingDirectory = async () => {
     await openDetails(insideHolder.pid);
     expect(await sectionPath("Working directory")).toBe(tree.folder);
     await clickButton("Copy path", xpath.panelSection("Working directory"));
     await expectClipboard(tree.folder);
-  });
+  };
+  if (operatingSystem === "windows") {
+    itKnownFailing(
+      201,
+      "Copy path for the working directory copies the folder path",
+      copyWorkingDirectory,
+    );
+  } else {
+    it(
+      "Copy path for the working directory copies the folder path",
+      copyWorkingDirectory,
+    );
+  }
 
-  it("Reveal for the working directory shows the folder in the file manager", async () => {
+  const revealWorkingDirectory = async () => {
+    await openDetails(insideHolder.pid);
     await clickButton("Reveal", xpath.panelSection("Working directory"));
     await expectFileManagerToReveal(tree.folder);
-  });
+  };
+  if (operatingSystem === "windows") {
+    itKnownFailing(
+      201,
+      "Reveal for the working directory shows the folder in the file manager",
+      revealWorkingDirectory,
+    );
+  } else {
+    it(
+      "Reveal for the working directory shows the folder in the file manager",
+      revealWorkingDirectory,
+    );
+  }
 
   // #190: a directory handle is still revealed by selecting it in its parent, which
   // can do nothing when that parent is not showable. After #191 this should open the
@@ -378,7 +405,7 @@ describe("Process details panel", () => {
     await screenshot("process exited");
   });
 
-  it("Inspect owner folder starts a new inspection of the owner's working directory", async () => {
+  const inspectOwnerFolder = async () => {
     const ownerFolder = path.dirname(tree.folder);
     await openDetails(ownerHolder.pid);
     expect(await sectionPath("Working directory")).toBe(ownerFolder);
@@ -392,5 +419,17 @@ describe("Process details panel", () => {
     await waitForInspectionComplete();
     await waitForRowWith(String(ownerHolder.pid));
     await screenshot("owner folder inspected");
-  });
+  };
+  if (operatingSystem === "windows") {
+    itKnownFailing(
+      201,
+      "Inspect owner folder starts a new inspection of the owner's working directory",
+      inspectOwnerFolder,
+    );
+  } else {
+    it(
+      "Inspect owner folder starts a new inspection of the owner's working directory",
+      inspectOwnerFolder,
+    );
+  }
 });

@@ -300,29 +300,49 @@ export async function resetWorkspace({
   await reload();
 }
 
-/** Reload the page like F5 in a browser and wait until the workspace is back. */
+/**
+ * Reload the page and wait until the workspace is back.
+ * Do not call `location.reload()` inside `execute/sync`: on WebView2 the page
+ * is torn down before the command can return, so the script times out (30 s)
+ * even though the reload itself succeeded.
+ */
 export async function reload(): Promise<void> {
-  await browser.execute(() => {
-    (
-      window as unknown as { __oflhE2eBeforeReload?: boolean }
-    ).__oflhE2eBeforeReload = true;
-    setTimeout(() => location.reload(), 0);
-  });
+  await browser.refresh();
   await browser.waitUntil(
-    async () =>
-      browser.execute(
-        () =>
-          !(window as unknown as { __oflhE2eBeforeReload?: boolean })
-            .__oflhE2eBeforeReload &&
-          document.readyState === "complete" &&
-          !!document.querySelector("nav"),
-      ),
+    async () => {
+      try {
+        return await browser.execute(
+          () =>
+            document.readyState === "complete" &&
+            !!document.querySelector("nav"),
+        );
+      } catch {
+        return false;
+      }
+    },
     {
       timeout: 30_000,
-      interval: 200,
+      interval: 250,
       timeoutMsg: "The workspace did not load after a reload",
     },
   );
+}
+
+/** Close an open modal or native dialog so a failed test does not block the next one. */
+export async function dismissOpenDialog(): Promise<void> {
+  const open = await $(xpath.dialog)
+    .isDisplayed()
+    .catch(() => false);
+  if (!open) return;
+  const close = `${xpath.dialog}//button[@aria-label="Close dialog" or normalize-space(.)="Cancel" or normalize-space(.)="Done"]`;
+  if (
+    await $(close)
+      .isExisting()
+      .catch(() => false)
+  ) {
+    await click(close).catch(() => undefined);
+  }
+  await waitForGone(xpath.dialog).catch(() => undefined);
 }
 
 export async function activeElementDescription(): Promise<string> {

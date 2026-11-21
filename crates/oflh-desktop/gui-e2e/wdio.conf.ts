@@ -12,6 +12,8 @@ import {
 } from "./support/desktop.ts";
 import { stopAllHolders } from "./support/fixtures.ts";
 import { artifactsDir } from "./support/paths.ts";
+import { operatingSystem } from "./support/platform.ts";
+import { dismissOpenDialog } from "./support/ui.ts";
 import {
   classify,
   knownFailures,
@@ -46,14 +48,32 @@ export const config: WebdriverIO.Config = {
   reporters: ["spec"],
   mochaOpts: { ui: "bdd", timeout: 180_000 },
 
-  onPrepare() {
+  async onPrepare() {
     fs.rmSync(artifactsDir, { recursive: true, force: true });
     fs.mkdirSync(artifactsDir, { recursive: true });
-    return startLinuxFileManagerStandIns();
+    await startLinuxFileManagerStandIns();
+    // First WebView2 start on a runner can exceed the per-spec wait (AV scan,
+    // runtime first-run). Warm the binary once so the first spec is not the
+    // first launch.
+    if (operatingSystem === "windows") {
+      const warmed = await launchApp("warmup");
+      await stopApp(warmed);
+    }
   },
 
   async onWorkerStart(cid, _capabilities, specs) {
-    apps.set(cid, await launchApp(specName(specs[0] ?? cid)));
+    const name = specName(specs[0] ?? cid);
+    try {
+      apps.set(cid, await launchApp(name));
+    } catch (error) {
+      recordResult({
+        spec: name,
+        title: "start the app and wait for its WebDriver server",
+        outcome: "failed",
+        detail: String(error).split("\n")[0],
+      });
+      throw error;
+    }
   },
 
   async onWorkerEnd(cid) {
@@ -62,8 +82,21 @@ export const config: WebdriverIO.Config = {
     if (app) await stopApp(app);
   },
 
-  before(_capabilities, specs) {
+  async before(_capabilities, specs) {
     process.env.OFLH_E2E_SPEC = specName(specs[0] ?? "spec");
+    await browser.setTimeout({ script: 5_000, pageLoad: 30_000 });
+  },
+
+  async afterHook(test, _context, { passed, error }) {
+    if (passed || !error) return;
+    const title = (test as { title?: string }).title ?? "hook";
+    recordResult({
+      spec: process.env.OFLH_E2E_SPEC ?? "spec",
+      title: `hook: ${title}`,
+      outcome: "failed",
+      detail: String((error as Error).message ?? error).split("\n")[0],
+    });
+    await screenshot(`hook ${title}`).catch(() => undefined);
   },
 
   async afterTest(test, _context, { passed, error }) {
@@ -82,6 +115,7 @@ export const config: WebdriverIO.Config = {
             ? String(error.message ?? error).split("\n")[0]
             : undefined,
     });
+    await dismissOpenDialog();
   },
 
   async after() {

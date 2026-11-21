@@ -53,16 +53,25 @@ export async function launchApp(specName: string): Promise<RunningApp> {
     TAURI_WEBDRIVER_PORT: String(webdriverPort),
     PATH: `${stubBinDir}${path.delimiter}${process.env.PATH ?? ""}`,
   };
+  // Isolated profiles: Linux via XDG, Windows via WebView2 user data.
+  // macOS keeps the runner profile; specs reset WebView storage themselves.
+  const profile = fs.mkdtempSync(
+    path.join(os.tmpdir(), `oflh-e2e-profile-${specName}-`),
+  );
   if (operatingSystem === "linux") {
-    const profile = fs.mkdtempSync(
-      path.join(os.tmpdir(), `oflh-e2e-profile-${specName}-`),
-    );
     env.XDG_DATA_HOME = path.join(profile, "data");
     env.XDG_CONFIG_HOME = path.join(profile, "config");
     env.XDG_CACHE_HOME = path.join(profile, "cache");
+  } else if (operatingSystem === "windows") {
+    env.WEBVIEW2_USER_DATA_FOLDER = path.join(profile, "webview2");
   }
+  fs.writeSync(
+    log,
+    `starting ${binary} for ${specName} (webdriver port ${webdriverPort})\n`,
+  );
   const child = spawn(binary, [], { env, stdio: ["ignore", log, log] });
-  const deadline = Date.now() + 90_000;
+  fs.writeSync(log, `spawned pid ${child.pid ?? "unknown"}\n`);
+  const deadline = Date.now() + (specName === "warmup" ? 120_000 : 90_000);
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
       throw new Error(
@@ -72,9 +81,10 @@ export async function launchApp(specName: string): Promise<RunningApp> {
     if (await webdriverReady()) return { child, logFile };
     await sleep(250);
   }
+  const stillRunning = child.exitCode === null;
   await stopApp({ child, logFile });
   throw new Error(
-    `The app's WebDriver server did not answer within 90 s; see ${logFile}`,
+    `The app's WebDriver server did not answer within 90 s (process ${stillRunning ? "was still running" : `exited with ${child.exitCode}`}); see ${logFile}`,
   );
 }
 

@@ -81,6 +81,7 @@ export async function startHolder(
     ? spawn(
         "powershell.exe",
         [
+          "-STA",
           "-NoProfile",
           "-ExecutionPolicy",
           "Bypass",

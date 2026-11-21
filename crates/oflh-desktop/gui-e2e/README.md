@@ -63,7 +63,9 @@ request, so only the newest commit keeps screenshots.
   marked: #186 (search and keyboard focus), #188 (language switch leaves
   Settings), #190 (Reveal on a folder should open the folder itself), #192
   (About shows the git commit on a dev build), #194 (wait-until-free rename
-  keeps the original extension and can copy the original name).
+  keeps the original extension and can copy the original name), and on
+  Windows only #201 (working directory is Unavailable because the backend
+  never fills `Process.cwd`).
 - `itOn(systems, reason, title, fn)` runs only where the behavior exists (for
   example the Windows normal-close refusal) and reports "not applicable" with the
   reason elsewhere.
