@@ -140,6 +140,15 @@ describe("Ending processes", () => {
   });
 
   it("confirming Close ends the process and removes its row", async () => {
+    if (operatingSystem === "windows") {
+      await browser.waitUntil(
+        () => closable.mainWindowTitle() === "OFLH E2E windowed holder",
+        {
+          timeout: 15_000,
+          timeoutMsg: `The windowed holder still has title ${JSON.stringify(closable.mainWindowTitle())}`,
+        },
+      );
+    }
     await selectOnly(closable.pid);
     await clickButton("Terminate…");
     await expectDialogTitle(/^Close .+\?$/);

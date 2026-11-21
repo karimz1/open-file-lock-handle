@@ -268,15 +268,23 @@ export async function chooseOption(
   value: string,
 ): Promise<void> {
   await $(selector).waitForDisplayed({ timeout: 10_000 });
+  // Defer the change event so this command can return before a language
+  // switch reloads the page (#188). Dispatching change synchronously made
+  // WebView2 reject the script with "Illegal invocation".
   await browser.execute(
     (css, next) => {
-      const select = document.querySelector<HTMLSelectElement>(css)!;
+      const select = document.querySelector<HTMLSelectElement>(css);
+      if (!select) return;
       const setter = Object.getOwnPropertyDescriptor(
-        HTMLSelectElement.prototype,
+        Object.getPrototypeOf(select),
         "value",
-      )!.set!;
-      setter.call(select, next);
-      select.dispatchEvent(new Event("change", { bubbles: true }));
+      )?.set;
+      if (setter) setter.call(select, next);
+      else select.value = next;
+      setTimeout(() => {
+        select.dispatchEvent(new Event("input", { bubbles: true }));
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }, 0);
     },
     selector,
     value,

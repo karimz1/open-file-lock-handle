@@ -56,9 +56,27 @@ export interface Holder {
   /** Resolves true once the process has exited. */
   waitForExit(timeout: number): Promise<boolean>;
   isRunning(): boolean;
+  /** Windows only: the process main window title, or empty if it has none. */
+  mainWindowTitle(): string;
 }
 
 const running = new Set<Holder>();
+
+/** Windows: title of the process's main window, used to wait until a WinForms fixture is visible. */
+export function processMainWindowTitle(pid: number): string {
+  if (operatingSystem !== "windows") return "";
+  const result = spawnSync(
+    "powershell.exe",
+    [
+      "-STA",
+      "-NoProfile",
+      "-Command",
+      `Get-Process -Id ${pid} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty MainWindowTitle`,
+    ],
+    { encoding: "utf8" },
+  );
+  return (result.stdout ?? "").trim();
+}
 
 /**
  * Start a process that opens `files` and keeps them open. `windowed` (Windows
@@ -146,6 +164,7 @@ export async function startHolder(
     pid: ready.pid,
     port: ready.port,
     isRunning: () => !exited,
+    mainWindowTitle: () => processMainWindowTitle(ready.pid),
     waitForExit,
     async release() {
       if (windowed)

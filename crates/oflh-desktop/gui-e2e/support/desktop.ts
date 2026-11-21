@@ -114,15 +114,43 @@ function explorerWindows(): ExplorerWindow[] {
     } | ConvertTo-Json -Depth 3 -Compress`;
   const result = spawnSync(
     "powershell.exe",
-    ["-NoProfile", "-Command", script],
-    {
-      encoding: "utf8",
-    },
+    ["-STA", "-NoProfile", "-Command", script],
+    { encoding: "utf8" },
   );
   const text = (result.stdout ?? "").trim();
+  lastExplorerProbe = {
+    status: result.status,
+    stderr: (result.stderr ?? "").trim(),
+    stdout: text,
+  };
   if (!text) return [];
-  const parsed = JSON.parse(text) as ExplorerWindow | ExplorerWindow[];
-  return Array.isArray(parsed) ? parsed : [parsed];
+  try {
+    const parsed = JSON.parse(text) as ExplorerWindow | ExplorerWindow[];
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
+}
+
+/** Last Shell.Application probe, included in file-manager timeout messages. */
+let lastExplorerProbe:
+  { status: number | null; stderr: string; stdout: string } | undefined;
+
+function explorerWindowTitles(): string[] {
+  const result = spawnSync(
+    "powershell.exe",
+    [
+      "-STA",
+      "-NoProfile",
+      "-Command",
+      "Get-Process | Where-Object { $_.MainWindowTitle } | ForEach-Object { $_.MainWindowTitle }",
+    ],
+    { encoding: "utf8" },
+  );
+  return (result.stdout ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 function finderSelection(): string[] {
@@ -237,12 +265,17 @@ async function waitForFileManager(
       }
       if (operatingSystem === "windows") {
         const windows = explorerWindows();
-        seen = JSON.stringify(windows);
-        return mode === "open"
-          ? windows.some((window) => samePath(window.folder, target))
-          : windows.some((window) =>
-              window.selected.some((item) => samePath(item, target)),
-            );
+        const titles = explorerWindowTitles();
+        seen = JSON.stringify({ windows, titles, probe: lastExplorerProbe });
+        if (mode === "open") {
+          return (
+            windows.some((window) => samePath(window.folder, target)) ||
+            titles.some((title) => samePath(title, path.win32.basename(target)))
+          );
+        }
+        return windows.some((window) =>
+          window.selected.some((item) => samePath(item, target)),
+        );
       }
       if (mode === "open") {
         const opened = finderWindows();
