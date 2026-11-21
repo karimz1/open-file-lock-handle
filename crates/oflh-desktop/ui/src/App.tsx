@@ -10,6 +10,7 @@ import {
   lazy,
   Suspense,
   useCallback,
+  useMemo,
   useEffect,
   useRef,
   useState,
@@ -57,6 +58,7 @@ import {
   type Confirmation,
   type Details,
   type Failure,
+  type Page,
   type Row,
   type Sort,
   type Status,
@@ -71,6 +73,7 @@ import { normalizeTypedPath } from "./targetPath";
 import { TargetHelp } from "./TargetHelp";
 import { Inspector } from "./Inspector";
 import { useDebouncedValue } from "./useDebouncedValue";
+import { useStableCallback } from "./useStableCallback";
 import { Modal } from "./Modal";
 import { SharePanel } from "./SharePanel";
 import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
@@ -462,20 +465,106 @@ export function App() {
   // The box shows every key at once; the grid and Select all follow after a
   // short pause in typing instead of reloading on each character.
   const searchText = useDebouncedValue(query, query ? 180 : 0);
-  const tableQuery: TableQuery = {
-    columns,
-    text: searchText,
-    sort,
-    descending,
-    handles: view === "handles",
-    locks_only: view !== "ports" && locks,
-    ports: view === "ports",
-    ports_path_only: !!status.target && portsPathOnly,
-    offset: 0,
-    limit: 200,
-    process_key: scope?.key,
-  };
+  const tableQuery: TableQuery = useMemo(
+    () => ({
+      columns,
+      text: searchText,
+      sort,
+      descending,
+      handles: view === "handles",
+      locks_only: view !== "ports" && locks,
+      ports: view === "ports",
+      ports_path_only: !!status.target && portsPathOnly,
+      offset: 0,
+      limit: 200,
+      process_key: scope?.key,
+    }),
+    [
+      columns,
+      searchText,
+      sort,
+      descending,
+      view,
+      locks,
+      status.target,
+      portsPathOnly,
+      scope?.key,
+    ],
+  );
   const tableQueryKey = JSON.stringify(tableQuery);
+  // The grid and its rows are memoized. Stable handlers keep a keystroke in the
+  // target path or a click from rendering rows that did not change.
+  const toggleRow = useStableCallback((row: Row, revision: number) => {
+    const closing =
+      focused === row.process_key && activeRow?.row.key === row.key;
+    setActiveRow({
+      row,
+      revision,
+      queryKey: tableQueryKey,
+    });
+    setFocused(closing ? null : row.process_key);
+  });
+  const selectRow = useStableCallback(
+    (row: Row, additive: boolean, revision: number) => {
+      setSelected((current) => selectKey(current, row.process_key, additive));
+      setActiveRow({
+        row,
+        revision,
+        queryKey: tableQueryKey,
+      });
+      setFocused(row.process_key);
+    },
+  );
+  const openRow = useStableCallback((row: Row, revision: number) => {
+    setActiveRow({
+      row,
+      revision,
+      queryKey: tableQueryKey,
+    });
+    setFocused(row.process_key);
+    if (row.matching_files) setRevealRequest({ key: row.process_key });
+  });
+  const contextRow = useStableCallback((row: Row, revision: number) => {
+    if (status.scanning || revision !== status.revision) {
+      setToast(
+        t("inspection.k_wait_for_the_current_scan_to_finish_bef_20cd41dd"),
+      );
+      return;
+    }
+    setContext(row);
+    setActiveRow({
+      row,
+      revision,
+      queryKey: tableQueryKey,
+    });
+    setFocused(row.process_key);
+  });
+  const sortRows = useStableCallback((next: Sort) => changeSort(next));
+  const acceptPage = useStableCallback((page: Page) => {
+    setGridRevision(page.revision);
+    setFailedGridRevision(null);
+    setActiveRow((current) => {
+      if (!current) return current;
+      const row = page.rows.find(
+        (row) =>
+          row.key === current.row.key &&
+          (row.matching_files || row.path === current.row.path) &&
+          row.port?.endpoint === current.row.port?.endpoint,
+      );
+      return row
+        ? {
+            row,
+            revision: page.revision,
+            queryKey: tableQueryKey,
+          }
+        : current;
+    });
+  });
+  const failPage = useStableCallback((failure: unknown, revision: number) => {
+    if (revision !== statusRef.current.revision) return;
+    setFailedGridRevision(revision);
+    report(failure);
+  });
   useEffect(() => setRevealRequest(null), [tableQueryKey]);
   useEffect(() => {
     let active = true;
@@ -1738,88 +1827,19 @@ export function App() {
                           ? activeRow.row.key
                           : null
                       }
-                      onToggle={(row, revision) => {
-                        const closing =
-                          focused === row.process_key &&
-                          activeRow?.row.key === row.key;
-                        setActiveRow({
-                          row,
-                          revision,
-                          queryKey: tableQueryKey,
-                        });
-                        setFocused(closing ? null : row.process_key);
-                      }}
+                      onToggle={toggleRow}
                       revision={status.revision}
                       query={tableQuery}
                       hiddenColumns={hiddenColumns}
                       selected={selected}
                       focused={focused}
-                      onSelect={(row, additive, revision) => {
-                        setSelected((current) =>
-                          selectKey(current, row.process_key, additive),
-                        );
-                        setActiveRow({
-                          row,
-                          revision,
-                          queryKey: tableQueryKey,
-                        });
-                        setFocused(row.process_key);
-                      }}
-                      onOpen={(row, revision) => {
-                        setActiveRow({
-                          row,
-                          revision,
-                          queryKey: tableQueryKey,
-                        });
-                        setFocused(row.process_key);
-                        if (row.matching_files)
-                          setRevealRequest({ key: row.process_key });
-                      }}
-                      onContext={(row, revision) => {
-                        if (status.scanning || revision !== status.revision) {
-                          setToast(
-                            t(
-                              "inspection.k_wait_for_the_current_scan_to_finish_bef_20cd41dd",
-                            ),
-                          );
-                          return;
-                        }
-                        setContext(row);
-                        setActiveRow({
-                          row,
-                          revision,
-                          queryKey: tableQueryKey,
-                        });
-                        setFocused(row.process_key);
-                      }}
-                      onSort={changeSort}
-                      onPage={(page) => {
-                        setGridRevision(page.revision);
-                        setFailedGridRevision(null);
-                        setActiveRow((current) => {
-                          if (!current) return current;
-                          const row = page.rows.find(
-                            (row) =>
-                              row.key === current.row.key &&
-                              (row.matching_files ||
-                                row.path === current.row.path) &&
-                              row.port?.endpoint === current.row.port?.endpoint,
-                          );
-                          return row
-                            ? {
-                                row,
-                                revision: page.revision,
-                                queryKey: tableQueryKey,
-                              }
-                            : current;
-                        });
-                      }}
+                      onSelect={selectRow}
+                      onOpen={openRow}
+                      onContext={contextRow}
+                      onSort={sortRows}
+                      onPage={acceptPage}
                       onTotal={setTotal}
-                      onPageError={(failure, revision) => {
-                        if (revision !== statusRef.current.revision) return;
-                        setFailedGridRevision(revision);
-                        report(failure);
-                      }}
+                      onPageError={failPage}
                       onError={report}
                     />
                     {details && (
