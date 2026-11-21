@@ -20,6 +20,7 @@ use windows_sys::Win32::{
 mod file_users;
 pub(crate) mod handles;
 pub(crate) mod helper_job;
+pub(crate) mod reveal;
 struct Handle(HANDLE);
 impl Handle {
     fn new(handle: HANDLE, operation: &'static str) -> Result<Self> {
@@ -28,6 +29,9 @@ impl Handle {
         } else {
             Ok(Self(handle))
         }
+    }
+    fn as_raw(&self) -> HANDLE {
+        self.0
     }
 }
 impl Drop for Handle {
