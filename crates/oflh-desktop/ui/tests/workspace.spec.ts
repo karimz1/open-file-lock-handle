@@ -2809,9 +2809,32 @@ for (const [
     await page.locator(".search-box input").fill("bestellbest");
     // Wait for the debounced search before picking the filtered row.
     await expect(page.getByRole("grid")).toHaveAttribute("aria-rowcount", "2");
-    await page.getByRole("grid").getByRole("row").nth(1).click();
-    await page.getByRole("button", { name: sendLabel, exact: true }).click();
+    const row = page.getByRole("grid").getByRole("row").nth(1);
+    await row.click();
+    const sendMessage = page
+      .getByRole("complementary")
+      .getByRole("button", { name: sendLabel, exact: true });
+    await expect(sendMessage).toBeEnabled();
+    // At 860x560 the details panel opens over the still-wide process row.
+    // Wait until that overlap is gone, otherwise the click hits the row.
+    await expect
+      .poll(async () => {
+        const button = await sendMessage.boundingBox();
+        const rowBox = await row.boundingBox();
+        if (!button) return "no-button";
+        if (!rowBox) return "ok";
+        const overlap = !(
+          button.x >= rowBox.x + rowBox.width ||
+          rowBox.x >= button.x + button.width ||
+          button.y >= rowBox.y + rowBox.height ||
+          rowBox.y >= button.y + button.height
+        );
+        return overlap ? "overlap" : "ok";
+      })
+      .toBe("ok");
+    await sendMessage.click();
     const modal = page.getByRole("dialog");
+    await expect(modal).toBeVisible();
     await expect(modal).toContainText(delivery);
     await expect(modal).toContainText(ownNotice);
     const note = modal.getByRole("textbox", {
