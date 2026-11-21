@@ -481,6 +481,19 @@ test.beforeEach(async ({ page }) => {
                 "Primary action failed: FileManager1 is unavailable\nFallback action failed: xdg-open failed\nRust backtrace: fixture stack",
             };
           }
+          if (
+            command === "reveal" &&
+            (window as any).__failRevealReferences?.includes(args.reference)
+          ) {
+            throw {
+              kind: "desktop_integration",
+              message:
+                "The file manager could not open this folder. It may be inaccessible.",
+              os_code: 5,
+              details:
+                "Opening the folder failed: Access is denied. (os error 5)\nRust backtrace: fixture stack",
+            };
+          }
           if (command === "inspect_ports")
             return (status = {
               ...status,
@@ -597,6 +610,58 @@ test.beforeEach(async ({ page }) => {
             };
           }
           if (command === "page") {
+            if ((window as any).__folderRevealFixture) {
+              const process = processRows[0];
+              process.name = "Spotify.exe";
+              const folder =
+                "C:\\Program Files\\WindowsApps\\SpotifyAB.SpotifyMusic_1.309.205.0_x64__zpdnekdrzrea0";
+              const file = `${folder}\\chrome_100_percent.pak`;
+              const files = [
+                {
+                  path: { display: folder, reference: `${args.revision}:0:0` },
+                  references: 1,
+                  observations: [
+                    {
+                      relation: "open",
+                      access: "directory",
+                      evidence: null,
+                      evidence_label: null,
+                      deleted: false,
+                    },
+                  ],
+                  more_references: 0,
+                },
+                {
+                  path: { display: file, reference: `${args.revision}:0:1` },
+                  references: 1,
+                  observations: [
+                    {
+                      relation: "open",
+                      access: "read",
+                      evidence: null,
+                      evidence_label: null,
+                      deleted: false,
+                    },
+                  ],
+                  more_references: 0,
+                },
+              ];
+              return {
+                revision: args.revision,
+                total: 1,
+                rows: [
+                  {
+                    ...freshRow(process),
+                    path: folder,
+                    path_ref: `${args.revision}:0:0`,
+                    matching_files: { files, total: 2 },
+                  },
+                ].slice(
+                  args.query.offset,
+                  args.query.offset + args.query.limit,
+                ),
+              };
+            }
             if ((window as any).__fileMatchFixture) {
               const process = processRows[0];
               process.name = "FixturePdfEditor";
@@ -2335,6 +2400,64 @@ test("process search shows matching file paths and grouped references above ance
   ).toBeVisible();
   await expect(search).toHaveValue("bestell");
   await expect(page.getByRole("grid")).toHaveAttribute("aria-rowcount", "7");
+});
+
+test("matching files Reveal on a folder entry opens that folder and reports permission errors", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__folderRevealFixture = true;
+    localStorage.setItem("oflh-language", "de");
+  });
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  const files = page.getByRole("region", {
+    name: "Passende Dateien",
+    exact: true,
+  });
+  await expect(files).toBeVisible();
+  const entries = files.locator(".matching-file-list > li");
+  await expect(entries).toHaveCount(2);
+  const folder = entries.nth(0);
+  const file = entries.nth(1);
+  await expect(folder).toContainText(
+    "C:\\Program Files\\WindowsApps\\SpotifyAB.SpotifyMusic_1.309.205.0_x64__zpdnekdrzrea0",
+  );
+  await expect(folder).not.toContainText("chrome_100_percent.pak");
+  await folder
+    .getByText("1 Referenz · Zugriff und Nachweise", { exact: true })
+    .click();
+  await expect(folder).toContainText("Offen · Ordner");
+  await file
+    .getByText("1 Referenz · Zugriff und Nachweise", { exact: true })
+    .click();
+  await expect(file).toContainText("chrome_100_percent.pak");
+  await folder.getByRole("button", { name: "Anzeigen", exact: true }).click();
+  await file.getByRole("button", { name: "Anzeigen", exact: true }).click();
+  const revealCalls = await page.evaluate(() =>
+    (window as any).__testCalls.filter(
+      (call: any) => call.command === "reveal",
+    ),
+  );
+  expect(revealCalls.map((call: any) => call.args)).toEqual([
+    { revision: 1, reference: "1:0:0", containing: false },
+    { revision: 1, reference: "1:0:1", containing: false },
+  ]);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).__failRevealReferences = ["1:0:0"];
+  });
+  await folder.getByRole("button", { name: "Anzeigen", exact: true }).click();
+  const errorBanner = page.getByRole("alert");
+  await expect(errorBanner).toContainText(
+    "Der Vorgang konnte nicht abgeschlossen werden",
+  );
+  await expect(errorBanner).toContainText(
+    "The file manager could not open this folder. It may be inaccessible.",
+  );
+  await page.screenshot({
+    path: "test-results/reveal-folder-entry.png",
+  });
 });
 
 test("a changed process search updates file details without carrying the previous path", async ({
@@ -6944,16 +7067,14 @@ test("rename validates the name, reviews its path and reveals the returned resul
   await dialog.getByLabel("After it becomes free").selectOption("rename");
   const name = dialog.getByRole("textbox", { name: "New name", exact: true });
   const start = dialog.getByRole("button", { name: "Start waiting" });
-  for (const invalid of [
-    "../escape.pdf",
-    "NUL.pdf",
-    "bad?.pdf",
-    "Bestellbestätigung .pdf",
-  ]) {
+  for (const invalid of ["../escape.pdf", "NUL.pdf", "bad?.pdf"]) {
     await name.fill(invalid);
     await expect(name).toHaveAttribute("aria-invalid", "true");
     await expect(start).toBeDisabled();
   }
+  await name.fill("Bestellbestätigung .pdf");
+  await expect(name).toHaveAttribute("aria-invalid", "false");
+  await expect(start).toBeDisabled();
   await name.fill("Bestätigung archiviert.pdf");
   await expect(dialog.locator(".wait-result-preview")).toContainText(
     "Bestätigung archiviert.pdf",
@@ -6986,6 +7107,85 @@ test("rename validates the name, reviews its path and reveals the returned resul
   expect(
     await page.evaluate(() => (window as any).__revealedWaitPaths),
   ).toEqual(["/build/documents/Bestätigung fertig.pdf"]);
+});
+
+test("rename keeps the original extension, copies the original name and previews the final name", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const written: string[] = [];
+    (window as any).__copiedNames = written;
+    const clipboard = navigator.clipboard ?? ({} as Clipboard);
+    clipboard.writeText = async (text: string) => {
+      written.push(text);
+    };
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: clipboard,
+    });
+  });
+  const dialog = await openFileWait(page, { __emitWaitFree: true });
+  await dialog.getByLabel("After it becomes free").selectOption("rename");
+  const name = dialog.getByRole("textbox", { name: "New name", exact: true });
+  await page.screenshot({
+    path: documentationScreenshotPath("desktop-wait-rename-extension.png"),
+  });
+  await expect(name).toHaveValue("Bestellbestätigung .pdf");
+  await expect(name).toBeFocused();
+  expect(
+    await name.evaluate((element: HTMLInputElement) => [
+      element.selectionStart,
+      element.selectionEnd,
+    ]),
+  ).toEqual([0, "Bestellbestätigung ".length]);
+  await name.pressSequentially("Archiv");
+  await expect(name).toHaveValue("Archiv.pdf");
+  await expect(
+    dialog.getByText("Resulting name", { exact: true }),
+  ).toBeVisible();
+  await expect(dialog.getByText("Archiv.pdf", { exact: true })).toBeVisible();
+  await expect(dialog.locator(".wait-result-preview")).toContainText(
+    "/long-folder/Archiv.pdf",
+  );
+  await name.fill("OhneEndung");
+  await expect(
+    dialog.getByText("OhneEndung.pdf", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText("The original extension was kept.", { exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: documentationScreenshotPath("desktop-wait-rename-extension-kept.png"),
+  });
+  await dialog
+    .getByRole("button", { name: "Copy original name", exact: true })
+    .click();
+  expect(await page.evaluate(() => (window as any).__copiedNames)).toEqual([
+    "Bestellbestätigung .pdf",
+  ]);
+  await expect(
+    dialog.getByText("Original name copied.", { exact: true }),
+  ).toBeVisible();
+  await name.fill("Neu.docx");
+  await expect(dialog.locator(".wait-result-preview")).toContainText(
+    "Neu.docx",
+  );
+  await expect(
+    dialog.getByText("The original extension was kept.", { exact: true }),
+  ).toHaveCount(0);
+  await dialog
+    .getByRole("checkbox", {
+      name: "Rename this selected target after a final confirming free scan.",
+    })
+    .check();
+  await dialog.getByRole("button", { name: "Start waiting" }).click();
+  await expect(
+    page.getByRole("region", { name: "Selected target wait" }),
+  ).toContainText("Renamed.");
+  const calls = await page.evaluate(() => (window as any).__testCalls);
+  expect(
+    calls.find((call: any) => call.command === "wait_follow_up").args.newName,
+  ).toBe("Neu.docx");
 });
 
 for (const failure of ["operation", "reveal"] as const) {

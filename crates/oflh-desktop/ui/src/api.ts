@@ -88,6 +88,8 @@ export interface WaitSelection {
   revision: number;
   target: SelectionWaitTarget;
   display: string;
+  /** When true, the selected target is a folder and has no file extension. */
+  directory?: boolean;
 }
 export interface WaitFollowUpResult {
   action: "reveal" | "move" | "rename" | "delete";

@@ -36,7 +36,12 @@ const zh: TranslationSchema<typeof en> = {
     k_choose_destination: "选择文件夹…",
     k_change_destination: "更改文件夹…",
     k_new_name: "新名称",
-    k_name_hint: "请包含扩展名。文件仍保留在原文件夹中。",
+    k_name_hint:
+      "除非你输入其他扩展名，否则将保留原来的扩展名。文件仍位于当前文件夹中。",
+    k_copy_original_name: "复制原始名称",
+    k_original_name_copied: "已复制原始名称。",
+    k_final_name: "最终名称",
+    k_extension_kept: "已保留原来的扩展名。",
     k_invalid_name: "请输入不同的文件名，不得包含路径、保留字符或设备名称。",
     k_result_path: "操作后的路径",
     k_reveal_after_change:

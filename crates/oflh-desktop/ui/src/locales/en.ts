@@ -34,7 +34,12 @@ const en = {
     k_choose_destination: "Choose folder…",
     k_change_destination: "Change folder…",
     k_new_name: "New name",
-    k_name_hint: "Include the extension. The file stays in its current folder.",
+    k_name_hint:
+      "The original extension is kept unless you type a different one. The file stays in its current folder.",
+    k_copy_original_name: "Copy original name",
+    k_original_name_copied: "Original name copied.",
+    k_final_name: "Resulting name",
+    k_extension_kept: "The original extension was kept.",
     k_invalid_name:
       "Enter a different filename without a path, reserved characters, or a device name.",
     k_result_path: "Resulting path",

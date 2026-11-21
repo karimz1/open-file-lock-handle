@@ -38,8 +38,14 @@ fn reveal_with_fallback(
     if containing && parent.is_none() {
         return Err(Failure::invalid("No containing folder is available"));
     }
+    // Directory handles must be opened themselves. Revealing a folder in its
+    // parent can report success while showing nothing when that parent is not
+    // enumerable, which is common for locations such as WindowsApps.
+    let open_directory = !containing && path.is_dir();
     let (primary, primary_label) = if containing {
         (open_path(parent.unwrap_or(path)), "open containing folder")
+    } else if open_directory {
+        (open_path(path), "open the folder in the file manager")
     } else {
         (reveal_item(path), "reveal target in file manager")
     };
@@ -47,6 +53,18 @@ fn reveal_with_fallback(
         Ok(()) => return Ok(()),
         Err(error) => error,
     };
+    if open_directory {
+        return Err(Failure {
+            kind: "desktop_integration".into(),
+            message: oflh_core::safe(
+                "The file manager could not open this folder. It may be inaccessible.",
+            ),
+            os_code: None,
+            details: Some(diagnostic_details(&format!(
+                "Opening the folder failed: {primary_error}"
+            ))),
+        });
+    }
     let fallback = match (containing, parent) {
         (true, Some(parent)) => reveal_item(parent),
         (false, Some(parent)) => open_path(parent),
@@ -815,5 +833,126 @@ mod reveal_tests {
         assert!(details.contains("D-Bus unavailable"));
         assert!(details.contains("xdg-open failed"));
         assert!(details.contains("Rust backtrace"));
+    }
+
+    fn windows_apps_style_folder() -> (tempfile::TempDir, PathBuf) {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root
+            .path()
+            .join("Program Files")
+            .join("WindowsApps")
+            .join("SpotifyAB.SpotifyMusic_1.309.205.0_x64__zpdnekdrzrea0");
+        std::fs::create_dir_all(&folder).unwrap();
+        (root, folder)
+    }
+
+    #[test]
+    fn revealing_a_directory_opens_the_directory_itself() {
+        let (_root, folder) = windows_apps_style_folder();
+        let mut opened = None;
+        let mut revealed = None;
+        let result = reveal_with_fallback(
+            &folder,
+            false,
+            |path| {
+                opened = Some(path.to_owned());
+                Ok(())
+            },
+            |path| {
+                revealed = Some(path.to_owned());
+                Ok(())
+            },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(opened.as_deref(), Some(folder.as_path()));
+        assert!(
+            revealed.is_none(),
+            "selecting the folder in its parent is not the primary action: {revealed:?}"
+        );
+    }
+
+    #[test]
+    fn revealing_a_directory_does_not_fall_back_to_opening_the_parent() {
+        let (_root, folder) = windows_apps_style_folder();
+        let mut opened = None;
+        let result = reveal_with_fallback(
+            &folder,
+            false,
+            |path| {
+                opened = Some(path.to_owned());
+                Ok(())
+            },
+            |_| Err("SHOpenFolderAndSelectItems failed: access denied".into()),
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(opened.as_deref(), Some(folder.as_path()));
+    }
+
+    #[test]
+    fn a_failed_directory_reveal_surfaces_the_file_manager_error() {
+        let (_root, folder) = windows_apps_style_folder();
+        let result = reveal_with_fallback(
+            &folder,
+            false,
+            |_| Err("Access is denied. (os error 5)".into()),
+            |_| Ok(()),
+        )
+        .unwrap_err();
+
+        let message = result.message.to_lowercase();
+        assert!(
+            message.contains("folder") && message.contains("inaccessible"),
+            "expected a clear folder permission error, got {}",
+            result.message
+        );
+        let details = result.details.unwrap();
+        assert!(details.contains("Access is denied. (os error 5)"));
+        assert!(details.contains("Rust backtrace"));
+    }
+
+    #[test]
+    fn revealing_a_file_still_selects_it_in_the_containing_folder() {
+        let (_root, folder) = windows_apps_style_folder();
+        let file = folder.join("chrome_100_percent.pak");
+        std::fs::write(&file, b"pak").unwrap();
+        let mut revealed = None;
+        let result = reveal_with_fallback(
+            &file,
+            false,
+            |_| panic!("a successful file reveal must not open the parent first"),
+            |path| {
+                revealed = Some(path.to_owned());
+                Ok(())
+            },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(revealed.as_deref(), Some(file.as_path()));
+    }
+
+    #[test]
+    fn directory_paths_with_spaces_and_a_trailing_separator_open_the_directory() {
+        let (_root, folder) = windows_apps_style_folder();
+        let with_separator = folder.join("");
+        let mut opened = None;
+        let result = reveal_with_fallback(
+            &with_separator,
+            false,
+            |path| {
+                opened = Some(path.to_owned());
+                Ok(())
+            },
+            |_| Err("reveal_item_in_dir should not be required for a directory".into()),
+        );
+
+        assert!(result.is_ok());
+        assert!(
+            opened
+                .as_deref()
+                .is_some_and(|path| path.is_dir() && path.file_name() == folder.file_name()),
+            "opener received {opened:?}"
+        );
     }
 }

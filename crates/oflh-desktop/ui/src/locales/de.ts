@@ -38,7 +38,11 @@ const de: TranslationSchema<typeof en> = {
     k_change_destination: "Ordner ändern…",
     k_new_name: "Neuer Name",
     k_name_hint:
-      "Gib die Dateiendung mit an. Die Datei bleibt im bisherigen Ordner.",
+      "Die ursprüngliche Dateiendung bleibt erhalten, sofern du keine andere eingibst. Die Datei bleibt im bisherigen Ordner.",
+    k_copy_original_name: "Originalnamen kopieren",
+    k_original_name_copied: "Originalname kopiert.",
+    k_final_name: "Endgültiger Name",
+    k_extension_kept: "Die ursprüngliche Dateiendung wurde beibehalten.",
     k_invalid_name:
       "Gib einen anderen Dateinamen ohne Pfad, reservierte Zeichen oder Gerätenamen ein.",
     k_result_path: "Neuer Pfad",
