@@ -409,7 +409,21 @@ fn native_graceful() {
     let p = process(&mut *b, &path, child.0.id());
     let result = b.terminate(p.identity, false, &Cancellation::default());
     #[cfg(windows)]
-    assert!(result.is_err(), "console helper must not be force killed");
+    {
+        assert!(matches!(result, Err(Error::CloseUnavailable)));
+        assert!(
+            b.is_running(p.identity).unwrap(),
+            "graceful close must not force kill a console helper"
+        );
+        b.terminate(p.identity, true, &Cancellation::default())
+            .unwrap();
+        let mut child = child;
+        let until = std::time::Instant::now() + Duration::from_secs(5);
+        while child.0.try_wait().unwrap().is_none() {
+            assert!(std::time::Instant::now() < until);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
     #[cfg(unix)]
     {
         let mut child = child;

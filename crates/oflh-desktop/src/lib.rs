@@ -11,8 +11,13 @@ mod dropped_target;
 mod instance;
 pub mod launch;
 mod path_text;
+mod process_wait;
 mod recent;
 pub mod service;
+pub mod sessions;
 #[cfg(feature = "desktop")]
 pub mod shell;
 pub mod startup;
+#[cfg(feature = "desktop")]
+pub mod wait;
+mod wait_files;

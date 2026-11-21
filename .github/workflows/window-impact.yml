@@ -1,0 +1,66 @@
+name: Window impact
+# The termination preview warns when ending a process also closes several
+# windows. This checks the window count against real multi-window apps on
+# Windows, next to the synthetic window fixtures in oflh-platform.
+on:
+  pull_request:
+    paths:
+      - 'crates/oflh-platform/src/windows.rs'
+      - 'crates/oflh-platform/src/linux.rs'
+      - 'crates/oflh-core/src/impact.rs'
+      - 'crates/oflh-platform/examples/window_impact_probe.rs'
+      - 'crates/oflh-platform/tests/window_impact.rs'
+      - '.github/scripts/window-impact-apps.ps1'
+      - '.github/workflows/window-impact.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-apps:
+    name: Real apps / ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2022, windows-2025]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: rustup show
+      - name: Synthetic window fixtures
+        shell: bash
+        run: cargo test --locked -p oflh-platform --test window_impact -- --nocapture --test-threads=1
+      # Real apps run even when a synthetic case fails, so both are on record.
+      - name: Build window impact probe
+        if: success() || failure()
+        shell: bash
+        run: cargo build --release --locked -p oflh-platform --example window_impact_probe
+      - name: Real multi-window apps
+        if: success() || failure()
+        shell: pwsh
+        run: ./.github/scripts/window-impact-apps.ps1 -Probe target/release/examples/window_impact_probe.exe -Out window-impact
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: window-impact-${{ matrix.runner }}
+          path: window-impact/
+          if-no-files-found: warn
+          retention-days: 14
+  result:
+    name: Window impact result
+    if: always()
+    needs: [windows-apps]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Require every leg to succeed
+        env:
+          RESULT_TITLE: Window impact result
+          NEEDS: ${{ toJSON(needs) }}
+        run: node .github/scripts/require-success.mjs

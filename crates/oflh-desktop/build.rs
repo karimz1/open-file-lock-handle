@@ -1,4 +1,8 @@
 fn main() {
+    // Tauri also decodes this ICO into the running window's default icon.
+    // Rebuild that image when the asset changes, including incremental Cargo builds.
+    println!("cargo:rerun-if-changed=icons/icon.ico");
+
     #[cfg(feature = "desktop")]
     tauri_build::build();
 

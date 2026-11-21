@@ -33,6 +33,7 @@ pub fn helper_outcome(result: Result<()>) -> u32 {
         Err(Error::Changed) => 1,
         Err(Error::Protected) => 2,
         Err(Error::Cancelled) => 3,
+        Err(Error::CloseUnavailable) => 5,
         Err(Error::Io { source, .. }) => source
             .raw_os_error()
             .and_then(|code| u32::try_from(code).ok())
@@ -47,6 +48,7 @@ fn decode_outcome(code: u32) -> Result<()> {
         1 => Err(Error::Changed),
         2 => Err(Error::Protected),
         3 => Err(Error::Cancelled),
+        5 => Err(Error::CloseUnavailable),
         256..=0x7fff_ffff => Err(io(
             "administrator termination",
             std::io::Error::from_raw_os_error((code - 256) as i32),
@@ -185,7 +187,10 @@ mod tests {
             Err(Error::Changed)
         ));
         assert!(decode_outcome(0).is_ok());
-        assert!(decode_outcome(5).is_err());
+        assert!(matches!(
+            decode_outcome(helper_outcome(Err(Error::CloseUnavailable))),
+            Err(Error::CloseUnavailable)
+        ));
     }
     #[test]
     fn administrator_script_quotes_shell_and_applescript_separately() {

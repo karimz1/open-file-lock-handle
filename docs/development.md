@@ -47,12 +47,33 @@ cargo build --release --locked --bin oflh
 ```
 
 `cargo run` also works; `oflh` is the workspace's default member. Local builds
-report their version as `development` and never check for updates.
+report the workspace version and the git commit, for example `0.9.0-rc.1` and
+`commit abc1234`, or `abc1234-dirty` when the working tree has uncommitted
+changes. They still never check for updates.
 
 <a id="build-desktop"></a>
 <a id="desktop-development"></a>
 
 ## Desktop
+
+Use the development build script to install the frontend dependencies, build
+the desktop executable without an installer, and print the commit being built:
+
+```sh
+# Linux and macOS
+scripts/build-dev.sh
+scripts/build-dev.sh --run          # also start the app
+scripts/build-dev.sh --skip-npm-ci  # reuse an existing node_modules
+```
+
+```powershell
+# Windows (the Bypass flag is enough under the default execution policy)
+powershell -ExecutionPolicy Bypass -File scripts\build-dev.ps1
+powershell -ExecutionPolicy Bypass -File scripts\build-dev.ps1 -Run
+powershell -ExecutionPolicy Bypass -File scripts\build-dev.ps1 -SkipNpmCi
+```
+
+The same steps, if you prefer to run them yourself:
 
 ```sh
 npm --prefix crates/oflh-desktop/ui ci
@@ -60,9 +81,10 @@ npm --prefix crates/oflh-desktop/ui run tauri -- build --no-bundle -- --locked
 ./target/release/oflh-desktop
 ```
 
-This builds the frontend and the desktop executable without an installer. On
-Windows the binary is `target\release\oflh-desktop.exe`. The Tauri shell is
-behind the `oflh-desktop` crate's `desktop` feature, so plain
+On Windows the binary is `target\release\oflh-desktop.exe`. The script and
+the commands above both produce a local build that shows the workspace version
+and git commit in **About OFLH** and in `oflh-desktop --version`. The Tauri
+shell is behind the `oflh-desktop` crate's `desktop` feature, so plain
 `cargo build --workspace` and `cargo test --workspace` do not need WebKitGTK.
 
 Updater signing is only needed for release builds; see
@@ -85,6 +107,12 @@ macOS. It prints the paths of the new packages under
 | `--bundles LIST` | Build other Tauri bundles, for example `--bundles msi` or `--bundles deb` |
 | `--clean` | Run `npm ci` even if `node_modules` exists |
 | `--signed` | Also build signed updater artifacts; needs `TAURI_SIGNING_PRIVATE_KEY` |
+
+The Windows installer artwork (`crates/oflh-desktop/windows/branding/*.bmp`)
+is generated from the app logo. After changing the logo or colours, run
+`python3 crates/oflh-desktop/windows/branding/generate.py` (needs Pillow) and
+commit the new bitmaps. They are drawn at the 100% sizes MUI2 reserves, so
+NSIS stretches them slightly on high-DPI screens.
 
 Without a signing key, updater artifacts (`.sig`, `.app.tar.gz`) are turned
 off for the build, so local installers work without the release keys. When
@@ -140,8 +168,31 @@ platform backend need native runs on Linux, macOS, and Windows for both x86-64
 and ARM64, which [CI](../.github/workflows/ci.yml) provides on every pull
 request. Cross-compiling is not a substitute.
 
+Each workflow with matrix jobs ends in one status job (**CI result**,
+**Desktop result**, **Windows discovery result**, **Release result**). It runs
+even after failures and passes only when every job and every matrix leg
+succeeded; cancelled or unexpected skipped jobs fail it. Intentional skips are
+listed in the job and shown as such in its summary. Use these jobs as the
+required checks in branch protection. Non-blocking multi-user steps (Windows
+second-session sign-out, macOS non-admin pass) report their real outcome as a
+warning and in the run summary.
+
 [Regression coverage](inspection-regressions.md) lists which test guards which
 behavior.
+
+### Windows installer UI automation
+
+The desktop crate owns the [Windows installer test guide](../crates/oflh-desktop/tests/installer/README.md).
+The suite uses FlaUI.UIA3 and NUnit against real NSIS dialogs and built packages;
+it runs on interactive Windows CI runners. It checks owner-relative dialog
+placement, default cancellation, installation, reinstallation and uninstallation.
+Screenshots and TRX results are CI artifacts, not committed images.
+
+The repository [llms.txt](../llms.txt) links this guide and official framework
+references. The [website index](https://oflh.karimzouine.com/llms.txt) covers
+public downloads and user documentation. These indexes provide navigation;
+Google's [AI search guidance](https://developers.google.com/search/docs/appearance/ai-features)
+still recommends normal crawlable, helpful content rather than special AI files.
 
 ## Project layout
 

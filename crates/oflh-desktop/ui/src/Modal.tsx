@@ -1,4 +1,10 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import {
+  Children,
+  isValidElement,
+  useEffect,
+  useRef,
+  type ReactNode,
+} from "react";
 import { X } from "lucide-react";
 import { t } from "./i18n";
 export function Modal({
@@ -15,6 +21,17 @@ export function Modal({
   className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // The body scrolls in small windows; the title and buttons stay in view.
+  const body: ReactNode[] = [];
+  const actions: ReactNode[] = [];
+  for (const child of Children.toArray(children)) {
+    const name = isValidElement<{ className?: unknown }>(child)
+      ? child.props.className
+      : undefined;
+    const isActions =
+      typeof name === "string" && name.split(" ").includes("modal-actions");
+    (isActions ? actions : body).push(child);
+  }
   useEffect(() => {
     const dialog = ref.current!;
     const previous = document.activeElement as HTMLElement | null;
@@ -45,7 +62,8 @@ export function Modal({
           <X size={17} />
         </button>
       </header>
-      {children}
+      <div className="modal-body">{body}</div>
+      {actions}
     </dialog>
   );
 }

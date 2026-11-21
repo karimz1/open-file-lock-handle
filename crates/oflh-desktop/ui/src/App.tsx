@@ -1,4 +1,11 @@
-import { forceRecoveryTargets } from "./termination";
+import { SidebarResize, readSidebarWidth } from "./SidebarResize";
+import { useScrollRegionFades } from "./ScrollArea";
+import {
+  confirmationText,
+  confirmationValues,
+  forceRecoveryTargets,
+} from "./termination";
+import { ImpactScrollArea, TerminationTarget } from "./TerminationImpact";
 import {
   lazy,
   Suspense,
@@ -37,6 +44,7 @@ import {
   RefreshCw,
   Search,
   ShieldAlert,
+  Info,
   Trash2,
   X,
   ZoomIn,
@@ -54,13 +62,17 @@ import {
   type Status,
   type TableQuery,
   type ColumnFilters,
+  type WaitSelection,
 } from "./api";
 import { acceptStatus, initialStatus, selectKey } from "./state";
+import { readOpenMaximized, writeOpenMaximized } from "./windowStartup";
 import { scanDuration } from "./scanDuration";
 import { normalizeTypedPath } from "./targetPath";
 import { TargetHelp } from "./TargetHelp";
 import { Inspector } from "./Inspector";
+import { useDebouncedValue } from "./useDebouncedValue";
 import { Modal } from "./Modal";
+import { SharePanel } from "./SharePanel";
 import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
 import { AutoRefresh } from "./AutoRefresh";
 import {
@@ -75,12 +87,15 @@ import { SettingsMenu } from "./SettingsMenu";
 import { useUpdates } from "./useUpdates";
 import { UpdateBanner } from "./UpdateBanner";
 import { BackgroundInspection } from "./BackgroundInspection";
+import { WaitUntilFree } from "./WaitUntilFree";
 import { UpdateFeedback } from "./UpdateFeedback";
 import {
+  changeLocalePreference,
+  isLocalePreference,
   languageOptions,
-  localePreference,
   t,
   tValue,
+  useLocalePreference,
   type MessageKey,
 } from "./i18n";
 
@@ -91,6 +106,8 @@ const AboutDialog = lazy(() =>
 const columnKeys = new Set<ColumnKey>([
   "process",
   "pid",
+  "user",
+  "session",
   "path",
   "evidence",
   "memory",
@@ -110,7 +127,20 @@ const filterLabels: Record<keyof ColumnFilters, MessageKey> = {
   memory_max: "inspector.k_memory_max",
   evidence: "filters.k_evidence",
 };
+/** Columns that stay hidden until someone turns them on in the column picker. */
+const optInColumns: ColumnKey[] = ["user", "session"];
 function readHiddenColumns(): Set<ColumnKey> {
+  const hidden = readSavedHiddenColumns();
+  try {
+    // Saved sets from before these columns existed keep them hidden too.
+    if (localStorage.getItem("oflh-optional-columns") === null)
+      optInColumns.forEach((column) => hidden.add(column));
+  } catch {
+    optInColumns.forEach((column) => hidden.add(column));
+  }
+  return hidden;
+}
+function readSavedHiddenColumns(): Set<ColumnKey> {
   try {
     const saved: unknown = JSON.parse(
       localStorage.getItem("oflh-hidden-columns") ?? "[]",
@@ -142,6 +172,8 @@ function formatFailureDetails(failure: unknown): string {
   return String(failure);
 }
 export function App() {
+  useScrollRegionFades();
+  const localePreference = useLocalePreference();
   const updates = useUpdates();
   const [showAbout, setShowAbout] = useState(false);
 
@@ -167,6 +199,9 @@ export function App() {
       return 14;
     }
   });
+  const [openMaximized, setOpenMaximized] = useState(() =>
+    readOpenMaximized(localStorage),
+  );
   const [autoReloadSeconds, setAutoReloadSeconds] = useState(0);
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontSize}px`;
@@ -213,6 +248,7 @@ export function App() {
     gridFailed;
   const preparingRefresh = awaitingResults && !status.scanning && !gridReady;
   const inspectionLocked = scanBusy || closingInspection || preparingRefresh;
+  const scanUnavailable = inspectionLocked || status.wait.waiting;
   useEffect(() => {
     if (!scanBusy && gridReady) setAwaitingResults(false);
   }, [scanBusy, gridReady]);
@@ -239,12 +275,34 @@ export function App() {
       else next.add(column);
       try {
         localStorage.setItem("oflh-hidden-columns", JSON.stringify([...next]));
+        localStorage.setItem("oflh-optional-columns", "1");
       } catch {
         // The current session can still use the changed column set.
       }
       return next;
     });
   };
+  const columnPicker = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const outside = (event: PointerEvent) => {
+      const picker = columnPicker.current;
+      if (picker && !picker.contains(event.target as Node)) picker.open = false;
+    };
+    const escape = (event: KeyboardEvent) => {
+      const picker = columnPicker.current;
+      if (event.key === "Escape" && picker?.open) {
+        event.stopPropagation();
+        picker.open = false;
+        picker.querySelector("summary")?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape, true);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape, true);
+    };
+  }, []);
   const [showColumns, setShowColumns] = useState(false);
   const [fitAllRequest, setFitAllRequest] = useState(0);
   const [columnsFitting, setColumnsFitting] = useState(false);
@@ -256,6 +314,7 @@ export function App() {
       return false;
     }
   });
+  const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   const sidebarIsCollapsed = sidebarCollapsed || maximized;
   const toggleSidebarCollapsed = () => {
     setSidebarCollapsed((current) => {
@@ -287,12 +346,23 @@ export function App() {
   const [activeRow, setActiveRow] = useState<{
     row: Row;
     revision: number;
+    queryKey: string;
   } | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
+  // A one-shot request to scroll the details panel to the matching files of
+  // one process. The panel clears it once handled, so later row updates (for
+  // example a new search) cannot move focus out of the search box again.
+  const [revealRequest, setRevealRequest] = useState<{
+    key: string;
+  } | null>(null);
+  const clearRevealRequest = useCallback(() => setRevealRequest(null), []);
   const [details, setDetails] = useState<Details | null>(null);
   const [detailsRevision, setDetailsRevision] = useState(0);
   const [detailsMissing, setDetailsMissing] = useState(false);
   const [context, setContext] = useState<Row | null>(null);
+  const [waitSelection, setWaitSelection] = useState<WaitSelection | null>(
+    null,
+  );
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [ancestorOwner, setAncestorOwner] = useState<string | null>(null);
   const [resultContext, setResultContext] = useState<{
@@ -302,6 +372,8 @@ export function App() {
   const [showSupport, setShowSupport] = useState(false);
   const [results, setResults] = useState<ActionResult[] | null>(null);
   const [acting, setActing] = useState(false);
+  const [settlingRefreshes, setSettlingRefreshes] = useState(0);
+  const settlingTarget = useRef<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [pendingDrop, setPendingDrop] = useState<number | null>(null);
   const [openingWindow, setOpeningWindow] = useState(false);
@@ -355,11 +427,12 @@ export function App() {
     [],
   );
   useEffect(() => {
-    if (!autoReloadSeconds || !status.revision || scanBusy || !gridReady)
+    if (!autoReloadSeconds || !status.revision || scanUnavailable || !gridReady)
       return;
     const interval = window.setInterval(() => {
       if (
         !statusRef.current.scanning &&
+        !statusRef.current.wait.waiting &&
         !scanRequestPending.current &&
         !document.querySelector("dialog[open]") &&
         !confirmation &&
@@ -383,11 +456,15 @@ export function App() {
     showErrorDetails,
     status.revision,
     scanBusy,
+    scanUnavailable,
     view,
   ]);
+  // The box shows every key at once; the grid and Select all follow after a
+  // short pause in typing instead of reloading on each character.
+  const searchText = useDebouncedValue(query, query ? 180 : 0);
   const tableQuery: TableQuery = {
     columns,
-    text: query,
+    text: searchText,
     sort,
     descending,
     handles: view === "handles",
@@ -398,6 +475,8 @@ export function App() {
     limit: 200,
     process_key: scope?.key,
   };
+  const tableQueryKey = JSON.stringify(tableQuery);
+  useEffect(() => setRevealRequest(null), [tableQueryKey]);
   useEffect(() => {
     let active = true;
     const subscriptions = [
@@ -514,6 +593,7 @@ export function App() {
   ) => {
     if (
       statusRef.current.scanning ||
+      statusRef.current.wait.waiting ||
       scanRequestPending.current ||
       (["processes", "handles", "ports"].includes(view) &&
         gridRevision !== statusRef.current.revision &&
@@ -542,7 +622,7 @@ export function App() {
   };
   const refresh = () => runScan(() => api.refresh(), view, false);
   const closeInspection = () => {
-    if (inspectionLocked || scanRequestPending.current || acting) return;
+    if (scanUnavailable || scanRequestPending.current || acting) return;
     scanRequestPending.current = true;
     setClosingInspection(true);
     void api
@@ -607,6 +687,7 @@ export function App() {
     setDragging(false);
     if (
       view === "ports" ||
+      statusRef.current.wait.waiting ||
       inspectionLocked ||
       scanRequestPending.current ||
       windowRequestPending.current ||
@@ -688,6 +769,71 @@ export function App() {
       .reveal(status.revision, reference, containing)
       .catch((failure) => report(failure, operation));
   };
+  // Keys of every row matching the current filters. While the keys for a
+  // new query load, the previous set stays on screen so Select all does not
+  // blink disabled on every keystroke; a click then waits for the fresh set.
+  const [matching, setMatching] = useState<{
+    scope: string;
+    query: string;
+    keys: string[];
+  } | null>(null);
+  const matchingScope = `${view}:${status.revision}`;
+  const keysScope = useRef("");
+  const selectionQuery = JSON.stringify({
+    view,
+    revision: status.revision,
+    query: { ...tableQuery, offset: 0, limit: 0 },
+  });
+  useEffect(() => {
+    let live = true;
+    if (!status.revision || !["processes", "handles", "ports"].includes(view)) {
+      setMatching(null);
+      return;
+    }
+    void api
+      .keys(status.revision, JSON.parse(selectionQuery).query)
+      .then((keys) => {
+        if (live)
+          setMatching({ scope: matchingScope, query: selectionQuery, keys });
+        // A new filter in the same view closes details for a process that no
+        // longer matches; the selection stays, since it may include
+        // processes outside this view on purpose.
+        if (keysScope.current === matchingScope)
+          setFocused((current) =>
+            current && !keys.includes(current) ? null : current,
+          );
+        keysScope.current = matchingScope;
+      })
+      .catch((failure) => {
+        if (live) report(failure);
+      });
+    return () => {
+      live = false;
+    };
+  }, [status.revision, view, selectionQuery, matchingScope, report]);
+  // Only a new search text keeps the previous keys; another view or scan
+  // starts empty as before.
+  const matchingKeys = matching?.scope === matchingScope ? matching.keys : null;
+  const allMatchingSelected =
+    !!matchingKeys?.length && matchingKeys.every((key) => selected.has(key));
+  const toggleAll = () => {
+    const apply = (keys: string[]) =>
+      setSelected((current) => {
+        const next = new Set(current);
+        const all = keys.length > 0 && keys.every((key) => current.has(key));
+        for (const key of keys) {
+          if (all) next.delete(key);
+          else next.add(key);
+        }
+        return next;
+      });
+    if (matching?.query === selectionQuery) apply(matching.keys);
+    else
+      void api
+        .keys(status.revision, JSON.parse(selectionQuery).query)
+        .then(apply)
+        .catch(report);
+  };
   const selectAll = () => {
     void api
       .keys(status.revision, tableQuery)
@@ -734,12 +880,46 @@ export function App() {
         setConfirmation(null);
         setResultContext({ confirmation, ancestorOwner });
         setResults(value);
+        settlingTarget.current = statusRef.current.target;
+        setSettlingRefreshes(
+          value.some((result) => result.outcome === "exited") ? 2 : 0,
+        );
         setSelected(new Set());
         runScan(() => api.refresh(), view, false);
       })
       .catch(report)
       .finally(() => setActing(false));
   };
+  // Child processes and sockets can close shortly after the parent exits.
+  // Two bounded rescans settle the grid; never infer exit or signal from them.
+  useEffect(() => {
+    if (settlingRefreshes && status.target !== settlingTarget.current) {
+      setSettlingRefreshes(0);
+      return;
+    }
+    if (
+      !settlingRefreshes ||
+      scanUnavailable ||
+      !gridReady ||
+      acting ||
+      confirmation
+    )
+      return;
+    const timer = window.setTimeout(() => {
+      setSettlingRefreshes((left) => left - 1);
+      runScan(() => api.refresh(), view, false, true);
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [
+    settlingRefreshes,
+    scanUnavailable,
+    gridReady,
+    acting,
+    confirmation,
+    view,
+    status.revision,
+    status.target,
+  ]);
   const recoveryTargets = forceRecoveryTargets(
     resultContext?.confirmation ?? null,
     results ?? [],
@@ -953,11 +1133,11 @@ export function App() {
             <AutoRefresh
               value={autoReloadSeconds}
               onChange={setAutoReloadSeconds}
-              disabled={inspectionLocked}
+              disabled={scanUnavailable}
             />
           )}
           <button
-            disabled={!status.revision || inspectionLocked}
+            disabled={!status.revision || scanUnavailable}
             onClick={refresh}
             title={`${t("status.k_refresh")} (${modifier}+R ${t("common.k_or")} F5)`}
           >
@@ -974,6 +1154,11 @@ export function App() {
           inert={inspectionLocked}
           aria-disabled={inspectionLocked}
           className={`sidebar${sidebarIsCollapsed ? " collapsed" : ""}`}
+          style={
+            sidebarIsCollapsed || sidebarWidth === null
+              ? undefined
+              : { width: sidebarWidth }
+          }
           aria-label={t("navigation.k_workspace")}
         >
           {!maximized && (
@@ -1049,6 +1234,7 @@ export function App() {
               </div>
               <button
                 title={t("inspection.k_open_file")}
+                disabled={scanUnavailable}
                 onClick={() => runScan(() => api.choose(false))}
               >
                 <File size={16} />
@@ -1056,6 +1242,7 @@ export function App() {
               </button>
               <button
                 title={t("inspection.k_open_folder")}
+                disabled={scanUnavailable}
                 onClick={() => runScan(() => api.choose(true))}
               >
                 <FolderOpen size={17} />
@@ -1082,6 +1269,9 @@ export function App() {
             />
           </div>
         </nav>
+        {!sidebarIsCollapsed && (
+          <SidebarResize width={sidebarWidth} onChange={setSidebarWidth} />
+        )}
         <main
           inert={inspectionLocked && !backgroundScan}
           aria-busy={inspectionLocked}
@@ -1171,7 +1361,7 @@ export function App() {
                 </div>
               )}
               {!maximized && view !== "ports" && (
-                <div className="target-area" inert={inspectionLocked}>
+                <div className="target-area" inert={scanUnavailable}>
                   <form
                     className="target-bar"
                     onSubmit={(event) => {
@@ -1341,13 +1531,24 @@ export function App() {
                       </label>
                     )}
 
-                    <button className="select-all" onClick={selectAll}>
-                      {t("selection.k_select_all")}
+                    <button
+                      className="select-all"
+                      onClick={toggleAll}
+                      disabled={!matchingKeys?.length}
+                      aria-pressed={allMatchingSelected}
+                    >
+                      {t(
+                        allMatchingSelected
+                          ? "selection.k_deselect_all"
+                          : "selection.k_select_all",
+                      )}
                     </button>
-                    <details className="column-picker">
+                    <details className="column-picker" ref={columnPicker}>
                       <summary>
                         <Columns3 size={14} />
-                        {t("table.k_columns")}
+                        <span className="compact-label">
+                          {t("table.k_columns")}
+                        </span>
                         <ChevronDown
                           size={12}
                           className="column-picker-caret"
@@ -1385,7 +1586,9 @@ export function App() {
                       onClick={() => setShowColumns((visible) => !visible)}
                     >
                       <SlidersHorizontal size={14} />
-                      {t("filters.k_column_filters")}
+                      <span className="compact-label">
+                        {t("filters.k_column_filters")}
+                      </span>
                       {columnCount ? ` (${columnCount})` : ""}
                     </button>
                     <button
@@ -1395,7 +1598,9 @@ export function App() {
                       onClick={() => setFitAllRequest((current) => current + 1)}
                     >
                       <MoveHorizontal size={14} />{" "}
-                      {t("table.k_fit_all_columns")}
+                      <span className="compact-label">
+                        {t("table.k_fit_all_columns")}
+                      </span>
                     </button>
                     <span className="muted result-count">
                       {total} {t("app.k_results")}
@@ -1537,7 +1742,11 @@ export function App() {
                         const closing =
                           focused === row.process_key &&
                           activeRow?.row.key === row.key;
-                        setActiveRow({ row, revision });
+                        setActiveRow({
+                          row,
+                          revision,
+                          queryKey: tableQueryKey,
+                        });
                         setFocused(closing ? null : row.process_key);
                       }}
                       revision={status.revision}
@@ -1549,12 +1758,22 @@ export function App() {
                         setSelected((current) =>
                           selectKey(current, row.process_key, additive),
                         );
-                        setActiveRow({ row, revision });
+                        setActiveRow({
+                          row,
+                          revision,
+                          queryKey: tableQueryKey,
+                        });
                         setFocused(row.process_key);
                       }}
                       onOpen={(row, revision) => {
-                        setActiveRow({ row, revision });
+                        setActiveRow({
+                          row,
+                          revision,
+                          queryKey: tableQueryKey,
+                        });
                         setFocused(row.process_key);
+                        if (row.matching_files)
+                          setRevealRequest({ key: row.process_key });
                       }}
                       onContext={(row, revision) => {
                         if (status.scanning || revision !== status.revision) {
@@ -1566,7 +1785,11 @@ export function App() {
                           return;
                         }
                         setContext(row);
-                        setActiveRow({ row, revision });
+                        setActiveRow({
+                          row,
+                          revision,
+                          queryKey: tableQueryKey,
+                        });
                         setFocused(row.process_key);
                       }}
                       onSort={changeSort}
@@ -1578,11 +1801,16 @@ export function App() {
                           const row = page.rows.find(
                             (row) =>
                               row.key === current.row.key &&
-                              row.path === current.row.path &&
+                              (row.matching_files ||
+                                row.path === current.row.path) &&
                               row.port?.endpoint === current.row.port?.endpoint,
                           );
                           return row
-                            ? { row, revision: page.revision }
+                            ? {
+                                row,
+                                revision: page.revision,
+                                queryKey: tableQueryKey,
+                              }
                             : current;
                         });
                       }}
@@ -1596,6 +1824,15 @@ export function App() {
                     />
                     {details && (
                       <Inspector
+                        onWait={setWaitSelection}
+                        waitDisabled={inspectionLocked || status.wait.waiting}
+                        target={status.target}
+                        revealMatches={
+                          revealRequest?.key === details.process.process_key
+                            ? revealRequest
+                            : null
+                        }
+                        onRevealed={clearRevealRequest}
                         key={details.process.process_key}
                         terminateCurrent={(force) =>
                           prepare(force, [details.process.process_key])
@@ -1617,7 +1854,13 @@ export function App() {
                             .finally(() => setActing(false));
                         }}
                         details={details}
-                        rowCurrent={activeRow?.revision === status.revision}
+                        revision={detailsRevision}
+                        notify={setToast}
+                        report={(failure) => report(failure)}
+                        rowCurrent={
+                          activeRow?.revision === status.revision &&
+                          activeRow.queryKey === tableQueryKey
+                        }
                         availability={
                           detailsMissing
                             ? "missing"
@@ -1653,14 +1896,14 @@ export function App() {
                             ),
                           )
                         }
-                        handles={() => {
+                        handles={(preserveSearch) => {
                           if (inspectionLocked) return;
                           setView("handles");
                           setScope({
                             key: details.process.process_key,
                             name: details.process.name,
                           });
-                          setFileQuery("");
+                          if (!preserveSearch) setFileQuery("");
                         }}
                       />
                     )}
@@ -1674,6 +1917,13 @@ export function App() {
                           : "app.k_file_usage_is_not_proof_of_a_lock_windo_f7640915",
                       )}
                     </span>
+                    {view !== "ports" && status.revision > 0 && (
+                      <SharePanel
+                        revision={status.revision}
+                        notify={setToast}
+                        report={(failure) => report(failure)}
+                      />
+                    )}
                     {status.warnings.length > 0 && (
                       <details>
                         <summary>
@@ -1806,15 +2056,8 @@ export function App() {
                     id="language"
                     value={localePreference}
                     onChange={(event) => {
-                      try {
-                        localStorage.setItem(
-                          "oflh-language",
-                          event.target.value,
-                        );
-                      } catch {
-                        // Apply the language for this session even without storage.
-                      }
-                      window.location.reload();
+                      if (isLocalePreference(event.target.value))
+                        changeLocalePreference(event.target.value);
                     }}
                   >
                     {languageOptions.map(({ value, label }) => (
@@ -1823,6 +2066,27 @@ export function App() {
                       </option>
                     ))}
                   </select>
+                </div>
+              </section>
+              <section className="setting-section">
+                <div>
+                  <h3>{t("settings.k_window")}</h3>
+                  <p className="muted">
+                    {t("settings.k_open_window_maximized_help")}
+                  </p>
+                </div>
+                <div className="font-setting">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={openMaximized}
+                      onChange={(event) => {
+                        setOpenMaximized(event.target.checked);
+                        writeOpenMaximized(localStorage, event.target.checked);
+                      }}
+                    />
+                    {t("settings.k_open_window_maximized")}
+                  </label>
                 </div>
               </section>
               <section className="setting-section">
@@ -1929,7 +2193,9 @@ export function App() {
                       void api.openInstalledRelease().catch(report)
                     }
                   >
-                    {t("app.k_installed_version", { version: status.version })}
+                    {t("app.k_installed_version", {
+                      version: status.version,
+                    })}
                   </button>{" "}
                   · {t("app.k_mit_license")}
                 </p>
@@ -2008,6 +2274,15 @@ export function App() {
           )}
         </main>
       </div>
+      <WaitUntilFree
+        status={status}
+        selection={waitSelection}
+        onChoose={setWaitSelection}
+        onClose={() => setWaitSelection(null)}
+        disabled={inspectionLocked}
+        report={report}
+        onStatus={apply}
+      />
       <footer className="statusbar">
         <span className="status-current" role={scanBusy ? undefined : "status"}>
           {scanBusy ? (
@@ -2243,6 +2518,41 @@ export function App() {
             {t("app.k_actions_for_pid")} {context.pid}
           </p>
           <div className="context-actions">
+            {(context.path || context.port) && (
+              <button
+                disabled={status.wait.waiting || inspectionLocked}
+                onClick={() => {
+                  setWaitSelection({
+                    revision: status.revision,
+                    target: context.port
+                      ? { kind: "port", reference: context.port.reference }
+                      : { kind: "file", reference: context.path_ref },
+                    display: context.port
+                      ? `Port ${context.port.number}`
+                      : context.path,
+                  });
+                  setContext(null);
+                }}
+              >
+                {t(context.port ? "wait.k_port_action" : "wait.k_file_action")}
+              </button>
+            )}
+            {context.actionable && (
+              <button
+                disabled={status.wait.waiting || inspectionLocked}
+                onClick={() => {
+                  setWaitSelection({
+                    revision: status.revision,
+                    target: { kind: "process", key: context.process_key },
+                    display: `${context.name} (PID ${context.pid})`,
+                  });
+                  setContext(null);
+                }}
+              >
+                {t("wait.k_process_action")}
+              </button>
+            )}
+            <hr />
             {context.port && (
               <>
                 <button
@@ -2393,51 +2703,48 @@ export function App() {
       )}
       {confirmation && (
         <Modal
-          title={
-            confirmation.force
-              ? t("termination.k_force_terminate_processes")
-              : t("termination.k_terminate_processes")
-          }
+          title={t(
+            confirmationText(confirmation, "title"),
+            confirmationValues(confirmation),
+          )}
           danger={confirmation.force}
           close={dismiss}
+          className="confirmation-modal"
         >
           <div className="confirmation-note">
-            <ShieldAlert size={22} />
-            <p>
-              {confirmation.force
-                ? t(
-                    "termination.k_force_termination_stops_these_processes_9c247038",
-                  )
-                : t(
-                    "termination.k_request_these_processes_to_stop_unsaved_8b80fb41",
-                  )}
-            </p>
+            <ShieldAlert size={18} aria-hidden="true" />
+            <p>{t(confirmationText(confirmation, "note"))}</p>
           </div>
           {confirmation.elevated && (
             <p role="status">{t("termination.k_admin_confirmation")}</p>
           )}
-          <p>
-            <strong>
-              {confirmation.targets.length}{" "}
-              {confirmation.targets.length === 1
-                ? t("app.k_process_c2e2d662")
-                : t("navigation.k_processes_da2c4eba")}
-            </strong>{" "}
-            — {t("filters.k_all_targets_are_listed_below_including_1515b80a")}
-          </p>
-          <ul className="confirmation-list">
+          {confirmation.targets.some(
+            (target) => target.role === "ancestor",
+          ) && (
+            <p className="impact-warning">
+              {t(
+                "termination.k_stopping_a_parent_may_close_its_childre_04c26acd",
+              )}
+            </p>
+          )}
+          <ImpactScrollArea label={t("termination.k_impact_targets_label")}>
             {confirmation.targets.map((target) => (
-              <li key={target.key}>
-                <strong>{target.name || t("app.k_unnamed")}</strong>
-                <code>PID {target.pid}</code>
-              </li>
+              <TerminationTarget key={target.key} target={target} />
             ))}
-          </ul>
-          <p className="hint">
-            {t(
-              "termination.k_oflh_validates_each_captured_process_id_5e6d1cc4",
-            )}
-          </p>
+          </ImpactScrollArea>
+          <details className="safety-note">
+            <summary>
+              <Info size={13} aria-hidden="true" />
+              {t("termination.k_safety_summary")}
+            </summary>
+            <ul>
+              <li>{t("termination.k_safety_listed")}</li>
+              <li>{t("termination.k_safety_identity")}</li>
+              {!confirmation.force && (
+                <li>{t("termination.k_safety_no_escalation")}</li>
+              )}
+            </ul>
+          </details>
           <div className="modal-actions">
             <button
               data-default-focus
@@ -2451,9 +2758,10 @@ export function App() {
               {acting && <LoaderCircle size={14} className="spin" />}
               {acting
                 ? t("app.k_waiting_for_process_exit")
-                : confirmation.force
-                  ? t("termination.k_force_terminate_7b6445b3")
-                  : t("termination.k_terminate_77517bd0")}
+                : t(
+                    confirmationText(confirmation, "button"),
+                    confirmationValues(confirmation, 28),
+                  )}
             </button>
           </div>
         </Modal>
@@ -2488,6 +2796,8 @@ export function App() {
                     )
                   ) : result.outcome === "unverified" ? (
                     t("termination.k_request_sent_couldn_t_verify_exit")
+                  ) : result.error?.kind === "close_unavailable" ? (
+                    t("termination.k_close_unavailable")
                   ) : result.error?.kind === "identity_changed" ? (
                     t(
                       "termination.k_process_changed_or_already_exited_no_te_9b7e90d2",

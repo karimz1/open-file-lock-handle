@@ -1,13 +1,12 @@
   oflh  ·  Open File Lock Handle
 
-  BEENDEN ERZWINGEN · Prozesse: 1?
-  Sofortiges Beenden ohne Aufräumen. Ungespeicherte Arbeit kann verloren
-  gehen.
+  dotnet sofort beenden?
+  OFLH beendet es sofort, ohne Speichern. Ungespeicherte Arbeit geht verloren.
 
-  Betroffene Prozesse (einschließlich ausgefilterter Auswahl):
+  Prozesse (auch ausgefilterte):
     424242    dotnet
-
-
+              Auch 2 weitere geöffnete Dateien werden freigegeben.
+  Fenster und Kindprozesse werden geprüft…
 
 
 
@@ -20,5 +19,6 @@
 
 
   ────────────────────────────────────────────────────────────────────────────
-  ▶ Abbrechen      Beenden erzwingen
-  Tab / ←→ wählen · Enter bestätigen · Esc abbrechen
+  ▶ Abbrechen      Sofort beenden
+  Tab / ←→ wählen · d Details · Enter bestätigen · Esc abbrechen
+

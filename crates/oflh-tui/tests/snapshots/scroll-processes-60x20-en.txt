@@ -1,0 +1,20 @@
+  oflh   1 Processes  2 Locked files  3 Ports
+  /build  ·  MANUAL · r refresh
+  Navigation · / search · Tab/→ tree
+  ╭──────────────────────────────────────────────────────╮
+  │/ Search PID, process, path… · * wildcard             │
+  ╰──────────────────────────────────────────────────────╯
+  60 of 60 processes · sort: pid
+     PID     PROCESS             PORTS PATH    1–8 of 60 ↕
+     1000    worker-0            0     file-0.dll        █
+     1001    worker-1            0     file-0.dll        │
+     1002    worker-2            0     file-0.dll        │
+     1003    worker-3            0     file-0.dll        │
+     1004    worker-4            0     file-0.dll        │
+     1005    worker-5            0     file-0.dll        │
+     1006    worker-6            0     file-0.dll        │
+     1007    worker-7            0     file-0.dll        │
+  Enter inspect · Space select · m RAM / c CPU / n name /
+  ────────────────────────────────────────────────────────
+  1/2/3 tabs · / search · Enter inspect · k stop · x force
+  ? help · R GitHub · D Donate · q quit
