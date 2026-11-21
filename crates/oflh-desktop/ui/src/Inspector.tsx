@@ -18,6 +18,9 @@ import { memory } from "./state";
 import { SessionPanel } from "./SessionPanel";
 import { MatchingFiles } from "./MatchingFiles";
 import { t, tValue, type MessageKey } from "./i18n";
+// The last measured maximum width. A new Inspector starts from it, so the
+// panel keeps its width instead of snapping while it measures its parent.
+let lastMaximum = 720;
 export function Inspector({
   details,
   availability,
@@ -49,7 +52,7 @@ export function Inspector({
   notify: (message: string) => void;
   report: (failure: unknown) => void;
   details: Details;
-  availability: "current" | "updating" | "missing";
+  availability: "current" | "updating" | "switching" | "missing";
   rowCurrent: boolean;
   row: Row | null;
   close: () => void;
@@ -61,7 +64,11 @@ export function Inspector({
   terminateAncestor: (key: string, force: boolean) => void;
   terminateCurrent: (force: boolean) => void;
 }) {
-  const current = availability === "current";
+  // While the next process loads, the previous details stay visible. They are
+  // inert, so nothing can be activated, and they keep their normal look so a
+  // fast answer does not flash disabled buttons.
+  const switching = availability === "switching";
+  const current = availability === "current" || switching;
   const panel = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(() => {
     try {
@@ -71,15 +78,16 @@ export function Inspector({
       return 340;
     }
   });
-  const [maximum, setMaximum] = useState(720);
+  const [maximum, setMaximum] = useState(lastMaximum);
   const actualWidth = Math.min(width, maximum);
   const drag = useRef<{ x: number; width: number } | null>(null);
   useEffect(() => {
     const parent = panel.current?.parentElement;
     if (!parent) return;
-    const observer = new ResizeObserver(() =>
-      setMaximum(Math.max(260, Math.min(720, parent.clientWidth - 280))),
-    );
+    const observer = new ResizeObserver(() => {
+      lastMaximum = Math.max(260, Math.min(720, parent.clientWidth - 280));
+      setMaximum(lastMaximum);
+    });
     observer.observe(parent);
     return () => observer.disconnect();
   }, []);
@@ -206,6 +214,8 @@ export function Inspector({
       <aside
         className="inspector"
         aria-label={t("inspector.k_process_details")}
+        aria-busy={switching}
+        inert={switching}
       >
         <header>
           <span className="eyebrow">
@@ -463,7 +473,7 @@ export function Inspector({
         )}
         <p className="hint detail-footnote">
           {t(
-            availability === "updating"
+            availability === "updating" || switching
               ? "inspection.k_updating_details"
               : "inspector.k_matching_handles_are_target_observation_13c2ef67",
           )}

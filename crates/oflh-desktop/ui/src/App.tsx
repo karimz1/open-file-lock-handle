@@ -633,9 +633,10 @@ export function App() {
   }, [status.revision, report]);
   useEffect(() => {
     let active = true;
-    setDetails((current) =>
-      current?.process.process_key === focused ? current : null,
-    );
+    // Keep showing the previous process's details until the next ones arrive.
+    // The panel marks them busy and read-only; clearing them here would remove
+    // the panel and make the grid jump to full width and back.
+    setDetails((current) => (focused ? current : null));
     setDetailsMissing(false);
     if (focused)
       api
@@ -653,6 +654,10 @@ export function App() {
         .catch((failure) => {
           if (active) {
             setDetailsMissing(true);
+            // Never leave another process's details next to the new selection.
+            setDetails((current) =>
+              current?.process.process_key === focused ? current : null,
+            );
             if ((failure as Failure)?.kind !== "identity_changed")
               report(failure);
           }
@@ -1884,9 +1889,11 @@ export function App() {
                         availability={
                           detailsMissing
                             ? "missing"
-                            : detailsRevision === status.revision
-                              ? "current"
-                              : "updating"
+                            : details.process.process_key !== focused
+                              ? "switching"
+                              : detailsRevision === status.revision
+                                ? "current"
+                                : "updating"
                         }
                         row={
                           activeRow?.row.process_key ===
