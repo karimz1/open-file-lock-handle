@@ -481,6 +481,19 @@ test.beforeEach(async ({ page }) => {
                 "Primary action failed: FileManager1 is unavailable\nFallback action failed: xdg-open failed\nRust backtrace: fixture stack",
             };
           }
+          if (
+            command === "reveal" &&
+            (window as any).__failRevealReferences?.includes(args.reference)
+          ) {
+            throw {
+              kind: "desktop_integration",
+              message:
+                "The file manager could not open this folder. It may be inaccessible.",
+              os_code: 5,
+              details:
+                "Opening the folder failed: Access is denied. (os error 5)\nRust backtrace: fixture stack",
+            };
+          }
           if (command === "inspect_ports")
             return (status = {
               ...status,
@@ -597,6 +610,58 @@ test.beforeEach(async ({ page }) => {
             };
           }
           if (command === "page") {
+            if ((window as any).__folderRevealFixture) {
+              const process = processRows[0];
+              process.name = "Spotify.exe";
+              const folder =
+                "C:\\Program Files\\WindowsApps\\SpotifyAB.SpotifyMusic_1.309.205.0_x64__zpdnekdrzrea0";
+              const file = `${folder}\\chrome_100_percent.pak`;
+              const files = [
+                {
+                  path: { display: folder, reference: `${args.revision}:0:0` },
+                  references: 1,
+                  observations: [
+                    {
+                      relation: "open",
+                      access: "directory",
+                      evidence: null,
+                      evidence_label: null,
+                      deleted: false,
+                    },
+                  ],
+                  more_references: 0,
+                },
+                {
+                  path: { display: file, reference: `${args.revision}:0:1` },
+                  references: 1,
+                  observations: [
+                    {
+                      relation: "open",
+                      access: "read",
+                      evidence: null,
+                      evidence_label: null,
+                      deleted: false,
+                    },
+                  ],
+                  more_references: 0,
+                },
+              ];
+              return {
+                revision: args.revision,
+                total: 1,
+                rows: [
+                  {
+                    ...freshRow(process),
+                    path: folder,
+                    path_ref: `${args.revision}:0:0`,
+                    matching_files: { files, total: 2 },
+                  },
+                ].slice(
+                  args.query.offset,
+                  args.query.offset + args.query.limit,
+                ),
+              };
+            }
             if ((window as any).__fileMatchFixture) {
               const process = processRows[0];
               process.name = "FixturePdfEditor";
@@ -2335,6 +2400,64 @@ test("process search shows matching file paths and grouped references above ance
   ).toBeVisible();
   await expect(search).toHaveValue("bestell");
   await expect(page.getByRole("grid")).toHaveAttribute("aria-rowcount", "7");
+});
+
+test("matching files Reveal on a folder entry opens that folder and reports permission errors", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__folderRevealFixture = true;
+    localStorage.setItem("oflh-language", "de");
+  });
+  await page.goto("/");
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  const files = page.getByRole("region", {
+    name: "Passende Dateien",
+    exact: true,
+  });
+  await expect(files).toBeVisible();
+  const entries = files.locator(".matching-file-list > li");
+  await expect(entries).toHaveCount(2);
+  const folder = entries.nth(0);
+  const file = entries.nth(1);
+  await expect(folder).toContainText(
+    "C:\\Program Files\\WindowsApps\\SpotifyAB.SpotifyMusic_1.309.205.0_x64__zpdnekdrzrea0",
+  );
+  await expect(folder).not.toContainText("chrome_100_percent.pak");
+  await folder
+    .getByText("1 Referenz · Zugriff und Nachweise", { exact: true })
+    .click();
+  await expect(folder).toContainText("Offen · Ordner");
+  await file
+    .getByText("1 Referenz · Zugriff und Nachweise", { exact: true })
+    .click();
+  await expect(file).toContainText("chrome_100_percent.pak");
+  await folder.getByRole("button", { name: "Anzeigen", exact: true }).click();
+  await file.getByRole("button", { name: "Anzeigen", exact: true }).click();
+  const revealCalls = await page.evaluate(() =>
+    (window as any).__testCalls.filter(
+      (call: any) => call.command === "reveal",
+    ),
+  );
+  expect(revealCalls.map((call: any) => call.args)).toEqual([
+    { revision: 1, reference: "1:0:0", containing: false },
+    { revision: 1, reference: "1:0:1", containing: false },
+  ]);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).__failRevealReferences = ["1:0:0"];
+  });
+  await folder.getByRole("button", { name: "Anzeigen", exact: true }).click();
+  const errorBanner = page.getByRole("alert");
+  await expect(errorBanner).toContainText(
+    "Der Vorgang konnte nicht abgeschlossen werden",
+  );
+  await expect(errorBanner).toContainText(
+    "The file manager could not open this folder. It may be inaccessible.",
+  );
+  await page.screenshot({
+    path: "test-results/reveal-folder-entry.png",
+  });
 });
 
 test("a changed process search updates file details without carrying the previous path", async ({
