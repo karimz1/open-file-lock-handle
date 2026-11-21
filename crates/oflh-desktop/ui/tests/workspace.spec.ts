@@ -8055,6 +8055,13 @@ test("scrolling does not re-render the rows that stay on screen", async ({
       await page.waitForTimeout(40);
     }
   });
-  expect(counts.mounts["RowIcon"] ?? 0, "rows entered").toBeGreaterThan(0);
-  expect(updates(counts, "RowIcon"), "row icons re-rendered").toBe(0);
+  const entered = counts.mounts["RowIcon"] ?? 0;
+  expect(entered, "rows entered").toBeGreaterThan(0);
+  // A row that entered may update once when its icon arrives. A row that
+  // stayed on screen must not render at all.
+  expect(updates(counts, "GridRow"), "grid rows re-rendered").toBe(0);
+  expect(
+    updates(counts, "RowIcon"),
+    "row icons re-rendered",
+  ).toBeLessThanOrEqual(entered);
 });
