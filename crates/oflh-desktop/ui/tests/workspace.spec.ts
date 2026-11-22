@@ -2084,6 +2084,23 @@ for (const [width, height] of [
     await list.focus();
     await page.keyboard.press("PageDown");
     await expect.poll(async () => (await metrics()).top).toBeGreaterThan(0);
+    // PageDown scrolls with a smooth animation on macOS. A key pressed while
+    // that animation is still running replaces it instead of adding to it,
+    // so wait until the list stopped moving before pressing End.
+    await list.evaluate(
+      (node) =>
+        new Promise<void>((resolve) => {
+          let last = -1;
+          let still = 0;
+          const tick = () => {
+            still = node.scrollTop === last ? still + 1 : 0;
+            last = node.scrollTop;
+            if (still >= 5) resolve();
+            else requestAnimationFrame(tick);
+          };
+          tick();
+        }),
+    );
     await page.keyboard.press("End");
     await expect
       .poll(async () => {

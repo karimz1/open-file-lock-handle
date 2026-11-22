@@ -29,6 +29,7 @@ Run from the repository root. The toolchain is pinned in `rust-toolchain.toml`
 | Desktop frontend install | `npm --prefix crates/oflh-desktop/ui ci` |
 | Desktop frontend checks | `npm --prefix crates/oflh-desktop/ui run format:check`, `... test`, `... run build` |
 | Desktop browser tests | `npm --prefix crates/oflh-desktop/ui run test:ui` |
+| Desktop GUI end-to-end tests (real app) | see `crates/oflh-desktop/gui-e2e/README.md` |
 | Desktop app build | `scripts/build-dev.sh` or `powershell -ExecutionPolicy Bypass -File scripts\build-dev.ps1` (same as `npm --prefix crates/oflh-desktop/ui run tauri -- build --no-bundle -- --locked`) |
 | Updater tests | `cargo test -p oflh-desktop --features updater-tests --locked` |
 
