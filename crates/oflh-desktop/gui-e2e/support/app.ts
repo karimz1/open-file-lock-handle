@@ -41,7 +41,27 @@ export type PortableLayout = {
   beforeLocalBundles: string[];
 };
 
+const portableLayoutFile = path.join(artifactsDir, "portable-layout.json");
 let portableState: PortableLayout | undefined;
+
+function readPortableLayout(): PortableLayout | undefined {
+  if (portableState) return portableState;
+  if (!fs.existsSync(portableLayoutFile)) return undefined;
+  portableState = JSON.parse(
+    fs.readFileSync(portableLayoutFile, "utf8"),
+  ) as PortableLayout;
+  return portableState;
+}
+
+function writePortableLayout(layout: PortableLayout): void {
+  portableState = layout;
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.writeFileSync(
+    portableLayoutFile,
+    `${JSON.stringify(layout, null, 2)}
+`,
+  );
+}
 
 function listing(directory: string): string[] {
   if (!fs.existsSync(directory)) return [];
@@ -63,38 +83,38 @@ function bundleNames(root: string): string[] {
 
 /** Folder that holds the copied exe, `portable` marker and `data` directory. */
 export function portableLayout(): PortableLayout {
-  if (!portableState) {
+  const layout = readPortableLayout();
+  if (!layout) {
     throw new Error("the portable layout has not been prepared");
   }
-  return portableState;
+  return layout;
 }
 
 function preparePortableBinary(binary: string): {
   binary: string;
   cwd: string;
 } {
-  if (
-    !portableState ||
-    !fs.existsSync(path.join(portableState.root, "portable"))
-  ) {
+  const existing = readPortableLayout();
+  if (!existing || !fs.existsSync(path.join(existing.root, "portable"))) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "oflh-e2e-portable-"));
     fs.copyFileSync(binary, path.join(root, path.basename(binary)));
     fs.writeFileSync(path.join(root, "portable"), "");
     fs.mkdirSync(path.join(root, "data"), { recursive: true });
     const appDataRoot = process.env.APPDATA ?? "";
     const localRoot = process.env.LOCALAPPDATA ?? "";
-    portableState = {
+    writePortableLayout({
       root,
       data: path.join(root, "data"),
       beforeAppData: listing(path.join(appDataRoot, bundleId)),
       beforeLocal: listing(path.join(localRoot, bundleId)),
       beforeAppDataBundles: bundleNames(appDataRoot),
       beforeLocalBundles: bundleNames(localRoot),
-    };
+    });
   }
+  const layout = portableLayout();
   return {
-    binary: path.join(portableState.root, path.basename(binary)),
-    cwd: portableState.root,
+    binary: path.join(layout.root, path.basename(binary)),
+    cwd: layout.root,
   };
 }
 
