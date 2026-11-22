@@ -123,6 +123,15 @@ Details: [docs/architecture.md](docs/architecture.md),
 - [docs/inspection-regressions.md](docs/inspection-regressions.md) maps each
   scanner contract to its tests.
 
+## Continuous integration
+
+CI is the single source of truth and must run independently from scratch on
+every job. Do not add caches that persist across runs (`actions/cache`,
+`setup-node`/`setup-*` cache options, `Swatinem/rust-cache`, sccache, and the
+like). Do not hard-code hashes. For flaky external downloads, retry the
+download or bundle command a few times with a short backoff; a real build
+error must still fail after the last attempt.
+
 ## Documentation rules
 
 - `README.md` is the landing page: what oflh does, when to use it, install,
