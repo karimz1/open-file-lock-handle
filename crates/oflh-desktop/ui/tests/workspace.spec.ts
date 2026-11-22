@@ -1679,41 +1679,68 @@ test("a dialog appears at once when the system asks for reduced motion", async (
 test("the search explanation grows in smoothly instead of pushing the grid down", async ({
   page,
 }) => {
+  // The grow is only 140 ms. Sampling the grid's top with
+  // requestAnimationFrame therefore looks like one large step when a
+  // runner drops those frames, which is what failed GUI E2E / macOS on
+  // 1147a14 and 4e8502f (25.6 px vs a 24.6 px 75% threshold; the full
+  // movement was about 33 px, so the animation did run). Ask the Web
+  // Animations API whether search-explanation-in is actually running.
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/");
   await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
   const search = page.getByRole("textbox", { name: "Search loaded results" });
   await search.click();
-  await page.evaluate(() => {
-    (window as any).__gridTops = new Promise((resolve) => {
-      const tops: number[] = [];
-      const start = performance.now();
-      const tick = () => {
-        tops.push(
-          document.querySelector("#results-grid")!.getBoundingClientRect().top,
-        );
-        if (performance.now() - start < 900) requestAnimationFrame(tick);
-        else resolve(tops);
-      };
-      requestAnimationFrame(tick);
-    });
+  const grid = page.locator("#results-grid");
+  const before = (await grid.boundingBox())!.y;
+  const animationStarted = page.evaluate(() => {
+    return new Promise<{ names: string[]; durations: number[] }>(
+      (resolve, reject) => {
+        const started = performance.now();
+        const tick = () => {
+          const explanation = document.querySelector(".search-explanation");
+          if (explanation) {
+            const animations = explanation.getAnimations();
+            if (animations.length) {
+              resolve({
+                names: animations.map(
+                  (animation) =>
+                    (animation as CSSAnimation).animationName ?? "",
+                ),
+                durations: animations.map(
+                  (animation) =>
+                    Number(animation.effect?.getComputedTiming().duration) || 0,
+                ),
+              });
+              return;
+            }
+          }
+          if (performance.now() - started > 2000) {
+            reject(new Error("the search explanation never started growing"));
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      },
+    );
   });
   await search.pressSequentially("node");
+  const running = await animationStarted;
+  expect(running.names, "the grow animation runs").toContain(
+    "search-explanation-in",
+  );
+  expect(
+    Math.max(...running.durations, 0),
+    "the grow is animated",
+  ).toBeGreaterThan(0);
   await expect(
     page.getByText("Search includes full paths", { exact: false }),
   ).toBeVisible();
-  const tops = (await page.evaluate(
-    () => (window as any).__gridTops,
-  )) as number[];
-  const total = tops.at(-1)! - tops[0];
-  const biggestStep = Math.max(
-    ...tops.slice(1).map((top, index) => Math.abs(top - tops[index])),
-  );
+  const after = (await grid.boundingBox())!.y;
   expect(
-    total,
+    after - before,
     "the grid moves down by the height of the explanation",
   ).toBeGreaterThan(20);
-  // A slow runner may drop frames, so ask for "not one jump" rather than a pixel size.
-  expect(biggestStep, "largest move in one frame").toBeLessThan(total * 0.75);
 });
 test("automatic refresh repeats at the selected interval", async ({ page }) => {
   await page.goto("/");
