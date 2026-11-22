@@ -1485,6 +1485,12 @@ test("the result toolbar keeps the Maximize button on the search row at 1280 px"
 test("removing a recent target closes the gap smoothly instead of jumping", async ({
   page,
 }) => {
+  // The close is only 140 ms. Sampling the next row's top with
+  // requestAnimationFrame therefore looks like a single 43 px jump when a
+  // runner drops those frames, which is what happened on macOS CI at 9dbe4ef
+  // (Desktop GUI E2E / macOS, run 44965414362). Ask the Web Animations API
+  // whether a height transition is actually running instead.
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/");
   await page
     .getByRole("navigation")
@@ -1500,33 +1506,53 @@ test("removing a recent target closes the gap smoothly instead of jumping", asyn
     exact: true,
   });
   await expect(below).toBeVisible();
-  await page.evaluate((title) => {
-    (window as any).__recentTops = new Promise((resolve) => {
-      const tops: number[] = [];
-      const start = performance.now();
-      const tick = () => {
-        const node = document.querySelector(`.recent-target[title="${title}"]`);
-        if (node) tops.push(node.getBoundingClientRect().top);
-        if (performance.now() - start < 900) requestAnimationFrame(tick);
-        else resolve(tops);
-      };
-      requestAnimationFrame(tick);
-    });
-  }, entries[1]!);
+  const before = (await below.boundingBox())!.y;
+  const transitionStarted = page.evaluate(() => {
+    return new Promise<{ properties: string[]; durations: number[] }>(
+      (resolve, reject) => {
+        const started = performance.now();
+        const tick = () => {
+          const leaving = document.querySelector(
+            ".recent-entry.recent-leaving",
+          );
+          if (leaving) {
+            const animations = leaving.getAnimations();
+            resolve({
+              properties: animations.map(
+                (animation) =>
+                  (animation as CSSTransition).transitionProperty ?? "",
+              ),
+              durations: animations.map(
+                (animation) =>
+                  Number(animation.effect?.getComputedTiming().duration) || 0,
+              ),
+            });
+            return;
+          }
+          if (performance.now() - started > 2000) {
+            reject(new Error("the removed entry never started closing"));
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      },
+    );
+  });
   await recentList
     .getByRole("button", { name: `Remove ${entries[0]}`, exact: true })
     .click();
+  const running = await transitionStarted;
+  expect(running.properties, "height is in transition").toContain("height");
+  expect(
+    Math.max(...running.durations, 0),
+    "the close is animated",
+  ).toBeGreaterThan(0);
   await expect(recentList.locator(".recent-entry")).toHaveCount(11);
-  const tops = (await page.evaluate(
-    () => (window as any).__recentTops,
-  )) as number[];
-  const moved = tops[0] - tops.at(-1)!;
-  const biggestStep = Math.max(
-    ...tops.slice(1).map((top, index) => Math.abs(top - tops[index])),
+  const after = (await below.boundingBox())!.y;
+  expect(before - after, "the next entry moves up by one row").toBeGreaterThan(
+    25,
   );
-  expect(moved, "the next entry moves up by one row").toBeGreaterThan(25);
-  // A slow runner may drop frames, so ask for "not one jump" rather than a pixel size.
-  expect(biggestStep, "largest move in one frame").toBeLessThan(moved * 0.75);
 });
 test("recent targets can be searched, removed, and cleared", async ({
   page,
