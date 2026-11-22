@@ -619,6 +619,9 @@ const de: TranslationSchema<typeof en> = {
     k_file_usages: "Dateinutzungen",
     k_file_usages_d01933d6: "Dateinutzungen",
     k_file_users: "Dateinutzer",
+    k_file_usage_one: "Dateinutzung",
+    k_file_user_one: "Dateinutzer",
+    k_port_one: "Port",
     k_it_can_help_with_changing_processes_or_f5538b6f:
       "Das kann bei veränderlichen Prozessen oder Ports hilfreich sein. Ergebnisse können sich während der Untersuchung ändern; für gezielte Prüfungen ist eine manuelle Aktualisierung oft besser.",
     k_refresh: "Aktualisieren",

@@ -1,0 +1,26 @@
+{
+  "name": "oflh-desktop-gui-e2e",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end tests that drive the real OFLH desktop app through its embedded WebDriver server.",
+  "scripts": {
+    "test": "wdio run wdio.conf.ts",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^24.19.2",
+    "@wdio/cli": "^9.33.1",
+    "@wdio/globals": "^9.33.1",
+    "@wdio/local-runner": "^9.33.1",
+    "@wdio/mocha-framework": "^9.33.1",
+    "@wdio/spec-reporter": "^9.33.1",
+    "expect-webdriverio": "^7.0.1",
+    "prettier": "^3.10.1",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "webdriverio": "^9.33.1"
+  }
+}
