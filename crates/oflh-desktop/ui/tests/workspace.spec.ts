@@ -5,6 +5,7 @@ import {
   assertVirtualRowsLayout,
   watchVirtualRowLayout,
 } from "./virtualRowLayout";
+import { countRenders, installRenderProbe, updates } from "./renderProbe";
 
 /** Matches App.tsx: shortcut titles use ⌘ on Apple platforms and Ctrl elsewhere. */
 async function commandModifier(page: Page): Promise<"⌘" | "Ctrl"> {
@@ -884,6 +885,16 @@ test.beforeEach(async ({ page }) => {
             };
           }
           if (command === "details") {
+            if ((window as any).__detailsDelayMsForTest)
+              await new Promise((resolve) =>
+                setTimeout(resolve, (window as any).__detailsDelayMsForTest),
+              );
+            if ((window as any).__failDetailsKeysForTest?.includes(args.key))
+              throw {
+                kind: "identity_changed",
+                message: "Captured identity absent",
+                os_code: null,
+              };
             if ((window as any).__holdDetailsForTest && args.revision > 1)
               await new Promise<void>((resolve) => {
                 ((window as any).__heldDetails ??= []).push(resolve);
@@ -1451,6 +1462,72 @@ test("auto refresh pauses while context actions are open", async ({ page }) => {
   );
   expect(revealCalls).toHaveLength(1);
 });
+test("the result toolbar keeps the Maximize button on the search row at 1280 px", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.screenshot({ path: "test-results/toolbar-1280.png" });
+  const search = await page.locator(".search-box").boundingBox();
+  const maximize = await page
+    .getByRole("button", { name: "Maximize grid" })
+    .boundingBox();
+  const toolbar = await page.locator(".search-toolbar").boundingBox();
+  expect(search && maximize && toolbar).toBeTruthy();
+  expect(
+    maximize!.y,
+    "the Maximize button starts below the search box",
+  ).toBeLessThan(search!.y + search!.height / 2);
+  expect(toolbar!.height, "toolbar height").toBeLessThan(75);
+});
+
+test("removing a recent target closes the gap smoothly instead of jumping", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: /Recent targets/ })
+    .click();
+  const recentList = page.locator('.recent-list[aria-label="Recent targets"]');
+  await expect(recentList.locator(".recent-entry")).toHaveCount(12);
+  const entries = await recentList
+    .locator(".recent-target")
+    .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("title")));
+  const below = recentList.getByRole("button", {
+    name: entries[1]!,
+    exact: true,
+  });
+  await expect(below).toBeVisible();
+  await page.evaluate((title) => {
+    (window as any).__recentTops = new Promise((resolve) => {
+      const tops: number[] = [];
+      const start = performance.now();
+      const tick = () => {
+        const node = document.querySelector(`.recent-target[title="${title}"]`);
+        if (node) tops.push(node.getBoundingClientRect().top);
+        if (performance.now() - start < 900) requestAnimationFrame(tick);
+        else resolve(tops);
+      };
+      requestAnimationFrame(tick);
+    });
+  }, entries[1]!);
+  await recentList
+    .getByRole("button", { name: `Remove ${entries[0]}`, exact: true })
+    .click();
+  await expect(recentList.locator(".recent-entry")).toHaveCount(11);
+  const tops = (await page.evaluate(
+    () => (window as any).__recentTops,
+  )) as number[];
+  const moved = tops[0] - tops.at(-1)!;
+  const biggestStep = Math.max(
+    ...tops.slice(1).map((top, index) => Math.abs(top - tops[index])),
+  );
+  expect(moved, "the next entry moves up by one row").toBeGreaterThan(25);
+  // A slow runner may drop frames, so ask for "not one jump" rather than a pixel size.
+  expect(biggestStep, "largest move in one frame").toBeLessThan(moved * 0.75);
+});
 test("recent targets can be searched, removed, and cleared", async ({
   page,
 }) => {
@@ -1486,6 +1563,157 @@ test("recent targets can be searched, removed, and cleared", async ({
   await expect(
     page.getByRole("heading", { name: "No recent targets" }),
   ).toBeVisible();
+});
+/**
+ * Pauses the open animations of a dialog and its backdrop the moment the
+ * dialog opens, before any frame is drawn. The fade is then checked by seeking
+ * each animation instead of sampling frames, which a slow runner draws too few
+ * of.
+ */
+async function holdDialogAnimations(page: Page) {
+  await page.evaluate(() => {
+    const held: Animation[] = ((window as any).__dialogAnimations = []);
+    new MutationObserver((mutations) => {
+      for (const { target } of mutations) {
+        const dialog = target as HTMLDialogElement;
+        if (dialog.tagName !== "DIALOG" || !dialog.open) continue;
+        // Reading animations resolves the new style, which starts them.
+        for (const animation of document.getAnimations()) {
+          if ((animation.effect as KeyframeEffect).target !== dialog) continue;
+          animation.pause();
+          if (!held.includes(animation)) held.push(animation);
+        }
+      }
+    }).observe(document, {
+      attributes: true,
+      attributeFilter: ["open"],
+      subtree: true,
+    });
+  });
+}
+
+/** Opacity of each held animation at its start, middle and end. */
+async function seekDialogAnimations(page: Page) {
+  return page.evaluate(() => {
+    const dialog = document.querySelector("dialog[open]")!;
+    return ((window as any).__dialogAnimations as Animation[]).map(
+      (animation) => {
+        const effect = animation.effect as KeyframeEffect;
+        const pseudo = effect.pseudoElement;
+        const duration = Number(effect.getComputedTiming().duration);
+        const opacityAt = (time: number) => {
+          animation.currentTime = time;
+          return Number(getComputedStyle(dialog, pseudo).opacity);
+        };
+        const start = opacityAt(0);
+        const middle = opacityAt(duration / 2);
+        animation.finish();
+        const end = Number(getComputedStyle(dialog, pseudo).opacity);
+        return { part: pseudo ?? "dialog", duration, start, middle, end };
+      },
+    );
+  });
+}
+
+async function openAbout(page: Page) {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const about = page.getByRole("menuitem", { name: "About OFLH" });
+  await expect(about).toBeVisible();
+  await about.click();
+  await expect(page.getByRole("dialog", { name: "About OFLH" })).toBeVisible();
+}
+
+test("a dialog fades in instead of popping in", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await holdDialogAnimations(page);
+  await openAbout(page);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__dialogAnimations.length))
+    .toBe(2);
+  const fades = await seekDialogAnimations(page);
+  expect(fades.map((fade) => fade.part).sort()).toEqual([
+    "::backdrop",
+    "dialog",
+  ]);
+  for (const fade of fades) {
+    expect(fade.start, `${fade.part} opacity when it opens`).toBeLessThan(0.9);
+    expect(fade.middle, `${fade.part} opacity halfway`).toBeGreaterThan(
+      fade.start,
+    );
+    expect(fade.middle, `${fade.part} opacity halfway`).toBeLessThan(1);
+    expect(fade.end, `${fade.part} opacity once open`).toBe(1);
+    // Short enough to never feel slow.
+    expect(fade.duration).toBeGreaterThan(0);
+    expect(fade.duration).toBeLessThan(400);
+  }
+  await expect(page.getByRole("dialog", { name: "About OFLH" })).toHaveCSS(
+    "opacity",
+    "1",
+  );
+});
+
+test("a dialog appears at once when the system asks for reduced motion", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await holdDialogAnimations(page);
+  await openAbout(page);
+  // Any open animation would have been held when the dialog opened.
+  const opacity = await page.evaluate(async () => {
+    for (let frame = 0; frame < 2; frame += 1) {
+      await new Promise(requestAnimationFrame);
+    }
+    const dialog = document.querySelector("dialog[open]")!;
+    return {
+      held: (window as any).__dialogAnimations.length,
+      dialog: Number(getComputedStyle(dialog).opacity),
+      backdrop: Number(getComputedStyle(dialog, "::backdrop").opacity),
+    };
+  });
+  expect(opacity).toEqual({ held: 0, dialog: 1, backdrop: 1 });
+});
+
+test("the search explanation grows in smoothly instead of pushing the grid down", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  await search.click();
+  await page.evaluate(() => {
+    (window as any).__gridTops = new Promise((resolve) => {
+      const tops: number[] = [];
+      const start = performance.now();
+      const tick = () => {
+        tops.push(
+          document.querySelector("#results-grid")!.getBoundingClientRect().top,
+        );
+        if (performance.now() - start < 900) requestAnimationFrame(tick);
+        else resolve(tops);
+      };
+      requestAnimationFrame(tick);
+    });
+  });
+  await search.pressSequentially("node");
+  await expect(
+    page.getByText("Search includes full paths", { exact: false }),
+  ).toBeVisible();
+  const tops = (await page.evaluate(
+    () => (window as any).__gridTops,
+  )) as number[];
+  const total = tops.at(-1)! - tops[0];
+  const biggestStep = Math.max(
+    ...tops.slice(1).map((top, index) => Math.abs(top - tops[index])),
+  );
+  expect(
+    total,
+    "the grid moves down by the height of the explanation",
+  ).toBeGreaterThan(20);
+  // A slow runner may drop frames, so ask for "not one jump" rather than a pixel size.
+  expect(biggestStep, "largest move in one frame").toBeLessThan(total * 0.75);
 });
 test("automatic refresh repeats at the selected interval", async ({ page }) => {
   await page.goto("/");
@@ -2791,25 +3019,35 @@ test("process search filters once typing pauses while the box updates on every k
   await page.addInitScript(() => {
     (window as any).__searchClearRaceFixture = true;
   });
+  // The pause is measured on the page clock: a slow runner's real gaps
+  // between keys must not count as a pause in typing.
+  await page.clock.install();
   await page.goto("/");
   await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
   const search = page.getByRole("textbox", { name: "Search loaded results" });
   await search.click();
   await page.evaluate(() => ((window as any).__testCalls.length = 0));
+  const searches = () =>
+    page.evaluate(() =>
+      (window as any).__testCalls
+        .filter(
+          (call: any) =>
+            call.command === "page" || call.command === "select_all",
+        )
+        .map((call: any) => `${call.command}:${call.args.query.text}`)
+        .sort(),
+    );
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   for (const [index, key] of [..."spotify"].entries()) {
     await page.keyboard.type(key);
     await expect(search).toHaveValue("spotify".slice(0, index + 1));
-    await page.waitForTimeout(80);
+    await page.clock.runFor(80);
+    expect(await searches(), `after "${key}"`).toEqual([]);
   }
+  await page.clock.runFor(200);
+  await page.clock.resume();
+  await expect.poll(searches).toEqual(["page:spotify", "select_all:spotify"]);
   await expect(page.getByText("12 results", { exact: true })).toBeVisible();
-  const texts = await page.evaluate(() =>
-    (window as any).__testCalls
-      .filter(
-        (call: any) => call.command === "page" || call.command === "select_all",
-      )
-      .map((call: any) => `${call.command}:${call.args.query.text}`),
-  );
-  expect(texts.sort()).toEqual(["page:spotify", "select_all:spotify"]);
 });
 
 test("process details close when a search filters the process out and stay while it matches", async ({
@@ -2894,6 +3132,117 @@ test("clearing a process search quickly drops stale matches and keeps rows from 
   await expect(page.locator(".matching-files-more").first()).toBeVisible();
   await assertVirtualRowsLayout(page);
   await assertNoWatchedVirtualRowViolations(page);
+});
+
+test("the grid keeps its rows on screen while the next query loads", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  const grid = page.getByRole("grid");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await search.fill("node");
+  await expect(page.getByText("300 results", { exact: true })).toBeVisible();
+  await expect(grid).toHaveAttribute("aria-busy", "false");
+  // Remember the row elements so a refilter can be told apart from a rebuild.
+  await page.evaluate(() => {
+    document
+      .querySelectorAll(".data-row")
+      .forEach((row) => ((row as any).__sameRow = true));
+    const frames = { total: 0, empty: 0, loadingText: 0 };
+    (window as any).__gridFrames = frames;
+    const sample = () => {
+      const rows = document.querySelectorAll(".data-row").length;
+      frames.total++;
+      if (!rows) frames.empty++;
+      if (!rows && /Loading results/.test(document.body.innerText))
+        frames.loadingText++;
+      (window as any).__gridSampler = requestAnimationFrame(sample);
+    };
+    sample();
+    (window as any).__pageDelayMsForTest = 700;
+  });
+  await search.press("Backspace");
+  await expect(search).toHaveValue("nod");
+  // The debounce has fired and the page request is in flight.
+  await expect(grid).toHaveAttribute("aria-busy", "true");
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: "test-results/grid-stale-while-loading.png" });
+  const during = await page.evaluate(() => ({
+    rows: document.querySelectorAll(".data-row").length,
+    kept: document.querySelectorAll(".data-row").length
+      ? [...document.querySelectorAll(".data-row")].every(
+          (row) => (row as any).__sameRow,
+        )
+      : false,
+  }));
+  expect(during.rows, "rows stay visible while loading").toBeGreaterThan(5);
+  expect(during.kept).toBe(true);
+  await expect(grid).toHaveAttribute("aria-busy", "false");
+  await page.evaluate(() => {
+    cancelAnimationFrame((window as any).__gridSampler);
+    (window as any).__pageDelayMsForTest = 0;
+  });
+  const result = await page.evaluate(() => ({
+    frames: (window as any).__gridFrames,
+    rows: document.querySelectorAll(".data-row").length,
+    sameRows: [...document.querySelectorAll(".data-row")].filter(
+      (row) => (row as any).__sameRow,
+    ).length,
+  }));
+  expect(result.frames.empty, "frames with an empty grid").toBe(0);
+  expect(result.frames.loadingText).toBe(0);
+  // Same processes match "nod" and "node", so React should reuse their rows.
+  expect(result.sameRows).toBe(result.rows);
+});
+
+test("stale rows are read-only until the page for the new query arrives", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  const grid = page.getByRole("grid");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.evaluate(() => ((window as any).__pageDelayMsForTest = 900));
+  await search.fill("node");
+  await expect(grid).toHaveAttribute("aria-busy", "true");
+  expect(
+    await grid.locator(".data-row").count(),
+    "the previous rows are still on screen",
+  ).toBeGreaterThan(5);
+  const box = await grid.locator(".data-row").first().boundingBox();
+  expect(box).not.toBeNull();
+  // A real pointer lands on the container, not on the stale row.
+  await page.mouse.click(box!.x + 330, box!.y + box!.height / 2);
+  await page.mouse.dblclick(box!.x + 330, box!.y + box!.height / 2);
+  await grid.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("complementary", { name: "Process details" }),
+  ).toHaveCount(0);
+  await expect(page.getByText(/process(es)? selected/)).toHaveCount(0);
+  await expect(page.getByText("300 results", { exact: true })).toBeVisible();
+  await expect(grid).toHaveAttribute("aria-busy", "false");
+  await grid.getByRole("row").nth(1).click();
+  await expect(page.getByText("1 process selected")).toBeVisible();
+});
+
+test("switching views never shows the previous view's rows under new columns", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.evaluate(() => ((window as any).__pageDelayMsForTest = 800));
+  await page.keyboard.press("Control+3");
+  await expect(
+    page.getByRole("heading", { name: "Local ports" }),
+  ).toBeVisible();
+  await page.waitForTimeout(250);
+  await expect(grid.getByText("Blender")).toHaveCount(0);
+  await expect(grid.locator(".data-row")).toHaveCount(0);
+  await expect(grid.getByText("8080", { exact: false })).toBeVisible();
 });
 
 test("virtual process rows keep their boxes through search, font, columns and resize", async ({
@@ -3111,6 +3460,73 @@ test("native message limits include automatic context and stale drafts cannot se
     ),
   );
   expect(calls).toHaveLength(0);
+});
+
+test("the details panel stays on screen while the next process loads", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  const panel = page.getByRole("complementary", { name: "Process details" });
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await grid.getByRole("row").nth(2).click();
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText("PID 4001", { exact: true })).toBeVisible();
+  const before = await grid.boundingBox();
+  await page.evaluate(() => {
+    (window as any).__detailsDelayMsForTest = 900;
+    const frames = { total: 0, withoutPanel: 0 };
+    (window as any).__panelFrames = frames;
+    const sample = () => {
+      frames.total++;
+      if (!document.querySelector(".inspector")) frames.withoutPanel++;
+      (window as any).__panelSampler = requestAnimationFrame(sample);
+    };
+    sample();
+  });
+  await page.keyboard.press("ArrowDown");
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "test-results/details-while-switching.png" });
+  // The old details are still there, marked busy and not clickable.
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText("PID 4001", { exact: true })).toBeVisible();
+  await expect(panel).toHaveAttribute("aria-busy", "true");
+  await expect(panel).toHaveJSProperty("inert", true);
+  const during = await grid.boundingBox();
+  expect(during!.width, "the grid does not jump to full width").toBe(
+    before!.width,
+  );
+  await expect(panel.getByText("PID 4002", { exact: true })).toBeVisible();
+  await expect(panel).not.toHaveAttribute("aria-busy", "true");
+  await expect(panel).toHaveJSProperty("inert", false);
+  const frames = await page.evaluate(() => {
+    cancelAnimationFrame((window as any).__panelSampler);
+    return (window as any).__panelFrames;
+  });
+  expect(frames.withoutPanel, "frames without the panel").toBe(0);
+  expect((await grid.boundingBox())!.width).toBe(before!.width);
+});
+
+test("the details panel never shows the old process once the new one cannot be loaded", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__failDetailsKeysForTest = ["4002:18446744073709551615:0"];
+  });
+  await page.goto("/");
+  const grid = page.getByRole("grid");
+  const panel = page.getByRole("complementary", { name: "Process details" });
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await grid.getByRole("row").nth(2).click();
+  await expect(panel.getByText("PID 4001", { exact: true })).toBeVisible();
+  await page.evaluate(() => ((window as any).__detailsDelayMsForTest = 300));
+  await page.keyboard.press("ArrowDown");
+  await expect(grid.getByRole("row").nth(3)).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByText("PID 4001", { exact: true })).toHaveCount(0);
 });
 
 test("single-click rows open details and panel buttons close them", async ({
@@ -5112,6 +5528,11 @@ test("inspection barrier blocks manual and automatic reloads, shows work, and re
     ),
   ).toBe(0);
   await page.screenshot({ path: "test-results/inspection-progress.png" });
+  // The 5 s interval restarts when the scan ends. Stop the clock first, so
+  // the real time a slow runner spends between Cancel and the next step does
+  // not count towards it. The scan is still running, so the extra second
+  // pauseAt skips cannot start a reload.
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).not.toBeVisible();
   await page.clock.runFor(4900);
@@ -5737,13 +6158,191 @@ test("quiet refresh rejects retained matches after a new query and publishes the
   // has rendered the new query.
   await page.clock.runFor(200);
   await page.clock.runFor(100);
-  await expect(grid.locator(".data-row")).toHaveCount(0);
+  // The previous rows may stay visible, but they are read-only and the grid
+  // reports that the new page is still on its way.
+  await expect(grid).toHaveAttribute("aria-busy", "true");
+  await expect(grid.locator(".grid-rows")).toHaveJSProperty("inert", true);
   await page.evaluate(() => {
     (window as any).__releasePagesForTest();
   });
   await expect(page.getByText("300 results", { exact: true })).toBeVisible();
   await expect(grid.getByText("node", { exact: true }).first()).toBeVisible();
   await expect(grid.getByText("Blender", { exact: true })).toHaveCount(0);
+});
+
+const refreshControls = [
+  ".new-window-button",
+  ".sidebar .nav-section button",
+  ".target-bar button[type=submit]",
+  ".selection-toolbar button",
+];
+
+// The grey-out of locked controls starts after 250 ms. Frames in the first
+// 230 ms of a lock must look unchanged; the rest is slack for frame timing.
+const greyOutDelayMs = 230;
+
+async function watchControlLook(page: import("@playwright/test").Page) {
+  await page.evaluate(
+    ({ selectors, greyOutDelayMs }) => {
+      const look: {
+        frames: number;
+        lowest: number;
+        locked: number;
+        earlyFrames: number;
+        earlyLowest: number;
+        lockedAt?: number;
+        unlockedAt?: number;
+      } = { frames: 0, lowest: 1, locked: 0, earlyFrames: 0, earlyLowest: 1 };
+      (window as any).__controlLook = look;
+      const sample = () => {
+        const now = performance.now();
+        look.frames++;
+        let lockedNow = false;
+        let lowest = 1;
+        for (const selector of selectors)
+          for (const node of document.querySelectorAll(selector)) {
+            lowest = Math.min(lowest, Number(getComputedStyle(node).opacity));
+            if ((node as HTMLButtonElement).disabled || node.closest("[inert]"))
+              lockedNow = true;
+          }
+        look.lowest = Math.min(look.lowest, lowest);
+        if (lockedNow) {
+          look.locked++;
+          look.lockedAt ??= now;
+          if (
+            look.unlockedAt === undefined &&
+            now - look.lockedAt < greyOutDelayMs
+          ) {
+            look.earlyFrames++;
+            look.earlyLowest = Math.min(look.earlyLowest, lowest);
+          }
+        } else if (look.lockedAt !== undefined) {
+          look.unlockedAt ??= now;
+        }
+        (window as any).__controlLookSampler = requestAnimationFrame(sample);
+      };
+      sample();
+    },
+    { selectors: refreshControls, greyOutDelayMs },
+  );
+}
+
+async function finishScan(page: import("@playwright/test").Page) {
+  await page.evaluate(() => {
+    (window as any).__holdRefreshForTest = false;
+    (window as any).__emitTestEvent("scan-status", {
+      scanning: false,
+      generation: 50,
+      revision: 50,
+    });
+  });
+}
+
+test("a short refresh locks the controls without visibly greying them", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await expect(page.getByText("1 process selected")).toBeVisible();
+  await page.evaluate(() => ((window as any).__holdRefreshForTest = true));
+  await watchControlLook(page);
+  // Start and finish the refresh inside the page, so no test runner round
+  // trips stretch the lock.
+  const lockedMs = await page
+    .getByRole("button", { name: "Refresh", exact: true })
+    .evaluate(async (button: HTMLButtonElement) => {
+      const look = (window as any).__controlLook;
+      button.click();
+      const started = performance.now();
+      while (look.lockedAt === undefined) {
+        if (performance.now() - started > 5000)
+          throw new Error("the refresh did not lock the controls");
+        await new Promise(requestAnimationFrame);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      (window as any).__holdRefreshForTest = false;
+      (window as any).__emitTestEvent("scan-status", {
+        scanning: false,
+        generation: 50,
+        revision: 50,
+      });
+      while (look.unlockedAt === undefined) {
+        if (performance.now() - started > 5000)
+          throw new Error("the controls stayed locked after the refresh");
+        await new Promise(requestAnimationFrame);
+      }
+      return look.unlockedAt - look.lockedAt;
+    });
+  await expect(page.getByText("Updating results")).toHaveCount(0);
+  await page.waitForTimeout(400);
+  const look = await page.evaluate(() => {
+    cancelAnimationFrame((window as any).__controlLookSampler);
+    return (window as any).__controlLook;
+  });
+  // The controls really were locked while the scan ran.
+  expect(look.earlyFrames).toBeGreaterThan(0);
+  // How long the lock lasts depends on the machine (a slow CI runner needs
+  // more time for the new page), so check what the user sees while a lock is
+  // still short instead of how long this one lasted.
+  expect(
+    look.earlyLowest,
+    `lowest control opacity in the first ${greyOutDelayMs} ms of a refresh (locked for ${Math.round(lockedMs)} ms)`,
+  ).toBeGreaterThan(0.95);
+});
+
+test("a long refresh still shows the controls as unavailable", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.evaluate(() => ((window as any).__holdRefreshForTest = true));
+  await watchControlLook(page);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.waitForTimeout(900);
+  await page.screenshot({ path: "test-results/refresh-long-controls.png" });
+  await expect(page.locator(".new-window-button")).toBeDisabled();
+  const lowest = await page.evaluate(
+    () => (window as any).__controlLook.lowest,
+  );
+  expect(lowest).toBeLessThan(0.6);
+  await finishScan(page);
+  await expect(page.locator(".new-window-button")).toBeEnabled();
+  await expect
+    .poll(() =>
+      page
+        .locator(".new-window-button")
+        .evaluate((node) => getComputedStyle(node).opacity),
+    )
+    .toBe("1");
+});
+
+test("the status line does not move when a refresh starts", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const metrics = page.locator(".status-metrics");
+  const before = (await metrics.boundingBox())!;
+  await page.evaluate(() => ((window as any).__holdRefreshForTest = true));
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByText("Updating results")).toBeVisible();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: "test-results/refresh-status-line.png" });
+  const during = (await metrics.boundingBox())!;
+  // Fonts differ per OS, so the reserved width may be off by a pixel or two.
+  // Without the reserved width the text moved by more than 100 px.
+  expect(
+    Math.abs(during.x - before.x),
+    "status text shift while updating",
+  ).toBeLessThan(4);
+  await finishScan(page);
+  await expect(page.getByText("Updating results")).toHaveCount(0);
+  const after = (await metrics.boundingBox())!;
+  expect(
+    Math.abs(after.x - before.x),
+    "status text shift after updating",
+  ).toBeLessThan(4);
 });
 
 test("a native target scan after quiet refresh locks inspection controls without a modal", async ({
@@ -7887,4 +8486,70 @@ test("changing language in Settings stays on the page and swaps text without a r
   expect(await page.evaluate(() => localStorage.getItem("oflh-language"))).toBe(
     "system",
   );
+});
+
+test("typing in the target path does not render the grid", async ({ page }) => {
+  await installRenderProbe(page);
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const path = page.getByRole("textbox", {
+    name: "Target file or folder path",
+  });
+  await path.click();
+  const counts = await countRenders(page, async () => {
+    await path.pressSequentially("/tmp/a", { delay: 30 });
+  });
+  // The probe must see the app render on each key, or "0" proves nothing.
+  expect(updates(counts, "App"), "App renders while typing").toBeGreaterThan(0);
+  expect(updates(counts, "Table"), "Table renders while typing").toBe(0);
+  expect(updates(counts, "GridRow"), "rows render while typing").toBe(0);
+  expect(updates(counts, "RowIcon"), "row icons render while typing").toBe(0);
+});
+
+test("selecting a row renders only the rows whose state changed", async ({
+  page,
+}) => {
+  await installRenderProbe(page);
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const grid = page.getByRole("grid");
+  const visibleRows = await grid.locator(".data-row").count();
+  expect(visibleRows).toBeGreaterThan(10);
+  const counts = await countRenders(page, async () => {
+    await grid
+      .getByRole("row")
+      .nth(3)
+      .click({ position: { x: 300, y: 10 } });
+    await expect(page.locator(".inspector")).toBeVisible();
+  });
+  // The clicked row changes (selected, focused, expanded). Nothing else may.
+  expect(updates(counts, "RowIcon"), "row icons rendered").toBeLessThanOrEqual(
+    3,
+  );
+  expect(updates(counts, "GridRow"), "rows rendered").toBeLessThanOrEqual(3);
+});
+
+test("scrolling does not re-render the rows that stay on screen", async ({
+  page,
+}) => {
+  await installRenderProbe(page);
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const scroller = page.locator("#results-grid");
+  const counts = await countRenders(page, async () => {
+    await scroller.hover();
+    for (let step = 0; step < 6; step++) {
+      await page.mouse.wheel(0, 90);
+      await page.waitForTimeout(40);
+    }
+  });
+  const entered = counts.mounts["RowIcon"] ?? 0;
+  expect(entered, "rows entered").toBeGreaterThan(0);
+  // A row that entered may update once when its icon arrives. A row that
+  // stayed on screen must not render at all.
+  expect(updates(counts, "GridRow"), "grid rows re-rendered").toBe(0);
+  expect(
+    updates(counts, "RowIcon"),
+    "row icons re-rendered",
+  ).toBeLessThanOrEqual(entered);
 });

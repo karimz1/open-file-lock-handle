@@ -10,6 +10,7 @@ import {
   lazy,
   Suspense,
   useCallback,
+  useMemo,
   useEffect,
   useRef,
   useState,
@@ -57,6 +58,7 @@ import {
   type Confirmation,
   type Details,
   type Failure,
+  type Page,
   type Row,
   type Sort,
   type Status,
@@ -71,6 +73,7 @@ import { normalizeTypedPath } from "./targetPath";
 import { TargetHelp } from "./TargetHelp";
 import { Inspector } from "./Inspector";
 import { useDebouncedValue } from "./useDebouncedValue";
+import { useStableCallback } from "./useStableCallback";
 import { Modal } from "./Modal";
 import { SharePanel } from "./SharePanel";
 import { readTheme, ThemePicker, useAppliedTheme } from "./Themes";
@@ -462,20 +465,106 @@ export function App() {
   // The box shows every key at once; the grid and Select all follow after a
   // short pause in typing instead of reloading on each character.
   const searchText = useDebouncedValue(query, query ? 180 : 0);
-  const tableQuery: TableQuery = {
-    columns,
-    text: searchText,
-    sort,
-    descending,
-    handles: view === "handles",
-    locks_only: view !== "ports" && locks,
-    ports: view === "ports",
-    ports_path_only: !!status.target && portsPathOnly,
-    offset: 0,
-    limit: 200,
-    process_key: scope?.key,
-  };
+  const tableQuery: TableQuery = useMemo(
+    () => ({
+      columns,
+      text: searchText,
+      sort,
+      descending,
+      handles: view === "handles",
+      locks_only: view !== "ports" && locks,
+      ports: view === "ports",
+      ports_path_only: !!status.target && portsPathOnly,
+      offset: 0,
+      limit: 200,
+      process_key: scope?.key,
+    }),
+    [
+      columns,
+      searchText,
+      sort,
+      descending,
+      view,
+      locks,
+      status.target,
+      portsPathOnly,
+      scope?.key,
+    ],
+  );
   const tableQueryKey = JSON.stringify(tableQuery);
+  // The grid and its rows are memoized. Stable handlers keep a keystroke in the
+  // target path or a click from rendering rows that did not change.
+  const toggleRow = useStableCallback((row: Row, revision: number) => {
+    const closing =
+      focused === row.process_key && activeRow?.row.key === row.key;
+    setActiveRow({
+      row,
+      revision,
+      queryKey: tableQueryKey,
+    });
+    setFocused(closing ? null : row.process_key);
+  });
+  const selectRow = useStableCallback(
+    (row: Row, additive: boolean, revision: number) => {
+      setSelected((current) => selectKey(current, row.process_key, additive));
+      setActiveRow({
+        row,
+        revision,
+        queryKey: tableQueryKey,
+      });
+      setFocused(row.process_key);
+    },
+  );
+  const openRow = useStableCallback((row: Row, revision: number) => {
+    setActiveRow({
+      row,
+      revision,
+      queryKey: tableQueryKey,
+    });
+    setFocused(row.process_key);
+    if (row.matching_files) setRevealRequest({ key: row.process_key });
+  });
+  const contextRow = useStableCallback((row: Row, revision: number) => {
+    if (status.scanning || revision !== status.revision) {
+      setToast(
+        t("inspection.k_wait_for_the_current_scan_to_finish_bef_20cd41dd"),
+      );
+      return;
+    }
+    setContext(row);
+    setActiveRow({
+      row,
+      revision,
+      queryKey: tableQueryKey,
+    });
+    setFocused(row.process_key);
+  });
+  const sortRows = useStableCallback((next: Sort) => changeSort(next));
+  const acceptPage = useStableCallback((page: Page) => {
+    setGridRevision(page.revision);
+    setFailedGridRevision(null);
+    setActiveRow((current) => {
+      if (!current) return current;
+      const row = page.rows.find(
+        (row) =>
+          row.key === current.row.key &&
+          (row.matching_files || row.path === current.row.path) &&
+          row.port?.endpoint === current.row.port?.endpoint,
+      );
+      return row
+        ? {
+            row,
+            revision: page.revision,
+            queryKey: tableQueryKey,
+          }
+        : current;
+    });
+  });
+  const failPage = useStableCallback((failure: unknown, revision: number) => {
+    if (revision !== statusRef.current.revision) return;
+    setFailedGridRevision(revision);
+    report(failure);
+  });
   useEffect(() => setRevealRequest(null), [tableQueryKey]);
   useEffect(() => {
     let active = true;
@@ -544,9 +633,10 @@ export function App() {
   }, [status.revision, report]);
   useEffect(() => {
     let active = true;
-    setDetails((current) =>
-      current?.process.process_key === focused ? current : null,
-    );
+    // Keep showing the previous process's details until the next ones arrive.
+    // The panel marks them busy and read-only; clearing them here would remove
+    // the panel and make the grid jump to full width and back.
+    setDetails((current) => (focused ? current : null));
     setDetailsMissing(false);
     if (focused)
       api
@@ -564,6 +654,10 @@ export function App() {
         .catch((failure) => {
           if (active) {
             setDetailsMissing(true);
+            // Never leave another process's details next to the new selection.
+            setDetails((current) =>
+              current?.process.process_key === focused ? current : null,
+            );
             if ((failure as Failure)?.kind !== "identity_changed")
               report(failure);
           }
@@ -733,12 +827,28 @@ export function App() {
       .then(() => setToast(t("selection.k_error_details_copied")))
       .catch(report);
   };
-  const removeRecent = (id: number) => {
+  const removeRecent = (id: number, entry?: HTMLElement | null) => {
+    const drop = () =>
+      setRecent((current) => current.filter((item) => item.id !== id));
     void api
       .removeRecent(id)
-      .then(() =>
-        setRecent((current) => current.filter((item) => item.id !== id)),
-      )
+      .then(() => {
+        if (
+          !entry ||
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ) {
+          drop();
+          return;
+        }
+        // Close the gap over a moment instead of moving every entry below it
+        // in one frame, then drop the entry from the list.
+        entry.inert = true;
+        entry.style.height = `${entry.offsetHeight}px`;
+        void entry.offsetHeight;
+        entry.classList.add("recent-leaving");
+        entry.style.height = "0px";
+        window.setTimeout(drop, 160);
+      })
       .catch(report);
   };
   const clearRecent = () => {
@@ -1662,9 +1772,13 @@ export function App() {
                   )}
                   {query && view !== "ports" && (
                     <div className="search-explanation">
-                      {t(
-                        "filters.k_search_includes_full_paths_a_shared_fol_1d2d885e",
-                      )}
+                      <div>
+                        <div>
+                          {t(
+                            "filters.k_search_includes_full_paths_a_shared_fol_1d2d885e",
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )}
                   {scope && (
@@ -1738,88 +1852,19 @@ export function App() {
                           ? activeRow.row.key
                           : null
                       }
-                      onToggle={(row, revision) => {
-                        const closing =
-                          focused === row.process_key &&
-                          activeRow?.row.key === row.key;
-                        setActiveRow({
-                          row,
-                          revision,
-                          queryKey: tableQueryKey,
-                        });
-                        setFocused(closing ? null : row.process_key);
-                      }}
+                      onToggle={toggleRow}
                       revision={status.revision}
                       query={tableQuery}
                       hiddenColumns={hiddenColumns}
                       selected={selected}
                       focused={focused}
-                      onSelect={(row, additive, revision) => {
-                        setSelected((current) =>
-                          selectKey(current, row.process_key, additive),
-                        );
-                        setActiveRow({
-                          row,
-                          revision,
-                          queryKey: tableQueryKey,
-                        });
-                        setFocused(row.process_key);
-                      }}
-                      onOpen={(row, revision) => {
-                        setActiveRow({
-                          row,
-                          revision,
-                          queryKey: tableQueryKey,
-                        });
-                        setFocused(row.process_key);
-                        if (row.matching_files)
-                          setRevealRequest({ key: row.process_key });
-                      }}
-                      onContext={(row, revision) => {
-                        if (status.scanning || revision !== status.revision) {
-                          setToast(
-                            t(
-                              "inspection.k_wait_for_the_current_scan_to_finish_bef_20cd41dd",
-                            ),
-                          );
-                          return;
-                        }
-                        setContext(row);
-                        setActiveRow({
-                          row,
-                          revision,
-                          queryKey: tableQueryKey,
-                        });
-                        setFocused(row.process_key);
-                      }}
-                      onSort={changeSort}
-                      onPage={(page) => {
-                        setGridRevision(page.revision);
-                        setFailedGridRevision(null);
-                        setActiveRow((current) => {
-                          if (!current) return current;
-                          const row = page.rows.find(
-                            (row) =>
-                              row.key === current.row.key &&
-                              (row.matching_files ||
-                                row.path === current.row.path) &&
-                              row.port?.endpoint === current.row.port?.endpoint,
-                          );
-                          return row
-                            ? {
-                                row,
-                                revision: page.revision,
-                                queryKey: tableQueryKey,
-                              }
-                            : current;
-                        });
-                      }}
+                      onSelect={selectRow}
+                      onOpen={openRow}
+                      onContext={contextRow}
+                      onSort={sortRows}
+                      onPage={acceptPage}
                       onTotal={setTotal}
-                      onPageError={(failure, revision) => {
-                        if (revision !== statusRef.current.revision) return;
-                        setFailedGridRevision(revision);
-                        report(failure);
-                      }}
+                      onPageError={failPage}
                       onError={report}
                     />
                     {details && (
@@ -1864,9 +1909,11 @@ export function App() {
                         availability={
                           detailsMissing
                             ? "missing"
-                            : detailsRevision === status.revision
-                              ? "current"
-                              : "updating"
+                            : details.process.process_key !== focused
+                              ? "switching"
+                              : detailsRevision === status.revision
+                                ? "current"
+                                : "updating"
                         }
                         row={
                           activeRow?.row.process_key ===
@@ -1995,7 +2042,14 @@ export function App() {
                             className="icon-button recent-remove"
                             aria-label={`${t("app.k_remove")} ${target.display}`}
                             title={t("history.k_remove_from_recent_targets")}
-                            onClick={() => removeRecent(target.id)}
+                            onClick={(event) =>
+                              removeRecent(
+                                target.id,
+                                event.currentTarget.closest<HTMLElement>(
+                                  ".recent-entry",
+                                ),
+                              )
+                            }
                           >
                             <Trash2 size={15} />
                           </button>
@@ -2285,6 +2339,13 @@ export function App() {
       />
       <footer className="statusbar">
         <span className="status-current" role={scanBusy ? undefined : "status"}>
+          {/* Reserves the width of the busy text, so the rest of the footer
+              does not slide when a refresh starts and ends. */}
+          <span
+            className="status-sizer"
+            aria-hidden="true"
+            data-text={`${t("inspection.k_updating_results")} 0.0 s ${t("common.k_cancel")}`}
+          />
           {scanBusy ? (
             <BackgroundInspection
               status={status}

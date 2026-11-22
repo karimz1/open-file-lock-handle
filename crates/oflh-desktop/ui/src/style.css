@@ -61,6 +61,27 @@ button:disabled {
   opacity: 0.45;
   cursor: default;
 }
+/* Controls that are locked for a moment (a refresh, loading details) grey out
+   only if it lasts: a locked state shorter than the delay is never seen, and
+   unlocking is immediate. */
+button,
+input,
+select {
+  transition: opacity 120ms ease-out;
+}
+button:disabled,
+[inert] button,
+[inert] input,
+[inert] select {
+  transition-delay: 250ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  button,
+  input,
+  select {
+    transition: none;
+  }
+}
 button.primary {
   background: var(--primary);
   border-color: var(--primary);
@@ -889,6 +910,20 @@ main {
   margin-left: 8px;
   font-size: 0.6923rem;
 }
+.grid-rows {
+  transition: opacity 120ms ease-out;
+}
+/* Rows kept while the next query loads. The delay keeps fast answers from
+   flickering; a slow one fades the old rows to show they are on their way out. */
+.grid-rows.grid-stale {
+  opacity: 0.6;
+  transition-delay: 160ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .grid-rows {
+    transition: none;
+  }
+}
 .empty {
   display: flex;
   align-items: center;
@@ -1111,6 +1146,28 @@ main {
   gap: 7px;
   min-width: 0;
 }
+/* The idle text and the busy text share one cell, so the cell is as wide as
+   the wider of the two and the footer text next to it stays put. */
+.statusbar > .status-current:first-child {
+  display: grid;
+  grid-template-columns: minmax(0, max-content);
+  align-items: center;
+}
+.status-current > * {
+  grid-area: 1 / 1;
+}
+.status-sizer::after {
+  content: attr(data-text);
+}
+.status-sizer {
+  /* Room for the progress info button and the Cancel button's chrome. */
+  padding-inline-end: calc(51.8px + 0.3em);
+  visibility: hidden;
+  max-width: 40vw;
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .status-current-label {
   min-width: 0;
   overflow: hidden;
@@ -1172,6 +1229,22 @@ main {
   display: flex;
   min-width: 0;
   border-top: 1px solid var(--border);
+}
+/* A removed entry shrinks to nothing; the script sets the heights. Clipping
+   is only needed while it shrinks, so focus rings stay visible otherwise. */
+.recent-entry.recent-leaving {
+  overflow: hidden;
+  opacity: 0;
+  border-top-width: 0;
+  transition:
+    height 140ms ease-out,
+    opacity 120ms ease-out,
+    border-top-width 140ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .recent-entry.recent-leaving {
+    transition: none;
+  }
 }
 .recent-entry:first-child {
   border-top: 0;
@@ -1392,6 +1465,28 @@ main {
 .modal[open] {
   display: flex;
   flex-direction: column;
+  animation: modal-in 140ms ease-out;
+}
+.modal[open]::backdrop {
+  animation: modal-backdrop-in 140ms ease-out;
+}
+/* Opacity only: a transform would change the dialog's measured box while it
+   opens. */
+@keyframes modal-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal[open],
+  .modal[open]::backdrop {
+    animation: none;
+  }
 }
 .modal > header,
 .modal > .modal-actions {
@@ -1905,6 +2000,9 @@ button {
 .search-box {
   min-height: 2.75rem;
   max-width: 480px;
+  /* Narrower than the 210px base so the toolbar still fits on one row with the
+     sidebar open at 1280px, instead of Maximize wrapping onto its own row. */
+  min-width: 190px;
   padding: 4px 12px;
   background: var(--bg);
   border-radius: 6px;
@@ -1937,6 +2035,17 @@ button {
 }
 .data-row {
   font-size: 0.95rem;
+}
+/* The previous process's details while the next ones load: fade only if the
+   answer is slow, so a quick one never flickers. */
+.inspector[aria-busy="true"] {
+  opacity: 0.6;
+  transition: opacity 120ms ease-out 160ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .inspector[aria-busy="true"] {
+    transition: none;
+  }
 }
 .inspector-container {
   position: relative;
@@ -2314,11 +2423,34 @@ kbd.shortcut {
   margin-left: auto;
   padding: 3px 8px;
 }
+/* The explanation grows to its height instead of pushing the grid down in
+   one frame. The grid-rows animation needs no measured height; a WebView that
+   cannot animate it simply shows the line at once. */
 .search-explanation {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: search-explanation-in 140ms ease-out;
+}
+.search-explanation > div {
+  min-height: 0;
+  overflow: hidden;
+}
+.search-explanation > div > div {
   padding: 7px 20px;
   color: var(--muted);
   font-size: 0.85rem;
   border-bottom: 1px solid var(--border);
+}
+@keyframes search-explanation-in {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .search-explanation {
+    animation: none;
+  }
 }
 
 /* A separated utility group stays discoverable without boxed navigation. */
