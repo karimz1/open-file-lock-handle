@@ -15,14 +15,15 @@ pub(super) fn extensions(os: &str) -> Result<&'static [&'static str]> {
     match os {
         "linux" => Ok(&["deb", "rpm", "gz"]),
         "darwin" => Ok(&["dmg", "gz", "sig"]),
-        "windows" => Ok(&["exe", "sig"]),
+        "windows" => Ok(&["exe", "sig", "zip"]),
         _ => Err("unsupported desktop OS".into()),
     }
 }
 pub(super) fn artifact(os: &str, arch: &str, extension: &str) -> String {
     match (os, extension) {
         ("windows", "sig") => format!("oflh-desktop.windows.{arch}-installer.exe.sig"),
-        ("windows", _) => format!("oflh-desktop.windows.{arch}-installer.{extension}"),
+        ("windows", "exe") => format!("oflh-desktop.windows.{arch}-installer.exe"),
+        ("windows", "zip") => format!("oflh-desktop.windows.{arch}-portable.zip"),
         ("linux", "gz") => format!("oflh-desktop.linux.{arch}.tar.gz"),
         ("darwin", "gz") => format!("oflh-desktop.darwin.{arch}.app.tar.gz"),
         ("darwin", "sig") => format!("oflh-desktop.darwin.{arch}.app.tar.gz.sig"),
@@ -94,7 +95,7 @@ pub(super) fn package(
     let installers: Vec<_> = allowed
         .iter()
         .copied()
-        .filter(|extension| os != "linux" || *extension != "gz")
+        .filter(|extension| !matches!((os, *extension), ("linux", "gz") | ("windows", "zip")))
         .collect();
     collect(directory, &mut found, &installers)?;
     if found.len() != installers.len() {
@@ -111,6 +112,8 @@ pub(super) fn package(
         }
         if os == "linux" && *extension == "gz" {
             linux_archive(binary, &destination)?;
+        } else if os == "windows" && *extension == "zip" {
+            windows_portable_archive(binary, &destination)?;
         } else {
             let source = found.get(*extension).ok_or("missing desktop installer")?;
             if source.metadata()?.len() == 0 {
@@ -127,6 +130,86 @@ pub(super) fn package(
     file.write_all(receipt.as_bytes())?;
     Ok(())
 }
+const PORTABLE_README: &str = "OFLH Desktop for Windows (portable)
+
+Extract this folder anywhere you can write, then run oflh-desktop.exe.
+No installation and no administrator rights are needed to start the app.
+Administrator permission is requested only if you confirm ending a protected process.
+
+Settings, recent targets, and interface preferences are stored in the data folder
+next to the executable. Keep that folder when you unpack a newer zip.
+
+This build needs the Microsoft Edge WebView2 Runtime, which Windows 10 (April 2018
+or later) and Windows 11 already include. If the app says the runtime is missing,
+install it from:
+https://developer.microsoft.com/microsoft-edge/webview2/
+
+This package does not add Explorer context-menu entries or an uninstaller.
+To remove it, delete the folder. Updates are manual: download a new zip and move
+the data folder into it.
+
+Choose the archive for your CPU: amd64 = x86-64; arm64 = AArch64.
+ARM32 is not provided.
+An open file is not proof of a lock. Stopping processes can lose unsaved work.
+https://github.com/karimz1/open-file-lock-handle
+";
+
+fn zip_entry(
+    zip: &mut zip::ZipWriter<fs::File>,
+    name: &str,
+    bytes: &[u8],
+    unix_permissions: u32,
+) -> Result<()> {
+    use std::io::Write;
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .last_modified_time(zip::DateTime::DEFAULT)
+        .unix_permissions(unix_permissions);
+    zip.start_file(name, options)?;
+    zip.write_all(bytes)?;
+    Ok(())
+}
+
+fn windows_portable_archive(binary: &Path, destination: &Path) -> Result<()> {
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let dir_options = zip::write::SimpleFileOptions::default()
+        .last_modified_time(zip::DateTime::DEFAULT)
+        .unix_permissions(0o755);
+    zip.add_directory("oflh-desktop/data/", dir_options)?;
+    zip_entry(
+        &mut zip,
+        "oflh-desktop/oflh-desktop.exe",
+        &fs::read(binary)?,
+        0o755,
+    )?;
+    zip_entry(&mut zip, "oflh-desktop/portable", b"", 0o644)?;
+    zip_entry(
+        &mut zip,
+        "oflh-desktop/LICENSE",
+        &fs::read(repository.join("LICENSE"))?,
+        0o644,
+    )?;
+    zip_entry(
+        &mut zip,
+        "oflh-desktop/icon.png",
+        &fs::read(repository.join("crates/oflh-desktop/icons/128x128.png"))?,
+        0o644,
+    )?;
+    zip_entry(
+        &mut zip,
+        "oflh-desktop/README.txt",
+        PORTABLE_README.as_bytes(),
+        0o644,
+    )?;
+    zip.finish()?;
+    Ok(())
+}
+
 const ARCHIVE_README: &str = "OFLH Desktop for Linux
 
 Run ./oflh-desktop from this directory in your graphical desktop session.
@@ -356,5 +439,65 @@ mod tests {
             artifact("windows", "amd64", "exe"),
             "oflh-desktop.windows.amd64-installer.exe"
         );
+    }
+    #[test]
+    fn windows_portable_artifact_name_identifies_the_zip() {
+        assert_eq!(
+            artifact("windows", "amd64", "zip"),
+            "oflh-desktop.windows.amd64-portable.zip"
+        );
+        assert_eq!(
+            artifact("windows", "arm64", "zip"),
+            "oflh-desktop.windows.arm64-portable.zip"
+        );
+    }
+
+    #[test]
+    fn windows_portable_archive_contains_the_tested_executable_and_marker() {
+        use std::io::Read;
+        let root = std::env::temp_dir().join(format!("oflh-win-portable-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let binary = root.join("binary");
+        fs::write(&binary, b"exact tested portable executable").unwrap();
+        let archive = root.join("app.zip");
+        windows_portable_archive(&binary, &archive).unwrap();
+        let second = root.join("second.zip");
+        windows_portable_archive(&binary, &second).unwrap();
+        assert_eq!(digest(&archive).unwrap(), digest(&second).unwrap());
+        assert!(windows_portable_archive(&binary, &archive).is_err());
+        let mut zip = zip::ZipArchive::new(fs::File::open(&archive).unwrap()).unwrap();
+        let mut names = Vec::new();
+        for index in 0..zip.len() {
+            let mut entry = zip.by_index(index).unwrap();
+            let name = entry.name().unwrap().into_owned();
+            if name == "oflh-desktop/oflh-desktop.exe" {
+                let mut bytes = Vec::new();
+                entry.read_to_end(&mut bytes).unwrap();
+                assert_eq!(bytes, fs::read(&binary).unwrap());
+            }
+            if name == "oflh-desktop/portable" {
+                assert_eq!(entry.size(), 0);
+            }
+            names.push(name);
+        }
+        assert!(names.contains(&"oflh-desktop/oflh-desktop.exe".into()));
+        assert!(names.contains(&"oflh-desktop/portable".into()));
+        assert!(
+            names.contains(&"oflh-desktop/data/".into())
+                || names.contains(&"oflh-desktop/data".into())
+        );
+        assert!(names.contains(&"oflh-desktop/LICENSE".into()));
+        assert!(names.contains(&"oflh-desktop/icon.png".into()));
+        assert!(names.contains(&"oflh-desktop/README.txt".into()));
+        let mut readme = String::new();
+        zip.by_name("oflh-desktop/README.txt")
+            .unwrap()
+            .read_to_string(&mut readme)
+            .unwrap();
+        assert!(readme.contains("WebView2"));
+        assert!(readme.contains("data folder"));
+        assert!(readme.contains("No installation and no administrator rights"));
+        fs::remove_dir_all(root).unwrap();
     }
 }
