@@ -25,5 +25,6 @@ export default defineConfig({
     command: "npm run dev",
     url: "http://127.0.0.1:1420",
     reuseExistingServer: !process.env.CI,
+    env: { ...process.env, OFLH_PLAYWRIGHT: "1" },
   },
 });
