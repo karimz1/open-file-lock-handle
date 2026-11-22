@@ -1564,6 +1564,157 @@ test("recent targets can be searched, removed, and cleared", async ({
     page.getByRole("heading", { name: "No recent targets" }),
   ).toBeVisible();
 });
+/**
+ * Pauses the open animations of a dialog and its backdrop the moment the
+ * dialog opens, before any frame is drawn. The fade is then checked by seeking
+ * each animation instead of sampling frames, which a slow runner draws too few
+ * of.
+ */
+async function holdDialogAnimations(page: Page) {
+  await page.evaluate(() => {
+    const held: Animation[] = ((window as any).__dialogAnimations = []);
+    new MutationObserver((mutations) => {
+      for (const { target } of mutations) {
+        const dialog = target as HTMLDialogElement;
+        if (dialog.tagName !== "DIALOG" || !dialog.open) continue;
+        // Reading animations resolves the new style, which starts them.
+        for (const animation of document.getAnimations()) {
+          if ((animation.effect as KeyframeEffect).target !== dialog) continue;
+          animation.pause();
+          if (!held.includes(animation)) held.push(animation);
+        }
+      }
+    }).observe(document, {
+      attributes: true,
+      attributeFilter: ["open"],
+      subtree: true,
+    });
+  });
+}
+
+/** Opacity of each held animation at its start, middle and end. */
+async function seekDialogAnimations(page: Page) {
+  return page.evaluate(() => {
+    const dialog = document.querySelector("dialog[open]")!;
+    return ((window as any).__dialogAnimations as Animation[]).map(
+      (animation) => {
+        const effect = animation.effect as KeyframeEffect;
+        const pseudo = effect.pseudoElement;
+        const duration = Number(effect.getComputedTiming().duration);
+        const opacityAt = (time: number) => {
+          animation.currentTime = time;
+          return Number(getComputedStyle(dialog, pseudo).opacity);
+        };
+        const start = opacityAt(0);
+        const middle = opacityAt(duration / 2);
+        animation.finish();
+        const end = Number(getComputedStyle(dialog, pseudo).opacity);
+        return { part: pseudo ?? "dialog", duration, start, middle, end };
+      },
+    );
+  });
+}
+
+async function openAbout(page: Page) {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const about = page.getByRole("menuitem", { name: "About OFLH" });
+  await expect(about).toBeVisible();
+  await about.click();
+  await expect(page.getByRole("dialog", { name: "About OFLH" })).toBeVisible();
+}
+
+test("a dialog fades in instead of popping in", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await holdDialogAnimations(page);
+  await openAbout(page);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__dialogAnimations.length))
+    .toBe(2);
+  const fades = await seekDialogAnimations(page);
+  expect(fades.map((fade) => fade.part).sort()).toEqual([
+    "::backdrop",
+    "dialog",
+  ]);
+  for (const fade of fades) {
+    expect(fade.start, `${fade.part} opacity when it opens`).toBeLessThan(0.9);
+    expect(fade.middle, `${fade.part} opacity halfway`).toBeGreaterThan(
+      fade.start,
+    );
+    expect(fade.middle, `${fade.part} opacity halfway`).toBeLessThan(1);
+    expect(fade.end, `${fade.part} opacity once open`).toBe(1);
+    // Short enough to never feel slow.
+    expect(fade.duration).toBeGreaterThan(0);
+    expect(fade.duration).toBeLessThan(400);
+  }
+  await expect(page.getByRole("dialog", { name: "About OFLH" })).toHaveCSS(
+    "opacity",
+    "1",
+  );
+});
+
+test("a dialog appears at once when the system asks for reduced motion", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await holdDialogAnimations(page);
+  await openAbout(page);
+  // Any open animation would have been held when the dialog opened.
+  const opacity = await page.evaluate(async () => {
+    for (let frame = 0; frame < 2; frame += 1) {
+      await new Promise(requestAnimationFrame);
+    }
+    const dialog = document.querySelector("dialog[open]")!;
+    return {
+      held: (window as any).__dialogAnimations.length,
+      dialog: Number(getComputedStyle(dialog).opacity),
+      backdrop: Number(getComputedStyle(dialog, "::backdrop").opacity),
+    };
+  });
+  expect(opacity).toEqual({ held: 0, dialog: 1, backdrop: 1 });
+});
+
+test("the search explanation grows in smoothly instead of pushing the grid down", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const search = page.getByRole("textbox", { name: "Search loaded results" });
+  await search.click();
+  await page.evaluate(() => {
+    (window as any).__gridTops = new Promise((resolve) => {
+      const tops: number[] = [];
+      const start = performance.now();
+      const tick = () => {
+        tops.push(
+          document.querySelector("#results-grid")!.getBoundingClientRect().top,
+        );
+        if (performance.now() - start < 900) requestAnimationFrame(tick);
+        else resolve(tops);
+      };
+      requestAnimationFrame(tick);
+    });
+  });
+  await search.pressSequentially("node");
+  await expect(
+    page.getByText("Search includes full paths", { exact: false }),
+  ).toBeVisible();
+  const tops = (await page.evaluate(
+    () => (window as any).__gridTops,
+  )) as number[];
+  const total = tops.at(-1)! - tops[0];
+  const biggestStep = Math.max(
+    ...tops.slice(1).map((top, index) => Math.abs(top - tops[index])),
+  );
+  expect(
+    total,
+    "the grid moves down by the height of the explanation",
+  ).toBeGreaterThan(20);
+  // A slow runner may drop frames, so ask for "not one jump" rather than a pixel size.
+  expect(biggestStep, "largest move in one frame").toBeLessThan(total * 0.75);
+});
 test("automatic refresh repeats at the selected interval", async ({ page }) => {
   await page.goto("/");
   await page
@@ -2868,25 +3019,35 @@ test("process search filters once typing pauses while the box updates on every k
   await page.addInitScript(() => {
     (window as any).__searchClearRaceFixture = true;
   });
+  // The pause is measured on the page clock: a slow runner's real gaps
+  // between keys must not count as a pause in typing.
+  await page.clock.install();
   await page.goto("/");
   await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
   const search = page.getByRole("textbox", { name: "Search loaded results" });
   await search.click();
   await page.evaluate(() => ((window as any).__testCalls.length = 0));
+  const searches = () =>
+    page.evaluate(() =>
+      (window as any).__testCalls
+        .filter(
+          (call: any) =>
+            call.command === "page" || call.command === "select_all",
+        )
+        .map((call: any) => `${call.command}:${call.args.query.text}`)
+        .sort(),
+    );
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   for (const [index, key] of [..."spotify"].entries()) {
     await page.keyboard.type(key);
     await expect(search).toHaveValue("spotify".slice(0, index + 1));
-    await page.waitForTimeout(80);
+    await page.clock.runFor(80);
+    expect(await searches(), `after "${key}"`).toEqual([]);
   }
+  await page.clock.runFor(200);
+  await page.clock.resume();
+  await expect.poll(searches).toEqual(["page:spotify", "select_all:spotify"]);
   await expect(page.getByText("12 results", { exact: true })).toBeVisible();
-  const texts = await page.evaluate(() =>
-    (window as any).__testCalls
-      .filter(
-        (call: any) => call.command === "page" || call.command === "select_all",
-      )
-      .map((call: any) => `${call.command}:${call.args.query.text}`),
-  );
-  expect(texts.sort()).toEqual(["page:spotify", "select_all:spotify"]);
 });
 
 test("process details close when a search filters the process out and stay while it matches", async ({

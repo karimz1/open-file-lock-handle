@@ -1772,9 +1772,13 @@ export function App() {
                   )}
                   {query && view !== "ports" && (
                     <div className="search-explanation">
-                      {t(
-                        "filters.k_search_includes_full_paths_a_shared_fol_1d2d885e",
-                      )}
+                      <div>
+                        <div>
+                          {t(
+                            "filters.k_search_includes_full_paths_a_shared_fol_1d2d885e",
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )}
                   {scope && (
