@@ -1,0 +1,19 @@
+name: Prefetch Tauri NSIS tools
+description: Restore or download the NSIS files tauri-bundler fetches from GitHub, so bundle jobs do not depend on a live unauthenticated download.
+
+runs:
+  using: composite
+  steps:
+    - name: Cache the Tauri NSIS tool directory
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.os == 'Windows' && format('{0}/tauri', env.LOCALAPPDATA) || format('{0}/.cache/tauri', env.HOME) }}
+        key: tauri-nsis-${{ runner.os }}-${{ hashFiles('.github/scripts/prefetch-tauri-nsis.sh', 'crates/oflh-desktop/ui/package-lock.json') }}
+    - name: Prefetch Tauri NSIS tools
+      shell: bash
+      env:
+        # Public release assets, fetched with the workflow token so GitHub
+        # does not 403 the unauthenticated rate limit that failed the
+        # frontend NSIS preflight on release/0.9.
+        GH_TOKEN: ${{ github.token }}
+      run: bash "${{ github.workspace }}/.github/scripts/prefetch-tauri-nsis.sh"
