@@ -118,8 +118,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: npm
-          cache-dependency-path: crates/oflh-desktop/ui/package-lock.json
       - run: npm ci
         working-directory: crates/oflh-desktop/ui
       - name: Compile the rendered NSIS installer template early
@@ -173,8 +171,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: npm
-          cache-dependency-path: crates/oflh-desktop/ui/package-lock.json
       - run: npm ci
         working-directory: crates/oflh-desktop/ui
       - name: Install Chrome for Playwright
@@ -221,8 +217,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: npm
-          cache-dependency-path: crates/oflh-desktop/ui/package-lock.json
       - name: Linux WebView build dependencies
         if: matrix.os == 'linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libxdo-dev libssl-dev librsvg2-dev patchelf xvfb
