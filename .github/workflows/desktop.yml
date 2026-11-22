@@ -122,7 +122,6 @@ jobs:
           cache-dependency-path: crates/oflh-desktop/ui/package-lock.json
       - run: npm ci
         working-directory: crates/oflh-desktop/ui
-      - uses: ./.github/actions/prefetch-tauri-nsis
       - name: Compile the rendered NSIS installer template early
         # Renders the real Tauri template and hooks with makensis against a stub
         # executable, so script errors fail here in minutes instead of after the
@@ -131,7 +130,16 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq nsis
           mkdir -p ../../../target/x86_64-pc-windows-msvc/release
           printf 'MZ' > ../../../target/x86_64-pc-windows-msvc/release/oflh-desktop.exe
-          (cd .. && ui/node_modules/.bin/tauri bundle --bundles nsis --target x86_64-pc-windows-msvc --no-binary-patching -c '{"bundle":{"createUpdaterArtifacts":false}}')
+          for attempt in 1 2 3; do
+            if (cd .. && ui/node_modules/.bin/tauri bundle --bundles nsis --target x86_64-pc-windows-msvc --no-binary-patching -c '{"bundle":{"createUpdaterArtifacts":false}}'); then
+              break
+            fi
+            echo "NSIS bundle attempt $attempt of 3 failed"
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep 25
+          done
           rm -rf ../../../target/x86_64-pc-windows-msvc
         working-directory: crates/oflh-desktop/ui
       - name: Verify updater signing key against the app public key
@@ -319,8 +327,6 @@ jobs:
             printf '%s\n' "$UPDATER_PRIVATE_KEY_PASSWORD"
             echo 'OFLH_UPDATER_PASSWORD'
           } >> "$GITHUB_ENV"
-      - uses: ./.github/actions/prefetch-tauri-nsis
-        if: ${{ matrix.os == 'windows' }}
       - name: Bundle the built executable without rebuilding
         working-directory: crates/oflh-desktop/ui
         shell: bash
@@ -328,6 +334,19 @@ jobs:
           bundle() {
             npm run tauri -- bundle --config "$RUNNER_TEMP/desktop-version.json" --no-binary-patching --bundles '${{ matrix.bundles }}'
           }
+          if [ '${{ matrix.os }}' = windows ]; then
+            for attempt in 1 2 3; do
+              if bundle; then
+                exit 0
+              fi
+              echo "NSIS bundle attempt $attempt of 3 failed"
+              if [ "$attempt" -eq 3 ]; then
+                exit 1
+              fi
+              sleep 25
+            done
+            exit 1
+          fi
           if [ '${{ matrix.os }}' != darwin ]; then
             bundle
             exit
