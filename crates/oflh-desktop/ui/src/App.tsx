@@ -2292,6 +2292,13 @@ export function App() {
       />
       <footer className="statusbar">
         <span className="status-current" role={scanBusy ? undefined : "status"}>
+          {/* Reserves the width of the busy text, so the rest of the footer
+              does not slide when a refresh starts and ends. */}
+          <span
+            className="status-sizer"
+            aria-hidden="true"
+            data-text={`${t("inspection.k_updating_results")} 0.0 s ${t("common.k_cancel")}`}
+          />
           {scanBusy ? (
             <BackgroundInspection
               status={status}

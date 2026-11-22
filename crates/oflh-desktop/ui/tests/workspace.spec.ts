@@ -5300,6 +5300,11 @@ test("inspection barrier blocks manual and automatic reloads, shows work, and re
     ),
   ).toBe(0);
   await page.screenshot({ path: "test-results/inspection-progress.png" });
+  // The 5 s interval restarts when the scan ends. Stop the clock first, so
+  // the real time a slow runner spends between Cancel and the next step does
+  // not count towards it. The scan is still running, so the extra second
+  // pauseAt skips cannot start a reload.
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).not.toBeVisible();
   await page.clock.runFor(4900);
@@ -5935,6 +5940,181 @@ test("quiet refresh rejects retained matches after a new query and publishes the
   await expect(page.getByText("300 results", { exact: true })).toBeVisible();
   await expect(grid.getByText("node", { exact: true }).first()).toBeVisible();
   await expect(grid.getByText("Blender", { exact: true })).toHaveCount(0);
+});
+
+const refreshControls = [
+  ".new-window-button",
+  ".sidebar .nav-section button",
+  ".target-bar button[type=submit]",
+  ".selection-toolbar button",
+];
+
+// The grey-out of locked controls starts after 250 ms. Frames in the first
+// 230 ms of a lock must look unchanged; the rest is slack for frame timing.
+const greyOutDelayMs = 230;
+
+async function watchControlLook(page: import("@playwright/test").Page) {
+  await page.evaluate(
+    ({ selectors, greyOutDelayMs }) => {
+      const look: {
+        frames: number;
+        lowest: number;
+        locked: number;
+        earlyFrames: number;
+        earlyLowest: number;
+        lockedAt?: number;
+        unlockedAt?: number;
+      } = { frames: 0, lowest: 1, locked: 0, earlyFrames: 0, earlyLowest: 1 };
+      (window as any).__controlLook = look;
+      const sample = () => {
+        const now = performance.now();
+        look.frames++;
+        let lockedNow = false;
+        let lowest = 1;
+        for (const selector of selectors)
+          for (const node of document.querySelectorAll(selector)) {
+            lowest = Math.min(lowest, Number(getComputedStyle(node).opacity));
+            if ((node as HTMLButtonElement).disabled || node.closest("[inert]"))
+              lockedNow = true;
+          }
+        look.lowest = Math.min(look.lowest, lowest);
+        if (lockedNow) {
+          look.locked++;
+          look.lockedAt ??= now;
+          if (
+            look.unlockedAt === undefined &&
+            now - look.lockedAt < greyOutDelayMs
+          ) {
+            look.earlyFrames++;
+            look.earlyLowest = Math.min(look.earlyLowest, lowest);
+          }
+        } else if (look.lockedAt !== undefined) {
+          look.unlockedAt ??= now;
+        }
+        (window as any).__controlLookSampler = requestAnimationFrame(sample);
+      };
+      sample();
+    },
+    { selectors: refreshControls, greyOutDelayMs },
+  );
+}
+
+async function finishScan(page: import("@playwright/test").Page) {
+  await page.evaluate(() => {
+    (window as any).__holdRefreshForTest = false;
+    (window as any).__emitTestEvent("scan-status", {
+      scanning: false,
+      generation: 50,
+      revision: 50,
+    });
+  });
+}
+
+test("a short refresh locks the controls without visibly greying them", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await expect(page.getByText("1 process selected")).toBeVisible();
+  await page.evaluate(() => ((window as any).__holdRefreshForTest = true));
+  await watchControlLook(page);
+  // Start and finish the refresh inside the page, so no test runner round
+  // trips stretch the lock.
+  const lockedMs = await page
+    .getByRole("button", { name: "Refresh", exact: true })
+    .evaluate(async (button: HTMLButtonElement) => {
+      const look = (window as any).__controlLook;
+      button.click();
+      const started = performance.now();
+      while (look.lockedAt === undefined) {
+        if (performance.now() - started > 5000)
+          throw new Error("the refresh did not lock the controls");
+        await new Promise(requestAnimationFrame);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      (window as any).__holdRefreshForTest = false;
+      (window as any).__emitTestEvent("scan-status", {
+        scanning: false,
+        generation: 50,
+        revision: 50,
+      });
+      while (look.unlockedAt === undefined) {
+        if (performance.now() - started > 5000)
+          throw new Error("the controls stayed locked after the refresh");
+        await new Promise(requestAnimationFrame);
+      }
+      return look.unlockedAt - look.lockedAt;
+    });
+  await expect(page.getByText("Updating results")).toHaveCount(0);
+  await page.waitForTimeout(400);
+  const look = await page.evaluate(() => {
+    cancelAnimationFrame((window as any).__controlLookSampler);
+    return (window as any).__controlLook;
+  });
+  // The controls really were locked while the scan ran.
+  expect(look.earlyFrames).toBeGreaterThan(0);
+  // How long the lock lasts depends on the machine (a slow CI runner needs
+  // more time for the new page), so check what the user sees while a lock is
+  // still short instead of how long this one lasted.
+  expect(
+    look.earlyLowest,
+    `lowest control opacity in the first ${greyOutDelayMs} ms of a refresh (locked for ${Math.round(lockedMs)} ms)`,
+  ).toBeGreaterThan(0.95);
+});
+
+test("a long refresh still shows the controls as unavailable", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  await page.evaluate(() => ((window as any).__holdRefreshForTest = true));
+  await watchControlLook(page);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.waitForTimeout(900);
+  await page.screenshot({ path: "test-results/refresh-long-controls.png" });
+  await expect(page.locator(".new-window-button")).toBeDisabled();
+  const lowest = await page.evaluate(
+    () => (window as any).__controlLook.lowest,
+  );
+  expect(lowest).toBeLessThan(0.6);
+  await finishScan(page);
+  await expect(page.locator(".new-window-button")).toBeEnabled();
+  await expect
+    .poll(() =>
+      page
+        .locator(".new-window-button")
+        .evaluate((node) => getComputedStyle(node).opacity),
+    )
+    .toBe("1");
+});
+
+test("the status line does not move when a refresh starts", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const metrics = page.locator(".status-metrics");
+  const before = (await metrics.boundingBox())!;
+  await page.evaluate(() => ((window as any).__holdRefreshForTest = true));
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByText("Updating results")).toBeVisible();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: "test-results/refresh-status-line.png" });
+  const during = (await metrics.boundingBox())!;
+  // Fonts differ per OS, so the reserved width may be off by a pixel or two.
+  // Without the reserved width the text moved by more than 100 px.
+  expect(
+    Math.abs(during.x - before.x),
+    "status text shift while updating",
+  ).toBeLessThan(4);
+  await finishScan(page);
+  await expect(page.getByText("Updating results")).toHaveCount(0);
+  const after = (await metrics.boundingBox())!;
+  expect(
+    Math.abs(after.x - before.x),
+    "status text shift after updating",
+  ).toBeLessThan(4);
 });
 
 test("a native target scan after quiet refresh locks inspection controls without a modal", async ({
