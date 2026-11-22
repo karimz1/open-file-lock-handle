@@ -22,9 +22,9 @@ export default defineConfig({
     },
   },
   webServer: {
-    command: "npm run dev",
+    command:
+      "npx vite --config vite.playwright.config.ts --host 127.0.0.1 --port 1420 --strictPort",
     url: "http://127.0.0.1:1420",
     reuseExistingServer: !process.env.CI,
-    env: { ...process.env, OFLH_PLAYWRIGHT: "1" },
   },
 });
