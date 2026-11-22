@@ -69,8 +69,14 @@ export function portableLayout(): PortableLayout {
   return portableState;
 }
 
-function preparePortableBinary(binary: string): { binary: string; cwd: string } {
-  if (!portableState || !fs.existsSync(path.join(portableState.root, "portable"))) {
+function preparePortableBinary(binary: string): {
+  binary: string;
+  cwd: string;
+} {
+  if (
+    !portableState ||
+    !fs.existsSync(path.join(portableState.root, "portable"))
+  ) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "oflh-e2e-portable-"));
     fs.copyFileSync(binary, path.join(root, path.basename(binary)));
     fs.writeFileSync(path.join(root, "portable"), "");

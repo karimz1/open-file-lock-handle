@@ -82,7 +82,9 @@ itOn(
     expect(webviewUsed).toBe(true);
     expect(listing(appData)).toEqual(beforeAppData);
     expect(listing(localData)).toEqual(beforeLocal);
-    expect(bundleNames(process.env.APPDATA ?? "")).toEqual(beforeAppDataBundles);
+    expect(bundleNames(process.env.APPDATA ?? "")).toEqual(
+      beforeAppDataBundles,
+    );
     expect(bundleNames(process.env.LOCALAPPDATA ?? "")).toEqual(
       beforeLocalBundles,
     );
