@@ -1,5 +1,8 @@
 //! Portable Windows layout: a marker file next to the executable keeps
 //! settings and WebView data in a `data` folder in the same directory.
+// The helpers are used from the desktop shell. Workspace lint without that
+// feature still type-checks this module, so unused items are expected.
+#![cfg_attr(not(feature = "desktop"), allow(dead_code))]
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
@@ -52,12 +55,10 @@ pub(crate) fn single_instance_identifier(base: &str, exe_dir: &Path) -> String {
 }
 
 /// Whether the running executable is in portable mode.
-#[cfg_attr(not(feature = "desktop"), allow(dead_code))]
 pub(crate) fn is_active() -> bool {
     exe_directory().is_some_and(|directory| marker_present(&directory))
 }
 
-#[cfg_attr(not(feature = "desktop"), allow(dead_code))]
 pub(crate) fn exe_directory() -> Option<PathBuf> {
     std::env::current_exe()
         .ok()
