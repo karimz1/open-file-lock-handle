@@ -5,6 +5,7 @@ import {
   assertVirtualRowsLayout,
   watchVirtualRowLayout,
 } from "./virtualRowLayout";
+import { countRenders, installRenderProbe, updates } from "./renderProbe";
 
 /** Matches App.tsx: shortcut titles use ⌘ on Apple platforms and Ctrl elsewhere. */
 async function commandModifier(page: Page): Promise<"⌘" | "Ctrl"> {
@@ -8258,4 +8259,70 @@ test("changing language in Settings stays on the page and swaps text without a r
   expect(await page.evaluate(() => localStorage.getItem("oflh-language"))).toBe(
     "system",
   );
+});
+
+test("typing in the target path does not render the grid", async ({ page }) => {
+  await installRenderProbe(page);
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const path = page.getByRole("textbox", {
+    name: "Target file or folder path",
+  });
+  await path.click();
+  const counts = await countRenders(page, async () => {
+    await path.pressSequentially("/tmp/a", { delay: 30 });
+  });
+  // The probe must see the app render on each key, or "0" proves nothing.
+  expect(updates(counts, "App"), "App renders while typing").toBeGreaterThan(0);
+  expect(updates(counts, "Table"), "Table renders while typing").toBe(0);
+  expect(updates(counts, "GridRow"), "rows render while typing").toBe(0);
+  expect(updates(counts, "RowIcon"), "row icons render while typing").toBe(0);
+});
+
+test("selecting a row renders only the rows whose state changed", async ({
+  page,
+}) => {
+  await installRenderProbe(page);
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const grid = page.getByRole("grid");
+  const visibleRows = await grid.locator(".data-row").count();
+  expect(visibleRows).toBeGreaterThan(10);
+  const counts = await countRenders(page, async () => {
+    await grid
+      .getByRole("row")
+      .nth(3)
+      .click({ position: { x: 300, y: 10 } });
+    await expect(page.locator(".inspector")).toBeVisible();
+  });
+  // The clicked row changes (selected, focused, expanded). Nothing else may.
+  expect(updates(counts, "RowIcon"), "row icons rendered").toBeLessThanOrEqual(
+    3,
+  );
+  expect(updates(counts, "GridRow"), "rows rendered").toBeLessThanOrEqual(3);
+});
+
+test("scrolling does not re-render the rows that stay on screen", async ({
+  page,
+}) => {
+  await installRenderProbe(page);
+  await page.goto("/");
+  await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
+  const scroller = page.locator("#results-grid");
+  const counts = await countRenders(page, async () => {
+    await scroller.hover();
+    for (let step = 0; step < 6; step++) {
+      await page.mouse.wheel(0, 90);
+      await page.waitForTimeout(40);
+    }
+  });
+  const entered = counts.mounts["RowIcon"] ?? 0;
+  expect(entered, "rows entered").toBeGreaterThan(0);
+  // A row that entered may update once when its icon arrives. A row that
+  // stayed on screen must not render at all.
+  expect(updates(counts, "GridRow"), "grid rows re-rendered").toBe(0);
+  expect(
+    updates(counts, "RowIcon"),
+    "row icons re-rendered",
+  ).toBeLessThanOrEqual(entered);
 });
