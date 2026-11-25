@@ -44,7 +44,19 @@ jobs:
         shell: pwsh
         run: |
           $compiler = "${env:ProgramFiles(x86)}/NSIS/makensis.exe"
-          if (!(Test-Path $compiler)) { choco install nsis --yes --no-progress }
+          # windows-2025 does not ship makensis. Chocolatey's community feed
+          # sometimes returns 503 for the nsis package; retry the download only.
+          if (!(Test-Path $compiler)) {
+            foreach ($attempt in 1, 2, 3) {
+              choco install nsis --yes --no-progress
+              if (Test-Path $compiler) { break }
+              Write-Host "NSIS install attempt $attempt of 3 failed"
+              if ($attempt -eq 3) {
+                throw 'NSIS is not installed and Chocolatey could not install it'
+              }
+              Start-Sleep -Seconds 25
+            }
+          }
           $env:OFLH_DIALOG_SMOKE_EXE = Join-Path $env:RUNNER_TEMP 'oflh-dialog-smoke.exe'
           $env:OFLH_DIALOG_SMOKE_RESULT = Join-Path $env:RUNNER_TEMP 'oflh-dialog-result.txt'
           $env:OFLH_INSTALLER_REPORT = Join-Path $PWD 'installer-e2e-report'
