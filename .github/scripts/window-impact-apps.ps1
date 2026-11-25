@@ -25,62 +25,6 @@ function Save-Screen([string] $name) {
 }
 
 
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public static class OflhInput {
-    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
-    [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
-    [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hwnd, int x, int y, int w, int h, bool repaint);
-    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
-    public static void Drag(int x1, int y1, int x2, int y2) {
-        SetCursorPos(x1, y1); System.Threading.Thread.Sleep(200);
-        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); System.Threading.Thread.Sleep(200);
-        for (int i = 1; i <= 25; i++) {
-            SetCursorPos(x1 + (x2 - x1) * i / 25, y1 + (y2 - y1) * i / 25);
-            System.Threading.Thread.Sleep(30);
-        }
-        System.Threading.Thread.Sleep(300);
-        mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
-    }
-}
-"@
-
-# Tear document tabs off into their own frames, the way a person makes
-# separate windows when the app's settings keep tabs.
-function Split-Tabs($process, [string[]] $names) {
-    $process.Refresh()
-    $main = $process.MainWindowHandle
-    [void] [OflhInput]::MoveWindow($main, 0, 0, 900, 600, $true)
-    [void] [OflhInput]::SetForegroundWindow($main)
-    Start-Sleep -Seconds 2
-    try {
-        Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
-    } catch { Write-Host "UI Automation unavailable: $_" }
-    foreach ($name in $names) {
-        $point = $null
-        try {
-            $root = [System.Windows.Automation.AutomationElement]::FromHandle($main)
-            $condition = [System.Windows.Automation.PropertyCondition]::new(
-                [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-                [System.Windows.Automation.ControlType]::TabItem)
-            $tabs = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
-            Write-Host "tabs: $(($tabs | ForEach-Object { "$($_.Current.Name)@$($_.Current.BoundingRectangle)" }) -join ', ')"
-            $tab = $tabs | Where-Object { $_.Current.Name -like "*$name*" } | Select-Object -First 1
-            if ($tab) {
-                $rect = $tab.Current.BoundingRectangle
-                $point = @([int]($rect.X + $rect.Width / 2), [int]($rect.Y + $rect.Height / 2))
-            }
-        } catch { Write-Host "UI Automation lookup failed: $_" }
-        if (-not $point) { Write-Host "tab $name not found"; continue }
-        Write-Host "dragging tab $name from $point"
-        [OflhInput]::Drag($point[0], $point[1], 960, 680)
-        Start-Sleep -Seconds 3
-        [void] [OflhInput]::SetForegroundWindow($main)
-        Start-Sleep -Seconds 1
-    }
-}
-
 function Invoke-Probe([string] $case, [string] $path, [string[]] $names) {
     $arguments = @($path) + ($names | ForEach-Object { '--name', $_ })
     $json = & $Probe @arguments
@@ -121,97 +65,63 @@ function Write-Pdf([string] $path, [string] $label) {
     [System.IO.File]::WriteAllText($path, $builder.ToString(), [System.Text.Encoding]::ASCII)
 }
 
-# PDF-XChange Editor: one process, every document in its own window.
+# Windows Forms in the built-in Windows PowerShell: one process holds a
+# document and shows every document in its own top-level window, the way
+# multi-window editors do. Nothing is downloaded: powershell.exe and Windows
+# Forms ship with every Windows image, and the framework adds its own hidden
+# helper windows (parking, broadcast, IME) that must not be counted.
 try {
-    # Straight from the vendor, the MSI the Chocolatey package wraps, so an
-    # outage of the Chocolatey community feed cannot fail this check.
-    $msiUrl = 'https://downloads.pdf-xchange.com/11.1.2.0/EditorV11.x64.msi'
-    $msi = Join-Path $work 'EditorV11.x64.msi'
-    for ($attempt = 1; ; $attempt++) {
-        try { Invoke-WebRequest -Uri $msiUrl -OutFile $msi; break }
-        catch {
-            if ($attempt -ge 3) { throw "PDF-XChange Editor download failed after $attempt attempts: $_" }
-            Write-Host "PDF-XChange Editor download attempt $attempt of 3 failed: $_"
-            Start-Sleep -Seconds (15 * $attempt)
-        }
-    }
-    $install = Start-Process msiexec.exe -ArgumentList '/i', "`"$msi`"", '/quiet', '/norestart' -Wait -PassThru
-    if ($install.ExitCode -notin 0, 3010, 1641) { throw "PDF-XChange Editor install exited with $($install.ExitCode)" }
-    # V10 and older install under Tracker Software, V11 under PDF-XChange.
-    $executables = Get-ChildItem 'C:\Program Files\PDF-XChange', 'C:\Program Files\Tracker Software' -Recurse -Filter *.exe -ErrorAction SilentlyContinue
-    $executables | ForEach-Object { Write-Host "  $($_.FullName) [$($_.VersionInfo.FileDescription)]" }
-    $editor = $executables | Where-Object { $_.Name -in 'PDFXEdit.exe', 'PXCEditor.exe' -or $_.VersionInfo.FileDescription -eq 'PDF-XChange Editor' } |
-        Select-Object -First 1
-    if (-not $editor) { throw 'PDF-XChange Editor executable not found after install' }
-    $editorName = $editor.Name
-    $editor = $editor.FullName
-    Write-Host "PDF-XChange Editor: $editor $((Get-Item $editor).VersionInfo.FileVersion)"
-    # Each document in its own window, and no "make me the default PDF app"
-    # prompt blocking the queue. V11 renamed the vendor key; set every form.
-    foreach ($vendor in 'Tracker Software', 'PDF-XChange', 'PDF_XChange') {
-        $settings = "HKCU:\Software\$vendor\PDFXEditor\3.0\Settings"
-        New-Item -Force "$settings\Docs", "$settings\Prompts" | Out-Null
-        # SingleWnd off is the SDI mode: every document gets its own frame.
-        New-ItemProperty -Force -Path "$settings\Docs" -Name 'b.SingleWnd' -PropertyType DWord -Value 0 | Out-Null
-        New-ItemProperty -Force -Path "$settings\Docs" -Name 'b.OpenInNewWindow' -PropertyType DWord -Value 1 | Out-Null
-        New-ItemProperty -Force -Path "$settings\Prompts" -Name 'b.AskForDefaultApp' -PropertyType DWord -Value 0 | Out-Null
-    }
-    $policy = 'HKLM:\SOFTWARE\Policies\Tracker Software\PDFXEditor\3.0\FileAssociations'
-    New-Item -Force $policy | Out-Null
-    New-ItemProperty -Force -Path $policy -Name 'b.AllowCheck' -PropertyType DWord -Value 0 | Out-Null
-    # Let the editor create its settings tree once, then switch documents to
-    # SDI wherever it keeps them (the vendor key moved between versions).
-    $first = Start-Process $editor -PassThru
-    Start-Sleep -Seconds 15
-    [void] $first.CloseMainWindow()
-    if (-not $first.WaitForExit(20000)) { $first | Stop-Process -Force }
-    Start-Sleep -Seconds 2
-    $settingsKeys = Get-ChildItem 'HKCU:\Software' -Recurse -ErrorAction SilentlyContinue |
-        Where-Object { $_.PSChildName -eq 'Settings' -and $_.Name -match 'PDFX|PDF-XChange|Tracker' }
-    $settingsKeys | ForEach-Object { Write-Host "settings key: $($_.Name)" }
-    # Record what the editor wrote, so the SDI switch can be checked.
-    reg query 'HKCU\Software\PDF-XChange\PDFEditor\Settings' /s 2>$null |
-        Select-String -Pattern 'Docs|Wnd|Window|Tab|^HKEY' | Select-Object -First 80 | Out-Host
-    foreach ($key in $settingsKeys) {
-        $docs = Join-Path $key.PSPath 'Docs'
-        if (-not (Test-Path $docs)) { New-Item $docs | Out-Null }
-        New-ItemProperty -Force -Path $docs -Name 'b.SingleWnd' -PropertyType DWord -Value 0 | Out-Null
-        New-ItemProperty -Force -Path $docs -Name 'b.OpenInNewWindow' -PropertyType DWord -Value 1 | Out-Null
-    }
     $documents = 'example', 'invoice', 'manual', 'notes' | ForEach-Object {
         $path = Join-Path $work "$_.pdf"
         Write-Pdf $path $_
         $path
     }
-    Start-Process $editor -ArgumentList "`"$($documents[0])`""
-    Start-Sleep -Seconds 15
-    foreach ($document in $documents[1..3]) {
-        Start-Process $editor -ArgumentList "`"$document`""
-        Start-Sleep -Seconds 5
-    }
-    Start-Sleep -Seconds 10
-    $running = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($editorName)) | Select-Object -First 1
-    Save-Screen 'pdf-xchange-tabs'
-    Split-Tabs $running @('invoice', 'manual', 'notes')
-    Start-Sleep -Seconds 5
-    Save-Screen 'pdf-xchange'
-    $report = Invoke-Probe 'pdf-xchange' $documents[0] @($editorName)
-    Check 'pdf-xchange' ($report.Count -eq 1) "exactly one PDF-XChange process holds example.pdf (found $($report.Count))"
+    $ready = Join-Path $work 'forms.ready'
+    Remove-Item $ready, "$ready.tmp" -ErrorAction SilentlyContinue
+    $editorScript = Join-Path $work 'forms-editor.ps1'
+    Set-Content -Path $editorScript -Encoding UTF8 -Value @'
+param([string] $Hold, [string] $Ready, [string] $Titles)
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Windows.Forms
+$held = [System.IO.File]::Open($Hold, 'Open', 'ReadWrite', 'None')
+$index = 0
+$forms = foreach ($title in $Titles -split ',') {
+    $form = [System.Windows.Forms.Form]::new()
+    $form.Text = "$title - OFLH Forms Editor"
+    $form.StartPosition = 'Manual'
+    $form.Location = [System.Drawing.Point]::new(40 * $index, 40 * $index)
+    $index++
+    $form.Size = [System.Drawing.Size]::new(480, 320)
+    $form.Show()
+    $form
+}
+[System.Windows.Forms.Application]::DoEvents()
+Set-Content -Path "$Ready.tmp" -Value $PID -Encoding ascii
+Move-Item -Path "$Ready.tmp" -Destination $Ready -Force
+[System.Windows.Forms.Application]::Run()
+$held.Dispose()
+'@
+    $titles = ($documents | ForEach-Object { [IO.Path]::GetFileName($_) }) -join ','
+    $editor = Start-Process powershell.exe -PassThru -ArgumentList @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', "`"$editorScript`"",
+        '-Hold', "`"$($documents[0])`"", '-Ready', "`"$ready`"", '-Titles', $titles)
+    $deadline = (Get-Date).AddSeconds(60)
+    while (-not (Test-Path $ready) -and -not $editor.HasExited -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+    if (-not (Test-Path $ready)) { throw "the Windows Forms editor did not show its windows (exited: $($editor.HasExited))" }
+    Start-Sleep -Seconds 2
+    Save-Screen 'forms-editor'
+    $report = Invoke-Probe 'forms-editor' $documents[0] @('powershell.exe')
+    Check 'forms-editor' ($report.Count -eq 1 -and $report[0].pid -eq $editor.Id) "exactly the editor process holds example.pdf (found $(@($report | ForEach-Object { $_.pid }) -join ', '))"
     $titles = @($report | ForEach-Object { $_.windows } | Where-Object { $_ })
-    # The first frame keeps example.pdf, but PDF-XChange titles a frame after
-    # its active tab and may lag behind, so only the torn-off frames are named.
-    foreach ($name in 'invoice', 'manual', 'notes') {
-        Check 'pdf-xchange' ([bool] ($titles | Where-Object { $_ -like "*$name*" })) "preview lists the window showing $name.pdf (titles: $($titles -join ' | '))"
+    foreach ($name in 'example', 'invoice', 'manual', 'notes') {
+        Check 'forms-editor' ([bool] ($titles | Where-Object { $_ -like "$name.pdf*" })) "preview lists the window showing $name.pdf (titles: $($titles -join ' | '))"
     }
-    Check 'pdf-xchange' ($titles.Count -ge 4) "preview counts at least the 4 document windows (counted $($titles.Count))"
+    Check 'forms-editor' ($titles.Count -eq 4) "preview counts exactly the 4 document windows, not the framework's helper windows (counted $($titles.Count))"
 } catch {
-    $failures.Add("pdf-xchange: $_")
-    Write-Host "FAIL pdf-xchange: $_"
+    $failures.Add("forms-editor: $_")
+    Write-Host "FAIL forms-editor: $_"
 } finally {
-    foreach ($vendor in 'Tracker Software', 'PDF-XChange', 'PDF_XChange') {
-        reg query "HKCU\Software\$vendor\PDFXEditor\3.0\Settings\Docs" 2>$null | Out-Host
-    }
-    Get-Process PDFXEdit, PXCEditor -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    if ($editor -and -not $editor.HasExited) { $editor | Stop-Process -Force -ErrorAction SilentlyContinue }
 }
 
 # File Explorer: several folder windows in one shell process.
