@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   launchApp,
+  launchArguments,
   stopApp,
   webdriverPort,
   type RunningApp,
@@ -64,7 +65,7 @@ export const config: WebdriverIO.Config = {
   async onWorkerStart(cid, _capabilities, specs) {
     const name = specName(specs[0] ?? cid);
     try {
-      apps.set(cid, await launchApp(name));
+      apps.set(cid, await launchApp(name, launchArguments(name)));
     } catch (error) {
       recordResult({
         spec: name,
