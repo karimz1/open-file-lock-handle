@@ -37,7 +37,24 @@ dotnet test crates/oflh-desktop/tests/installer/Oflh.Installer.Tests.sln --no-re
 ```
 
 CI uploads the screenshots and TRX files as the `installer-e2e-<arch>` and
-`installer-dialog-flaui` artifacts.
+`installer-dialog-flaui` artifacts. The dialog smoke fixture is compiled on
+Ubuntu with the distro `nsis` package, then exercised on Windows; CI does not
+download NSIS from Chocolatey or SourceForge.
+
+To compile the fixture locally (Linux or Windows, with `makensis` already
+installed) and run the dialog test on Windows:
+
+```bash
+makensis -DOUTPUT_EXE="$PWD/oflh-dialog-smoke.exe" -DHOOKS="$PWD/crates/oflh-desktop/windows/installer-hooks.nsh" crates/oflh-desktop/tests/installer/fixtures/dialog-smoke.nsi
+```
+
+```powershell
+$env:OFLH_DIALOG_SMOKE_EXE = (Resolve-Path 'oflh-dialog-smoke.exe').Path
+$env:OFLH_DIALOG_SMOKE_RESULT = Join-Path $env:TEMP 'oflh-dialog-result.txt'
+$env:OFLH_INSTALLER_REPORT = Join-Path $PWD 'installer-e2e-report'
+dotnet test crates/oflh-desktop/tests/installer/Oflh.Installer.Tests.sln --no-restore --filter 'TestCategory=DialogSmoke' --logger trx --results-directory installer-e2e-report
+```
+
 
 ## Official references
 

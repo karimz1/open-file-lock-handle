@@ -30,9 +30,35 @@ on:
 permissions:
   contents: read
 jobs:
+  installer-dialog-compile:
+    if: ${{ !inputs.administrator_only }}
+    name: Compile the NSIS dialog smoke fixture
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compile the dialog fixture with the distro NSIS package
+        # The FlaUI test still runs on Windows. Compiling here uses Ubuntu's
+        # nsis package, so the test does not download NSIS from Chocolatey or
+        # SourceForge. The fixture writes its result to $TEMP at runtime.
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq nsis
+          hooks=$(realpath crates/oflh-desktop/windows/installer-hooks.nsh)
+          makensis -V2 \
+            "-DOUTPUT_EXE=$RUNNER_TEMP/oflh-dialog-smoke.exe" \
+            "-DHOOKS=$hooks" \
+            crates/oflh-desktop/tests/installer/fixtures/dialog-smoke.nsi
+          test -s "$RUNNER_TEMP/oflh-dialog-smoke.exe"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: oflh-dialog-smoke
+          path: ${{ runner.temp }}/oflh-dialog-smoke.exe
+          if-no-files-found: error
+          retention-days: 3
   installer-dialog:
     if: ${{ !inputs.administrator_only }}
     name: Native NSIS dialog smoke test
+    needs: installer-dialog-compile
     runs-on: windows-2025
     timeout-minutes: 10
     steps:
@@ -40,31 +66,17 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-      - name: Compile and exercise the actual installer dialog macro
+      - uses: actions/download-artifact@v8
+        with:
+          name: oflh-dialog-smoke
+          path: ${{ runner.temp }}/oflh-dialog-smoke
+      - name: Exercise the compiled dialog fixture
         shell: pwsh
         run: |
-          $compiler = "${env:ProgramFiles(x86)}/NSIS/makensis.exe"
-          # windows-2025 does not ship makensis. Do not use Chocolatey: its
-          # community feed returned 503/504 for nsis 3.13.0 across several
-          # retries. Fetch the official portable zip instead, with retries
-          # for a flaky download. The checksum is not hard-coded.
-          if (!(Test-Path $compiler)) {
-            $zip = Join-Path $env:RUNNER_TEMP 'nsis-3.13.zip'
-            $destination = Join-Path $env:RUNNER_TEMP 'nsis-3.13'
-            $url = 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip'
-            & curl.exe --location --fail --retry 5 --retry-all-errors --retry-delay 10 --output $zip $url
-            if ($LASTEXITCODE -ne 0) { throw 'Failed to download the official NSIS portable zip' }
-            if (Test-Path $destination) { Remove-Item -Recurse -Force $destination }
-            Expand-Archive -Path $zip -DestinationPath $env:RUNNER_TEMP
-            $compiler = Join-Path $destination 'makensis.exe'
-          }
-          if (!(Test-Path $compiler)) { throw "makensis was not found at $compiler" }
-          $env:OFLH_DIALOG_SMOKE_EXE = Join-Path $env:RUNNER_TEMP 'oflh-dialog-smoke.exe'
-          $env:OFLH_DIALOG_SMOKE_RESULT = Join-Path $env:RUNNER_TEMP 'oflh-dialog-result.txt'
+          $env:OFLH_DIALOG_SMOKE_EXE = Join-Path $env:RUNNER_TEMP 'oflh-dialog-smoke/oflh-dialog-smoke.exe'
+          if (!(Test-Path $env:OFLH_DIALOG_SMOKE_EXE)) { throw "missing compiled dialog fixture: $env:OFLH_DIALOG_SMOKE_EXE" }
+          $env:OFLH_DIALOG_SMOKE_RESULT = Join-Path $env:TEMP 'oflh-dialog-result.txt'
           $env:OFLH_INSTALLER_REPORT = Join-Path $PWD 'installer-e2e-report'
-          $hooks = (Resolve-Path 'crates/oflh-desktop/windows/installer-hooks.nsh').Path
-          & $compiler "/DOUTPUT_EXE=$env:OFLH_DIALOG_SMOKE_EXE" "/DRESULT_OUTPUT=$env:OFLH_DIALOG_SMOKE_RESULT" "/DHOOKS=$hooks" crates/oflh-desktop/tests/installer/fixtures/dialog-smoke.nsi
-          if ($LASTEXITCODE -ne 0) { throw 'NSIS fixture compilation failed' }
           dotnet restore crates/oflh-desktop/tests/installer/Oflh.Installer.Tests.sln --locked-mode
           if ($LASTEXITCODE -ne 0) { throw 'Test dependency restore failed' }
           dotnet test crates/oflh-desktop/tests/installer/Oflh.Installer.Tests.sln --no-restore --filter 'TestCategory=DialogSmoke' --logger 'trx;LogFileName=dialog-smoke.trx' --results-directory installer-e2e-report
@@ -1006,6 +1018,7 @@ jobs:
     name: Desktop result
     if: always()
     needs:
+      - installer-dialog-compile
       - installer-dialog
       - administrator-recovery
       - frontend
@@ -1028,6 +1041,6 @@ jobs:
           NEEDS: ${{ toJSON(needs) }}
           ALLOWED_SKIPS: >-
             ${{ inputs.administrator_only
-              && 'installer-dialog frontend frontend-e2e native prune-tester-builds package-smoke archive-smoke multiuser-e2e'
+              && 'installer-dialog-compile installer-dialog frontend frontend-e2e native prune-tester-builds package-smoke archive-smoke multiuser-e2e'
               || 'prune-tester-builds' }}
         run: node .github/scripts/require-success.mjs

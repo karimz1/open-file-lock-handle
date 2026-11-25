@@ -15,7 +15,7 @@ Page instfiles
 Section
   SetAutoClose true
   !insertmacro OFLH_RUNNING_DIALOG "OFLH Desktop" "$(oflhAppRunningTitle)" "Click OK to close it and continue."
-  FileOpen $0 "${RESULT_OUTPUT}" w
+  FileOpen $0 "$TEMP\oflh-dialog-result.txt" w
   FileWrite $0 "$R4"
   FileClose $0
 SectionEnd
