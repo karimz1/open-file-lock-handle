@@ -44,19 +44,21 @@ jobs:
         shell: pwsh
         run: |
           $compiler = "${env:ProgramFiles(x86)}/NSIS/makensis.exe"
-          # windows-2025 does not ship makensis. Chocolatey's community feed
-          # sometimes returns 503 for the nsis package; retry the download only.
+          # windows-2025 does not ship makensis. Do not use Chocolatey: its
+          # community feed returned 503/504 for nsis 3.13.0 across several
+          # retries. Fetch the official portable zip instead, with retries
+          # for a flaky download. The checksum is not hard-coded.
           if (!(Test-Path $compiler)) {
-            foreach ($attempt in 1, 2, 3) {
-              choco install nsis --yes --no-progress
-              if (Test-Path $compiler) { break }
-              Write-Host "NSIS install attempt $attempt of 3 failed"
-              if ($attempt -eq 3) {
-                throw 'NSIS is not installed and Chocolatey could not install it'
-              }
-              Start-Sleep -Seconds 25
-            }
+            $zip = Join-Path $env:RUNNER_TEMP 'nsis-3.13.zip'
+            $destination = Join-Path $env:RUNNER_TEMP 'nsis-3.13'
+            $url = 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip'
+            & curl.exe --location --fail --retry 5 --retry-all-errors --retry-delay 10 --output $zip $url
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to download the official NSIS portable zip' }
+            if (Test-Path $destination) { Remove-Item -Recurse -Force $destination }
+            Expand-Archive -Path $zip -DestinationPath $env:RUNNER_TEMP
+            $compiler = Join-Path $destination 'makensis.exe'
           }
+          if (!(Test-Path $compiler)) { throw "makensis was not found at $compiler" }
           $env:OFLH_DIALOG_SMOKE_EXE = Join-Path $env:RUNNER_TEMP 'oflh-dialog-smoke.exe'
           $env:OFLH_DIALOG_SMOKE_RESULT = Join-Path $env:RUNNER_TEMP 'oflh-dialog-result.txt'
           $env:OFLH_INSTALLER_REPORT = Join-Path $PWD 'installer-e2e-report'
