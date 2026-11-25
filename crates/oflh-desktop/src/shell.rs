@@ -638,13 +638,19 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
         #[cfg(windows)]
         {
             oflh_platform::webview2::ensure_installed()?;
-            oflh_platform::webview2::set_user_data_folder(&data.join("webview"))?;
+            oflh_platform::webview2::set_user_data_folder(&crate::portable::webview_dir(data))?;
         }
         if let Some(directory) = crate::portable::exe_directory() {
             context.config_mut().identifier = crate::portable::single_instance_identifier(
                 &context.config().identifier,
                 &directory,
             );
+        }
+        // Automatic windows would still get `%LOCALAPPDATA%\{identifier}`
+        // as their WebView data directory (Tauri ignores an absolute path in
+        // the config). Create the window in setup with an explicit path.
+        for window in &mut context.config_mut().app.windows {
+            window.create = false;
         }
     }
     let builder = tauri::Builder::default();
@@ -689,6 +695,14 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
             }
             app.manage(Arc::new(service));
             app.manage(DroppedTarget::default());
+            if let Some(data) = &portable_data {
+                let Some(config) = app.config().app.windows.first().cloned() else {
+                    return Err("missing desktop window configuration".into());
+                };
+                tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+                    .data_directory(crate::portable::webview_dir(data))
+                    .build()?;
+            }
             Ok(())
         })
         .on_window_event(|window, event| {

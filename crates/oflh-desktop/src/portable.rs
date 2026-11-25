@@ -29,6 +29,16 @@ pub(crate) fn data_dir(exe_dir: &Path) -> PathBuf {
     exe_dir.join("data")
 }
 
+/// WebView2 profile directory under the portable data folder.
+///
+/// Tauri otherwise creates `%LOCALAPPDATA%\{identifier}` for the profile on
+/// Windows. The path must be set on the window builder; a relative value in
+/// tauri.conf.json is resolved under LocalAppData, and an absolute value there
+/// is ignored.
+pub(crate) fn webview_dir(data: &Path) -> PathBuf {
+    data.join("webview")
+}
+
 /// Updater behaviour for a given OS and portable flag. Linux and portable
 /// Windows only offer a download link, because there is no in-place installer
 /// to apply.
@@ -95,6 +105,11 @@ mod tests {
         assert_ne!(directories_override(&dir), Some("./"));
         assert_eq!(directories_override(&dir), Some(DIRECTORIES_OVERRIDE));
         assert_eq!(data_dir(&dir), dir.join("data"));
+        assert_eq!(
+            webview_dir(&data_dir(&dir)),
+            dir.join("data").join("webview")
+        );
+        assert!(webview_dir(&data_dir(&dir)).starts_with(&dir.join("data")));
         fs::remove_dir_all(dir).unwrap();
     }
 
