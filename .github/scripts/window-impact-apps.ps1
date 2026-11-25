@@ -83,6 +83,14 @@ try {
 param([string] $Hold, [string] $Ready, [string] $Titles)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
+# On windows-2022 the console window is attributed to this process and, being
+# visible, would rightly count as a fifth window. Hide it, as a GUI editor has
+# no console; hidden windows must not be counted.
+Add-Type -Namespace Oflh -Name Console -MemberDefinition @"
+[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window, int command);
+"@
+[void] [Oflh.Console]::ShowWindow([Oflh.Console]::GetConsoleWindow(), 0)
 $held = [System.IO.File]::Open($Hold, 'Open', 'ReadWrite', 'None')
 $index = 0
 $forms = foreach ($title in $Titles -split ',') {
@@ -102,9 +110,7 @@ Move-Item -Path "$Ready.tmp" -Destination $Ready -Force
 $held.Dispose()
 '@
     $titles = ($documents | ForEach-Object { [IO.Path]::GetFileName($_) }) -join ','
-    # Hidden console: on windows-2022 the console window is attributed to
-    # powershell.exe and, being visible, would rightly count as a fifth window.
-    $editor = Start-Process powershell.exe -PassThru -WindowStyle Hidden -ArgumentList @(
+    $editor = Start-Process powershell.exe -PassThru -ArgumentList @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', "`"$editorScript`"",
         '-Hold', "`"$($documents[0])`"", '-Ready', "`"$ready`"", '-Titles', $titles)
     $deadline = (Get-Date).AddSeconds(60)
