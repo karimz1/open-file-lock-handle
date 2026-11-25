@@ -123,7 +123,20 @@ function Write-Pdf([string] $path, [string] $label) {
 
 # PDF-XChange Editor: one process, every document in its own window.
 try {
-    choco install pdfxchangeeditor -y --no-progress | Out-Host
+    # Straight from the vendor, the MSI the Chocolatey package wraps, so an
+    # outage of the Chocolatey community feed cannot fail this check.
+    $msiUrl = 'https://downloads.pdf-xchange.com/11.1.2.0/EditorV11.x64.msi'
+    $msi = Join-Path $work 'EditorV11.x64.msi'
+    for ($attempt = 1; ; $attempt++) {
+        try { Invoke-WebRequest -Uri $msiUrl -OutFile $msi; break }
+        catch {
+            if ($attempt -ge 3) { throw "PDF-XChange Editor download failed after $attempt attempts: $_" }
+            Write-Host "PDF-XChange Editor download attempt $attempt of 3 failed: $_"
+            Start-Sleep -Seconds (15 * $attempt)
+        }
+    }
+    $install = Start-Process msiexec.exe -ArgumentList '/i', "`"$msi`"", '/quiet', '/norestart' -Wait -PassThru
+    if ($install.ExitCode -notin 0, 3010, 1641) { throw "PDF-XChange Editor install exited with $($install.ExitCode)" }
     # V10 and older install under Tracker Software, V11 under PDF-XChange.
     $executables = Get-ChildItem 'C:\Program Files\PDF-XChange', 'C:\Program Files\Tracker Software' -Recurse -Filter *.exe -ErrorAction SilentlyContinue
     $executables | ForEach-Object { Write-Host "  $($_.FullName) [$($_.VersionInfo.FileDescription)]" }
