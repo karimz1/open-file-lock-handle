@@ -102,7 +102,9 @@ Move-Item -Path "$Ready.tmp" -Destination $Ready -Force
 $held.Dispose()
 '@
     $titles = ($documents | ForEach-Object { [IO.Path]::GetFileName($_) }) -join ','
-    $editor = Start-Process powershell.exe -PassThru -ArgumentList @(
+    # Hidden console: on windows-2022 the console window is attributed to
+    # powershell.exe and, being visible, would rightly count as a fifth window.
+    $editor = Start-Process powershell.exe -PassThru -WindowStyle Hidden -ArgumentList @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', "`"$editorScript`"",
         '-Hold', "`"$($documents[0])`"", '-Ready', "`"$ready`"", '-Titles', $titles)
     $deadline = (Get-Date).AddSeconds(60)
