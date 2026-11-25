@@ -272,7 +272,8 @@ const en = {
     k_sharing_conflict_write_denied_reported_5b8637bb:
       "SHARING CONFLICT: write denied; reported file user, lock owner unverified",
     k_shift_for_folder: "Shift for folder",
-    k_showing: "Showing",
+    k_scope_file_usages: "Showing file usages for {{name}}",
+    k_scope_ports: "Showing local ports for {{name}}",
     k_size: "Size",
     k_some_port_entries_could_not_be_inspecte_6356812f:
       "Some port entries could not be inspected (permissions or socket changes).",
