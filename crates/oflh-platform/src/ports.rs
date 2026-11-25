@@ -83,6 +83,12 @@ pub(crate) fn scan(cancel: &Cancellation) -> Result<Snapshot> {
         cancel.check()?;
         match verified_owner(&before, pid, native::port_identity) {
             Some(mut process) => {
+                // Linux and macOS capture the directory while enumerating; Windows
+                // reads it only for verified owners, not for every process.
+                #[cfg(windows)]
+                {
+                    process.cwd = native::working_directory(process.identity);
+                }
                 process.ports = ports;
                 snapshot.processes.push(process);
             }
