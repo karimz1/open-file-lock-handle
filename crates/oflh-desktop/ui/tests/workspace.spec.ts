@@ -2719,6 +2719,40 @@ test("first launch previews a theme and migrates neutral Dark", async ({
   await expect(dialog).not.toBeVisible();
 });
 
+// #200: the scope bar is one translated sentence, not a translated prefix
+// joined to a hard-coded English "for".
+for (const [locale, showAll, scope] of [
+  [
+    "en",
+    "View all matching file usages",
+    /^Showing file usages for FixturePdfEditor/,
+  ],
+  [
+    "de",
+    "Alle passenden Dateizugriffe anzeigen",
+    /^Angezeigt werden Dateinutzungen für FixturePdfEditor/,
+  ],
+  ["zh", "查看所有匹配的文件使用情况", /^显示 FixturePdfEditor 的文件使用情况/],
+] as const) {
+  test(`the process scope bar reads as one translated sentence (${locale})`, async ({
+    page,
+  }) => {
+    await page.addInitScript((language) => {
+      (window as any).__fileMatchFixture = true;
+      localStorage.setItem("oflh-language", language);
+    }, locale);
+    await page.goto("/");
+    await page.getByRole("grid").getByRole("row").nth(1).click();
+    const panel = page.getByRole("complementary");
+    await panel.getByRole("button", { name: showAll, exact: true }).click();
+    const bar = page.locator(".scope-bar");
+    await expect(bar).toBeVisible();
+    await expect(bar).toHaveText(scope);
+    await expect(bar.locator("strong")).toHaveText("FixturePdfEditor");
+    if (locale !== "en") await expect(bar).not.toContainText(" for ");
+  });
+}
+
 test("process search shows matching file paths and grouped references above ancestry", async ({
   page,
 }) => {
