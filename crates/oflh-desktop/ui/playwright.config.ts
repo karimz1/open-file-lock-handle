@@ -23,7 +23,7 @@ export default defineConfig({
   },
   webServer: {
     command:
-      "npx vite --config vite.playwright.config.ts --host 127.0.0.1 --port 1420 --strictPort",
+      "npx vite build --config vite.playwright.config.ts && npx vite preview --config vite.playwright.config.ts --host 127.0.0.1 --port 1420 --strictPort",
     url: "http://127.0.0.1:1420",
     reuseExistingServer: !process.env.CI,
   },
