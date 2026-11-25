@@ -4,6 +4,7 @@ namespace Oflh.Installer.Testing.Core;
 public static class InstallerProduct
 {
     public const string ProductName = "OFLH Desktop";
+    public const string Publisher = "Karim Zouine";
     public const string ExecutableName = "oflh-desktop.exe";
     public const string UninstallerName = "uninstall.exe";
     public const string ShortcutName = ProductName + ".lnk";

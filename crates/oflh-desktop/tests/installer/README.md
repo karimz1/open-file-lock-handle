@@ -23,7 +23,8 @@ What is covered, and nothing more:
 | Category | Fixture | Checks |
 | --- | --- | --- |
 | `DialogSmoke` | `RunningAppPromptTests` | The running-app prompt sits over the installer, follows it when moved, and Enter chooses Cancel. |
-| `Installer` | `SilentInstallTests` | Silent install creates the executable, Start menu shortcut, Apps & features entry and the context-menu entries for files, folders, folder background and drives; uninstall removes them. `/NOCONTEXTMENU` installs none. |
+| `Installer` | `SilentInstallTests` | Silent install creates the executable, one Start menu shortcut, a per-user Apps & features entry (name, publisher, the installed version, install folder; never in HKLM) and the context-menu entries for files, folders, folder background and drives; uninstall removes them. `/NOCONTEXTMENU` installs none. |
+| `Installer` | `UpgradeTests` | Installs the latest published release, then this build over it into the same folder: one per-user Apps & features entry with the new version and publisher, one Start menu shortcut, the context menu kept; uninstall removes all of it. CI downloads the previous installer fresh (`OFLH_PREVIOUS_INSTALLER_EXE`). |
 | `Installer` | `UninstallWizardTests` | The interactive uninstaller over a running app: the confirm page shows native OFLH branding and the OFLH branding line, the running-app prompt closes the app, and the app is removed. Saves the confirm page and prompt as PNGs. |
 | `Installer` | `WizardReinstallTests` | The interactive wizard over a running app: every page shows native OFLH branding and the OFLH branding line (never NSIS's default), and keeps text off the window edge, Cancel leaves the app running, confirming closes it and reaches Finish. Each page is saved as a PNG. |
 
@@ -32,6 +33,8 @@ Restore and run from the repository root on Windows:
 ```powershell
 dotnet restore crates/oflh-desktop/tests/installer/Oflh.Installer.Tests.sln --locked-mode
 $env:OFLH_INSTALLER_EXE = (Resolve-Path 'target/release/bundle/nsis/*-setup.exe').Path
+gh release download --repo karimz1/open-file-lock-handle --pattern 'oflh-desktop.windows.amd64-installer.exe' --dir previous-release
+$env:OFLH_PREVIOUS_INSTALLER_EXE = (Resolve-Path 'previous-release/oflh-desktop.windows.amd64-installer.exe').Path
 $env:OFLH_INSTALLER_REPORT = Join-Path $PWD 'installer-e2e-report'
 dotnet test crates/oflh-desktop/tests/installer/Oflh.Installer.Tests.sln --no-restore --filter 'TestCategory=Installer' --logger trx --results-directory installer-e2e-report
 ```
