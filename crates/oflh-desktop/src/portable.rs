@@ -109,7 +109,7 @@ mod tests {
             webview_dir(&data_dir(&dir)),
             dir.join("data").join("webview")
         );
-        assert!(webview_dir(&data_dir(&dir)).starts_with(&dir.join("data")));
+        assert!(webview_dir(&data_dir(&dir)).starts_with(dir.join("data")));
         fs::remove_dir_all(dir).unwrap();
     }
 
