@@ -156,12 +156,13 @@ including Apple Silicon), plus a `checksums.txt` with SHA-256 hashes. The
 
 | Platform | Package |
 | --- | --- |
-| Windows | `oflh-desktop.windows.<arch>-installer.exe` |
+| Windows | `oflh-desktop.windows.<arch>-installer.exe`, or `oflh-desktop.windows.<arch>-portable.zip` to run without installing |
 | macOS | `oflh-desktop.darwin.<arch>.dmg` |
 | Linux | `.deb`, `.rpm`, or a `.tar.gz` archive for other glibc distributions ([details](docs/desktop-usage.md#linux-archive-installation)) |
 
-On Windows and macOS the app can download and install updates itself after
-you confirm; on Linux, install new packages manually. ARM32 is not supported.
+On Windows and macOS the installed app can download and install updates itself
+after you confirm; the Windows portable zip and Linux packages are updated by
+downloading a new build. ARM32 is not supported.
 
 **Desktop app:** available since v0.2.0.
 

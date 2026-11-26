@@ -71,7 +71,7 @@ Never move a published tag.
 | --- | --- |
 | Linux | `.deb`, `.rpm`, `.tar.gz` |
 | macOS | `.dmg`, plus `.app.tar.gz` and `.sig` for the updater |
-| Windows | NSIS `-installer.exe` and `.sig` (no portable build) |
+| Windows | NSIS `-installer.exe` and `.sig`, plus a `-portable.zip` |
 
 CI tests the desktop executable and then bundles that same binary with
 `tauri bundle --no-binary-patching`. `cargo xtask assemble-release` collects the

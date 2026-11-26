@@ -9,6 +9,8 @@ Choose the desktop app for a graphical window with buttons and a process list. I
 | --- | --- |
 | Windows · x86-64 | [oflh-desktop.windows.amd64-installer.exe](https://github.com/karimz1/open-file-lock-handle/releases/download/{{TAG}}/oflh-desktop.windows.amd64-installer.exe) |
 | Windows · ARM64 | [oflh-desktop.windows.arm64-installer.exe](https://github.com/karimz1/open-file-lock-handle/releases/download/{{TAG}}/oflh-desktop.windows.arm64-installer.exe) |
+| Windows · x86-64 · portable | [oflh-desktop.windows.amd64-portable.zip](https://github.com/karimz1/open-file-lock-handle/releases/download/{{TAG}}/oflh-desktop.windows.amd64-portable.zip) |
+| Windows · ARM64 · portable | [oflh-desktop.windows.arm64-portable.zip](https://github.com/karimz1/open-file-lock-handle/releases/download/{{TAG}}/oflh-desktop.windows.arm64-portable.zip) |
 | macOS · Apple silicon | [oflh-desktop.darwin.arm64.dmg](https://github.com/karimz1/open-file-lock-handle/releases/download/{{TAG}}/oflh-desktop.darwin.arm64.dmg) |
 | macOS · Intel | [oflh-desktop.darwin.amd64.dmg](https://github.com/karimz1/open-file-lock-handle/releases/download/{{TAG}}/oflh-desktop.darwin.amd64.dmg) |
 | Linux · x86-64 · DEB | [oflh-desktop.linux.amd64.deb](https://github.com/karimz1/open-file-lock-handle/releases/download/{{TAG}}/oflh-desktop.linux.amd64.deb) |

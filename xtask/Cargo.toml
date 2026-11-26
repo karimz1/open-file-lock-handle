@@ -18,3 +18,4 @@ minisign-verify = "0.2.5"
 serde_json = "1"
 flate2 = "1"
 tar = "0.4"
+zip = { version = "9.7.3", default-features = false, features = ["deflate"] }

@@ -279,7 +279,8 @@ const de: TranslationSchema<typeof en> = {
     k_sharing_conflict_write_denied_reported_5b8637bb:
       "FREIGABEKONFLIKT: Schreiben verweigert; gemeldeter Dateinutzer, Sperrbesitzer nicht bestätigt",
     k_shift_for_folder: "Umschalttaste für Ordner",
-    k_showing: "Angezeigt werden",
+    k_scope_file_usages: "Angezeigt werden Dateinutzungen für {{name}}",
+    k_scope_ports: "Angezeigt werden lokale Ports für {{name}}",
     k_size: "Größe",
     k_some_port_entries_could_not_be_inspecte_6356812f:
       "Einige Porteinträge konnten wegen fehlender Berechtigungen oder geänderter Sockets nicht untersucht werden.",

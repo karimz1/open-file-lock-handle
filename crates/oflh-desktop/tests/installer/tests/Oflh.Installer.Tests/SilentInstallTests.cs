@@ -46,6 +46,54 @@ public sealed class SilentInstallTests : InstallerTestBase
     }
 
     [Test]
+    public async Task Silent_install_registers_one_per_user_apps_and_features_entry_with_version_and_publisher()
+    {
+        // Arrange
+        var options = new InstallOptions(InstallDirectory, Silent: true);
+        var probe = new InstallationProbe(InstallDirectory);
+
+        try
+        {
+            // Act
+            var exit = await Processes.RunAsync(Installer, options.ToArguments(), Timeouts.SilentInstall);
+            var installedVersion = await InstalledVersionAsync(probe);
+            var entry = SystemIntegrationProbe.PerUserUninstallEntry;
+
+            // Assert
+            Assert.That(exit, Is.Zero);
+            Assert.That(entry, Is.Not.Null, "No per-user Apps & features entry was registered.");
+            Assert.Multiple(() =>
+            {
+                Assert.That(entry!.DisplayName, Is.EqualTo(InstallerProduct.ProductName));
+                Assert.That(entry.Publisher, Is.EqualTo(InstallerProduct.Publisher));
+                Assert.That(entry.DisplayVersion, Is.EqualTo(installedVersion),
+                    "Apps & features must show the version of the installed executable.");
+                Assert.That(NormalizedDirectory(entry.InstallLocation), Is.EqualTo(NormalizedDirectory(InstallDirectory)));
+                Assert.That(entry.UninstallString, Does.Contain(probe.UninstallerPath));
+                Assert.That(SystemIntegrationProbe.HasPerMachineUninstallEntry, Is.False,
+                    "A per-user install without administrator rights must not write a machine-wide entry.");
+                Assert.That(SystemIntegrationProbe.StartMenuShortcutCount, Is.EqualTo(1));
+            });
+        }
+        finally
+        {
+            await UninstallAsync(probe);
+        }
+    }
+
+    internal static async Task<string> InstalledVersionAsync(InstallationProbe probe)
+    {
+        // `oflh-desktop --version` prints "oflh-desktop <version>".
+        var line = await ProcessRunner.FirstOutputLineAsync(probe.ExecutablePath, "--version", Timeouts.ProcessExit);
+        const string prefix = "oflh-desktop ";
+        Assert.That(line, Does.StartWith(prefix), "Unexpected --version output.");
+        return line[prefix.Length..];
+    }
+
+    internal static string NormalizedDirectory(string directory) =>
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+
+    [Test]
     public async Task NOCONTEXTMENU_switch_installs_without_context_menu_entries()
     {
         // Arrange

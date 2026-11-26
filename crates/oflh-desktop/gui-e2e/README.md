@@ -43,7 +43,8 @@ Linux also needs `xvfb openbox xclip python3-dbus python3-gi`. Run one file with
 | `specs/05-termination.e2e.ts`               | Close and force quit, confirmation, cancel, results                                          |
 | `specs/06-grid-keyboard-and-layout.e2e.ts`  | Sorting, columns, filters, maximize, keyboard navigation, virtual scroll, auto refresh       |
 | `specs/07-ports.e2e.ts`                     | Ports view, port search, copy port, wait for a port                                          |
-| `specs/08-launch-from-file-manager.e2e.ts`  | Start with `--inspect <folder>`; on Windows a second launch hands its folder to the window   |
+| `specs/08-windows-portable.e2e.ts`          | Windows portable layout: settings stay in `data/`, AppData is left alone                     |
+| `specs/09-launch-from-file-manager.e2e.ts`  | Start with `--inspect <folder>`; on Windows a second launch hands its folder to the window   |
 | `support/`                                  | App launch, fixture processes, desktop checks (clipboard, file manager), UI helpers, results |
 
 ## Results and screenshots
@@ -60,9 +61,8 @@ request, so only the newest commit keeps screenshots.
 
 - `itKnownFailing(issue, title, fn)` marks a reproduced bug with an open issue.
   It passes while the bug is there and fails as soon as the test passes, with a
-  reminder to turn it back into `it`. Nothing is skipped silently. Currently
-  marked, on Windows only: #201 (working directory is Unavailable because the
-  backend never fills `Process.cwd`).
+  reminder to turn it back into `it`. Nothing is skipped silently. No test is
+  marked at the moment.
 - `itOn(systems, reason, title, fn)` runs only where the behavior exists (for
   example the Windows normal-close refusal) and reports "not applicable" with the
   reason elsewhere.

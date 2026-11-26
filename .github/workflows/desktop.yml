@@ -443,10 +443,23 @@ jobs:
       - name: Windows installer end-to-end workflow
         if: matrix.os == 'windows'
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $installer = Get-ChildItem target/release/bundle/nsis/*-setup.exe
           if (@($installer).Count -ne 1) { throw 'Expected exactly one Windows installer' }
           $env:OFLH_INSTALLER_EXE = $installer.FullName
+          # The upgrade test installs this build over the latest published
+          # release. Download it fresh each run; retry only the download.
+          $previous = Join-Path $env:RUNNER_TEMP 'previous-release'
+          $asset = 'oflh-desktop.windows.${{ matrix.arch }}-installer.exe'
+          foreach ($attempt in 1..3) {
+            gh release download --repo $env:GITHUB_REPOSITORY --pattern $asset --dir $previous --clobber
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -eq 3) { throw "Could not download $asset from the latest release" }
+            Start-Sleep -Seconds 20
+          }
+          $env:OFLH_PREVIOUS_INSTALLER_EXE = Join-Path $previous $asset
           $env:OFLH_INSTALLER_REPORT = Join-Path $PWD 'installer-e2e-report'
           dotnet restore crates/oflh-desktop/tests/installer/Oflh.Installer.Tests.sln --locked-mode
           if ($LASTEXITCODE -ne 0) { throw 'Test dependency restore failed' }
@@ -487,6 +500,17 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.version || 'dev' }}
         run: cargo xtask package-desktop --version "$RELEASE_TAG" --os '${{ matrix.os }}' --arch '${{ matrix.arch }}' --binary target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }} --bundle-dir target/release/bundle --output desktop-dist
+      - name: Smoke-test the Windows portable zip
+        if: matrix.os == 'windows'
+        run: python .github/scripts/smoke-windows-portable.py "desktop-dist/oflh-desktop.windows.${{ matrix.arch }}-portable.zip"
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'windows'
+        with:
+          name: oflh-desktop.windows.${{ matrix.arch }}-portable.zip
+          archive: false
+          path: desktop-dist/oflh-desktop.windows.${{ matrix.arch }}-portable.zip
+          if-no-files-found: error
+          retention-days: 3
       - name: Verify real packaged updater download and signature
         if: matrix.os != 'linux'
         env:

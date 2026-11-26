@@ -29,7 +29,7 @@ export const stubBinDir = path.join(artifactsDir, "stub-bin");
  * The spec whose app starts the way the Explorer context menu starts it:
  * `oflh-desktop --inspect <folder>`.
  */
-export const startupTargetSpec = "08-launch-from-file-manager";
+export const startupTargetSpec = "09-launch-from-file-manager";
 
 /** The folder that spec's app is started with, created on first use. */
 export function startupTarget(): string {
@@ -41,6 +41,99 @@ export function startupTarget(): string {
 /** Command-line arguments for the app instance of one spec file. */
 export function launchArguments(specName: string): string[] {
   return specName === startupTargetSpec ? ["--inspect", startupTarget()] : [];
+}
+
+/** True for the Windows-only portable-layout spec. */
+export function isPortableSpec(specName: string): boolean {
+  return operatingSystem === "windows" && specName.includes("windows-portable");
+}
+
+const bundleId = "io.github.karimz1.oflh";
+
+export type PortableLayout = {
+  root: string;
+  data: string;
+  beforeAppData: string[];
+  beforeLocal: string[];
+  beforeAppDataBundles: string[];
+  beforeLocalBundles: string[];
+};
+
+const portableLayoutFile = path.join(artifactsDir, "portable-layout.json");
+let portableState: PortableLayout | undefined;
+
+function readPortableLayout(): PortableLayout | undefined {
+  if (portableState) return portableState;
+  if (!fs.existsSync(portableLayoutFile)) return undefined;
+  portableState = JSON.parse(
+    fs.readFileSync(portableLayoutFile, "utf8"),
+  ) as PortableLayout;
+  return portableState;
+}
+
+function writePortableLayout(layout: PortableLayout): void {
+  portableState = layout;
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.writeFileSync(
+    portableLayoutFile,
+    `${JSON.stringify(layout, null, 2)}
+`,
+  );
+}
+
+function listing(directory: string): string[] {
+  if (!fs.existsSync(directory)) return [];
+  const names: string[] = [];
+  for (const entry of fs.readdirSync(directory, { recursive: true })) {
+    names.push(String(entry));
+  }
+  names.sort();
+  return names;
+}
+
+function bundleNames(root: string): string[] {
+  if (!fs.existsSync(root)) return [];
+  return fs
+    .readdirSync(root)
+    .filter((name) => name.startsWith(bundleId))
+    .sort();
+}
+
+/** Folder that holds the copied exe, `portable` marker and `data` directory. */
+export function portableLayout(): PortableLayout {
+  const layout = readPortableLayout();
+  if (!layout) {
+    throw new Error("the portable layout has not been prepared");
+  }
+  return layout;
+}
+
+function preparePortableBinary(binary: string): {
+  binary: string;
+  cwd: string;
+} {
+  const existing = readPortableLayout();
+  if (!existing || !fs.existsSync(path.join(existing.root, "portable"))) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "oflh-e2e-portable-"));
+    fs.copyFileSync(binary, path.join(root, path.basename(binary)));
+    fs.writeFileSync(path.join(root, "portable"), "");
+    fs.mkdirSync(path.join(root, "data"), { recursive: true });
+    const appDataRoot = process.env.APPDATA ?? "";
+    const localRoot = process.env.LOCALAPPDATA ?? "";
+    writePortableLayout({
+      root,
+      data: path.join(root, "data"),
+      beforeAppData: listing(path.join(appDataRoot, bundleId)),
+      beforeLocal: listing(path.join(localRoot, bundleId)),
+      beforeAppDataBundles: bundleNames(appDataRoot),
+      beforeLocalBundles: bundleNames(localRoot),
+    });
+  }
+  const layout = portableLayout();
+  return {
+    binary: path.join(layout.root, path.basename(binary)),
+    cwd: layout.root,
+  };
 }
 
 export interface RunningApp {
@@ -58,11 +151,18 @@ export async function launchApp(
   specName: string,
   args: string[] = [],
 ): Promise<RunningApp> {
-  const binary = appBinary();
+  let binary = appBinary();
   if (!fs.existsSync(binary)) {
     throw new Error(
       `${binary} does not exist. Build it first: npm --prefix crates/oflh-desktop/ui run tauri -- build --debug --no-bundle --features gui-e2e`,
     );
+  }
+  const portable = isPortableSpec(specName);
+  let cwd: string | undefined;
+  if (portable) {
+    const prepared = preparePortableBinary(binary);
+    binary = prepared.binary;
+    cwd = prepared.cwd;
   }
   await waitForPortToClose();
   const logsDir = path.join(artifactsDir, "app-logs");
@@ -83,14 +183,15 @@ export async function launchApp(
     env.XDG_DATA_HOME = path.join(profile, "data");
     env.XDG_CONFIG_HOME = path.join(profile, "config");
     env.XDG_CACHE_HOME = path.join(profile, "cache");
-  } else if (operatingSystem === "windows") {
+  } else if (operatingSystem === "windows" && !portable) {
+    // Portable mode keeps the WebView profile in data/; do not override it.
     env.WEBVIEW2_USER_DATA_FOLDER = path.join(profile, "webview2");
   }
   fs.writeSync(
     log,
     `starting ${binary} ${args.join(" ")} for ${specName} (webdriver port ${webdriverPort})\n`,
   );
-  const child = spawn(binary, args, { env, stdio: ["ignore", log, log] });
+  const child = spawn(binary, args, { cwd, env, stdio: ["ignore", log, log] });
   fs.writeSync(log, `spawned pid ${child.pid ?? "unknown"}\n`);
   const deadline = Date.now() + (specName === "warmup" ? 120_000 : 90_000);
   while (Date.now() < deadline) {

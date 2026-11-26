@@ -13,8 +13,6 @@ import {
   startHolder,
   type Holder,
 } from "../support/fixtures.ts";
-import { operatingSystem } from "../support/platform.ts";
-import { itKnownFailing } from "../support/results.ts";
 import {
   $,
   $$,
@@ -156,25 +154,17 @@ describe("Process details panel", () => {
     await expectFileManagerToReveal(executable);
   });
 
-  // #201: Windows never fills Process.cwd, so this section says Unavailable.
+  // #201: every platform, Windows included, reports the working directory.
   const copyWorkingDirectory = async () => {
     await openDetails(insideHolder.pid);
     expect(await sectionPath("Working directory")).toBe(tree.folder);
     await clickButton("Copy path", xpath.panelSection("Working directory"));
     await expectClipboard(tree.folder);
   };
-  if (operatingSystem === "windows") {
-    itKnownFailing(
-      201,
-      "Copy path for the working directory copies the folder path",
-      copyWorkingDirectory,
-    );
-  } else {
-    it(
-      "Copy path for the working directory copies the folder path",
-      copyWorkingDirectory,
-    );
-  }
+  it(
+    "Copy path for the working directory copies the folder path",
+    copyWorkingDirectory,
+  );
 
   // Folders are opened themselves since #191, not selected in their parent.
   const revealWorkingDirectory = async () => {
@@ -182,18 +172,10 @@ describe("Process details panel", () => {
     await clickButton("Reveal", xpath.panelSection("Working directory"));
     await expectFileManagerToOpen(tree.folder);
   };
-  if (operatingSystem === "windows") {
-    itKnownFailing(
-      201,
-      "Reveal for the working directory opens the folder in the file manager",
-      revealWorkingDirectory,
-    );
-  } else {
-    it(
-      "Reveal for the working directory opens the folder in the file manager",
-      revealWorkingDirectory,
-    );
-  }
+  it(
+    "Reveal for the working directory opens the folder in the file manager",
+    revealWorkingDirectory,
+  );
 
   // #190, fixed in #191: a directory handle opens the folder itself.
   it("Reveal for a folder in Matching files opens the folder itself", async () => {
@@ -412,16 +394,8 @@ describe("Process details panel", () => {
     await waitForRowWith(String(ownerHolder.pid));
     await screenshot("owner folder inspected");
   };
-  if (operatingSystem === "windows") {
-    itKnownFailing(
-      201,
-      "Inspect owner folder starts a new inspection of the owner's working directory",
-      inspectOwnerFolder,
-    );
-  } else {
-    it(
-      "Inspect owner folder starts a new inspection of the owner's working directory",
-      inspectOwnerFolder,
-    );
-  }
+  it(
+    "Inspect owner folder starts a new inspection of the owner's working directory",
+    inspectOwnerFolder,
+  );
 });

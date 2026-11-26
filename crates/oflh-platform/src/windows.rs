@@ -107,6 +107,134 @@ fn read_process(pid: u32) -> Result<Process> {
         ..Process::default()
     })
 }
+/// Current directory of a captured process lifetime, read from its process
+/// parameters block (PEB, `ProcessParameters`, `CurrentDirectory.DosPath`).
+/// Returns an empty path when the process is protected, belongs to someone the
+/// caller may not read, exits, or was replaced by a new lifetime; the UI then
+/// says Unavailable. Windows keeps a trailing backslash on the current
+/// directory; it is dropped (except for drive roots) to match other platforms.
+pub(super) fn working_directory(identity: Identity) -> PathBuf {
+    read_working_directory(identity)
+        .map(trim_directory_separator)
+        .unwrap_or_default()
+}
+fn read_working_directory(identity: Identity) -> Option<PathBuf> {
+    use windows_sys::Wdk::System::Threading::{
+        NtQueryInformationProcess, ProcessBasicInformation, ProcessWow64Information,
+    };
+    let handle = open(
+        identity.pid,
+        PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
+    )
+    .ok()?;
+    if times(&handle, identity.pid).ok()?.0 != identity {
+        return None;
+    }
+    let mut wow64_peb = 0usize;
+    // SAFETY: live handle; the output is a writable pointer-sized slot whose
+    // exact size is passed, as ProcessWow64Information requires.
+    let status = unsafe {
+        NtQueryInformationProcess(
+            handle.0,
+            ProcessWow64Information,
+            (&mut wow64_peb as *mut usize).cast(),
+            size_of::<usize>() as u32,
+            null_mut(),
+        )
+    };
+    if status < 0 {
+        return None;
+    }
+    let (buffer, length) = if wow64_peb != 0 {
+        // 32-bit process under WOW64: its own SetCurrentDirectory updates the
+        // 32-bit parameters. PEB32.ProcessParameters is at 0x10;
+        // RTL_USER_PROCESS_PARAMETERS32.CurrentDirectory.DosPath at 0x24 is a
+        // UNICODE_STRING32 { Length: u16, MaximumLength: u16, Buffer: u32 }.
+        let parameters = u64::from(remote_u32(&handle, wow64_peb as u64 + 0x10)?);
+        let length = remote_u16(&handle, parameters.checked_add(0x24)?)?;
+        let buffer = u64::from(remote_u32(&handle, parameters.checked_add(0x28)?)?);
+        (buffer, length)
+    } else {
+        let mut basic = PROCESS_BASIC_INFORMATION::default();
+        // SAFETY: live handle; writable PROCESS_BASIC_INFORMATION with its exact size.
+        let status = unsafe {
+            NtQueryInformationProcess(
+                handle.0,
+                ProcessBasicInformation,
+                (&mut basic as *mut PROCESS_BASIC_INFORMATION).cast(),
+                size_of::<PROCESS_BASIC_INFORMATION>() as u32,
+                null_mut(),
+            )
+        };
+        if status < 0 || basic.PebBaseAddress.is_null() {
+            return None;
+        }
+        // 64-bit layout (x86-64 and ARM64): PEB.ProcessParameters is at 0x20;
+        // RTL_USER_PROCESS_PARAMETERS.CurrentDirectory.DosPath at 0x38 is a
+        // UNICODE_STRING { Length: u16, MaximumLength: u16, pad, Buffer: u64 }.
+        let peb = basic.PebBaseAddress as usize as u64;
+        let parameters = remote_u64(&handle, peb.checked_add(0x20)?)?;
+        let length = remote_u16(&handle, parameters.checked_add(0x38)?)?;
+        let buffer = remote_u64(&handle, parameters.checked_add(0x40)?)?;
+        (buffer, length)
+    };
+    if buffer == 0 || length == 0 || length % 2 != 0 {
+        return None;
+    }
+    let mut bytes = vec![0u8; usize::from(length)];
+    read_remote(&handle, buffer, &mut bytes)?;
+    let text: Vec<u16> = bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u16::from_le_bytes(*pair))
+        .collect();
+    Some(PathBuf::from(OsString::from_wide(&text)))
+}
+/// Fills `bytes` from `address` in the process, or `None` unless every byte was read.
+fn read_remote(handle: &Handle, address: u64, bytes: &mut [u8]) -> Option<()> {
+    let address = usize::try_from(address).ok()?;
+    let mut read = 0usize;
+    // SAFETY: live handle with PROCESS_VM_READ; the destination is a writable
+    // buffer of exactly bytes.len() bytes and the OS validates the remote range.
+    let ok = unsafe {
+        windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(
+            handle.0,
+            address as *const core::ffi::c_void,
+            bytes.as_mut_ptr().cast(),
+            bytes.len(),
+            &mut read,
+        )
+    };
+    (ok != 0 && read == bytes.len()).then_some(())
+}
+fn remote_u16(handle: &Handle, address: u64) -> Option<u16> {
+    let mut bytes = [0; 2];
+    read_remote(handle, address, &mut bytes)?;
+    Some(u16::from_le_bytes(bytes))
+}
+fn remote_u32(handle: &Handle, address: u64) -> Option<u32> {
+    let mut bytes = [0; 4];
+    read_remote(handle, address, &mut bytes)?;
+    Some(u32::from_le_bytes(bytes))
+}
+fn remote_u64(handle: &Handle, address: u64) -> Option<u64> {
+    let mut bytes = [0; 8];
+    read_remote(handle, address, &mut bytes)?;
+    Some(u64::from_le_bytes(bytes))
+}
+/// `C:\work\` becomes `C:\work`; `C:\` and `\\server\share\` roots stay usable.
+fn trim_directory_separator(directory: PathBuf) -> PathBuf {
+    let mut text: Vec<u16> = directory.as_os_str().encode_wide().collect();
+    let is_drive_root = text.len() == 3 && text[1] == u16::from(b':');
+    while text.len() > 1
+        && !is_drive_root
+        && matches!(text.last(), Some(&c) if c == u16::from(b'\\') || c == u16::from(b'/'))
+    {
+        text.pop();
+    }
+    PathBuf::from(OsString::from_wide(&text))
+}
 fn username(pid: u32) -> String {
     let Ok(handle) = open(pid, PROCESS_QUERY_LIMITED_INFORMATION) else {
         return "unknown".into();
@@ -711,6 +839,7 @@ impl Backend for Native {
         for process in &mut snapshot.processes {
             cancel.check()?;
             process.user = username(process.identity.pid);
+            process.cwd = working_directory(process.identity);
             process.parent = parents.get(&process.identity.pid).copied().unwrap_or(0);
             let mut next = process.parent;
             while next > 0
@@ -1903,5 +2032,48 @@ mod native_recovery_tests {
             Err(Error::Cancelled)
         ));
         assert_eq!(cancel.progress().native_file_user_queries, 0);
+    }
+}
+
+#[cfg(test)]
+mod working_directory_tests {
+    use super::*;
+
+    #[test]
+    fn trailing_separators_are_dropped_except_for_drive_roots() {
+        for (raw, expected) in [
+            (r"C:\work\", r"C:\work"),
+            (r"C:\work", r"C:\work"),
+            (r"C:\", r"C:\"),
+            (r"\\server\share\", r"\\server\share"),
+            (r"\\?\C:\work\", r"\\?\C:\work"),
+        ] {
+            assert_eq!(
+                trim_directory_separator(PathBuf::from(raw)),
+                PathBuf::from(expected),
+                "{raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn current_process_directory_matches_the_os_view() {
+        let identity = read_identity(std::process::id()).unwrap();
+        let expected = std::env::current_dir().unwrap();
+        assert_eq!(
+            fs_canonical(&working_directory(identity)),
+            fs_canonical(&expected)
+        );
+    }
+
+    #[test]
+    fn a_replaced_lifetime_reports_no_directory() {
+        let mut identity = read_identity(std::process::id()).unwrap();
+        identity.started += 1;
+        assert!(working_directory(identity).as_os_str().is_empty());
+    }
+
+    fn fs_canonical(path: &Path) -> PathBuf {
+        std::fs::canonicalize(path).unwrap()
     }
 }

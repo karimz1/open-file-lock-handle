@@ -19,9 +19,35 @@ public sealed class InstallationProbe(string installDirectory)
     }, Timeouts.DialogClose, Timeouts.PollInterval, throwOnTimeout: true);
 }
 
+/// <summary>Values Windows shows for the app under Apps &amp; features.</summary>
+public sealed record UninstallEntry(string DisplayName, string DisplayVersion, string Publisher, string InstallLocation, string UninstallString);
+
 /// <summary>Reads the shell and registry integration the installer registers for the current user or machine.</summary>
 public static class SystemIntegrationProbe
 {
+    /// <summary>
+    /// The per-user "Apps &amp; features" entry. The installer runs without
+    /// administrator rights, so it must never land in HKLM.
+    /// </summary>
+    public static UninstallEntry? PerUserUninstallEntry => ReadEntry(Registry.CurrentUser);
+
+    /// <summary>A machine-wide entry, which a per-user installer must not create.</summary>
+    public static bool HasPerMachineUninstallEntry => ReadEntry(Registry.LocalMachine) is not null;
+
+    /// <summary>Start menu shortcuts named after the product, in the user's and all users' menus.</summary>
+    public static int StartMenuShortcutCount => StartMenuRoots()
+        .Where(Directory.Exists)
+        .Sum(root => Directory.EnumerateFiles(root, InstallerProduct.ShortcutName, SearchOption.AllDirectories).Count());
+
+    private static UninstallEntry? ReadEntry(RegistryKey hive)
+    {
+        using var key = hive.OpenSubKey(InstallerProduct.UninstallRegistryKey);
+        if (key is null) return null;
+        string Text(string name) => key.GetValue(name) as string ?? "";
+        return new UninstallEntry(Text("DisplayName"), Text("DisplayVersion"), Text("Publisher"),
+            Text("InstallLocation").Trim('"'), Text("UninstallString"));
+    }
+
     /// <summary>The per-user or per-machine "Apps &amp; features" entry, if any.</summary>
     public static bool HasUninstallEntry => OpenFromEitherHive(InstallerProduct.UninstallRegistryKey) is { } key && Dispose(key);
 

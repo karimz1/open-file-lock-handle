@@ -100,7 +100,8 @@ This runs `npm ci` in `crates/oflh-desktop/ui` when `node_modules` is missing,
 then builds the installer for your OS with the same bundles as CI: NSIS
 (`.exe`) on Windows, `.deb` and `.rpm` on Linux, and `.app` and `.dmg` on
 macOS. It prints the paths of the new packages under
-`target/release/bundle/`.
+`target/release/bundle/`. On Windows, `cargo xtask package-desktop` also writes
+a `-portable.zip` next to the installer, using the same tested executable.
 
 | Option | Effect |
 | --- | --- |
