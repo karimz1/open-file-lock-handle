@@ -43,8 +43,21 @@ jobs:
       - name: Compile and exercise the actual installer dialog macro
         shell: pwsh
         run: |
-          $compiler = "${env:ProgramFiles(x86)}/NSIS/makensis.exe"
-          if (!(Test-Path $compiler)) { choco install nsis --yes --no-progress }
+          # Use the same NSIS release the Tauri bundler downloads for the real
+          # installer, from GitHub, instead of the Chocolatey community feed.
+          $nsisUrl = 'https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.13/nsis-3.13.zip'
+          $nsisZip = Join-Path $env:RUNNER_TEMP 'nsis.zip'
+          for ($attempt = 1; ; $attempt++) {
+            try { Invoke-WebRequest -Uri $nsisUrl -OutFile $nsisZip; break }
+            catch {
+              if ($attempt -ge 3) { throw "NSIS download failed after $attempt attempts: $_" }
+              Write-Host "NSIS download attempt $attempt of 3 failed: $_"
+              Start-Sleep -Seconds (15 * $attempt)
+            }
+          }
+          Expand-Archive -Path $nsisZip -DestinationPath $env:RUNNER_TEMP -Force
+          $compiler = Join-Path $env:RUNNER_TEMP 'nsis-3.13/makensis.exe'
+          if (!(Test-Path $compiler)) { throw "makensis.exe missing from $nsisUrl" }
           $env:OFLH_DIALOG_SMOKE_EXE = Join-Path $env:RUNNER_TEMP 'oflh-dialog-smoke.exe'
           $env:OFLH_DIALOG_SMOKE_RESULT = Join-Path $env:RUNNER_TEMP 'oflh-dialog-result.txt'
           $env:OFLH_INSTALLER_REPORT = Join-Path $PWD 'installer-e2e-report'
