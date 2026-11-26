@@ -1489,11 +1489,13 @@ test("the result toolbar keeps the Maximize button on the search row at 1280 px"
 test("removing a recent target closes the gap smoothly instead of jumping", async ({
   page,
 }) => {
-  // The close is only 140 ms. Sampling the next row's top with
-  // requestAnimationFrame therefore looks like a single 43 px jump when a
-  // runner drops those frames, which is what happened on macOS CI at 9dbe4ef
-  // (Desktop GUI E2E / macOS, run 44965414362). Ask the Web Animations API
-  // whether a height transition is actually running instead.
+  // The entry closes for 140 ms and is dropped 160 ms after it gets its
+  // leaving class. Polling for that class with requestAnimationFrame missed it
+  // on macOS CI when the runner drew no frame in that window (run 45774067770),
+  // so record the class change from a MutationObserver instead: its callback
+  // runs right after the script that adds the class, before any frame or the
+  // timer that drops the entry. Reading the animations there resolves the new
+  // style, which starts the transition.
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/");
   await page
@@ -1511,42 +1513,48 @@ test("removing a recent target closes the gap smoothly instead of jumping", asyn
   });
   await expect(below).toBeVisible();
   const before = (await below.boundingBox())!.y;
-  const transitionStarted = page.evaluate(() => {
-    return new Promise<{ properties: string[]; durations: number[] }>(
-      (resolve, reject) => {
-        const started = performance.now();
-        const tick = () => {
-          const leaving = document.querySelector(
-            ".recent-entry.recent-leaving",
-          );
-          if (leaving) {
-            const animations = leaving.getAnimations();
-            resolve({
-              properties: animations.map(
-                (animation) =>
-                  (animation as CSSTransition).transitionProperty ?? "",
-              ),
-              durations: animations.map(
-                (animation) =>
-                  Number(animation.effect?.getComputedTiming().duration) || 0,
-              ),
-            });
-            return;
-          }
-          if (performance.now() - started > 2000) {
-            reject(new Error("the removed entry never started closing"));
-            return;
-          }
-          requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      },
-    );
+  const remove = recentList.getByRole("button", {
+    name: `Remove ${entries[0]}`,
+    exact: true,
   });
-  await recentList
-    .getByRole("button", { name: `Remove ${entries[0]}`, exact: true })
-    .click();
-  const running = await transitionStarted;
+  await remove.evaluate((button) => {
+    const entry = button.closest(".recent-entry")!;
+    const list = entry.parentElement!;
+    (window as any).__recentClose = new Promise<{
+      properties: string[];
+      durations: number[];
+    }>((resolve, reject) => {
+      const observer = new MutationObserver(() => {
+        if (entry.classList.contains("recent-leaving")) {
+          observer.disconnect();
+          const animations = entry.getAnimations();
+          resolve({
+            properties: animations.map(
+              (animation) =>
+                (animation as CSSTransition).transitionProperty ?? "",
+            ),
+            durations: animations.map(
+              (animation) =>
+                Number(animation.effect?.getComputedTiming().duration) || 0,
+            ),
+          });
+        } else if (!entry.isConnected) {
+          observer.disconnect();
+          reject(new Error("the removed entry was dropped without closing"));
+        }
+      });
+      observer.observe(entry, { attributes: true, attributeFilter: ["class"] });
+      observer.observe(list, { childList: true });
+    });
+  });
+  await remove.click();
+  const running = await page.evaluate(
+    () =>
+      (window as any).__recentClose as Promise<{
+        properties: string[];
+        durations: number[];
+      }>,
+  );
   expect(running.properties, "height is in transition").toContain("height");
   expect(
     Math.max(...running.durations, 0),
