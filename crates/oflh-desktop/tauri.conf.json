@@ -36,6 +36,7 @@
     "homepage": "https://oflh.karimzouine.com/",
     "copyright": "Copyright © Karim Zouine",
     "shortDescription": "Find processes using files and folders",
+    "longDescription": "OFLH Desktop shows which processes are using a file, folder or local port, and whether the operating system reports a lock. An open file is not proof of a lock. You can wait until a target is free, or end a process after a confirmation that shows what else is affected. Ending a process can lose unsaved work.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
