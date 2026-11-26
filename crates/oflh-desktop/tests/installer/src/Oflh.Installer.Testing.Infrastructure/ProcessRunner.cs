@@ -24,6 +24,21 @@ public sealed class ProcessRunner : IDisposable
         return process.ExitCode;
     }
 
+    /// <summary>Runs a console-capable executable and returns its first line of standard output.</summary>
+    public static async Task<string> FirstOutputLineAsync(string path, string arguments, TimeSpan timeout)
+    {
+        using var process = Process.Start(new ProcessStartInfo(path, arguments)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            CreateNoWindow = true,
+        }) ?? throw new InvalidOperationException($"Could not start {path}.");
+        using var cancellation = new CancellationTokenSource(timeout);
+        var output = await process.StandardOutput.ReadToEndAsync(cancellation.Token).ConfigureAwait(false);
+        await process.WaitForExitAsync(cancellation.Token).ConfigureAwait(false);
+        return output.Split('\n', 2)[0].Trim();
+    }
+
     public static async Task<bool> WaitForExitAsync(Process process, TimeSpan timeout)
     {
         using var cancellation = new CancellationTokenSource(timeout);
