@@ -11,6 +11,7 @@ mod dropped_target;
 mod instance;
 pub mod launch;
 mod path_text;
+mod portable;
 mod process_wait;
 mod recent;
 pub mod service;

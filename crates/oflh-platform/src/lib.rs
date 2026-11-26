@@ -51,6 +51,8 @@ mod process_pool;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
+pub mod webview2;
+#[cfg(windows)]
 mod windows;
 #[cfg(target_os = "linux")]
 mod x11;

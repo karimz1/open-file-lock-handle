@@ -538,11 +538,7 @@ fn system_info() -> SystemInfo {
 
 #[tauri::command]
 fn update_mode() -> &'static str {
-    if cfg!(target_os = "linux") {
-        "download"
-    } else {
-        "install"
-    }
+    crate::portable::update_mode(crate::portable::is_active())
 }
 
 #[tauri::command]
@@ -632,6 +628,31 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
     } else {
         initial_target
     };
+    let mut context = tauri::generate_context!();
+    let portable_data = crate::portable::exe_directory().and_then(|directory| {
+        crate::portable::directories_override(&directory)
+            .map(|_| crate::portable::data_dir(&directory))
+    });
+    if let Some(data) = &portable_data {
+        std::fs::create_dir_all(data)?;
+        #[cfg(windows)]
+        {
+            oflh_platform::webview2::ensure_installed()?;
+            oflh_platform::webview2::set_user_data_folder(&crate::portable::webview_dir(data))?;
+        }
+        if let Some(directory) = crate::portable::exe_directory() {
+            context.config_mut().identifier = crate::portable::single_instance_identifier(
+                &context.config().identifier,
+                &directory,
+            );
+        }
+        // Automatic windows would still get `%LOCALAPPDATA%\{identifier}`
+        // as their WebView data directory (Tauri ignores an absolute path in
+        // the config). Create the window in setup with an explicit path.
+        for window in &mut context.config_mut().app.windows {
+            window.create = false;
+        }
+    }
     let builder = tauri::Builder::default();
     // The single-instance plugin must be registered first.
     #[cfg(windows)]
@@ -653,7 +674,11 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
         .plugin(tauri_plugin_notification::init())
         .setup(move |app| {
             let handle = app.handle().clone();
-            let app_data = app.path().app_data_dir()?;
+            let app_data = if let Some(data) = &portable_data {
+                data.clone()
+            } else {
+                app.path().app_data_dir()?
+            };
             std::fs::create_dir_all(&app_data)?;
             let service = Service::with_recent_database(
                 oflh_platform::native()?,
@@ -670,6 +695,14 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
             }
             app.manage(Arc::new(service));
             app.manage(DroppedTarget::default());
+            if let Some(data) = &portable_data {
+                let Some(config) = app.config().app.windows.first().cloned() else {
+                    return Err("missing desktop window configuration".into());
+                };
+                tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+                    .data_directory(crate::portable::webview_dir(data))
+                    .build()?;
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -755,7 +788,7 @@ pub fn run(initial_target: Option<PathBuf>) -> Result<(), Box<dyn std::error::Er
             prepare_close_file,
             close_file
         ])
-        .run(tauri::generate_context!())?;
+        .run(context)?;
     Ok(())
 }
 

@@ -14,6 +14,7 @@ downloads, see the [README](../README.md#desktop-install).
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Appearance and language](#appearance)
 - [Updates](#updates)
+- [Windows portable zip](#windows-portable-zip)
 - [Linux archive installation](#linux-archive-installation)
 
 ## Inspect files and processes
@@ -352,16 +353,39 @@ The app checks for a new release at startup and hourly. An available update
 shows a **1** badge on the gear; nothing pops up on its own. Choose **Check for
 updates** in the gear menu to check immediately.
 
-On Windows and macOS, **Install and restart** downloads the signed update,
-installs it, and relaunches the app. On Linux, the dialog links to the
-[download page](https://oflh.karimzouine.com/#download); install the new
-package or extract the new archive yourself.
+On Windows and macOS, an installed copy can use **Install and restart** to
+download the signed update, install it, and relaunch. The Windows portable zip
+and Linux packages use the same dialog to open the
+[download page](https://oflh.karimzouine.com/#download); unpack or install the
+new build yourself. When updating a portable zip, move the existing `data`
+folder into the new folder.
 
 **About OFLH** in the gear menu shows the installed version, commit, OS, and
 license, with a button to copy them for bug reports.
 
 **Donate**, at the bottom right, opens Buy Me a Coffee, GitHub Sponsors, or
 PayPal in your browser.
+
+
+<a id="windows-portable-zip"></a>
+
+## Windows portable zip
+
+Use the portable zip when you do not want to run the installer or need to keep
+the app and its settings in one folder, for example on a USB drive. Extract
+`oflh-desktop.windows.<arch>-portable.zip`, then run `oflh-desktop.exe`. No
+administrator rights are needed to start it. Administrator permission is
+requested only if you confirm ending a protected process.
+
+Settings, recent targets, and the interface theme live in the `data` folder
+next to the executable. The empty `portable` file next to the executable is
+what turns this on; do not delete it. The package does not add Explorer
+context-menu entries or an uninstaller: delete the folder to remove it.
+
+The portable build uses the Microsoft Edge WebView2 Runtime already present on
+Windows 10 (April 2018 or later) and Windows 11. If the app says the runtime is
+missing, install it from
+[Microsoft](https://developer.microsoft.com/microsoft-edge/webview2/).
 
 ## Linux archive installation
 

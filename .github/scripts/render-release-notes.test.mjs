@@ -7,6 +7,8 @@ const script = fileURLToPath(new URL('./render-release-notes.mjs', import.meta.u
 const expectedFiles = [
   'oflh-desktop.windows.amd64-installer.exe',
   'oflh-desktop.windows.arm64-installer.exe',
+  'oflh-desktop.windows.amd64-portable.zip',
+  'oflh-desktop.windows.arm64-portable.zip',
   'oflh-desktop.darwin.arm64.dmg',
   'oflh-desktop.darwin.amd64.dmg',
   'oflh-desktop.linux.amd64.deb',

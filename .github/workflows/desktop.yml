@@ -487,6 +487,17 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.version || 'dev' }}
         run: cargo xtask package-desktop --version "$RELEASE_TAG" --os '${{ matrix.os }}' --arch '${{ matrix.arch }}' --binary target/release/oflh-desktop${{ matrix.os == 'windows' && '.exe' || '' }} --bundle-dir target/release/bundle --output desktop-dist
+      - name: Smoke-test the Windows portable zip
+        if: matrix.os == 'windows'
+        run: python .github/scripts/smoke-windows-portable.py "desktop-dist/oflh-desktop.windows.${{ matrix.arch }}-portable.zip"
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'windows'
+        with:
+          name: oflh-desktop.windows.${{ matrix.arch }}-portable.zip
+          archive: false
+          path: desktop-dist/oflh-desktop.windows.${{ matrix.arch }}-portable.zip
+          if-no-files-found: error
+          retention-days: 3
       - name: Verify real packaged updater download and signature
         if: matrix.os != 'linux'
         env:
