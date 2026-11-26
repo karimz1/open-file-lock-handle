@@ -98,6 +98,17 @@ pub fn children_of(table: &[ProcessEntry], parent: Identity) -> Vec<Ancestor> {
         .collect()
 }
 
+/// Drop children that are also in `selected`.
+///
+/// A confirmation for several processes should not claim that a selected
+/// child "keeps running". Identities are matched in full, not by PID alone.
+/// An empty remaining list still means the process table could be read.
+pub fn omit_selected_children(impact: &mut Impact, selected: &[Identity]) {
+    if let Some(children) = impact.children.as_mut() {
+        children.retain(|child| !selected.contains(&child.identity));
+    }
+}
+
 /// Short label for a local binding, such as `TCP 3000` or `UDP [::1]:53`.
 pub fn port_label(port: &Port) -> String {
     if port.address.is_unspecified() {
@@ -351,5 +362,83 @@ mod tests {
         assert!(windows_critical(600, "csrss.exe"));
         assert!(!windows_critical(800, "svchost.exe"));
         assert!(!windows_critical(900, "blender.exe"));
+    }
+
+    #[test]
+    fn omit_selected_children_drops_matching_identities_only() {
+        let parent = Identity {
+            pid: 20,
+            started: 5,
+            started_sub: 0,
+        };
+        let selected_child = Ancestor {
+            identity: Identity {
+                pid: 21,
+                started: 6,
+                started_sub: 0,
+            },
+            name: "sleep".into(),
+        };
+        let other_child = Ancestor {
+            identity: Identity {
+                pid: 21,
+                started: 1,
+                started_sub: 0,
+            },
+            name: "reused-pid".into(),
+        };
+        let leftover = Ancestor {
+            identity: Identity {
+                pid: 22,
+                started: 7,
+                started_sub: 0,
+            },
+            name: "helper".into(),
+        };
+        let mut impact = Impact {
+            children: Some(vec![
+                selected_child.clone(),
+                other_child.clone(),
+                leftover.clone(),
+            ]),
+            ..Impact::default()
+        };
+        omit_selected_children(&mut impact, &[parent, selected_child.identity]);
+        assert_eq!(
+            impact.children.as_ref().unwrap(),
+            &vec![other_child, leftover]
+        );
+    }
+
+    #[test]
+    fn omit_selected_children_keeps_an_empty_list_when_every_child_is_selected() {
+        let child = Identity {
+            pid: 21,
+            started: 6,
+            started_sub: 0,
+        };
+        let mut impact = Impact {
+            children: Some(vec![Ancestor {
+                identity: child,
+                name: "sleep".into(),
+            }]),
+            ..Impact::default()
+        };
+        omit_selected_children(&mut impact, &[child]);
+        assert_eq!(impact.children, Some(vec![]));
+    }
+
+    #[test]
+    fn omit_selected_children_leaves_unreadable_tables_as_none() {
+        let mut impact = Impact::default();
+        omit_selected_children(
+            &mut impact,
+            &[Identity {
+                pid: 21,
+                started: 6,
+                started_sub: 0,
+            }],
+        );
+        assert!(impact.children.is_none());
     }
 }
