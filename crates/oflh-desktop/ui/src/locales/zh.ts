@@ -215,8 +215,9 @@ const zh: TranslationSchema<typeof en> = {
     k_exact_pid: "精确 PID",
     k_execute: "执行",
     k_file_usage: "文件使用情况",
-    k_file_usage_is_not_proof_of_a_lock_windo_f7640915:
-      "文件被使用不代表被锁定。Windows 报告的文件使用者不一定是锁的持有者。",
+    k_file_usage_is_not_proof_of_a_lock: "文件被使用不代表被锁定。",
+    k_windows_resource_users_are_not_proven_lock_owners:
+      "Windows 报告的文件使用者不一定是锁的持有者。",
     k_for: "目标：",
     k_full_path: "完整路径",
     k_github_profile: "GitHub 个人主页",

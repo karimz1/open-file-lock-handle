@@ -69,6 +69,7 @@ import {
 import { acceptStatus, initialStatus, selectKey } from "./state";
 import { readOpenMaximized, writeOpenMaximized } from "./windowStartup";
 import { scanDuration } from "./scanDuration";
+import { fileUsageNoticeKeys } from "./coverageNotice";
 import { normalizeTypedPath } from "./targetPath";
 import { TargetHelp } from "./TargetHelp";
 import { Inspector } from "./Inspector";
@@ -222,6 +223,13 @@ export function App() {
   );
   const [autoReloadSeconds, setAutoReloadSeconds] = useState(0);
   useEffect(() => {
+    api
+      .systemInfo()
+      .then((info) => setOs(info.os))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     document.documentElement.style.fontSize = `${fontSize}px`;
     try {
       localStorage.setItem("oflh-font-size", String(fontSize));
@@ -245,6 +253,8 @@ export function App() {
   const statusRef = useRef(initialStatus);
   const scanRequestPending = useRef(false);
   const [startingScan, setStartingScan] = useState(false);
+  const [os, setOs] = useState("");
+
   const [closingInspection, setClosingInspection] = useState(false);
   const [awaitingResults, setAwaitingResults] = useState(false);
   const scanBusy = status.scanning || startingScan;
@@ -1976,11 +1986,16 @@ export function App() {
                   <div className="evidence-note">
                     <ShieldAlert size={13} />
                     <span>
-                      {t(
-                        view === "ports"
-                          ? "termination.k_local_bindings_do_not_prove_external_re_a5cdb1ad"
-                          : "app.k_file_usage_is_not_proof_of_a_lock_windo_f7640915",
-                      )}
+                      {view === "ports"
+                        ? t(
+                            "termination.k_local_bindings_do_not_prove_external_re_a5cdb1ad",
+                          )
+                        : fileUsageNoticeKeys(os).map((key, index) => (
+                            <span key={key}>
+                              {index > 0 ? " " : null}
+                              {t(key)}
+                            </span>
+                          ))}
                     </span>
                     {view !== "ports" && status.revision > 0 && (
                       <SharePanel
