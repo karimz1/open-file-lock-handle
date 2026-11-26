@@ -1275,6 +1275,36 @@ fn confirmation_summarizes_impact_and_expands_details_with_d() {
 }
 
 #[test]
+fn confirmation_does_not_say_a_selected_child_keeps_running() {
+    let mut app = impact_app();
+    let parent = app.snapshot.processes[0].identity;
+    let child = Identity {
+        pid: 4100,
+        started: 11,
+        started_sub: 0,
+    };
+    app.snapshot.processes.push(oflh_core::Process {
+        identity: child,
+        name: "python3".into(),
+        ..oflh_core::Process::default()
+    });
+    app.selected.extend([parent, child]);
+    assert!(
+        matches!(key(&mut app, K::Char('k')), Effect::Impact(ids) if ids == vec![parent, child])
+    );
+    app.accept_impact(&[parent, child], vec![blender_impact(), Default::default()]);
+    let collapsed = render_confirm(&mut app, "impact-selected-child-en");
+    let flat = collapsed.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        !flat.contains("background process keeps running"),
+        "{collapsed}"
+    );
+    key(&mut app, K::Char('d'));
+    let expanded = render_confirm(&mut app, "impact-selected-child-details-en");
+    assert!(!expanded.contains("Background processes"), "{expanded}");
+}
+
+#[test]
 fn confirmation_adds_nothing_without_notable_impact() {
     let mut app = self::app();
     app.snapshot.processes[0].usages.truncate(1);

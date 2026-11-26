@@ -915,13 +915,17 @@ impl Service {
         let mut native = backend.impact(&identities).into_iter();
         let targets = processes
             .into_iter()
-            .map(|process| ActionTarget {
-                key: identity_key(process.identity),
-                name: oflh_core::safe(&process.name),
-                pid: process.identity.pid,
-                role: TargetRole::Holder,
-                owner: self.owner(process),
-                impact: target_impact(native.next().unwrap_or_default(), Some(process)),
+            .map(|process| {
+                let mut impact = native.next().unwrap_or_default();
+                oflh_core::impact::omit_selected_children(&mut impact, &identities);
+                ActionTarget {
+                    key: identity_key(process.identity),
+                    name: oflh_core::safe(&process.name),
+                    pid: process.identity.pid,
+                    role: TargetRole::Holder,
+                    owner: self.owner(process),
+                    impact: target_impact(impact, Some(process)),
+                }
             })
             .collect();
         self.confirm(identities, targets, force)
@@ -2221,6 +2225,75 @@ mod tests {
             .terminate(&confirmation.ticket, &mut backend)
             .unwrap();
         assert_eq!(backend.calls, [(identity, false)]);
+    }
+    #[test]
+    fn confirmation_omits_children_that_are_also_selected() {
+        use oflh_core::impact::Impact;
+        let (service, parent) = action_service();
+        let child = Identity {
+            pid: u32::MAX - 2,
+            started: u64::MAX,
+            started_sub: 22,
+        };
+        service.shared.lock().dataset = Arc::new(Dataset::new(
+            1,
+            Snapshot {
+                processes: vec![
+                    Process {
+                        identity: parent,
+                        name: "python3".into(),
+                        ..Process::default()
+                    },
+                    Process {
+                        identity: child,
+                        name: "sleep".into(),
+                        ..Process::default()
+                    },
+                ],
+                warnings: vec![],
+            },
+        ));
+        let mut backend = Recorder {
+            impact: Some(Impact {
+                children: Some(vec![Ancestor {
+                    identity: child,
+                    name: "sleep".into(),
+                }]),
+                ..Impact::default()
+            }),
+            ..Recorder::default()
+        };
+        let both = service
+            .prepare(
+                1,
+                &[identity_key(parent), identity_key(child)],
+                false,
+                &mut backend,
+            )
+            .unwrap();
+        assert_eq!(both.targets.len(), 2);
+        assert_eq!(both.targets[0].name, "python3");
+        assert!(
+            both.targets[0]
+                .impact
+                .children
+                .as_ref()
+                .unwrap()
+                .items
+                .is_empty()
+        );
+        let parent_only = service
+            .prepare(1, &[identity_key(parent)], false, &mut backend)
+            .unwrap();
+        assert_eq!(
+            parent_only.targets[0]
+                .impact
+                .children
+                .as_ref()
+                .unwrap()
+                .items,
+            [format!("sleep (PID {})", child.pid)]
+        );
     }
     #[test]
     fn unavailable_impact_serializes_as_null_not_empty() {

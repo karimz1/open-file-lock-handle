@@ -1131,7 +1131,15 @@ impl App {
         {
             return;
         }
-        self.impact = ids.iter().copied().zip(impact).collect()
+        self.impact = ids
+            .iter()
+            .copied()
+            .zip(impact)
+            .map(|(id, mut entry)| {
+                oflh_core::impact::omit_selected_children(&mut entry, ids);
+                (id, entry)
+            })
+            .collect();
     }
     /// Session of the process shown in details, if it has one.
     pub fn detail_session(&mut self) -> Option<oflh_sessions::Session> {
