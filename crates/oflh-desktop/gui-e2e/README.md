@@ -44,6 +44,7 @@ Linux also needs `xvfb openbox xclip python3-dbus python3-gi`. Run one file with
 | `specs/06-grid-keyboard-and-layout.e2e.ts`  | Sorting, columns, filters, maximize, keyboard navigation, virtual scroll, auto refresh       |
 | `specs/07-ports.e2e.ts`                     | Ports view, port search, copy port, wait for a port                                          |
 | `specs/08-windows-portable.e2e.ts`          | Windows portable layout: settings stay in `data/`, AppData is left alone                     |
+| `specs/09-launch-from-file-manager.e2e.ts`  | Start with `--inspect <folder>`; on Windows a second launch hands its folder to the window   |
 | `support/`                                  | App launch, fixture processes, desktop checks (clipboard, file manager), UI helpers, results |
 
 ## Results and screenshots

@@ -25,6 +25,24 @@ export function appBinary(): string {
 /** Directory with stand-in helper programs put first on the app's PATH (Linux `xdg-open`). */
 export const stubBinDir = path.join(artifactsDir, "stub-bin");
 
+/**
+ * The spec whose app starts the way the Explorer context menu starts it:
+ * `oflh-desktop --inspect <folder>`.
+ */
+export const startupTargetSpec = "09-launch-from-file-manager";
+
+/** The folder that spec's app is started with, created on first use. */
+export function startupTarget(): string {
+  const folder = path.join(artifactsDir, "startup-target");
+  fs.mkdirSync(folder, { recursive: true });
+  return fs.realpathSync.native(folder);
+}
+
+/** Command-line arguments for the app instance of one spec file. */
+export function launchArguments(specName: string): string[] {
+  return specName === startupTargetSpec ? ["--inspect", startupTarget()] : [];
+}
+
 /** True for the Windows-only portable-layout spec. */
 export function isPortableSpec(specName: string): boolean {
   return operatingSystem === "windows" && specName.includes("windows-portable");
@@ -129,7 +147,10 @@ export interface RunningApp {
  * recent targets start empty; Windows and macOS keep the runner profile and
  * the specs reset the WebView storage themselves (see `resetWorkspace`).
  */
-export async function launchApp(specName: string): Promise<RunningApp> {
+export async function launchApp(
+  specName: string,
+  args: string[] = [],
+): Promise<RunningApp> {
   let binary = appBinary();
   if (!fs.existsSync(binary)) {
     throw new Error(
@@ -168,9 +189,9 @@ export async function launchApp(specName: string): Promise<RunningApp> {
   }
   fs.writeSync(
     log,
-    `starting ${binary} for ${specName} (webdriver port ${webdriverPort})\n`,
+    `starting ${binary} ${args.join(" ")} for ${specName} (webdriver port ${webdriverPort})\n`,
   );
-  const child = spawn(binary, [], { cwd, env, stdio: ["ignore", log, log] });
+  const child = spawn(binary, args, { cwd, env, stdio: ["ignore", log, log] });
   fs.writeSync(log, `spawned pid ${child.pid ?? "unknown"}\n`);
   const deadline = Date.now() + (specName === "warmup" ? 120_000 : 90_000);
   while (Date.now() < deadline) {
