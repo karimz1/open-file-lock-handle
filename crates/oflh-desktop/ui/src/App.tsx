@@ -132,6 +132,21 @@ const filterLabels: Record<keyof ColumnFilters, MessageKey> = {
 };
 /** Columns that stay hidden until someone turns them on in the column picker. */
 const optInColumns: ColumnKey[] = ["user", "session"];
+/**
+ * Renders a translated sentence whose {{name}} placeholder is the process
+ * name in bold. Word order and prepositions stay in the locale catalogs.
+ */
+function ScopeSentence({ text, name }: { text: string; name: string }) {
+  const [before, after = ""] = text.split("{{name}}");
+  return (
+    <>
+      {before}
+      <strong>{name}</strong>
+      {after}
+    </>
+  );
+}
+
 function readHiddenColumns(): Set<ColumnKey> {
   const hidden = readSavedHiddenColumns();
   try {
@@ -1783,11 +1798,14 @@ export function App() {
                   )}
                   {scope && (
                     <div className="scope-bar">
-                      {t("app.k_showing")}{" "}
-                      {view === "ports"
-                        ? t("inspection.k_local_ports_903c8be8")
-                        : t("status.k_file_usages_d01933d6")}{" "}
-                      for <strong>{scope.name}</strong>
+                      <ScopeSentence
+                        text={t(
+                          view === "ports"
+                            ? "app.k_scope_ports"
+                            : "app.k_scope_file_usages",
+                        )}
+                        name={scope.name}
+                      />
                       <button onClick={() => setScope(null)}>
                         <X size={12} />
                         {t("filters.k_clear_process_filter")}

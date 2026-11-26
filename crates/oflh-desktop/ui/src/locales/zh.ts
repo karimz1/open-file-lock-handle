@@ -261,7 +261,8 @@ const zh: TranslationSchema<typeof en> = {
     k_sharing_conflict_write_denied_reported_5b8637bb:
       "共享冲突：无法写入；已报告文件使用者，但锁的持有者未经确认",
     k_shift_for_folder: "按住 Shift 选择文件夹",
-    k_showing: "显示",
+    k_scope_file_usages: "显示 {{name}} 的文件使用情况",
+    k_scope_ports: "显示 {{name}} 的本地端口",
     k_size: "大小",
     k_some_port_entries_could_not_be_inspecte_6356812f:
       "部分端口信息无法检查（权限不足或套接字发生变化）。",
