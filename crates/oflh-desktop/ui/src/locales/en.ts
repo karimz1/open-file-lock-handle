@@ -226,8 +226,9 @@ const en = {
     k_exact_pid: "Exact PID",
     k_execute: "execute",
     k_file_usage: "File usage",
-    k_file_usage_is_not_proof_of_a_lock_windo_f7640915:
-      "File usage is not proof of a lock. Windows resource users are not proven lock owners.",
+    k_file_usage_is_not_proof_of_a_lock: "File usage is not proof of a lock.",
+    k_windows_resource_users_are_not_proven_lock_owners:
+      "Windows resource users are not proven lock owners.",
     k_for: "for",
     k_full_path: "Full path",
     k_github_profile: "GitHub profile",

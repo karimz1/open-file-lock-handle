@@ -231,8 +231,10 @@ const de: TranslationSchema<typeof en> = {
     k_exact_pid: "Exakte PID",
     k_execute: "Ausführen",
     k_file_usage: "Dateinutzung",
-    k_file_usage_is_not_proof_of_a_lock_windo_f7640915:
-      "Dateinutzung ist kein Beweis für eine Sperre. Unter Windows sind Ressourcennutzer nicht als Sperrbesitzer bestätigt.",
+    k_file_usage_is_not_proof_of_a_lock:
+      "Dateinutzung ist kein Beweis für eine Sperre.",
+    k_windows_resource_users_are_not_proven_lock_owners:
+      "Unter Windows sind Ressourcennutzer nicht als Sperrbesitzer bestätigt.",
     k_for: "für",
     k_full_path: "Vollständiger Pfad",
     k_github_profile: "GitHub-Profil",
