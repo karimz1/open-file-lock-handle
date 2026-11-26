@@ -1030,7 +1030,11 @@ test.beforeEach(async ({ page }) => {
             return (window as any).__terminationResults;
           }
           if (command === "terminate" && args.ticket === "parent-ticket") {
-            await new Promise((resolve) => setTimeout(resolve, 200));
+            // Held open until the test releases it, so the waiting state is
+            // asserted without racing a fixed delay on slow runners.
+            await new Promise<void>((resolve) => {
+              (window as any).__finishParentTermination = resolve;
+            });
             return [{ pid: 3000, outcome: "exited", error: null }];
           }
           if (
@@ -2476,6 +2480,7 @@ test("parent termination verifies exit, clears stale details and refreshes", asy
   ).toBeVisible();
   await dialog.getByRole("button", { name: /^Close (?!dialog)/ }).click();
   await expect(page.getByText("Waiting for process exit…")).toBeVisible();
+  await page.evaluate(() => (window as any).__finishParentTermination());
   await expect(page.getByText("Process exited", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("complementary", { name: "Process details" }),
