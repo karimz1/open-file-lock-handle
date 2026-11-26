@@ -4149,7 +4149,8 @@ for (const [saved, resolved, background] of [
       (theme) => localStorage.setItem("oflh-theme", theme),
       saved,
     );
-    await page.route(/\/src\/main\.tsx(?:\?.*)?$/, (route) => route.abort());
+    // Block the app bundle; theme-init.js is a separate public script.
+    await page.route(/\/assets\/index-[^/]+\.js$/, (route) => route.abort());
     await page.goto("/");
     await expect(page.locator("html")).toHaveAttribute("data-theme", resolved);
     await expect(page.locator("html")).toHaveCSS(
