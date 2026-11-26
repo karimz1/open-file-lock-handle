@@ -31,7 +31,7 @@ function Wait-For([string]$What, [int]$Seconds, [scriptblock]$Check) {
   Write-Host "timed out after ${Seconds}s: $What"; return $false
 }
 function Start-Locker([string]$Name, [string]$User, [string]$Password, [string]$Path, [switch]$Interactive) {
-  $pidFile = "$Run\$Name.pid"; Remove-Item $pidFile -ErrorAction SilentlyContinue
+  $pidFile = "$Run\$Name.pid"; Remove-Item $pidFile, "$pidFile.tmp" -ErrorAction SilentlyContinue
   $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$Run\locker.ps1`" -Path `"$Path`" -PidFile `"$pidFile`""
   $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -AllowStartIfOnBatteries
   if ($Interactive) {
@@ -91,7 +91,14 @@ switch ($Stage) {
     # The task runs as the third user, so its SMB session authenticates with that user's credentials.
     $opened = $null
     foreach ($server in '127.0.0.1', 'localhost', $env:COMPUTERNAME) {
-      try { $locker = Start-Locker 'share' $U3 $env:PW_OFLH_U3 "\\$server\oflhci\Q3.xlsx" } catch { Write-Host "SMB via $server failed: $_"; continue }
+      try { $locker = Start-Locker 'share' $U3 $env:PW_OFLH_U3 "\\$server\oflhci\Q3.xlsx" }
+      catch {
+        # Stop this attempt's task: a still-running instance makes the next
+        # Start-ScheduledTask a no-op, so the next server could never start.
+        Write-Host "SMB via $server failed: $_"
+        Stop-ScheduledTask -TaskName 'oflh-share' -ErrorAction SilentlyContinue
+        continue
+      }
       if (Wait-For "SMB open via $server" 20 { Get-SmbOpenFile | Where-Object { $_.Path -like '*Q3.xlsx' } }) { $opened = $server; break }
       Stop-ScheduledTask -TaskName 'oflh-share' -ErrorAction SilentlyContinue
     }
