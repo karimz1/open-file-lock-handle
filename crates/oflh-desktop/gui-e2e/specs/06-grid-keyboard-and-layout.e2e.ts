@@ -42,6 +42,24 @@ const columnHeaders = () =>
     ),
   );
 
+/**
+ * Wait until the grid shows the current query's own rows. After a view
+ * switch the grid keeps the previous view's rows on screen (read-only, with
+ * aria-busy) until the new page arrives, and then scrolls back to the top.
+ */
+const waitForGridRows = (rows: number) =>
+  browser.waitUntil(
+    () =>
+      browser.execute((count) => {
+        const grid = document.querySelector("[role=grid]");
+        return (
+          grid?.getAttribute("aria-busy") === "false" &&
+          grid.getAttribute("aria-rowcount") === String(count + 1)
+        );
+      }, rows),
+    { timeoutMsg: `The grid did not show its ${rows} rows` },
+  );
+
 /** Put keyboard focus on the grid itself, as Tab does, without clicking a row. */
 const focusGrid = () =>
   browser.execute(() =>
@@ -221,22 +239,42 @@ describe("Grid, keyboard and layout", () => {
     await switchView("File usages");
     await waitForVisible(xpath.grid);
     const total = manyFiles.length + 2;
-    await browser.waitUntil(async () => (await rowTexts()).length > 0);
+    await waitForGridRows(total);
     expect((await rowTexts()).length).toBeLessThan(total);
+    // Record every scroll position the grid goes through, so a failure says
+    // whether the scroll never landed or something moved the grid back.
     await browser.execute(() => {
       const grid = document.querySelector<HTMLElement>("[role=grid]")!;
+      const trace: string[] = [];
+      (window as unknown as { oflhScrollTrace: string[] }).oflhScrollTrace =
+        trace;
+      grid.addEventListener("scroll", () =>
+        trace.push(`${Math.round(performance.now())}ms top=${grid.scrollTop}`),
+      );
+      trace.push(
+        `scroll from top=${grid.scrollTop} to ${grid.scrollHeight} (client ${grid.clientHeight}, rows ${grid.getAttribute("aria-rowcount")}, busy ${grid.getAttribute("aria-busy")})`,
+      );
       grid.scrollTop = grid.scrollHeight;
     });
-    await browser.waitUntil(
-      async () =>
-        (await rowTexts()).some(
-          (row) =>
-            row.includes("file-119.txt") ||
-            row.includes("small.txt") ||
-            row.includes("other.txt"),
-        ),
-      { timeoutMsg: "The last rows did not render after scrolling to the end" },
-    );
+    const lastRowsShown = async () =>
+      (await rowTexts()).some(
+        (row) =>
+          row.includes("file-119.txt") ||
+          row.includes("small.txt") ||
+          row.includes("other.txt"),
+      );
+    await browser
+      .waitUntil(lastRowsShown, { timeout: 20_000 })
+      .catch(async () => {
+        const trace = await browser.execute(() =>
+          (
+            window as unknown as { oflhScrollTrace: string[] }
+          ).oflhScrollTrace.join("; "),
+        );
+        throw new Error(
+          `The last rows did not render after scrolling to the end. Scroll trace: ${trace}`,
+        );
+      });
     await screenshot("scrolled to the end");
     await $(xpath.grid).click();
     await press("Home");
@@ -259,6 +297,7 @@ describe("Grid, keyboard and layout", () => {
   });
 
   it("automatic refresh finds a new process without a manual refresh", async () => {
+    await switchView("Processes");
     await click('//button[@aria-label="Automatic refresh interval"]');
     await click('//*[@role="option"][normalize-space(.)="5s"]');
     const late = await startHolder([tree.file("other.txt")]);
