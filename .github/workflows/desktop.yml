@@ -503,11 +503,15 @@ jobs:
       - name: Smoke-test the Windows portable zip
         if: matrix.os == 'windows'
         run: python .github/scripts/smoke-windows-portable.py "desktop-dist/oflh-desktop.windows.${{ matrix.arch }}-portable.zip"
+      # The portable product is itself a zip. Uploading it with archive: false
+      # makes download-artifact decompress it (skip-decompress defaults to
+      # false), so assemble-release then looks for a .zip that is no longer
+      # on disk. Upload a wrapper zip that contains the portable zip, the
+      # same way desktop receipts are uploaded.
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'windows'
         with:
           name: oflh-desktop.windows.${{ matrix.arch }}-portable.zip
-          archive: false
           path: desktop-dist/oflh-desktop.windows.${{ matrix.arch }}-portable.zip
           if-no-files-found: error
           retention-days: 3
