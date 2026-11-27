@@ -43,12 +43,18 @@ export type GraceDecision = "waiting" | "accept" | "not-open";
  * Track how long the folder window has been continuously visible. Call this
  * once per poll with the combined result of every probe. A single probe that
  * misses must not be passed in on its own: that would reset `seenSince`.
+ *
+ * `deadline` is the end of the overall wait. If the folder is already
+ * visible but there is not enough time left for the grace period to
+ * finish, accept now: the file manager has been reached, and waiting
+ * further would only fail with the folder still open.
  */
 export function selectionGraceDecision(
   folderOpen: boolean,
   now: number,
   grace: SelectionGrace,
   graceMs: number,
+  deadline = Number.POSITIVE_INFINITY,
 ): GraceDecision {
   if (!folderOpen) {
     grace.seenSince = 0;
@@ -57,7 +63,10 @@ export function selectionGraceDecision(
   if (grace.seenSince === 0) {
     grace.seenSince = now;
   }
-  if (now - grace.seenSince < graceMs) return "waiting";
-  grace.seenSince = 0;
-  return "accept";
+  const waited = now - grace.seenSince;
+  if (waited >= graceMs || waited + (deadline - now) < graceMs) {
+    grace.seenSince = 0;
+    return "accept";
+  }
+  return "waiting";
 }
