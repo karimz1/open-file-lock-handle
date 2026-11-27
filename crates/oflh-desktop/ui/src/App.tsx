@@ -975,12 +975,14 @@ export function App() {
       .then((keys) => setSelected(new Set(keys)))
       .catch(report);
   };
-  const prepare = (force: boolean, keys = [...selected]) => {
+  const lastPrepare = useRef<{ force: boolean; keys: string[] } | null>(null);
+  const prepare = (force: boolean, keys = [...selected], wholeApp = true) => {
     setContext(null);
     setAncestorOwner(null);
     setActing(true);
+    lastPrepare.current = { force, keys };
     void api
-      .prepare(status.revision, keys, force)
+      .prepare(status.revision, keys, force, wholeApp)
       .then((value) => {
         setActing(false);
         setConfirmation(value);
@@ -2839,6 +2841,31 @@ export function App() {
               <TerminationTarget key={target.key} target={target} />
             ))}
           </ImpactScrollArea>
+          {confirmation.apps_available &&
+            !confirmation.elevated &&
+            lastPrepare.current && (
+              <p className="app-scope">
+                {!confirmation.whole_app && (
+                  <span className="impact-warning">
+                    {t("termination.k_app_helper_only_note")}{" "}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="link-button"
+                  disabled={acting}
+                  onClick={() => {
+                    const last = lastPrepare.current;
+                    if (last)
+                      prepare(last.force, last.keys, !confirmation.whole_app);
+                  }}
+                >
+                  {confirmation.whole_app
+                    ? t("termination.k_app_helper_only")
+                    : t("termination.k_app_whole_app")}
+                </button>
+              </p>
+            )}
           <details className="safety-note">
             <summary>
               <Info size={13} aria-hidden="true" />
@@ -2893,9 +2920,18 @@ export function App() {
               <li key={result.pid}>
                 <code>PID {result.pid}</code>
                 <span className={result.error ? "danger-text" : ""}>
-                  {result.outcome === "exited" ? (
+                  {result.outcome === "exited" && result.released === false ? (
+                    <span className="impact-warning">
+                      {t("termination.k_process_exited")}.{" "}
+                      {t("termination.k_file_held_again", {
+                        holders: (result.held_by ?? []).join(", "),
+                      })}
+                    </span>
+                  ) : result.outcome === "exited" ? (
                     <>
                       <Check size={15} /> {t("termination.k_process_exited")}
+                      {result.released === true &&
+                        ` · ${t("termination.k_file_free")}`}
                     </>
                   ) : result.outcome === "still_running" ? (
                     t(

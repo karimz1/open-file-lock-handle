@@ -27,7 +27,8 @@ enum Event {
     Wait(u64, Result<()>),
     ScopedScan(u64, Box<Result<(Target, PreparedSnapshot)>>),
     Metrics(u64, Result<Vec<(Identity, Metrics)>>),
-    Killed(usize, Vec<String>),
+    /// Requests sent, errors, and who holds the files afterwards when checked.
+    Killed(usize, Vec<String>, Option<Vec<Ancestor>>),
     Impact(Vec<Identity>, Vec<oflh_core::impact::Impact>),
     Update(std::result::Result<Option<String>, String>),
 }
@@ -217,7 +218,7 @@ pub fn run(
                 }
                 dirty = true
             }
-            Ok(Event::Killed(sent, errors)) => {
+            Ok(Event::Killed(sent, errors, release)) => {
                 app.stopping = false;
                 app.error = !errors.is_empty();
                 app.status = localized!(
@@ -230,6 +231,29 @@ pub fn run(
                     },
                     sent = sent
                 );
+                match release.as_deref() {
+                    Some([]) => {
+                        app.status.push_str(" · ");
+                        app.status.push_str(app.language.text("File is free"))
+                    }
+                    Some(holders) => {
+                        let holders = holders
+                            .iter()
+                            .map(|holder| {
+                                format!("{} (PID {})", safe(&holder.name), holder.identity.pid)
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        app.status.push_str(" · ");
+                        app.status.push_str(&localized!(
+                            app.language,
+                            "But the file is held again by {holders}.",
+                            holders = holders
+                        ));
+                        app.error = true
+                    }
+                    None => {}
+                }
                 if sent > 0 {
                     app.tree = None;
                     app.selected.clear()
@@ -273,12 +297,12 @@ pub fn run(
                 pulse = Instant::now() + PULSE;
                 dirty = true;
             }
-            Effect::Kill(ids, force) => {
+            Effect::Kill(ids, force, scope) => {
                 generation += 1;
                 sample = None;
                 app.finish_scan(Instant::now(), false);
                 sampling = false;
-                worker.request(generation, Work::Kill(ids, force));
+                worker.request(generation, Work::Kill(ids, force, scope));
                 pulse = Instant::now() + PULSE;
                 dirty = true
             }

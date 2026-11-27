@@ -515,6 +515,17 @@ pub struct ActionTarget {
     pub impact: TargetImpact,
     /// Owning user and session, read when the confirmation was prepared.
     pub owner: OwnerView,
+    /// Set when closing this holder closes the whole app it is a helper of.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app: Option<AppView>,
+}
+/// The app a helper process belongs to.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AppView {
+    /// Sanitized name of the app's main process.
+    pub name: String,
+    /// Observed PID of the main process; never sufficient on its own.
+    pub pid: u32,
 }
 /// Single-use confirmation receipt. The Rust service retains the actual identities.
 #[derive(Clone, Debug, Serialize)]
@@ -527,6 +538,11 @@ pub struct Confirmation {
     pub elevated: bool,
     /// All confirmed processes, including any hidden by filters.
     pub targets: Vec<ActionTarget>,
+    /// At least one holder is a helper of an app, so the user may choose
+    /// between closing the app and closing only the helper.
+    pub apps_available: bool,
+    /// Helpers close through their app (the default) instead of alone.
+    pub whole_app: bool,
 }
 /// Result of a request and a bounded check of its captured process lifetime.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -552,6 +568,11 @@ pub struct ActionResult {
     pub pid: u32,
     /// Failure for this operation, if any.
     pub error: Option<Failure>,
+    /// After an exit: whether the files this process held are free now.
+    /// `None` when nothing could be checked.
+    pub released: Option<bool>,
+    /// Processes that hold those files again, as `name (PID n)`.
+    pub held_by: Vec<String>,
 }
 
 #[cfg(test)]

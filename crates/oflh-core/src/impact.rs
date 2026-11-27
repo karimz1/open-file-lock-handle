@@ -1,7 +1,8 @@
 //! Best-effort side effects of terminating one process, shown before confirmation.
 //!
-//! Termination always targets a single process lifetime. These helpers only
-//! describe what else that request may touch; they never widen the action.
+//! These helpers only describe what else a termination request may touch;
+//! they never widen the action. Closing a whole app is a separate, explicit
+//! choice built on [`crate::app`].
 use crate::{Ancestor, Identity, Port, Process, safe};
 
 /// Entries shown per list before the user asks to see all of them.
@@ -38,6 +39,9 @@ pub struct Impact {
     /// Windows marks a few processes as critical: ending them stops the
     /// system. Always `false` on other platforms.
     pub critical: bool,
+    /// The app this process is a helper of, when closing the helper alone
+    /// would leave the app running. See [`crate::app`].
+    pub app: Option<crate::app::AppRoot>,
 }
 
 /// A display list capped at [`IMPACT_LIST_LIMIT`], with the remainder counted.

@@ -524,16 +524,58 @@ impl Backend for Native {
             .filter(|output| output.status.success())
             .map(|output| impact::launchd_jobs(&String::from_utf8_lossy(&output.stdout)))
             .unwrap_or_default();
-        children_for(process_table(), ids)
+        let table = process_table();
+        let apps: Vec<_> = ids
+            .iter()
+            .map(|&id| {
+                let table = table.as_ref().ok()?;
+                crate::resolve_app(table, id, |entry, _| {
+                    let read = read_process(entry.identity.pid)
+                        .ok()
+                        .filter(|(process, _)| process.identity == entry.identity);
+                    let executable = read
+                        .as_ref()
+                        .map(|(process, _)| process.executable.clone())
+                        .unwrap_or_default();
+                    oflh_core::app::Lineage {
+                        identity: entry.identity,
+                        parent: entry.parent,
+                        name: entry.name.clone(),
+                        visible: oflh_core::app::bundle_main_executable(&executable),
+                        executable,
+                        owner: read.as_ref().map(|(_, uid)| uid.to_string()),
+                        session: None,
+                        service: jobs.contains_key(&entry.identity.pid),
+                        critical: false,
+                    }
+                })
+            })
+            .collect();
+        children_for(table, ids)
             .into_iter()
             .zip(ids)
-            .map(|(children, &id)| impact::Impact {
+            .zip(apps)
+            .map(|((children, &id), app)| impact::Impact {
+                app,
                 windows: None,
                 children,
                 service: jobs.remove(&id.pid),
                 critical: false,
             })
             .collect()
+    }
+    fn app_helpers(&mut self, root: Identity) -> Vec<Identity> {
+        process_table()
+            .map(|table| {
+                crate::same_image_helpers(&table, root, |identity| {
+                    read_process(identity.pid)
+                        .ok()
+                        .filter(|(process, _)| process.identity == identity)
+                        .map(|(process, _)| process.executable)
+                        .filter(|path| !path.as_os_str().is_empty())
+                })
+            })
+            .unwrap_or_default()
     }
     fn terminate(&mut self, identity: Identity, force: bool, cancel: &Cancellation) -> Result<()> {
         identity.validate()?;

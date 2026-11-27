@@ -195,6 +195,14 @@ export function TerminationTarget({ target }: { target: ConfirmationTarget }) {
         </strong>
         <code>PID {target.pid}</code>
       </div>
+      {target.app && (
+        <p className="app-line">
+          {t("termination.k_app_belongs", {
+            name: target.app.name,
+            pid: target.app.pid,
+          })}
+        </p>
+      )}
       {target.owner &&
         (target.owner.service ||
           (target.owner.session && !target.owner.session.own)) && (

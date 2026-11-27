@@ -107,6 +107,23 @@ fn read_process(pid: u32) -> Result<Process> {
         ..Process::default()
     })
 }
+/// Executable of a captured lifetime; `None` when unreadable or replaced.
+fn executable(identity: Identity) -> Option<PathBuf> {
+    read_process(identity.pid)
+        .ok()
+        .filter(|process| {
+            process.identity == identity && !process.executable.as_os_str().is_empty()
+        })
+        .map(|process| process.executable)
+}
+/// Remote Desktop session a process runs in.
+fn session_id(pid: u32) -> Option<u32> {
+    let mut session = 0;
+    // SAFETY: writable out slot; the call only reads the PID.
+    (unsafe { windows_sys::Win32::System::RemoteDesktop::ProcessIdToSessionId(pid, &mut session) }
+        != 0)
+        .then_some(session)
+}
 /// Current directory of a captured process lifetime, read from its process
 /// parameters block (PEB, `ProcessParameters`, `CurrentDirectory.DosPath`).
 /// Returns an empty path when the process is protected, belongs to someone the
@@ -956,14 +973,42 @@ impl Backend for Native {
                     .collect()
             })
             .unwrap_or_default();
+        let apps: Vec<_> = ids
+            .iter()
+            .map(|&id| {
+                let table = table.as_ref().ok()?;
+                crate::resolve_app(table, id, |entry, _| {
+                    let pid = entry.identity.pid;
+                    let owner = username(pid);
+                    oflh_core::app::Lineage {
+                        identity: entry.identity,
+                        parent: entry.parent,
+                        name: entry.name.clone(),
+                        executable: executable(entry.identity).unwrap_or_default(),
+                        owner: (owner != "unknown").then_some(owner),
+                        session: session_id(pid),
+                        service: services
+                            .as_ref()
+                            .is_some_and(|services| services.contains_key(&pid)),
+                        critical: impact::windows_critical(pid, &entry.name),
+                        visible: titles
+                            .as_ref()
+                            .and_then(|titles| titles.get(&pid))
+                            .is_some_and(|windows| !windows.is_empty()),
+                    }
+                })
+            })
+            .collect();
         children_for(table, ids)
             .into_iter()
             .zip(ids)
-            .map(|(children, &id)| {
+            .zip(apps)
+            .map(|((children, &id), app)| {
                 // A PID read before EnumWindows or the service list must still
                 // name the same lifetime.
                 let live = read_identity(id.pid).is_ok_and(|live| live == id);
                 impact::Impact {
+                    app: app.filter(|_| live),
                     windows: titles
                         .as_mut()
                         .filter(|_| live)
@@ -987,6 +1032,11 @@ impl Backend for Native {
                 }
             })
             .collect()
+    }
+    fn app_helpers(&mut self, root: Identity) -> Vec<Identity> {
+        process_table()
+            .map(|table| crate::same_image_helpers(&table, root, executable))
+            .unwrap_or_default()
     }
     fn terminate(&mut self, identity: Identity, force: bool, cancel: &Cancellation) -> Result<()> {
         identity.validate()?;

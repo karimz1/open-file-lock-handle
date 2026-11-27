@@ -102,6 +102,7 @@ pub fn version_report(application: &str) -> String {
     report
 }
 
+pub mod app;
 pub mod check;
 pub mod impact;
 pub mod ports;

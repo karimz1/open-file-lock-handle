@@ -82,6 +82,168 @@ pub trait Backend: Send + 'static {
     }
     /// Request termination after validating identity and protected-process guards.
     fn terminate(&mut self, id: Identity, force: bool, cancel: &Cancellation) -> Result<()>;
+    /// Running descendants of an app's main process that run the same app
+    /// image (its helpers), read before anything is signalled.
+    fn app_helpers(&mut self, _root: Identity) -> Vec<Identity> {
+        Vec::new()
+    }
+    /// Close a whole app through its main process.
+    ///
+    /// A normal close asks only the main process; the app ends its own
+    /// helpers. A forced close ends the main process, then any of its
+    /// same-image helpers still running. Descendants that run other programs
+    /// (a shell or a build started from the app) are never touched.
+    fn terminate_app(&mut self, root: Identity, force: bool, cancel: &Cancellation) -> Result<()> {
+        let helpers = if force {
+            self.app_helpers(root)
+        } else {
+            Vec::new()
+        };
+        self.terminate(root, force, cancel)?;
+        if helpers.is_empty() {
+            return Ok(());
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while self.is_running(root).unwrap_or(false) && std::time::Instant::now() < deadline {
+            cancel.check()?;
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        for helper in helpers {
+            cancel.check()?;
+            // Helpers usually end with the main process. A failure here is
+            // not hidden: the release check after the action reports any
+            // process that still holds the file.
+            if self.is_running(helper).unwrap_or(false) {
+                let _ = self.terminate(helper, true, cancel);
+            }
+        }
+        Ok(())
+    }
+}
+/// Walk from `holder` up the process table and resolve the app it is a
+/// helper of. `describe` reads one table entry; `holder` tells it whether
+/// the entry is the holder itself.
+#[cfg(any(target_os = "linux", target_os = "macos", windows))]
+fn resolve_app(
+    table: &[impact::ProcessEntry],
+    holder: Identity,
+    mut describe: impl FnMut(&impact::ProcessEntry, bool) -> app::Lineage,
+) -> Option<app::AppRoot> {
+    let mut current = table.iter().find(|entry| entry.identity == holder)?;
+    let mut chain = vec![describe(current, true)];
+    while chain.len() <= app::MAX_DEPTH {
+        let Some(parent) = table.iter().find(|entry| {
+            entry.identity.pid == current.parent && entry.identity.pid != current.identity.pid
+        }) else {
+            break;
+        };
+        current = parent;
+        chain.push(describe(current, false));
+    }
+    let root = &chain[app::app_root(&chain, app::Images::native())?];
+    // Never this process or a protected PID.
+    root.identity.validate().ok()?;
+    Some(app::AppRoot {
+        identity: root.identity,
+        name: root.name.clone(),
+        executable: root.executable.clone(),
+    })
+}
+/// Same-image descendants of `root`, which must still be in `table`.
+#[cfg(any(target_os = "linux", target_os = "macos", windows))]
+fn same_image_helpers(
+    table: &[impact::ProcessEntry],
+    root: Identity,
+    mut executable: impl FnMut(Identity) -> Option<std::path::PathBuf>,
+) -> Vec<Identity> {
+    if !table.iter().any(|entry| entry.identity == root) {
+        return Vec::new();
+    }
+    let Some(image) = executable(root) else {
+        return Vec::new();
+    };
+    app::descendants_of(table, root)
+        .into_iter()
+        .filter(|helper| {
+            executable(*helper)
+                .is_some_and(|path| app::same_image(app::Images::native(), &image, &path))
+        })
+        .collect()
+}
+/// Most files checked after an action; one is enough to tell the user.
+pub const RELEASE_CHECK_FILES: usize = 4;
+/// Check whether files are free after an action ended `ended`.
+///
+/// A multi-process app can start a new helper that opens the file again, so
+/// a process exit alone does not prove the file is free. Waits up to three
+/// seconds for `ended` to exit, then looks three times over 1.5 seconds and
+/// reports who holds the files at the last look: a helper that is still
+/// shutting down is not reported, one that came back is. `None` means
+/// nothing could be checked; an empty list means every checked file is free.
+pub fn holders_after(
+    backend: &mut dyn Backend,
+    files: &[std::path::PathBuf],
+    ended: &[Identity],
+    cancel: &Cancellation,
+) -> Option<Vec<Ancestor>> {
+    let mut targets = Vec::new();
+    for file in files {
+        if targets.len() == RELEASE_CHECK_FILES {
+            break;
+        }
+        if file.is_file()
+            && let Ok(target) = Target::new(file)
+            && !targets
+                .iter()
+                .any(|known: &Target| known.path == target.path)
+        {
+            targets.push(target)
+        }
+    }
+    if targets.is_empty() {
+        return None;
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while ended
+        .iter()
+        .any(|identity| backend.is_running(*identity).unwrap_or(false))
+        && std::time::Instant::now() < deadline
+    {
+        if cancel.check().is_err() {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let mut checked = false;
+    let mut holders: Vec<Ancestor> = Vec::new();
+    for _ in 0..3 {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        holders.clear();
+        for target in &targets {
+            if cancel.check().is_err() {
+                return checked.then(Vec::new);
+            }
+            let Ok(snapshot) = backend.scan(target, cancel) else {
+                continue;
+            };
+            checked = true;
+            for process in snapshot.processes {
+                if process.identity.pid != 0
+                    && !process.usages.is_empty()
+                    && !ended.contains(&process.identity)
+                    && !holders
+                        .iter()
+                        .any(|known| known.identity == process.identity)
+                {
+                    holders.push(Ancestor {
+                        identity: process.identity,
+                        name: process.name,
+                    })
+                }
+            }
+        }
+    }
+    checked.then_some(holders)
 }
 /// Construct the scanner for the current operating system.
 pub fn native() -> Result<Box<dyn Backend>> {

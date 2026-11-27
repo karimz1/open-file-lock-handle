@@ -1695,6 +1695,30 @@ main {
 .impact-warning {
   color: var(--danger);
 }
+/* A helper process closes through its app; say so plainly. */
+.app-line {
+  margin: 4px 0 0 22px;
+  color: var(--text);
+  font-size: 0.8462rem;
+  font-weight: 600;
+}
+.app-scope {
+  margin: 8px 0 0;
+  font-size: 0.8462rem;
+}
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
 .impact-details {
   margin: 4px 0 0 22px;
   font-size: 0.8462rem;

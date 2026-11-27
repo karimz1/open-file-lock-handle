@@ -94,6 +94,19 @@ jobs:
         run: |
           cargo fmt --all --check
           cargo clippy --workspace --all-targets --locked -- -D warnings
+      # The app close test shows a real X11 window from a repo fixture, on a
+      # private Xvfb display it starts itself.
+      - name: Install Xvfb for the app close test
+        if: matrix.os == 'linux'
+        run: |
+          if ! command -v Xvfb >/dev/null; then
+            for attempt in 1 2 3; do
+              sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb && break
+              echo "apt attempt $attempt failed; retrying" >&2
+              sleep 15
+            done
+          fi
+          command -v Xvfb
       - name: Unit and native lock tests
         env:
           OFLH_TRACE_NATIVE_TESTS: '1'

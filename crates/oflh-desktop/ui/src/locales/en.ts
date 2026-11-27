@@ -726,6 +726,14 @@ const en = {
     k_impact_latest_scan:
       "Based on the latest scan and a process check when this dialog opened.",
     k_role_parent: "Parent",
+    k_app_belongs:
+      "Part of {{name}} (PID {{pid}}). Closing it closes the whole app.",
+    k_app_helper_only: "Only end the helper process",
+    k_app_whole_app: "Close the whole app instead",
+    k_app_helper_only_note:
+      "The app usually starts a new helper right away, so the file may be held again.",
+    k_file_free: "File is free",
+    k_file_held_again: "But the file is held again by {{holders}}.",
     k_retry_admin: "Retry with administrator privileges…",
     k_admin_recovery:
       "Permission denied. You can authorize a retry for these original targets. Administrator privileges do not guarantee success.",

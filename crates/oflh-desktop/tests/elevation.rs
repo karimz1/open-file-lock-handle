@@ -170,7 +170,8 @@ fn exercise_helper(executable: &Path, privileged: bool) {
         ),
         2
     );
-    assert_eq!(request(executable, identity, "2", privileged, false), 4);
+    // Modes 0 to 3 are close/force, each for one process or a whole app.
+    assert_eq!(request(executable, identity, "4", privileged, false), 4);
     #[cfg(unix)]
     if privileged {
         use std::os::unix::fs::PermissionsExt;

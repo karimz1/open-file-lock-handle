@@ -89,7 +89,7 @@ fn safe_confirmation_and_hidden_selection() {
     a.width = 10;
     assert!(matches!(key(&mut a, K::Enter), Effect::None));
     a.width = 80;
-    assert!(matches!(key(&mut a,K::Enter),Effect::Kill(ids,true) if ids.len()==1));
+    assert!(matches!(key(&mut a,K::Enter),Effect::Kill(ids,true,_) if ids.len()==1));
 }
 #[test]
 fn ancestry_captures_identity() {
@@ -946,7 +946,7 @@ fn translated_workflows_keep_search_identities_default_cancel_and_review_guards(
         assert!(app.error);
         app.height = 24;
         assert!(
-            matches!(key(&mut app,K::Enter),Effect::Kill(identities,true) if identities == [identity])
+            matches!(key(&mut app,K::Enter),Effect::Kill(identities,true,_) if identities == [identity])
         );
         let mut app = self::app();
         app.language = language;
@@ -1214,7 +1214,7 @@ fn confirmation_requests_impact_and_ignores_stale_results() {
     assert!(app.impact_details);
     // Enter still terminates only the captured target.
     key(&mut app, K::Tab);
-    assert!(matches!(key(&mut app, K::Enter), Effect::Kill(ids, false) if ids == vec![id]));
+    assert!(matches!(key(&mut app, K::Enter), Effect::Kill(ids, false, _) if ids == vec![id]));
     // A new confirmation starts collapsed with no carried-over impact.
     app.stopping = false;
     key(&mut app, K::Char('k'));
@@ -1829,4 +1829,74 @@ mod sessions {
         key(&mut a, K::Char('L'));
         assert!(a.sign_out.is_none());
     }
+}
+
+fn helper_impact() -> oflh_core::impact::Impact {
+    oflh_core::impact::Impact {
+        app: Some(oflh_core::app::AppRoot {
+            identity: Identity {
+                pid: 3900,
+                started: 5,
+                started_sub: 0,
+            },
+            name: "Example".into(),
+            executable: "/opt/example/example".into(),
+        }),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_helper_is_closed_through_its_app_unless_only_the_helper_is_asked_for() {
+    let mut app = impact_app();
+    let id = app.snapshot.processes[0].identity;
+    let files: Vec<_> = app.snapshot.processes[0]
+        .usages
+        .iter()
+        .map(|usage| usage.path.clone())
+        .collect();
+    key(&mut app, K::Char('k'));
+    app.accept_impact(&[id], vec![helper_impact()]);
+    let screen = render_confirm(&mut app, "app-whole-en");
+    let flat = screen.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains("Part of Example (PID 3900). Closing it closes the whole app."),
+        "{screen}"
+    );
+    assert!(flat.contains("h: only end the helper process"), "{screen}");
+    key(&mut app, K::Tab);
+    let Effect::Kill(ids, false, scope) = key(&mut app, K::Enter) else {
+        panic!("expected a termination")
+    };
+    assert_eq!(ids[0].pid, 3900);
+    assert_eq!(scope.apps, vec![true]);
+    assert_eq!(scope.files, files);
+
+    app.stopping = false;
+    key(&mut app, K::Char('k'));
+    app.accept_impact(&[id], vec![helper_impact()]);
+    key(&mut app, K::Char('h'));
+    let screen = render_confirm(&mut app, "app-helper-only-en");
+    let flat = screen.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(!flat.contains("Part of Example"), "{screen}");
+    assert!(flat.contains("h: close the whole app instead"), "{screen}");
+    assert!(flat.contains("usually starts a new helper"), "{screen}");
+    key(&mut app, K::Tab);
+    let Effect::Kill(ids, false, scope) = key(&mut app, K::Enter) else {
+        panic!("expected a termination")
+    };
+    assert_eq!(ids, vec![id]);
+    assert_eq!(scope.apps, vec![false]);
+}
+
+#[test]
+fn h_does_nothing_without_an_app() {
+    let mut app = impact_app();
+    let id = app.snapshot.processes[0].identity;
+    key(&mut app, K::Char('k'));
+    app.accept_impact(&[id], vec![blender_impact()]);
+    key(&mut app, K::Char('h'));
+    assert!(!app.helper_only);
+    let screen = render_confirm(&mut app, "app-none-en");
+    assert!(!screen.contains("h: "), "{screen}");
 }
