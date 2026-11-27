@@ -5,6 +5,7 @@
   "description": "End-to-end tests that drive the real OFLH desktop app through its embedded WebDriver server.",
   "scripts": {
     "test": "wdio run wdio.conf.ts",
+    "test:unit": "tsx --test support/explorer-reveal.test.ts",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
