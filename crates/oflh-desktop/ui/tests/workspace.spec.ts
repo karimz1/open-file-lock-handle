@@ -985,6 +985,8 @@ test.beforeEach(async ({ page }) => {
             return {
               ticket: "captured-ticket",
               force: args.force,
+              apps_available: Boolean((window as any).__appOf),
+              whole_app: args.wholeApp !== false,
               targets: args.keys.map((key: string) => {
                 const row = processRows.find((row) => row.process_key === key)!;
                 return {
@@ -992,6 +994,10 @@ test.beforeEach(async ({ page }) => {
                   name: row.name,
                   pid: row.pid,
                   role: "holder",
+                  app:
+                    args.wholeApp !== false
+                      ? (window as any).__appOf
+                      : undefined,
                   owner: multi ? ownerOf(row.pid) : undefined,
                   impact:
                     typeof (window as any).__impact === "function"
@@ -7748,6 +7754,78 @@ test("issue 153: settings popup escapes sidebar clipping", async ({ page }) => {
   expect(hit).toBe(true);
   await about.click();
   await expect(page.getByRole("dialog", { name: "About OFLH" })).toBeVisible();
+});
+
+test("a helper process closes through its app, or alone when asked", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    (window as any).__appOf = { name: "Example", pid: 3900 };
+    (window as any).__terminationResults = [
+      {
+        pid: 4000,
+        outcome: "exited",
+        error: null,
+        released: false,
+        held_by: ["Example (PID 4100)"],
+      },
+    ];
+  });
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.getByText(
+      "Part of Example (PID 3900). Closing it closes the whole app.",
+    ),
+  ).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Only end the helper process" })
+    .click();
+  await expect(dialog.getByText(/usually starts a new helper/)).toBeVisible();
+  await expect(dialog.getByText(/^Part of Example/)).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "Close the whole app instead" }),
+  ).toBeVisible();
+  const prepares = await page.evaluate(() =>
+    (window as any).__testCalls
+      .filter((call: any) => call.command === "prepare")
+      .map((call: any) => call.args.wholeApp),
+  );
+  expect(prepares).toEqual([true, false]);
+  await dialog
+    .getByRole("button", { name: /^Close (?!dialog|the whole)/ })
+    .click();
+  // An exit alone is not reported as success when the app took the file back.
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByText("But the file is held again by Example (PID 4100)."),
+  ).toBeVisible();
+});
+
+test("a closed app reports that the file is free", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    (window as any).__appOf = { name: "Example", pid: 3900 };
+    (window as any).__terminationResults = [
+      {
+        pid: 3900,
+        outcome: "exited",
+        error: null,
+        released: true,
+        held_by: [],
+      },
+    ];
+  });
+  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("button", { name: "Terminate…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: /^Close (?!dialog)/ }).click();
+  await expect(
+    page.getByRole("dialog").getByText("Process exited · File is free"),
+  ).toBeVisible();
 });
 
 test("issue 153: rejected window close offers confirmed force recovery", async ({

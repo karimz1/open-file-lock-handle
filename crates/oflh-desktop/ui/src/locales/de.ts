@@ -748,6 +748,14 @@ const de: TranslationSchema<typeof en> = {
     k_impact_latest_scan:
       "Stand: letzter Scan und eine Prozessprüfung beim Öffnen dieses Dialogs.",
     k_role_parent: "Elternprozess",
+    k_app_belongs:
+      "Gehört zu {{name}} (PID {{pid}}). Beenden schließt die ganze App.",
+    k_app_helper_only: "Nur Hilfsprozess beenden",
+    k_app_whole_app: "Stattdessen ganze App beenden",
+    k_app_helper_only_note:
+      "Die App startet meist sofort einen neuen Hilfsprozess, dann ist die Datei wieder belegt.",
+    k_file_free: "Datei ist frei",
+    k_file_held_again: "Die Datei ist aber wieder belegt von {{holders}}.",
     k_retry_admin: "Mit Administratorrechten erneut versuchen …",
     k_admin_recovery:
       "Zugriff verweigert. Sie können einen erneuten Versuch für diese ursprünglichen Ziele autorisieren. Administratorrechte garantieren keinen Erfolg.",

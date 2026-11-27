@@ -691,6 +691,13 @@ const zh: TranslationSchema<typeof en> = {
       "程序未关闭时，OFLH 不会强制结束。如需强制，请使用“强制结束”。",
     k_impact_latest_scan: "依据最近一次扫描及打开此对话框时的进程检查。",
     k_role_parent: "父进程",
+    k_app_belongs: "属于 {{name}}（PID {{pid}}）。结束它会关闭整个应用。",
+    k_app_helper_only: "只结束此辅助进程",
+    k_app_whole_app: "改为关闭整个应用",
+    k_app_helper_only_note:
+      "应用通常会立即启动新的辅助进程，文件可能再次被占用。",
+    k_file_free: "文件已释放",
+    k_file_held_again: "但文件又被 {{holders}} 占用。",
     k_retry_admin: "以管理员权限重试…",
     k_admin_recovery:
       "权限不足。您可以授权对原始目标重试。管理员权限不保证成功。",

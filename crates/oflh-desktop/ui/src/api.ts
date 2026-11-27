@@ -232,18 +232,28 @@ export interface ConfirmationTarget {
   role?: "holder" | "ancestor";
   impact?: TargetImpact;
   owner?: OwnerView;
+  /** Set when closing this helper closes the whole app it belongs to. */
+  app?: { name: string; pid: number };
 }
 export interface Confirmation {
   ticket: string;
   force: boolean;
   elevated: boolean;
   targets: ConfirmationTarget[];
+  /** A holder is a helper of an app: closing the app or only the helper. */
+  apps_available?: boolean;
+  /** Helpers close through their app. */
+  whole_app?: boolean;
 }
 export interface ActionResult {
   outcome: "exited" | "still_running" | "unverified" | "failed";
   pid: number;
   admin_recovery?: boolean;
   error: Failure | null;
+  /** After an exit: whether the files are free; null when not checked. */
+  released?: boolean | null;
+  /** Processes holding the files again, as `name (PID n)`. */
+  held_by?: string[];
 }
 export const api = {
   systemInfo: () => invoke<{ os: string; arch: string }>("system_info"),
@@ -286,8 +296,18 @@ export const api = {
   copyDiagnostic: (text: string) => invoke<void>("copy_diagnostic", { text }),
   reveal: (revision: number, reference: string, containing: boolean) =>
     invoke<void>("reveal", { revision, reference, containing }),
-  prepare: (revision: number, keys: string[], force: boolean) =>
-    invoke<Confirmation>("prepare", { revision, keys, force }),
+  prepare: (
+    revision: number,
+    keys: string[],
+    force: boolean,
+    wholeApp = true,
+  ) =>
+    invoke<Confirmation>("prepare", {
+      revision,
+      keys,
+      force,
+      wholeApp,
+    }),
   prepareAncestor: (owner: string, key: string, force: boolean) =>
     invoke<Confirmation>("prepare_ancestor", { owner, key, force }),
   dismiss: () => invoke<void>("dismiss"),
