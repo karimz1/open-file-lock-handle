@@ -8,7 +8,7 @@ pub enum Work {
     ScanPorts(Target),
     FollowPort(Identity, std::path::PathBuf),
     Sample(Vec<Identity>),
-    Kill(Vec<Identity>, bool),
+    Kill(Vec<Identity>, bool, crate::app::KillScope),
     Wait {
         target: Target,
         port: Option<u16>,
@@ -133,20 +133,32 @@ fn execute_job(backend: &mut dyn Backend, job: Job) -> Event {
         Work::Sample(identities) => {
             Event::Metrics(job.generation, backend.sample(&identities, &job.cancel))
         }
-        Work::Kill(identities, force) => {
-            let mut sent = 0;
+        Work::Kill(identities, force, scope) => {
+            let mut ended = Vec::new();
             let mut errors = Vec::new();
-            for identity in identities {
+            for (index, identity) in identities.into_iter().enumerate() {
                 if job.cancel.check().is_err() {
                     errors.push("cancelled remaining actions".into());
                     break;
                 }
-                match backend.terminate(identity, force, &job.cancel) {
-                    Ok(()) => sent += 1,
+                let result = if scope.apps.get(index).copied().unwrap_or(false) {
+                    backend.terminate_app(identity, force, &job.cancel)
+                } else {
+                    backend.terminate(identity, force, &job.cancel)
+                };
+                match result {
+                    Ok(()) => ended.push(identity),
                     Err(error) => errors.push(format!("PID {}: {error}", identity.pid)),
                 }
             }
-            Event::Killed(sent, errors)
+            // An exit alone does not prove the file is free: an app can
+            // start a new helper that opens it again.
+            let release = if ended.is_empty() || scope.files.is_empty() {
+                None
+            } else {
+                oflh_platform::holders_after(backend, &scope.files, &ended, &job.cancel)
+            };
+            Event::Killed(ended.len(), errors, release)
         }
     }
 }
@@ -250,6 +262,7 @@ mod tests {
                     started_sub: 0,
                 }],
                 true,
+                Default::default(),
             ),
         );
         drop(worker);

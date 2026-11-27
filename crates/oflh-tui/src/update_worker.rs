@@ -135,10 +135,10 @@ mod tests {
         for _ in 0..1000 {
             assert!(!worker.request());
         }
-        events.send(Event::Killed(0, vec![])).unwrap();
+        events.send(Event::Killed(0, vec![], None)).unwrap();
         assert!(matches!(
             receiver.recv_timeout(Duration::from_secs(2)).unwrap(),
-            Event::Killed(0, _)
+            Event::Killed(0, _, _)
         ));
         release_tx.send(()).unwrap();
         assert!(

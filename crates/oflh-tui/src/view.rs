@@ -1532,7 +1532,39 @@ fn dialog(frame: &mut Frame, area: Rect, app: &mut App) {
                 process.identity.pid,
                 safe(&process.name)
             )));
+            if let Some(root) = app.app_of(process.identity) {
+                lines.push(Line::styled(
+                    format!(
+                        "            {}",
+                        localized!(
+                            app.language,
+                            "Part of {name} (PID {pid}). Closing it closes the whole app.",
+                            name = safe(&root.name),
+                            pid = root.identity.pid
+                        )
+                    ),
+                    Style::default().fg(LOCK).add_modifier(Modifier::BOLD),
+                ))
+            }
             impact_lines(&mut lines, app, process, area.width as usize);
+        }
+        if app.apps_available() {
+            if app.helper_only {
+                lines.push(Line::styled(
+                    app.language.text(
+                        "The app usually starts a new helper right away, so the file may be held again.",
+                    ),
+                    Style::default().fg(LOCK),
+                ))
+            }
+            lines.push(Line::styled(
+                app.language.text(if app.helper_only {
+                    "h: close the whole app instead"
+                } else {
+                    "h: only end the helper process"
+                }),
+                accent(),
+            ))
         }
         if checking {
             lines.push(Line::styled(

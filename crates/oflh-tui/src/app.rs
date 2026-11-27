@@ -49,12 +49,20 @@ pub enum Effect {
     CancelWait,
     CheckUpdate,
     FollowPort(Identity, std::path::PathBuf),
-    Kill(Vec<Identity>, bool),
+    Kill(Vec<Identity>, bool, KillScope),
     /// Read windows and children for the pending targets.
     Impact(Vec<Identity>),
     Link(&'static str),
     /// Sign out the confirmed session after revalidating it.
     SignOut(oflh_sessions::SessionKey),
+}
+/// How a confirmed termination applies to apps, and what to check after it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct KillScope {
+    /// Per identity: it is an app's main process, closed with its helpers.
+    pub apps: Vec<bool>,
+    /// Files the selected processes held; checked again after the action.
+    pub files: Vec<std::path::PathBuf>,
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum UpdateFeedback {
@@ -210,6 +218,8 @@ pub struct App {
     pub force: bool,
     pub confirm: bool,
     pub parent_action: bool,
+    /// Close only the selected helper processes, not the apps they belong to.
+    pub helper_only: bool,
     /// Best-effort impact per pending target, read off the UI thread.
     pub impact: HashMap<Identity, oflh_core::impact::Impact>,
     /// Whether the confirmation lists the full impact (toggled with `d`).
@@ -286,6 +296,7 @@ impl App {
             force: false,
             confirm: false,
             parent_action: false,
+            helper_only: false,
             impact: HashMap::new(),
             impact_details: false,
             impact_all: false,
@@ -1057,6 +1068,7 @@ impl App {
         self.scroll = 0;
         self.force = matches!(key, K::Char('x' | 'X'));
         self.parent_action = false;
+        self.helper_only = false;
         if let Some(tree) = &self.tree {
             let target = tree.nodes[tree.cursor].clone();
             if target.identity.validate().is_err() {
@@ -1140,6 +1152,59 @@ impl App {
                 (id, entry)
             })
             .collect();
+    }
+    /// The app a pending helper belongs to, unless only helpers are closed.
+    pub fn app_of(&self, identity: Identity) -> Option<&oflh_core::app::AppRoot> {
+        if self.helper_only {
+            return None;
+        }
+        self.app_root(identity)
+    }
+    /// Whether any pending target is a helper of an app.
+    pub fn apps_available(&self) -> bool {
+        self.pending
+            .iter()
+            .any(|target| self.app_root(target.identity).is_some())
+    }
+    fn app_root(&self, identity: Identity) -> Option<&oflh_core::app::AppRoot> {
+        if self.parent_action {
+            return None;
+        }
+        self.impact
+            .get(&identity)
+            .and_then(|impact| impact.app.as_ref())
+            .filter(|app| app.identity.validate().is_ok())
+    }
+    /// Identities to end and how: a helper is replaced by its app, and
+    /// several helpers of one app become one action.
+    fn kill_targets(&mut self) -> (Vec<Identity>, KillScope) {
+        let mut identities = Vec::new();
+        let mut scope = KillScope::default();
+        for target in &self.pending {
+            if let Some(process) = self
+                .snapshot
+                .processes
+                .iter()
+                .find(|process| process.identity == target.identity)
+            {
+                scope
+                    .files
+                    .extend(process.usages.iter().map(|usage| usage.path.clone()))
+            }
+            let (identity, app) = match self.app_of(target.identity) {
+                Some(app) => (app.identity, true),
+                None => (target.identity, false),
+            };
+            match identities.iter().position(|known| *known == identity) {
+                Some(index) => scope.apps[index] |= app,
+                None => {
+                    identities.push(identity);
+                    scope.apps.push(app)
+                }
+            }
+        }
+        self.pending.clear();
+        (identities, scope)
     }
     /// Session of the process shown in details, if it has one.
     pub fn detail_session(&mut self) -> Option<oflh_sessions::Session> {
@@ -1246,6 +1311,7 @@ impl App {
             }
             K::Tab | K::Left | K::Right => self.confirm = !self.confirm,
             K::Char('d') => self.impact_details = !self.impact_details,
+            K::Char('h') if self.apps_available() => self.helper_only = !self.helper_only,
             // Space expands every group (opening Details if needed) or collapses them.
             K::Char(' ' | 'a') => {
                 if self.impact_details {
@@ -1275,13 +1341,8 @@ impl App {
                     self.screen = Screen::Main;
                     self.stopping = true;
                     self.status = self.language.text("Requesting termination…").into();
-                    return Effect::Kill(
-                        self.pending
-                            .drain(..)
-                            .map(|process| process.identity)
-                            .collect(),
-                        self.force,
-                    );
+                    let (identities, scope) = self.kill_targets();
+                    return Effect::Kill(identities, self.force, scope);
                 }
             }
             _ => {}

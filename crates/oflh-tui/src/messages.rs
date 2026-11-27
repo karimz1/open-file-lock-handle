@@ -248,6 +248,10 @@ labels! {
     "▴ Space show less", "▴ Leertaste weniger zeigen", "▴ 空格 收起";
     "↑↓ / PgUp PgDn scroll · Home/End", "↑↓ / Bild↑ Bild↓ blättern · Pos1/Ende", "↑↓ / PgUp PgDn 滚动 · Home/End";
     "Windows needs this process. Ending it can crash your PC.", "Windows braucht diesen Prozess. Wenn du ihn beendest, kann dein PC abstürzen.", "Windows 需要此进程。结束它可能导致电脑崩溃。";
+    "File is free", "Datei ist frei", "文件已释放";
+    "h: only end the helper process", "h: Nur Hilfsprozess beenden", "h：只结束此辅助进程";
+    "h: close the whole app instead", "h: Stattdessen ganze App beenden", "h：改为关闭整个应用";
+    "The app usually starts a new helper right away, so the file may be held again.", "Die App startet meist sofort einen neuen Hilfsprozess, dann ist die Datei wieder belegt.", "应用通常会立即启动新的辅助进程，文件可能再次被占用。";
     "A service will probably restart it right away.", "Ein Dienst startet es wahrscheinlich sofort neu.", "某个服务很可能会立即重新启动它。";
     "Service", "Dienst", "服务";
     "may restart it", "startet es eventuell neu", "可能会重新启动它";
@@ -586,6 +590,20 @@ macro_rules! localized {
             $crate::view::messages::Language::English => format!("Open browser: {error}" $(, $($arguments)*)?),
             $crate::view::messages::Language::German => format!("Browser öffnen: {error}" $(, $($arguments)*)?),
             $crate::view::messages::Language::Chinese => format!("打开浏览器：{error}" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "But the file is held again by {holders}." $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("But the file is held again by {holders}." $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Die Datei ist aber wieder belegt von {holders}." $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("但文件又被 {holders} 占用。" $(, $($arguments)*)?),
+        }
+    };
+    ($language:expr, "Part of {name} (PID {pid}). Closing it closes the whole app." $(, $($arguments:tt)*)?) => {
+        match $language {
+            $crate::view::messages::Language::English => format!("Part of {name} (PID {pid}). Closing it closes the whole app." $(, $($arguments)*)?),
+            $crate::view::messages::Language::German => format!("Gehört zu {name} (PID {pid}). Beenden schließt die ganze App." $(, $($arguments)*)?),
+            $crate::view::messages::Language::Chinese => format!("属于 {name}（PID {pid}）。结束它会关闭整个应用。" $(, $($arguments)*)?),
         }
     };
     ($language:expr, "{sent} termination requests sent{}" $(, $($arguments:tt)*)?) => {
