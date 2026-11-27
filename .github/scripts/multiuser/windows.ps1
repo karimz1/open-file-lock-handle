@@ -42,11 +42,37 @@ function Start-Locker([string]$Name, [string]$User, [string]$Password, [string]$
     Register-ScheduledTask -TaskName "oflh-$Name" -Action $action -User "$env:COMPUTERNAME\$User" -Password $Password -Settings $settings -Force | Out-Null
   }
   Start-ScheduledTask -TaskName "oflh-$Name"
-  if (-not (Wait-For "$Name locker PID" 60 { Test-Path $pidFile })) { throw "locker $Name did not start" }
+  if (-not (Wait-For "$Name locker PID" 60 { Test-Path $pidFile })) {
+    Write-Host "run dir:"
+    Get-ChildItem $Run -ErrorAction SilentlyContinue | Format-Table Name, Length, LastWriteTime -AutoSize | Out-String | Write-Host
+    Write-Host "task:"
+    Get-ScheduledTaskInfo -TaskName "oflh-$Name" -ErrorAction SilentlyContinue | Format-List * | Out-String | Write-Host
+    Write-Host "powershell processes:"
+    Get-Process powershell, pwsh -IncludeUserName -ErrorAction SilentlyContinue |
+      Format-Table Id, SessionId, UserName, ProcessName -AutoSize | Out-String | Write-Host
+    throw "locker $Name did not start"
+  }
   $lockerPid = [int](Get-Content $pidFile -Raw).Trim()
   $session = (Get-Process -Id $lockerPid).SessionId
   Write-Host "locker $Name pid=$lockerPid session=$session file=$Path"
   return @{ Pid = $lockerPid; Session = $session }
+}
+function Warm-UserProfile([string]$User, [string]$Password) {
+  # New-LocalUser does not create a profile. The first batch logon does, and
+  # that can take longer than Start-Locker's 60s wait for the PID file.
+  # Warm the profile here so the owner locker is not that first logon.
+  # Start-Locker's 60s wait is unchanged.
+  $ready = "$Run\$User.profile-ready"
+  Remove-Item $ready -ErrorAction SilentlyContinue
+  $command = "Set-Content -LiteralPath '$ready' -Value `$PID -Encoding ascii"
+  $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -Command `"$command`""
+  $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -AllowStartIfOnBatteries
+  Register-ScheduledTask -TaskName "oflh-$User-profile" -Action $action -User "$env:COMPUTERNAME\$User" -Password $Password -Settings $settings -Force | Out-Null
+  Start-ScheduledTask -TaskName "oflh-$User-profile"
+  $ok = Wait-For "$User profile" 180 { Test-Path $ready }
+  Unregister-ScheduledTask -TaskName "oflh-$User-profile" -Confirm:$false -ErrorAction SilentlyContinue
+  if (-not $ok) { throw "could not pre-warm the profile for $User" }
+  Write-Host "warmed profile for $User"
 }
 function Get-UserSessions([string]$User) {
   # quser exits 1 when there is no match; parse defensively (header, '>' marker, missing SESSIONNAME).
@@ -72,6 +98,7 @@ switch ($Stage) {
       New-LocalUser -Name $user -Password $secure -PasswordNeverExpires -AccountNeverExpires | Out-Null
       Add-LocalGroupMember -Group 'Users' -Member $user
       Grant-Right $user 'SeBatchLogonRight'
+      Warm-UserProfile $user $password
       Out-Env ("PW_" + $user.ToUpper()) $password
     }
     Add-LocalGroupMember -Group 'Remote Desktop Users' -Member $U2
