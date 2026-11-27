@@ -1,10 +1,16 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+mod check;
 mod messages;
+mod wait;
 use oflh_tui::Language;
 use std::{ffi::OsString, io::IsTerminal, process::ExitCode};
 #[derive(Debug, thiserror::Error)]
 enum CliError {
+    #[error("{0}")]
+    Check(String),
+    #[error("{0}")]
+    Wait(String),
     #[error("{0}")]
     Usage(String),
     #[error(transparent)]
@@ -21,14 +27,29 @@ struct Arguments {
     view: oflh_tui::StartOptions,
     help: bool,
     version: bool,
+    check: bool,
+    json: bool,
+    wait: bool,
+    timeout: Option<std::time::Duration>,
+    tui_wait_timeout: Option<std::time::Duration>,
+    poll_interval: Option<std::time::Duration>,
 }
 
+#[allow(clippy::too_many_lines)]
 fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Arguments, CliError> {
     let mut result = Arguments::default();
     let mut positional = false;
     let mut arguments = arguments.into_iter();
     while let Some(argument) = arguments.next() {
         if !positional {
+            if argument == "wait" && result.path.is_none() && !result.wait && !result.check {
+                result.wait = true;
+                continue;
+            }
+            if argument == "check" && result.path.is_none() && !result.check {
+                result.check = true;
+                continue;
+            }
             if argument == "--" {
                 positional = true;
                 continue;
@@ -58,6 +79,34 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Argu
             }
             if argument == "--no-update-check" {
                 result.view.no_update_check = true;
+                continue;
+            }
+            if argument == "--wait-timeout" {
+                let value = arguments
+                    .next()
+                    .and_then(|value| value.to_str().and_then(|value| value.parse::<u64>().ok()))
+                    .filter(|seconds| *seconds > 0)
+                    .ok_or_else(|| {
+                        CliError::Usage(
+                            "--wait-timeout requires whole seconds greater than zero".into(),
+                        )
+                    })?;
+                result.tui_wait_timeout = Some(std::time::Duration::from_secs(value));
+                continue;
+            }
+            if argument == "--timeout" || argument == "--poll-interval" {
+                let timeout_flag = argument == "--timeout";
+                let value = positive_seconds(arguments.next())
+                    .ok_or_else(|| seconds_usage(result.view.language))?;
+                if timeout_flag {
+                    result.timeout = Some(std::time::Duration::from_secs(value));
+                } else {
+                    result.poll_interval = Some(std::time::Duration::from_secs(value));
+                }
+                continue;
+            }
+            if argument == "--json" {
+                result.json = true;
                 continue;
             }
             if argument == "--ports" {
@@ -110,9 +159,63 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Argu
         }
         positional = true;
     }
+    if result.check && result.wait {
+        return Err(CliError::Usage(
+            messages::choose(
+                result.view.language.unwrap_or_else(Language::system),
+                "choose either check or wait",
+                "Entweder check oder wait angeben",
+                "请选择 check 或 wait 其中之一",
+            )
+            .into(),
+        ));
+    }
+    if result.json && !result.check {
+        return Err(CliError::Usage(
+            messages::choose(
+                result.view.language.unwrap_or_else(Language::system),
+                "--json requires the check subcommand",
+                "--json benötigt den Unterbefehl check",
+                "--json 需要 check 子命令",
+            )
+            .into(),
+        ));
+    }
+    if (result.timeout.is_some() || result.poll_interval.is_some()) && !result.wait {
+        return Err(CliError::Usage(
+            messages::choose(
+                result.view.language.unwrap_or_else(Language::system),
+                "--timeout and --poll-interval require the wait subcommand",
+                "--timeout und --poll-interval benötigen den Unterbefehl wait",
+                "--timeout 和 --poll-interval 需要 wait 子命令",
+            )
+            .into(),
+        ));
+    }
     result.view.follow_port_folder = result.path.is_none();
     result.view.ports_path_only = result.view.ports && result.path.is_some();
     Ok(result)
+}
+
+/// Positive whole seconds, as accepted by --timeout and --poll-interval.
+fn positive_seconds(value: Option<OsString>) -> Option<u64> {
+    value?
+        .to_str()?
+        .parse::<u64>()
+        .ok()
+        .filter(|seconds| *seconds > 0)
+}
+
+fn seconds_usage(language: Option<Language>) -> CliError {
+    CliError::Usage(
+        messages::choose(
+            language.unwrap_or_else(Language::system),
+            "--timeout and --poll-interval require whole seconds greater than zero",
+            "--timeout und --poll-interval benötigen ganze Sekunden größer als null",
+            "--timeout 和 --poll-interval 需要大于零的整数秒",
+        )
+        .into(),
+    )
 }
 
 fn language_usage(language: Option<Language>) -> CliError {
@@ -127,9 +230,10 @@ fn language_usage(language: Option<Language>) -> CliError {
     )
 }
 
-fn run() -> Result<(), CliError> {
+fn run() -> Result<RunResult, CliError> {
     if let Some(result) = oflh_platform::inspection_helper::dispatch() {
-        return Ok(result?);
+        result?;
+        return Ok(RunResult::Success);
     }
     let arguments = parse_arguments(std::env::args_os().skip(1))?;
     if arguments.help {
@@ -137,11 +241,37 @@ fn run() -> Result<(), CliError> {
             "{}",
             messages::help(arguments.view.language.unwrap_or_else(Language::system))
         );
-        return Ok(());
+        return Ok(RunResult::Success);
     }
     if arguments.version {
         println!("{}", oflh_core::version_report("oflh"));
-        return Ok(());
+        return Ok(RunResult::Success);
+    }
+    if arguments.wait {
+        let options = wait::Options::from_view(
+            &arguments.view,
+            arguments.view.language.unwrap_or_else(Language::system),
+            arguments.path,
+            arguments.timeout,
+            arguments
+                .poll_interval
+                .unwrap_or(std::time::Duration::from_secs(1)),
+        );
+        return wait::run(options).map(|()| RunResult::WaitCompleted);
+    }
+    if arguments.check {
+        let options = check::Options::from_view(
+            &arguments.view,
+            arguments.view.language.unwrap_or_else(Language::system),
+            arguments.path,
+            arguments.json,
+        );
+        return check::run(options)
+            .map(|outcome| match outcome {
+                check::Outcome::Free => RunResult::Success,
+                check::Outcome::Held => RunResult::CheckHeld,
+            })
+            .map_err(|error| CliError::Check(error.to_string()));
     }
     let path = arguments.path;
     let target = oflh_core::Target::new(path.unwrap_or_else(|| OsString::from(".")))?;
@@ -153,20 +283,33 @@ fn run() -> Result<(), CliError> {
             "需要交互式终端；请在终端中运行 oflh .",
         )));
     }
+    let mut view = arguments.view;
+    view.wait_timeout = arguments.tui_wait_timeout;
     let backend = oflh_platform::native()?;
-    oflh_tui::run(
-        target,
-        oflh_core::display_version().into(),
-        backend,
-        arguments.view,
-    )?;
-    Ok(())
+    oflh_tui::run(target, oflh_core::display_version().into(), backend, view)?;
+    Ok(RunResult::Success)
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RunResult {
+    Success,
+    WaitCompleted,
+    CheckHeld,
 }
 fn main() -> ExitCode {
     match run() {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(RunResult::Success) => ExitCode::SUCCESS,
+        Ok(RunResult::CheckHeld) => ExitCode::from(check::EXIT_HELD),
+        Ok(RunResult::WaitCompleted) => ExitCode::SUCCESS,
         Err(error) => {
-            let code = if matches!(error, CliError::Usage(_)) {
+            let code = if matches!(
+                error,
+                CliError::Core(oflh_core::Error::WaitTimedOut | oflh_core::Error::Cancelled)
+                    | CliError::Wait(_)
+            ) {
+                wait::error_exit_code(&error)
+            } else if matches!(error, CliError::Check(_)) {
+                check::error_exit_code(&error)
+            } else if matches!(error, CliError::Usage(_)) {
                 2
             } else {
                 1
@@ -180,6 +323,32 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn check_json_and_port_arguments_do_not_change_interactive_defaults() {
+        let parsed = parse_arguments(
+            ["check", "--json", "--port", "3000"]
+                .into_iter()
+                .map(OsString::from),
+        )
+        .unwrap();
+        assert!(parsed.check);
+        assert!(parsed.json);
+        assert_eq!(parsed.view.port, Some(3000));
+        let scoped = parse_arguments(
+            ["check", "--json", "--ports", "."]
+                .into_iter()
+                .map(OsString::from),
+        )
+        .unwrap();
+        assert!(scoped.view.ports_path_only);
+        assert_eq!(scoped.path, Some(OsString::from(".")));
+        assert!(parse_arguments(["--json"].into_iter().map(OsString::from)).is_err());
+        let literal =
+            parse_arguments(["check", "--", "--json"].into_iter().map(OsString::from)).unwrap();
+        assert_eq!(literal.path, Some(OsString::from("--json")));
+        assert!(!literal.json);
+    }
+
     #[test]
     fn disabling_update_checks_preserves_options_and_literal_path_rules() {
         let parsed = parse_arguments(

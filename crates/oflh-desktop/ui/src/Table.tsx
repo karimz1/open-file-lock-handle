@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -6,23 +7,19 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import {
-  ArrowDown,
-  ArrowUp,
-  PanelRightOpen,
-  PanelRightClose,
-  FileSearch,
-  Search,
-  ShieldCheck,
-} from "lucide-react";
+import { GridRow } from "./GridRow";
+import { useStableCallback } from "./useStableCallback";
+import { ArrowDown, ArrowUp, FileSearch, Search } from "lucide-react";
 import { api, type Page, type Row, type Sort, type TableQuery } from "./api";
 import { createPageLoader } from "./pageLoader";
+import { pageKind, staleRowsFor, virtualRowKey } from "./gridPages";
 import { columnText, columnMeasurer } from "./columnSizing";
-import { memory, compactPath } from "./state";
-import { t, tValue, type MessageKey } from "./i18n";
+import { t, useLocale, type MessageKey } from "./i18n";
 export type ColumnKey =
   | "process"
   | "pid"
+  | "user"
+  | "session"
   | "path"
   | "evidence"
   | "memory"
@@ -37,6 +34,7 @@ export interface ColumnDefinition {
   width: number;
 }
 export type CachedPage = Page & {
+  kind?: string;
   offset: number;
   queryKey: string;
   target: string;
@@ -66,6 +64,8 @@ interface Props {
 export const fileColumns: ColumnDefinition[] = [
   { key: "process", label: "app.k_process", sort: "name", width: 220 },
   { key: "pid", label: "app.k_pid", sort: "pid", width: 84 },
+  { key: "user", label: "sessions.k_user", width: 140 },
+  { key: "session", label: "sessions.k_session", width: 110 },
   { key: "path", label: "app.k_path", sort: "path", width: 380 },
   { key: "evidence", label: "filters.k_evidence_access", width: 170 },
   { key: "memory", label: "inspector.k_memory", sort: "memory", width: 104 },
@@ -74,6 +74,8 @@ export const fileColumns: ColumnDefinition[] = [
 export const portColumns: ColumnDefinition[] = [
   { key: "process", label: "app.k_process", sort: "name", width: 220 },
   { key: "pid", label: "app.k_pid", sort: "pid", width: 84 },
+  { key: "user", label: "sessions.k_user", width: 140 },
+  { key: "session", label: "sessions.k_session", width: 110 },
   { key: "address", label: "app.k_local_address", sort: "address", width: 230 },
   { key: "port", label: "app.k_port", sort: "port", width: 90 },
   {
@@ -85,7 +87,9 @@ export const portColumns: ColumnDefinition[] = [
   { key: "memory", label: "inspector.k_memory", sort: "memory", width: 104 },
   { key: "cpu", label: "app.k_cpu", sort: "cpu", width: 80 },
 ];
-export function Table(props: Props) {
+export const Table = memo(function Table(props: Props) {
+  // Memoized: translated text must follow a language switch on its own.
+  useLocale();
   const allColumns = props.query.ports ? portColumns : fileColumns;
   const columns = allColumns.filter(
     (column) =>
@@ -121,12 +125,27 @@ export function Table(props: Props) {
       : null;
   // Keep the accepted viewport during a same-target refresh. A different query
   // or target must never inherit stale matches. Actions retain the page revision.
-  const displayPage =
+  const kind = pageKind(props.query);
+  const sameQuery =
     page?.queryKey === queryKey && page.target === props.target
       ? page
       : cachedPage;
+  // Until the page for a changed query arrives, keep the previous rows on
+  // screen instead of an empty grid. They are read-only (see the rows
+  // container), and only ever from the same target and view.
+  const previousRows = sameQuery
+    ? null
+    : staleRowsFor(
+        page,
+        { queryKey, target: props.target, kind },
+        failedPage?.revision === props.revision &&
+          failedPage.target === props.target &&
+          failedPage.queryKey === queryKey,
+      );
+  const displayPage = sameQuery ?? previousRows;
+  const stale = !sameQuery && !!previousRows;
   const currentPage =
-    displayPage?.revision === props.revision ? displayPage : null;
+    !stale && displayPage?.revision === props.revision ? displayPage : null;
   const [cursor, setCursor] = useState(0);
   const viewport = useRef({ page: displayPage, cursor });
   viewport.current = { page: displayPage, cursor };
@@ -139,6 +158,8 @@ export function Table(props: Props) {
   const [widths, setWidths] = useState<Record<ColumnKey, number>>({
     process: 220,
     pid: 84,
+    user: 140,
+    session: 110,
     path: 380,
     evidence: 170,
     memory: 104,
@@ -152,23 +173,34 @@ export function Table(props: Props) {
   const template = columns.map((column) => `${widthFor(column)}px`).join(" ");
   const minWidth = columns.reduce((sum, column) => sum + widthFor(column), 0);
   const rowHeight = Math.round((38 * props.fontSize) / 13);
+  const layoutKey = `${props.fontSize}:${[...props.hiddenColumns].sort().join(",")}`;
   const virtual = useVirtualizer({
     count: displayPage?.total ?? 0,
     getScrollElement: () => scroll.current,
     estimateSize: () => rowHeight,
     overscan: 10,
+    // Key measurements by font size, visible columns, and the row's matching
+    // paths so wrapping paths cannot inherit short heights from a previous
+    // layout. The query itself is not part of the key: the same process keeps
+    // its element across a refilter. Do not call virtual.measure() here: it
+    // clears the size cache and parks tall rows at the estimated height until
+    // a later remasure.
+    getItemKey: (index) =>
+      virtualRowKey(
+        layoutKey,
+        displayPage?.rows[index - displayPage.offset],
+        index,
+      ),
   });
-  useEffect(() => {
-    virtual.measure();
-  }, [props.fontSize, props.query.handles]);
   const items = virtual.getVirtualItems();
   const firstVisible = items[0]?.index ?? 0;
   const lastVisible = items.at(-1)?.index ?? firstVisible;
   // Retain a page while it covers the complete visible/overscan window.
-  const offset =
-    displayPage &&
-    firstVisible >= displayPage.offset &&
-    lastVisible < displayPage.offset + displayPage.rows.length
+  const offset = stale
+    ? 0
+    : displayPage &&
+        firstVisible >= displayPage.offset &&
+        lastVisible < displayPage.offset + displayPage.rows.length
       ? displayPage.offset
       : Math.floor(firstVisible / 100) * 100;
   const pageFailed =
@@ -217,6 +249,7 @@ export function Table(props: Props) {
               ...result,
               offset,
               queryKey,
+              kind,
               target: props.target,
             };
             if (offset === 0) {
@@ -351,7 +384,26 @@ export function Table(props: Props) {
   }, [props.fitAllRequest]);
   const rowAt = (index: number) =>
     displayPage?.rows[index - displayPage.offset];
+  // Stable handlers for the memoized rows. They read the page that is shown
+  // when they run, as the inline closures did.
+  const pickRow = useStableCallback(
+    (index: number, row: Row, additive: boolean) => {
+      setCursor(index);
+      props.onSelect(row, additive, displayPage!.revision);
+    },
+  );
+  const openRow = useStableCallback((row: Row) =>
+    props.onOpen(row, displayPage!.revision),
+  );
+  const contextRow = useStableCallback((row: Row) =>
+    props.onContext(row, displayPage!.revision),
+  );
+  const toggleRow = useStableCallback((row: Row) =>
+    props.onToggle(row, displayPage!.revision),
+  );
   const navigate = (event: KeyboardEvent<HTMLDivElement>) => {
+    // Rows kept from the previous query are not actionable.
+    if (stale) return;
     let index = cursor;
     if (event.key === "ArrowDown") index++;
     else if (event.key === "ArrowUp") index--;
@@ -560,6 +612,8 @@ export function Table(props: Props) {
         </div>
       ) : (
         <div
+          className={stale ? "grid-rows grid-stale" : "grid-rows"}
+          inert={stale}
           style={{
             height: virtual.getTotalSize(),
             minWidth,
@@ -569,166 +623,32 @@ export function Table(props: Props) {
           {items.map((item) => {
             const row = rowAt(item.index);
             return (
-              <div
-                key={row?.key ?? item.key}
-                id={`result-row-${item.index}`}
-                role="row"
-                data-cursor={item.index === cursor}
-                aria-rowindex={item.index + 2}
-                aria-selected={!!row && props.selected.has(row.process_key)}
-                className={`data-row ${row && props.selected.has(row.process_key) ? "selected" : ""} ${row?.process_key === props.focused ? "focused" : ""}`}
-                data-index={item.index}
-                ref={virtual.measureElement}
-                style={{
-                  position: "absolute",
-                  top: item.start,
-                  minHeight: rowHeight,
-                  gridTemplateColumns: template,
-                  width: "100%",
-                }}
-                onClick={(event) => {
-                  if (row) {
-                    setCursor(item.index);
-                    props.onSelect(
-                      row,
-                      event.ctrlKey || event.metaKey || event.shiftKey,
-                      displayPage!.revision,
-                    );
-                  }
-                }}
-                onDoubleClick={() =>
-                  row && props.onOpen(row, displayPage!.revision)
-                }
-                onContextMenu={(event) => {
-                  if (row) {
-                    event.preventDefault();
-                    props.onContext(row, displayPage!.revision);
-                  }
-                }}
-              >
-                {row ? (
-                  <>
-                    <div role="gridcell" className="process-cell">
-                      <button
-                        type="button"
-                        className="process-icon row-details-toggle"
-                        aria-label={`${t(props.expandedKey === row.key ? "common.k_close_details" : "common.k_open_details")} ${t("app.k_details_for")} ${row.name || t("app.k_process_c2e2d662")}${row.port ? ` ${row.port.endpoint}` : ` ${compactPath(row.path, props.target)}`}`}
-                        title={
-                          props.expandedKey === row.key
-                            ? t("app.k_close_details_panel")
-                            : t("app.k_open_details_panel")
-                        }
-                        aria-expanded={props.expandedKey === row.key}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          props.onToggle(row, displayPage!.revision);
-                        }}
-                        onDoubleClick={(event) => event.stopPropagation()}
-                      >
-                        {props.expandedKey === row.key ? (
-                          <PanelRightClose size={14} />
-                        ) : (
-                          <PanelRightOpen size={14} />
-                        )}
-                      </button>
-                      <span title={row.name}>
-                        {row.name || t("app.k_unnamed")}
-                      </span>
-                      {props.selected.has(row.process_key) && (
-                        <span className="selection-mark" />
-                      )}
-                    </div>
-                    {!props.hiddenColumns.has("pid") && (
-                      <div role="gridcell" className="mono muted">
-                        {row.pid || "—"}
-                      </div>
-                    )}
-                    {props.query.ports ? (
-                      <>
-                        {!props.hiddenColumns.has("address") && (
-                          <div
-                            role="gridcell"
-                            className="mono"
-                            title={row.port?.endpoint}
-                          >
-                            {row.port?.address ?? "—"}
-                          </div>
-                        )}
-                        {!props.hiddenColumns.has("port") && (
-                          <div role="gridcell" className="mono">
-                            {row.port?.number ?? "—"}
-                          </div>
-                        )}
-                        {!props.hiddenColumns.has("protocol") && (
-                          <div role="gridcell">
-                            <span className="badge">{row.port?.protocol}</span>{" "}
-                            <span className="muted">
-                              {tValue(row.port?.state ?? "")}
-                            </span>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        {!props.hiddenColumns.has("path") && (
-                          <div
-                            role="gridcell"
-                            className={`mono path-cell ${props.query.handles ? "full-path-cell" : ""}`}
-                            title={row.path}
-                          >
-                            {(props.query.handles
-                              ? row.path
-                              : compactPath(row.path, props.target)) ||
-                              t("common.k_unavailable_2c9c1f79")}
-                            {row.deleted && (
-                              <span className="badge">
-                                {t("table.k_deleted")}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        {!props.hiddenColumns.has("evidence") && (
-                          <div
-                            role="gridcell"
-                            title={row.evidence ?? undefined}
-                          >
-                            {row.evidence ? (
-                              <span className="evidence">
-                                <ShieldCheck size={13} />
-                                {tValue(row.evidence_label ?? "")}
-                              </span>
-                            ) : (
-                              <span className="muted">
-                                {props.query.handles
-                                  ? `${tValue(row.relation)} · ${tValue(row.access)}`
-                                  : `${row.usages} ${t("status.k_file_usages_d01933d6")}`}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </>
-                    )}
-                    {!props.hiddenColumns.has("memory") && (
-                      <div role="gridcell" className="mono numeric">
-                        {memory(row.memory)}
-                      </div>
-                    )}
-                    {!props.hiddenColumns.has("cpu") && (
-                      <div role="gridcell" className="mono numeric">
-                        {row.cpu === null ? "—" : `${row.cpu.toFixed(1)}%`}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div role="gridcell" className="muted">
-                    {t("app.k_loading")}…
-                  </div>
-                )}
-              </div>
+              <GridRow
+                key={item.key}
+                index={item.index}
+                start={item.start}
+                row={row}
+                selected={!!row && props.selected.has(row.process_key)}
+                focused={row?.process_key === props.focused}
+                cursor={item.index === cursor}
+                expanded={!!row && props.expandedKey === row.key}
+                template={template}
+                rowHeight={rowHeight}
+                hiddenColumns={props.hiddenColumns}
+                ports={!!props.query.ports}
+                handles={!!props.query.handles}
+                target={props.target}
+                revision={displayPage?.revision}
+                measure={virtual.measureElement}
+                onPick={pickRow}
+                onOpen={openRow}
+                onContext={contextRow}
+                onToggle={toggleRow}
+              />
             );
           })}
         </div>
       )}
     </div>
   );
-}
+});

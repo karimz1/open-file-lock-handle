@@ -1,0 +1,123 @@
+name: GUI E2E
+# Drives the real desktop app (debug build with the test-only `gui-e2e` feature) through
+# its embedded WebDriver server, against real processes that hold files and ports.
+# See crates/oflh-desktop/gui-e2e/README.md.
+on:
+  pull_request:
+  push:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: gui-e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  gui-e2e:
+    name: GUI E2E / ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: linux, arch: amd64, label: 'Linux x86-64', runner: ubuntu-24.04}
+          - {os: linux, arch: arm64, label: 'Linux ARM64', runner: ubuntu-24.04-arm}
+          - {os: darwin, arch: amd64, label: 'macOS Intel', runner: macos-15-intel}
+          - {os: darwin, arch: arm64, label: 'macOS Apple Silicon', runner: macos-15}
+          - {os: windows, arch: amd64, label: 'Windows x86-64', runner: windows-2025}
+          - {os: windows, arch: arm64, label: 'Windows ARM64', runner: windows-11-arm}
+    defaults:
+      run:
+        shell: bash
+    env:
+      OFLH_E2E_ARTIFACTS: ${{ github.workspace }}/gui-e2e-artifacts
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Linux WebView, display and desktop-integration dependencies
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libxdo-dev libssl-dev librsvg2-dev patchelf \
+            xvfb xauth openbox xclip dbus-x11 python3-dbus python3-gi
+      - run: rustup show
+      - name: Install UI and test dependencies
+        run: |
+          npm ci --prefix crates/oflh-desktop/ui
+          npm ci --prefix crates/oflh-desktop/gui-e2e
+      - name: Type-check and format-check the suite
+        working-directory: crates/oflh-desktop/gui-e2e
+        run: npm run typecheck && npm run format:check
+      - name: Build the app with the embedded WebDriver server
+        working-directory: crates/oflh-desktop/ui
+        run: npm run tauri -- build --debug --no-bundle --features gui-e2e -- --locked
+      - name: Run the GUI end-to-end suite (Linux, virtual display)
+        if: matrix.os == 'linux'
+        working-directory: crates/oflh-desktop/gui-e2e
+        run: xvfb-run -a -s '-screen 0 1600x1000x24' dbus-run-session -- ./run-linux.sh
+      - name: Run the GUI end-to-end suite
+        if: matrix.os != 'linux'
+        working-directory: crates/oflh-desktop/gui-e2e
+        run: npm test
+      - name: Upload screenshots, app logs and summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gui-e2e-${{ matrix.os }}-${{ matrix.arch }}
+          path: gui-e2e-artifacts/
+          retention-days: 3
+          if-no-files-found: warn
+
+  prune-older-screenshots:
+    name: Delete GUI E2E artifacts of older runs on this branch or PR
+    needs: gui-e2e
+    # Only after every leg uploaded successfully, so the newest commit always keeps its
+    # screenshots. Fork PRs get a read-only token, so they skip instead of failing.
+    if: >-
+      ${{ github.event_name == 'push' ||
+          (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: write
+    steps:
+      - name: Delete gui-e2e artifacts from older runs of the same branch and event
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          CURRENT_RUN: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/gui-e2e.yml/runs?branch=$(jq -rn --arg b "$BRANCH" '$b|@uri')&event=$EVENT&per_page=100" \
+            --jq ".workflow_runs[] | select(.id < $CURRENT_RUN) | .id" |
+          while read -r run; do
+            gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.expired | not) | select(.name | startswith("gui-e2e-")) | "\(.id) \(.name)"' |
+            while read -r id name; do
+              echo "Deleting $name from run $run"
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+            done
+          done
+
+  result:
+    name: GUI E2E result
+    if: always()
+    needs: [gui-e2e, prune-older-screenshots]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Require every platform to pass
+        env:
+          RESULT_TITLE: GUI E2E result
+          NEEDS: ${{ toJSON(needs) }}
+          # Skipped for fork PRs and manual runs, which cannot or need not delete artifacts.
+          ALLOWED_SKIPS: prune-older-screenshots
+        run: node .github/scripts/require-success.mjs

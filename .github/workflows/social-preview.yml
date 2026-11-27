@@ -28,10 +28,6 @@ jobs:
           node-version: '24'
       - name: Use the Playwright version pinned by the desktop UI
         run: echo "PLAYWRIGHT_VERSION=$(node -p "require('./crates/oflh-desktop/ui/package-lock.json').packages['node_modules/playwright'].version")" >> "$GITHUB_ENV"
-      - uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-headless-shell-${{ runner.os }}-${{ runner.arch }}-${{ env.PLAYWRIGHT_VERSION }}
       - name: Install Playwright outside the repository
         run: |
           npm i --no-save --no-package-lock --prefix "$RUNNER_TEMP/pw" "playwright@$PLAYWRIGHT_VERSION"

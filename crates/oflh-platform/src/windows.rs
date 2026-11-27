@@ -6,6 +6,10 @@ use std::{
     path::{Path, PathBuf},
     ptr::{null, null_mut},
 };
+use windows_sys::Win32::System::Services::{
+    CloseServiceHandle, ENUM_SERVICE_STATUS_PROCESSW, EnumServicesStatusExW, OpenSCManagerW,
+    SC_ENUM_PROCESS_INFO, SC_HANDLE, SC_MANAGER_ENUMERATE_SERVICE, SERVICE_ACTIVE, SERVICE_WIN32,
+};
 use windows_sys::Win32::{
     Foundation::*,
     Security::*,
@@ -102,6 +106,134 @@ fn read_process(pid: u32) -> Result<Process> {
         user: "unknown".into(),
         ..Process::default()
     })
+}
+/// Current directory of a captured process lifetime, read from its process
+/// parameters block (PEB, `ProcessParameters`, `CurrentDirectory.DosPath`).
+/// Returns an empty path when the process is protected, belongs to someone the
+/// caller may not read, exits, or was replaced by a new lifetime; the UI then
+/// says Unavailable. Windows keeps a trailing backslash on the current
+/// directory; it is dropped (except for drive roots) to match other platforms.
+pub(super) fn working_directory(identity: Identity) -> PathBuf {
+    read_working_directory(identity)
+        .map(trim_directory_separator)
+        .unwrap_or_default()
+}
+fn read_working_directory(identity: Identity) -> Option<PathBuf> {
+    use windows_sys::Wdk::System::Threading::{
+        NtQueryInformationProcess, ProcessBasicInformation, ProcessWow64Information,
+    };
+    let handle = open(
+        identity.pid,
+        PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
+    )
+    .ok()?;
+    if times(&handle, identity.pid).ok()?.0 != identity {
+        return None;
+    }
+    let mut wow64_peb = 0usize;
+    // SAFETY: live handle; the output is a writable pointer-sized slot whose
+    // exact size is passed, as ProcessWow64Information requires.
+    let status = unsafe {
+        NtQueryInformationProcess(
+            handle.0,
+            ProcessWow64Information,
+            (&mut wow64_peb as *mut usize).cast(),
+            size_of::<usize>() as u32,
+            null_mut(),
+        )
+    };
+    if status < 0 {
+        return None;
+    }
+    let (buffer, length) = if wow64_peb != 0 {
+        // 32-bit process under WOW64: its own SetCurrentDirectory updates the
+        // 32-bit parameters. PEB32.ProcessParameters is at 0x10;
+        // RTL_USER_PROCESS_PARAMETERS32.CurrentDirectory.DosPath at 0x24 is a
+        // UNICODE_STRING32 { Length: u16, MaximumLength: u16, Buffer: u32 }.
+        let parameters = u64::from(remote_u32(&handle, wow64_peb as u64 + 0x10)?);
+        let length = remote_u16(&handle, parameters.checked_add(0x24)?)?;
+        let buffer = u64::from(remote_u32(&handle, parameters.checked_add(0x28)?)?);
+        (buffer, length)
+    } else {
+        let mut basic = PROCESS_BASIC_INFORMATION::default();
+        // SAFETY: live handle; writable PROCESS_BASIC_INFORMATION with its exact size.
+        let status = unsafe {
+            NtQueryInformationProcess(
+                handle.0,
+                ProcessBasicInformation,
+                (&mut basic as *mut PROCESS_BASIC_INFORMATION).cast(),
+                size_of::<PROCESS_BASIC_INFORMATION>() as u32,
+                null_mut(),
+            )
+        };
+        if status < 0 || basic.PebBaseAddress.is_null() {
+            return None;
+        }
+        // 64-bit layout (x86-64 and ARM64): PEB.ProcessParameters is at 0x20;
+        // RTL_USER_PROCESS_PARAMETERS.CurrentDirectory.DosPath at 0x38 is a
+        // UNICODE_STRING { Length: u16, MaximumLength: u16, pad, Buffer: u64 }.
+        let peb = basic.PebBaseAddress as usize as u64;
+        let parameters = remote_u64(&handle, peb.checked_add(0x20)?)?;
+        let length = remote_u16(&handle, parameters.checked_add(0x38)?)?;
+        let buffer = remote_u64(&handle, parameters.checked_add(0x40)?)?;
+        (buffer, length)
+    };
+    if buffer == 0 || length == 0 || length % 2 != 0 {
+        return None;
+    }
+    let mut bytes = vec![0u8; usize::from(length)];
+    read_remote(&handle, buffer, &mut bytes)?;
+    let text: Vec<u16> = bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u16::from_le_bytes(*pair))
+        .collect();
+    Some(PathBuf::from(OsString::from_wide(&text)))
+}
+/// Fills `bytes` from `address` in the process, or `None` unless every byte was read.
+fn read_remote(handle: &Handle, address: u64, bytes: &mut [u8]) -> Option<()> {
+    let address = usize::try_from(address).ok()?;
+    let mut read = 0usize;
+    // SAFETY: live handle with PROCESS_VM_READ; the destination is a writable
+    // buffer of exactly bytes.len() bytes and the OS validates the remote range.
+    let ok = unsafe {
+        windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory(
+            handle.0,
+            address as *const core::ffi::c_void,
+            bytes.as_mut_ptr().cast(),
+            bytes.len(),
+            &mut read,
+        )
+    };
+    (ok != 0 && read == bytes.len()).then_some(())
+}
+fn remote_u16(handle: &Handle, address: u64) -> Option<u16> {
+    let mut bytes = [0; 2];
+    read_remote(handle, address, &mut bytes)?;
+    Some(u16::from_le_bytes(bytes))
+}
+fn remote_u32(handle: &Handle, address: u64) -> Option<u32> {
+    let mut bytes = [0; 4];
+    read_remote(handle, address, &mut bytes)?;
+    Some(u32::from_le_bytes(bytes))
+}
+fn remote_u64(handle: &Handle, address: u64) -> Option<u64> {
+    let mut bytes = [0; 8];
+    read_remote(handle, address, &mut bytes)?;
+    Some(u64::from_le_bytes(bytes))
+}
+/// `C:\work\` becomes `C:\work`; `C:\` and `\\server\share\` roots stay usable.
+fn trim_directory_separator(directory: PathBuf) -> PathBuf {
+    let mut text: Vec<u16> = directory.as_os_str().encode_wide().collect();
+    let is_drive_root = text.len() == 3 && text[1] == u16::from(b':');
+    while text.len() > 1
+        && !is_drive_root
+        && matches!(text.last(), Some(&c) if c == u16::from(b'\\') || c == u16::from(b'/'))
+    {
+        text.pop();
+    }
+    PathBuf::from(OsString::from_wide(&text))
 }
 fn username(pid: u32) -> String {
     let Ok(handle) = open(pid, PROCESS_QUERY_LIMITED_INFORMATION) else {
@@ -383,6 +515,213 @@ fn process_snapshot() -> Result<(Handle, PROCESSENTRY32W)> {
     };
     Ok((handle, entry))
 }
+/// Every process whose creation time is readable with limited query access.
+/// Others keep a zero birth token, which the child filter rejects.
+fn process_table() -> Result<Vec<impact::ProcessEntry>> {
+    let mut table = Vec::new();
+    let (handle, mut entry) = process_snapshot()?;
+    // SAFETY: initialized size field and live snapshot handle.
+    let mut ok = unsafe { Process32FirstW(handle.0, &mut entry) };
+    while ok != 0 {
+        let pid = entry.th32ProcessID;
+        let identity = read_identity(pid).unwrap_or(Identity {
+            pid,
+            ..Identity::default()
+        });
+        table.push(impact::ProcessEntry {
+            identity,
+            parent: entry.th32ParentProcessID,
+            name: path(&entry.szExeFile).to_string_lossy().into_owned(),
+        });
+        // SAFETY: same live snapshot handle and initialized entry.
+        ok = unsafe { Process32NextW(handle.0, &mut entry) };
+    }
+    Ok(table)
+}
+/// Whether a top-level window is on screen: visible, not cloaked by its app,
+/// and either minimized or with a real size. Windows on another virtual
+/// desktop are cloaked by the shell, not the app, and still count.
+///
+/// # Safety
+/// `hwnd` must come from the OS, for example an `EnumWindows` callback.
+unsafe fn window_shown(hwnd: HWND) -> bool {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWM_CLOAKED_APP, DWMWA_CLOAKED, DwmGetWindowAttribute,
+    };
+    // SAFETY: OS-supplied window handle; the out buffers match the requested sizes.
+    unsafe {
+        if IsWindowVisible(hwnd) == 0 {
+            return false;
+        }
+        let mut cloaked = 0u32;
+        if DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAKED as u32,
+            (&mut cloaked as *mut u32).cast(),
+            size_of::<u32>() as u32,
+        ) == 0
+            && cloaked & DWM_CLOAKED_APP != 0
+        {
+            return false;
+        }
+        if IsIconic(hwnd) != 0 {
+            return true;
+        }
+        let mut rect: RECT = std::mem::zeroed();
+        GetWindowRect(hwnd, &mut rect) != 0 && rect.right > rect.left && rect.bottom > rect.top
+    }
+}
+/// Whether a top-level window is one of the app windows a person sees and
+/// that closes with the process, independent of how the app built it.
+///
+/// Counts shown windows that are unowned, owned by a window that is not shown
+/// itself (hidden or zero-size host windows), or ask for their own taskbar
+/// button. Tool windows and dialogs owned by a shown window do not count.
+///
+/// # Safety
+/// `hwnd` must come from the OS, for example an `EnumWindows` callback.
+unsafe fn is_app_window(hwnd: HWND) -> bool {
+    // SAFETY: OS-supplied window handles; the owner may be null, which is checked.
+    unsafe {
+        if !window_shown(hwnd) {
+            return false;
+        }
+        let extended = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+        if extended & WS_EX_APPWINDOW != 0 {
+            return true;
+        }
+        if extended & WS_EX_TOOLWINDOW != 0 {
+            return false;
+        }
+        let owner = GetWindow(hwnd, GW_OWNER);
+        owner.is_null() || !window_shown(owner)
+    }
+}
+unsafe extern "system" fn collect_window_title(hwnd: HWND, param: isize) -> i32 {
+    // SAFETY: only called synchronously by our EnumWindows with the live map address.
+    let titles = unsafe { &mut *(param as *mut HashMap<u32, Vec<String>>) };
+    let mut pid = 0;
+    // SAFETY: OS supplies hwnd and a writable PID slot; the title buffer length matches.
+    unsafe {
+        if !is_app_window(hwnd) {
+            return 1;
+        }
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        let mut title = [0u16; 512];
+        let length = GetWindowTextW(hwnd, title.as_mut_ptr(), title.len() as i32);
+        if pid != 0 && length > 0 {
+            titles
+                .entry(pid)
+                .or_default()
+                .push(String::from_utf16_lossy(&title[..length as usize]))
+        }
+    }
+    1
+}
+struct ServiceManager(SC_HANDLE);
+impl Drop for ServiceManager {
+    fn drop(&mut self) {
+        // SAFETY: the handle came from OpenSCManagerW and is closed exactly once.
+        unsafe { CloseServiceHandle(self.0) };
+    }
+}
+
+/// Display names of running Win32 services, grouped by hosting PID.
+fn services_by_pid() -> std::io::Result<HashMap<u32, Vec<String>>> {
+    // SAFETY: null machine and database names select the local active database.
+    let handle = unsafe {
+        OpenSCManagerW(
+            std::ptr::null(),
+            std::ptr::null(),
+            SC_MANAGER_ENUMERATE_SERVICE,
+        )
+    };
+    if handle.is_null() {
+        return Err(std::io::Error::last_os_error());
+    }
+    let manager = ServiceManager(handle);
+    // u64 storage keeps the buffer aligned for ENUM_SERVICE_STATUS_PROCESSW.
+    let mut buffer = vec![0u64; 8 * 1024];
+    let mut resume = 0u32;
+    let mut services: HashMap<u32, Vec<String>> = HashMap::new();
+    loop {
+        let (mut needed, mut count) = (0u32, 0u32);
+        // SAFETY: the buffer is writable for the passed byte size; the out
+        // pointers are valid locals; the group filter is null (all groups).
+        let ok = unsafe {
+            EnumServicesStatusExW(
+                manager.0,
+                SC_ENUM_PROCESS_INFO,
+                SERVICE_WIN32,
+                SERVICE_ACTIVE,
+                buffer.as_mut_ptr().cast(),
+                (buffer.len() * 8).min(u32::MAX as usize) as u32,
+                &mut needed,
+                &mut count,
+                &mut resume,
+                std::ptr::null(),
+            )
+        };
+        let more = ok == 0 && {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() != Some(windows_sys::Win32::Foundation::ERROR_MORE_DATA as i32)
+            {
+                return Err(error);
+            }
+            true
+        };
+        // SAFETY: on success or ERROR_MORE_DATA the first `count` entries are
+        // initialized, and their strings point into `buffer`, which outlives
+        // this slice.
+        let entries = unsafe {
+            std::slice::from_raw_parts(
+                buffer.as_ptr().cast::<ENUM_SERVICE_STATUS_PROCESSW>(),
+                count as usize,
+            )
+        };
+        for entry in entries {
+            let pid = entry.ServiceStatusProcess.dwProcessId;
+            if pid == 0 || entry.lpDisplayName.is_null() {
+                continue;
+            }
+            let mut len = 0;
+            // SAFETY: lpDisplayName is a NUL-terminated string inside `buffer`.
+            let name = unsafe {
+                while *entry.lpDisplayName.add(len) != 0 {
+                    len += 1
+                }
+                std::slice::from_raw_parts(entry.lpDisplayName, len)
+            };
+            services
+                .entry(pid)
+                .or_default()
+                .push(String::from_utf16_lossy(name));
+        }
+        if !more {
+            return Ok(services);
+        }
+        if count == 0 {
+            buffer.resize((needed as usize).div_ceil(8).max(buffer.len() * 2), 0);
+        }
+    }
+}
+
+/// Titles of the app windows a person sees, by owning PID: what closes when
+/// the process ends. See [`is_app_window`].
+fn window_titles() -> Result<HashMap<u32, Vec<String>>> {
+    let mut titles = HashMap::new();
+    // SAFETY: callback receives a pointer to the map, valid for synchronous EnumWindows.
+    if unsafe {
+        EnumWindows(
+            Some(collect_window_title),
+            (&mut titles as *mut HashMap<u32, Vec<String>>) as isize,
+        )
+    } == 0
+    {
+        return Err(io("enumerate windows", std::io::Error::last_os_error()));
+    }
+    Ok(titles)
+}
 impl Backend for Native {
     fn scan(&mut self, target: &Target, cancel: &Cancellation) -> Result<Snapshot> {
         cancel.check()?;
@@ -500,6 +839,7 @@ impl Backend for Native {
         for process in &mut snapshot.processes {
             cancel.check()?;
             process.user = username(process.identity.pid);
+            process.cwd = working_directory(process.identity);
             process.parent = parents.get(&process.identity.pid).copied().unwrap_or(0);
             let mut next = process.parent;
             while next > 0
@@ -603,6 +943,51 @@ impl Backend for Native {
             _ => Err(io("verify process exit", std::io::Error::last_os_error())),
         }
     }
+    fn impact(&mut self, ids: &[Identity]) -> Vec<impact::Impact> {
+        let mut titles = window_titles().ok();
+        let mut services = services_by_pid().ok();
+        let table = process_table();
+        let names: HashMap<u32, String> = table
+            .as_ref()
+            .map(|table| {
+                table
+                    .iter()
+                    .map(|entry| (entry.identity.pid, entry.name.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        children_for(table, ids)
+            .into_iter()
+            .zip(ids)
+            .map(|(children, &id)| {
+                // A PID read before EnumWindows or the service list must still
+                // name the same lifetime.
+                let live = read_identity(id.pid).is_ok_and(|live| live == id);
+                impact::Impact {
+                    windows: titles
+                        .as_mut()
+                        .filter(|_| live)
+                        .map(|titles| titles.remove(&id.pid).unwrap_or_default()),
+                    children,
+                    service: services
+                        .as_mut()
+                        .filter(|_| live)
+                        .and_then(|services| services.remove(&id.pid))
+                        .and_then(|names| {
+                            let first = names.first()?.clone();
+                            Some(match names.len() {
+                                1 => first,
+                                n => format!("{first} +{}", n - 1),
+                            })
+                        }),
+                    critical: impact::windows_critical(
+                        id.pid,
+                        names.get(&id.pid).map_or("", String::as_str),
+                    ),
+                }
+            })
+            .collect()
+    }
     fn terminate(&mut self, identity: Identity, force: bool, cancel: &Cancellation) -> Result<()> {
         identity.validate()?;
         cancel.check()?;
@@ -633,10 +1018,7 @@ impl Backend for Native {
             return Err(io("enumerate windows", std::io::Error::last_os_error()));
         }
         if state.sent == 0 {
-            return Err(Error::Unavailable(
-                "no window accepted a graceful close request; use force kill explicitly if needed"
-                    .into(),
-            ));
+            return Err(Error::CloseUnavailable);
         }
         Ok(())
     }
@@ -1650,5 +2032,48 @@ mod native_recovery_tests {
             Err(Error::Cancelled)
         ));
         assert_eq!(cancel.progress().native_file_user_queries, 0);
+    }
+}
+
+#[cfg(test)]
+mod working_directory_tests {
+    use super::*;
+
+    #[test]
+    fn trailing_separators_are_dropped_except_for_drive_roots() {
+        for (raw, expected) in [
+            (r"C:\work\", r"C:\work"),
+            (r"C:\work", r"C:\work"),
+            (r"C:\", r"C:\"),
+            (r"\\server\share\", r"\\server\share"),
+            (r"\\?\C:\work\", r"\\?\C:\work"),
+        ] {
+            assert_eq!(
+                trim_directory_separator(PathBuf::from(raw)),
+                PathBuf::from(expected),
+                "{raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn current_process_directory_matches_the_os_view() {
+        let identity = read_identity(std::process::id()).unwrap();
+        let expected = std::env::current_dir().unwrap();
+        assert_eq!(
+            fs_canonical(&working_directory(identity)),
+            fs_canonical(&expected)
+        );
+    }
+
+    #[test]
+    fn a_replaced_lifetime_reports_no_directory() {
+        let mut identity = read_identity(std::process::id()).unwrap();
+        identity.started += 1;
+        assert!(working_directory(identity).as_os_str().is_empty());
+    }
+
+    fn fs_canonical(path: &Path) -> PathBuf {
+        std::fs::canonicalize(path).unwrap()
     }
 }

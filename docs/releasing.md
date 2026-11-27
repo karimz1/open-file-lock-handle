@@ -37,7 +37,8 @@ own and refuses to overwrite a published release.
 A suffix such as `-rc.1` makes a prerelease. Prereleases are never marked
 **Latest**, so the website, the updater, and Homebrew keep pointing at the last
 stable version. Release binaries report the tag without the `v`; local builds
-report `development`.
+report the workspace version plus the git commit and still never check for
+updates.
 
 To rerun the workflow for an existing tag:
 
@@ -70,7 +71,7 @@ Never move a published tag.
 | --- | --- |
 | Linux | `.deb`, `.rpm`, `.tar.gz` |
 | macOS | `.dmg`, plus `.app.tar.gz` and `.sig` for the updater |
-| Windows | NSIS `-installer.exe` and `.sig` (no portable build) |
+| Windows | NSIS `-installer.exe` and `.sig`, plus a `-portable.zip` |
 
 CI tests the desktop executable and then bundles that same binary with
 `tauri bundle --no-binary-patching`. `cargo xtask assemble-release` collects the
