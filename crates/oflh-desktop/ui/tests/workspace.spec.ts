@@ -4974,8 +4974,18 @@ test("normal termination recovery confirms captured targets instead of refreshin
       .filter((call: any) => call.command === "prepare")
       .map((call: any) => call.args),
   ).toEqual([
-    { revision: 1, keys: ["4000:18446744073709551615:0"], force: false },
-    { revision: 1, keys: ["4000:18446744073709551615:0"], force: true },
+    {
+      revision: 1,
+      keys: ["4000:18446744073709551615:0"],
+      force: false,
+      wholeApp: true,
+    },
+    {
+      revision: 1,
+      keys: ["4000:18446744073709551615:0"],
+      force: true,
+      wholeApp: true,
+    },
   ]);
   expect(
     calls.filter((call: any) => call.command === "terminate"),
