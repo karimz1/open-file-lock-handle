@@ -352,11 +352,18 @@ async fn prepare(
     revision: u32,
     keys: Vec<String>,
     force: bool,
+    whole_app: Option<bool>,
 ) -> Result<Confirmation, Failure> {
     let service = service.inner().clone();
     blocking(move || {
         let mut backend = oflh_platform::native().map_err(Failure::from)?;
-        service.prepare(revision, &keys, force, &mut *backend)
+        service.prepare_scoped(
+            revision,
+            &keys,
+            force,
+            whole_app.unwrap_or(true),
+            &mut *backend,
+        )
     })
     .await
 }

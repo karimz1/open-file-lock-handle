@@ -62,10 +62,14 @@ fn decode_outcome(code: u32) -> Result<()> {
 /// Request OS authorization and run only the captured termination operation.
 /// The helper rechecks identity using the normal backend and owns its native handle.
 /// Authorization is requested separately for each target; cancellation stops the batch.
+///
+/// With `app`, `identity` is an app's main process and the helper closes the
+/// whole app ([`crate::Backend::terminate_app`]).
 pub fn terminate(
     executable: &Path,
     identity: Identity,
     force: bool,
+    app: bool,
     cancel: &Cancellation,
 ) -> Result<()> {
     identity.validate()?;
@@ -76,11 +80,15 @@ pub fn terminate(
         identity.pid.to_string(),
         identity.started.to_string(),
         identity.started_sub.to_string(),
-        u8::from(force).to_string(),
+        mode(force, app).to_string(),
     ];
     launch(executable, &arguments).and_then(decode_outcome)
 }
 
+/// Helper mode digit: bit 0 forces, bit 1 closes the whole app.
+fn mode(force: bool, app: bool) -> u8 {
+    u8::from(force) | (u8::from(app) << 1)
+}
 #[cfg(unix)]
 fn output_code(output: std::process::Output) -> Result<u32> {
     if output.status.code() == Some(126)
@@ -158,16 +166,23 @@ pub fn run_helper(arguments: &[String]) -> Result<()> {
         started: arguments[2].parse().map_err(|_| invalid())?,
         started_sub: arguments[3].parse().map_err(|_| invalid())?,
     };
-    let force = match arguments[4].as_str() {
-        "0" => false,
-        "1" => true,
+    let (force, app) = match arguments[4].as_str() {
+        "0" => (false, false),
+        "1" => (true, false),
+        "2" => (false, true),
+        "3" => (true, true),
         _ => return Err(invalid()),
     };
     identity.validate()?;
     if identity.pid == requester {
         return Err(Error::Protected);
     }
-    super::native()?.terminate(identity, force, &Cancellation::default())
+    let mut backend = super::native()?;
+    if app {
+        backend.terminate_app(identity, force, &Cancellation::default())
+    } else {
+        backend.terminate(identity, force, &Cancellation::default())
+    }
 }
 
 #[cfg(test)]
@@ -231,6 +246,15 @@ mod tests {
                 Err(Error::Protected)
             ));
         }
-        assert!(run_helper(&["42", "43", "1", "0", "2"].map(String::from)).is_err());
+        assert!(run_helper(&["42", "43", "1", "0", "4"].map(String::from)).is_err());
+        assert_eq!(
+            [
+                mode(false, false),
+                mode(true, false),
+                mode(false, true),
+                mode(true, true)
+            ],
+            [0, 1, 2, 3]
+        );
     }
 }

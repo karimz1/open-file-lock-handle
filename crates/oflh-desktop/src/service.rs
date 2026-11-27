@@ -12,6 +12,16 @@ use std::{
     sync::{Arc, Condvar, Mutex, MutexGuard},
 };
 
+/// What a confirmation will act on, kept in Rust until the user confirms.
+#[derive(Default)]
+struct Scoped {
+    identities: Vec<Identity>,
+    targets: Vec<ActionTarget>,
+    apps: Vec<bool>,
+    files: Vec<Vec<PathBuf>>,
+    apps_available: bool,
+    whole_app: bool,
+}
 struct ScanJob {
     generation: u32,
     path: Option<PathBuf>,
@@ -25,6 +35,12 @@ struct PendingAction {
     force: bool,
     elevated: bool,
     targets: Vec<ActionTarget>,
+    /// Per identity: an app's main process, closed as a whole app.
+    apps: Vec<bool>,
+    /// Per identity: files to check after the action.
+    files: Vec<Vec<PathBuf>>,
+    apps_available: bool,
+    whole_app: bool,
 }
 /// An explicit one-shot action gated by a fresh free scan.
 #[derive(Clone, Debug)]
@@ -885,11 +901,13 @@ impl Service {
                     .map(|process| self.owner(process))
                     .unwrap_or_else(|| self.sessions.owner("", ancestor.identity.pid)),
                 impact: target_impact(native, scanned),
+                app: None,
             }],
             force,
         )
     }
     /// Capture every selected lifetime, including selections hidden by the current filter.
+    /// A helper of a visible app closes through that app; see [`Self::prepare_scoped`].
     pub fn prepare(
         &self,
         revision: u32,
@@ -897,38 +915,80 @@ impl Service {
         force: bool,
         backend: &mut dyn Backend,
     ) -> Result<Confirmation, Failure> {
+        self.prepare_scoped(revision, keys, force, true, backend)
+    }
+    /// Like [`Self::prepare`]. With `whole_app`, a holder that is a helper of
+    /// an app is replaced by the app's main process, and several helpers of
+    /// one app become one action. Without it, only the holders are closed.
+    pub fn prepare_scoped(
+        &self,
+        revision: u32,
+        keys: &[String],
+        force: bool,
+        whole_app: bool,
+        backend: &mut dyn Backend,
+    ) -> Result<Confirmation, Failure> {
         if keys.is_empty() || keys.len() > 10000 {
             return Err(Failure::invalid("Select between 1 and 10,000 processes"));
         }
         let dataset = self.dataset(revision)?;
         let mut seen = HashSet::new();
-        let mut identities = Vec::new();
+        let mut selected = Vec::new();
         let mut processes = Vec::new();
         for key in keys {
             let (_, process) = dataset.process(key)?;
             process.identity.validate().map_err(Failure::from)?;
             if seen.insert(process.identity) {
-                identities.push(process.identity);
+                selected.push(process.identity);
                 processes.push(process);
             }
         }
-        let mut native = backend.impact(&identities).into_iter();
-        let targets = processes
-            .into_iter()
-            .map(|process| {
-                let mut impact = native.next().unwrap_or_default();
-                oflh_core::impact::omit_selected_children(&mut impact, &identities);
-                ActionTarget {
-                    key: identity_key(process.identity),
-                    name: oflh_core::safe(&process.name),
-                    pid: process.identity.pid,
-                    role: TargetRole::Holder,
-                    owner: self.owner(process),
-                    impact: target_impact(impact, Some(process)),
-                }
-            })
-            .collect();
-        self.confirm(identities, targets, force)
+        let mut native = backend.impact(&selected).into_iter();
+        let mut apps_available = false;
+        let mut action = Scoped::default();
+        for process in processes {
+            let mut impact = native.next().unwrap_or_default();
+            oflh_core::impact::omit_selected_children(&mut impact, &selected);
+            let app = impact
+                .app
+                .take()
+                .filter(|app| app.identity.validate().is_ok());
+            apps_available |= app.is_some();
+            let app = app.filter(|_| whole_app);
+            let identity = app.as_ref().map_or(process.identity, |app| app.identity);
+            let files: Vec<PathBuf> = process
+                .usages
+                .iter()
+                .map(|usage| usage.path.clone())
+                .collect();
+            if let Some(index) = action
+                .identities
+                .iter()
+                .position(|known| *known == identity)
+            {
+                action.files[index].extend(files);
+                action.apps[index] |= app.is_some();
+                continue;
+            }
+            action.identities.push(identity);
+            action.apps.push(app.is_some());
+            action.files.push(files);
+            action.targets.push(ActionTarget {
+                key: identity_key(process.identity),
+                name: oflh_core::safe(&process.name),
+                pid: process.identity.pid,
+                role: TargetRole::Holder,
+                owner: self.owner(process),
+                impact: target_impact(impact, Some(process)),
+                app: app.map(|app| AppView {
+                    name: oflh_core::safe(&app.name),
+                    pid: app.identity.pid,
+                }),
+            });
+        }
+        action.apps_available = apps_available;
+        action.whole_app = whole_app;
+        self.confirm_scoped(action, force, false)
     }
     fn confirm(
         &self,
@@ -945,6 +1005,34 @@ impl Service {
         force: bool,
         elevated: bool,
     ) -> Result<Confirmation, Failure> {
+        let count = identities.len();
+        self.confirm_scoped(
+            Scoped {
+                identities,
+                targets,
+                apps: vec![false; count],
+                files: vec![Vec::new(); count],
+                apps_available: false,
+                whole_app: false,
+            },
+            force,
+            elevated,
+        )
+    }
+    fn confirm_scoped(
+        &self,
+        action: Scoped,
+        force: bool,
+        elevated: bool,
+    ) -> Result<Confirmation, Failure> {
+        let Scoped {
+            identities,
+            targets,
+            apps,
+            files,
+            apps_available,
+            whole_app,
+        } = action;
         let mut state = self.shared.lock();
         state.admin_recovery = None;
         state.next_ticket = state
@@ -958,12 +1046,18 @@ impl Service {
             force,
             elevated,
             targets: targets.clone(),
+            apps,
+            files,
+            apps_available,
+            whole_app,
         });
         Ok(Confirmation {
             ticket,
             force,
             elevated,
             targets,
+            apps_available,
+            whole_app,
         })
     }
     /// Confirm only permission-denied targets retained from the original result receipt.
@@ -988,7 +1082,18 @@ impl Service {
         for identity in &action.identities {
             identity.validate().map_err(Failure::from)?;
         }
-        self.confirm_mode(action.identities, action.targets, action.force, true)
+        self.confirm_scoped(
+            Scoped {
+                identities: action.identities,
+                targets: action.targets,
+                apps: action.apps,
+                files: action.files,
+                apps_available: action.apps_available,
+                whole_app: action.whole_app,
+            },
+            action.force,
+            true,
+        )
     }
     /// Invalidate an outstanding confirmation without sending any process signal.
     pub fn dismiss(&self) {
@@ -1005,11 +1110,13 @@ impl Service {
             ticket,
             backend,
             oflh_platform::elevation::is_elevated(),
-            |backend, identity, force, elevated, cancel| {
+            |backend, identity, force, elevated, cancel, app| {
                 if elevated {
                     let executable = std::env::current_exe()
                         .map_err(|error| oflh_core::io("locate administrator helper", error))?;
-                    oflh_platform::elevation::terminate(&executable, identity, force, cancel)
+                    oflh_platform::elevation::terminate(&executable, identity, force, app, cancel)
+                } else if app {
+                    backend.terminate_app(identity, force, cancel)
                 } else {
                     backend.terminate(identity, force, cancel)
                 }
@@ -1046,6 +1153,7 @@ impl Service {
             bool,
             bool,
             &Cancellation,
+            bool,
         ) -> oflh_core::Result<()>,
     ) -> Result<Vec<ActionResult>, Failure> {
         let action = self.consume_action(ticket)?;
@@ -1053,12 +1161,20 @@ impl Service {
         let mut results: Vec<_> = action
             .identities
             .iter()
-            .map(|&identity| {
+            .zip(&action.apps)
+            .map(|(&identity, &app)| {
                 let error = identity
                     .validate()
                     .and_then(|()| cancel.check())
                     .and_then(|()| {
-                        request(backend, identity, action.force, action.elevated, &cancel)
+                        request(
+                            backend,
+                            identity,
+                            action.force,
+                            action.elevated,
+                            &cancel,
+                            app,
+                        )
                     })
                     .err()
                     .map(Failure::from);
@@ -1083,23 +1199,30 @@ impl Service {
                         ActionOutcome::StillRunning
                     },
                     error,
+                    released: None,
+                    held_by: Vec::new(),
                 }
             })
             .collect();
         verify_action_results(backend, &action.identities, &mut results);
+        verify_release(backend, &action, &mut results, &cancel);
         let mut recovery = PendingAction {
             ticket: action.ticket.clone(),
             force: action.force,
             elevated: false,
             identities: Vec::new(),
             targets: Vec::new(),
+            apps: Vec::new(),
+            files: Vec::new(),
+            apps_available: action.apps_available,
+            whole_app: action.whole_app,
         };
-        for ((identity, target), result) in
-            action.identities.iter().zip(&action.targets).zip(&results)
-        {
+        for (index, result) in results.iter().enumerate() {
             if result.admin_recovery {
-                recovery.identities.push(*identity);
-                recovery.targets.push(target.clone());
+                recovery.identities.push(action.identities[index]);
+                recovery.targets.push(action.targets[index].clone());
+                recovery.apps.push(action.apps[index]);
+                recovery.files.push(action.files[index].clone());
             }
         }
         if !recovery.identities.is_empty() {
@@ -1119,6 +1242,49 @@ impl Drop for Service {
         state.pending = None;
         state.action = None;
         self.shared.ready.notify_one();
+    }
+}
+/// After an exit, check that the files are really free. A multi-process app
+/// can start a new helper that opens them again; that is reported, never
+/// hidden behind "exited". One combined check keeps the wait bounded.
+fn verify_release(
+    backend: &mut dyn Backend,
+    action: &PendingAction,
+    results: &mut [ActionResult],
+    cancel: &Cancellation,
+) {
+    let mut files: Vec<PathBuf> = Vec::new();
+    for (result, held) in results.iter().zip(&action.files) {
+        if result.outcome == ActionOutcome::Exited {
+            for file in held {
+                if !files.contains(file) {
+                    files.push(file.clone())
+                }
+            }
+        }
+    }
+    if files.is_empty() {
+        return;
+    }
+    let Some(holders) = oflh_platform::holders_after(backend, &files, &action.identities, cancel)
+    else {
+        return;
+    };
+    let held_by: Vec<String> = holders
+        .iter()
+        .map(|holder| {
+            format!(
+                "{} (PID {})",
+                oflh_core::safe(&holder.name),
+                holder.identity.pid
+            )
+        })
+        .collect();
+    for (result, held) in results.iter_mut().zip(&action.files) {
+        if result.outcome == ActionOutcome::Exited && !held.is_empty() {
+            result.released = Some(held_by.is_empty());
+            result.held_by = held_by.clone();
+        }
     }
 }
 fn verify_action_results(
@@ -1731,6 +1897,170 @@ mod tests {
             timeout: Some(Duration::from_millis(150)),
         });
     }
+    /// A multi-process app: two helpers hold the file; the app's main
+    /// process starts a new helper whenever one ends.
+    #[derive(Default)]
+    struct RespawningApp {
+        file: PathBuf,
+        ended: Vec<Identity>,
+        /// `(identity, force, whole app)` per request.
+        calls: Vec<(Identity, bool, bool)>,
+    }
+    const APP: Identity = Identity {
+        pid: 4000,
+        started: 40,
+        started_sub: 0,
+    };
+    const HELPERS: [Identity; 2] = [
+        Identity {
+            pid: 4001,
+            started: 41,
+            started_sub: 0,
+        },
+        Identity {
+            pid: 4002,
+            started: 42,
+            started_sub: 0,
+        },
+    ];
+    const RESPAWNED: Identity = Identity {
+        pid: 4003,
+        started: 43,
+        started_sub: 0,
+    };
+    impl Backend for RespawningApp {
+        fn scan(&mut self, _: &Target, _: &Cancellation) -> Result<Snapshot> {
+            // The app is still running and started a new helper.
+            let processes = if self.ended.contains(&APP) {
+                Vec::new()
+            } else {
+                vec![Process {
+                    identity: RESPAWNED,
+                    name: "example".into(),
+                    usages: vec![Usage {
+                        path: self.file.clone(),
+                        ..Usage::default()
+                    }],
+                    ..Process::default()
+                }]
+            };
+            Ok(Snapshot {
+                processes,
+                warnings: vec![],
+            })
+        }
+        fn sample(&mut self, _: &[Identity], _: &Cancellation) -> Result<Vec<(Identity, Metrics)>> {
+            Ok(vec![])
+        }
+        fn is_running(&mut self, identity: Identity) -> Result<bool> {
+            Ok(!self.ended.contains(&identity))
+        }
+        fn impact(&mut self, ids: &[Identity]) -> Vec<oflh_core::impact::Impact> {
+            ids.iter()
+                .map(|_| oflh_core::impact::Impact {
+                    app: Some(oflh_core::app::AppRoot {
+                        identity: APP,
+                        name: "example".into(),
+                        executable: "/opt/example/example".into(),
+                    }),
+                    ..Default::default()
+                })
+                .collect()
+        }
+        fn terminate(&mut self, identity: Identity, force: bool, _: &Cancellation) -> Result<()> {
+            self.calls.push((identity, force, false));
+            self.ended.push(identity);
+            Ok(())
+        }
+        fn terminate_app(&mut self, root: Identity, force: bool, _: &Cancellation) -> Result<()> {
+            self.calls.push((root, force, true));
+            self.ended.extend([root, HELPERS[0], HELPERS[1]]);
+            Ok(())
+        }
+    }
+    fn respawning_service() -> (Service, RespawningApp, tempfile::TempDir, Vec<String>) {
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("Cookies");
+        std::fs::write(&file, b"held").unwrap();
+        let service = Service::new(Box::new(Recorder::default()), |_| {}).unwrap();
+        let helper = |identity| Process {
+            identity,
+            name: "example".into(),
+            usages: vec![Usage {
+                path: file.clone(),
+                ..Usage::default()
+            }],
+            ..Process::default()
+        };
+        service.shared.lock().dataset = Arc::new(Dataset::new(
+            1,
+            Snapshot {
+                processes: HELPERS.into_iter().map(helper).collect(),
+                warnings: vec![],
+            },
+        ));
+        let keys = HELPERS.into_iter().map(identity_key).collect();
+        (
+            service,
+            RespawningApp {
+                file,
+                ..RespawningApp::default()
+            },
+            directory,
+            keys,
+        )
+    }
+    #[test]
+    fn helpers_close_through_their_app_and_the_file_is_checked() {
+        let (service, mut backend, _directory, keys) = respawning_service();
+        let confirmation = service.prepare(1, &keys, false, &mut backend).unwrap();
+        assert!(confirmation.apps_available && confirmation.whole_app);
+        // Two helpers of one app are one action on the app.
+        assert_eq!(confirmation.targets.len(), 1);
+        assert_eq!(
+            confirmation.targets[0].app,
+            Some(AppView {
+                name: "example".into(),
+                pid: APP.pid
+            })
+        );
+        let results = service
+            .terminate(&confirmation.ticket, &mut backend)
+            .unwrap();
+        assert_eq!(backend.calls, [(APP, false, true)]);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].outcome, ActionOutcome::Exited);
+        assert_eq!(results[0].released, Some(true));
+        assert!(results[0].held_by.is_empty());
+    }
+    #[test]
+    fn closing_only_the_helper_reports_who_holds_the_file_again() {
+        let (service, mut backend, _directory, keys) = respawning_service();
+        let confirmation = service
+            .prepare_scoped(1, &keys, true, false, &mut backend)
+            .unwrap();
+        assert!(confirmation.apps_available && !confirmation.whole_app);
+        assert_eq!(confirmation.targets.len(), 2);
+        assert!(
+            confirmation
+                .targets
+                .iter()
+                .all(|target| target.app.is_none())
+        );
+        let results = service
+            .terminate(&confirmation.ticket, &mut backend)
+            .unwrap();
+        assert_eq!(
+            backend.calls,
+            [(HELPERS[0], true, false), (HELPERS[1], true, false)]
+        );
+        for result in &results {
+            // "Exited" alone would hide that the app took the file back.
+            assert_eq!(result.outcome, ActionOutcome::Exited);
+            assert_eq!(result.released, Some(false));
+            assert_eq!(result.held_by, ["example (PID 4003)"]);
+        }
+    }
     fn action_service() -> (Service, Identity) {
         let service = Service::new(Box::new(Recorder::default()), |_| {}).unwrap();
         let identity = Identity {
@@ -1889,7 +2219,7 @@ mod tests {
                     &confirmation.ticket,
                     &mut backend,
                     false,
-                    |_, _, _, elevated, _| {
+                    |_, _, _, elevated, _, _| {
                         assert!(!elevated);
                         Err(oflh_core::io(
                             "test termination",
@@ -1912,7 +2242,7 @@ mod tests {
                     &retry.ticket,
                     &mut backend,
                     false,
-                    |_, captured, retry_force, elevated, _| {
+                    |_, captured, retry_force, elevated, _, _| {
                         assert_eq!(captured, identity);
                         assert_eq!(retry_force, force);
                         assert!(elevated);
@@ -1943,6 +2273,7 @@ mod tests {
                 role: TargetRole::Holder,
                 owner: OwnerView::default(),
                 impact: TargetImpact::default(),
+                app: None,
             })
             .collect();
         let confirmation = service.confirm(identities.clone(), targets, true).unwrap();
@@ -1952,7 +2283,7 @@ mod tests {
                 &confirmation.ticket,
                 &mut Recorder::default(),
                 false,
-                |_, _, _, _, _| {
+                |_, _, _, _, _, _| {
                     call += 1;
                     match call {
                         1 | 2 => Err(oflh_core::io(
@@ -1980,7 +2311,7 @@ mod tests {
                 &retry.ticket,
                 &mut Recorder::default(),
                 false,
-                |_, captured, _, elevated, _| {
+                |_, captured, _, elevated, _, _| {
                     call += 1;
                     assert_eq!(captured, identities[0]);
                     assert!(elevated);
@@ -2023,7 +2354,7 @@ mod tests {
                     &confirmation.ticket,
                     &mut Recorder::default(),
                     already_elevated,
-                    |_, _, _, _, _| Err(error.take().unwrap()),
+                    |_, _, _, _, _, _| Err(error.take().unwrap()),
                 )
                 .unwrap();
             assert!(!results[0].admin_recovery);
@@ -2189,6 +2520,7 @@ mod tests {
                 children: Some(vec![child(7), child(8)]),
                 service: Some("Blender Render Farm".into()),
                 critical: false,
+                app: None,
             }),
             ..Recorder::default()
         };

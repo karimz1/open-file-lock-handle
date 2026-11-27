@@ -141,6 +141,8 @@ fn resolve_app(
         chain.push(describe(current, false));
     }
     let root = &chain[app::app_root(&chain, app::Images::native())?];
+    // Never this process or a protected PID.
+    root.identity.validate().ok()?;
     Some(app::AppRoot {
         identity: root.identity,
         name: root.name.clone(),
@@ -173,8 +175,10 @@ pub const RELEASE_CHECK_FILES: usize = 4;
 /// Check whether files are free after an action ended `ended`.
 ///
 /// A multi-process app can start a new helper that opens the file again, so
-/// a process exit alone does not prove the file is free. Looks three times
-/// over 1.5 seconds and stops at the first other holder. `None` means
+/// a process exit alone does not prove the file is free. Waits up to three
+/// seconds for `ended` to exit, then looks three times over 1.5 seconds and
+/// reports who holds the files at the last look: a helper that is still
+/// shutting down is not reported, one that came back is. `None` means
 /// nothing could be checked; an empty list means every checked file is free.
 pub fn holders_after(
     backend: &mut dyn Backend,
@@ -199,10 +203,22 @@ pub fn holders_after(
     if targets.is_empty() {
         return None;
     }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while ended
+        .iter()
+        .any(|identity| backend.is_running(*identity).unwrap_or(false))
+        && std::time::Instant::now() < deadline
+    {
+        if cancel.check().is_err() {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
     let mut checked = false;
+    let mut holders: Vec<Ancestor> = Vec::new();
     for _ in 0..3 {
         std::thread::sleep(std::time::Duration::from_millis(500));
-        let mut holders: Vec<Ancestor> = Vec::new();
+        holders.clear();
         for target in &targets {
             if cancel.check().is_err() {
                 return checked.then(Vec::new);
@@ -226,11 +242,8 @@ pub fn holders_after(
                 }
             }
         }
-        if !holders.is_empty() {
-            return Some(holders);
-        }
     }
-    checked.then(Vec::new)
+    checked.then_some(holders)
 }
 /// Construct the scanner for the current operating system.
 pub fn native() -> Result<Box<dyn Backend>> {
