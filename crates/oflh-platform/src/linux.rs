@@ -427,6 +427,12 @@ impl Backend for Native {
                         .and_then(|cgroup| oflh_core::app::desktop_app_scope(&cgroup))
                 };
                 let holder_scope = scope(id.pid);
+                let unit = |pid: u32| {
+                    std::fs::read_to_string(format!("/proc/{pid}/cgroup"))
+                        .ok()
+                        .and_then(|cgroup| impact::systemd_unit(&cgroup))
+                };
+                let holder_unit = unit(id.pid);
                 crate::resolve_app(table, id, |entry, holder| {
                     let pid = entry.identity.pid;
                     let cgroup = std::fs::read_to_string(format!("/proc/{pid}/cgroup")).ok();
@@ -451,7 +457,13 @@ impl Backend for Native {
                         session: std::fs::read_to_string(format!("/proc/{pid}/sessionid"))
                             .ok()
                             .and_then(|session| session.trim().parse().ok()),
-                        service: cgroup.as_deref().and_then(impact::systemd_unit).is_some(),
+                        // Never cross into another systemd service. Within
+                        // the holder's own unit (an autostarted app, or a CI
+                        // runner) the app and its helpers share one unit.
+                        service: {
+                            let unit = cgroup.as_deref().and_then(impact::systemd_unit);
+                            unit.is_some() && unit != holder_unit
+                        },
                         critical: false,
                         visible: shown || same_scope,
                     }
