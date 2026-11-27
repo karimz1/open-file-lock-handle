@@ -283,10 +283,13 @@ fn visible_window() -> impl Sized {
     connection.sync().unwrap();
     connection
 }
+/// macOS shows the main executable of a bundle as the app; the harness
+/// starts this process from `Fixture.app/Contents/MacOS/Fixture`.
 #[cfg(target_os = "macos")]
-fn visible_window() {
-    // macOS shows the main executable of a bundle as the app; the harness
-    // starts this process from `Fixture.app/Contents/MacOS/Fixture`.
+struct BundleApp;
+#[cfg(target_os = "macos")]
+fn visible_window() -> BundleApp {
+    BundleApp
 }
 #[cfg(unix)]
 fn run_until_closed<T>(_window: T) {
