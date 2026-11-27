@@ -463,6 +463,8 @@ async function waitForFileManager(
   let seen = "";
   const grace: SelectionGrace = { seenSince: 0 };
   const uri = pathToFileURL(target).href;
+  const timeout = 20_000;
+  const deadline = Date.now() + timeout;
   try {
     await browser.waitUntil(
       () => {
@@ -525,6 +527,7 @@ async function waitForFileManager(
               Date.now(),
               grace,
               SELECTION_GRACE_MS,
+              deadline,
             ) === "accept"
           ) {
             console.log(
@@ -547,7 +550,7 @@ async function waitForFileManager(
         seen = selection.join(", ");
         return selection.some((item) => samePath(item, target));
       },
-      { timeout: 20_000, interval: 500 },
+      { timeout, interval: 500 },
     );
   } catch (error) {
     // The message is built after the wait: `seen` holds the last probe.
