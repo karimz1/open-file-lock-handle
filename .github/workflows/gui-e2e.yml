@@ -50,7 +50,7 @@ jobs:
           npm ci --prefix crates/oflh-desktop/gui-e2e
       - name: Type-check and format-check the suite
         working-directory: crates/oflh-desktop/gui-e2e
-        run: npm run typecheck && npm run format:check
+        run: npm run typecheck && npm run format:check && npm run test:unit
       - name: Build the app with the embedded WebDriver server
         working-directory: crates/oflh-desktop/ui
         run: npm run tauri -- build --debug --no-bundle --features gui-e2e -- --locked

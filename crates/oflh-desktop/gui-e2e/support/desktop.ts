@@ -4,6 +4,12 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { browser } from "@wdio/globals";
 import { stubBinDir } from "./app.ts";
+import {
+  explorerFolderFromTitle,
+  explorerFolderIsOpen,
+  selectionGraceDecision,
+  type SelectionGrace,
+} from "./explorer-reveal.ts";
 import { artifactsDir, suiteRoot } from "./paths.ts";
 import { operatingSystem } from "./platform.ts";
 
@@ -442,40 +448,23 @@ function finderWindowTitles(): string[] {
  * there. After the item had a few seconds to appear selected, a window of its
  * containing folder is accepted as proof that Reveal reached the file manager,
  * and the missing selection is logged so it stays visible in the job log.
+ *
+ * The grace timer is updated once per poll from every probe at once. Updating
+ * it from Shell.Application alone used to reset the timer when that probe
+ * missed a window that UI Automation could still see, and the 20s wait then
+ * ran out with the folder clearly open.
  */
-let folderSeenSince = 0;
 const SELECTION_GRACE_MS = 8_000;
-function revealedFolderOnly(
-  windows: ExplorerWindow[],
-  titles: string[],
-  target: string,
-  automationFolder = false,
-): boolean {
-  const folder = path.win32.dirname(target);
-  const open =
-    automationFolder ||
-    windows.some((window) => samePath(window.folder, folder)) ||
-    titles.some((title) => samePath(title, path.win32.basename(folder)));
-  if (!open) {
-    folderSeenSince = 0;
-    return false;
-  }
-  folderSeenSince ||= Date.now();
-  if (Date.now() - folderSeenSince < SELECTION_GRACE_MS) return false;
-  console.log(
-    `Reveal opened ${folder} but Explorer did not report ${path.win32.basename(target)} as selected (#202)`,
-  );
-  folderSeenSince = 0;
-  return true;
-}
 
 async function waitForFileManager(
   target: string,
   mode: "reveal" | "open",
 ): Promise<void> {
   let seen = "";
-  folderSeenSince = 0;
+  const grace: SelectionGrace = { seenSince: 0 };
   const uri = pathToFileURL(target).href;
+  const timeout = 20_000;
+  const deadline = Date.now() + timeout;
   try {
     await browser.waitUntil(
       () => {
@@ -501,18 +490,19 @@ async function waitForFileManager(
             if (
               windows.some((window) => samePath(window.folder, target)) ||
               titles.some((title) =>
-                samePath(title, path.win32.basename(target)),
+                samePath(
+                  explorerFolderFromTitle(title),
+                  path.win32.basename(target),
+                ),
               )
             )
               return true;
-          } else {
-            if (
-              windows.some((window) =>
-                window.selected.some((item) => samePath(item, target)),
-              )
+          } else if (
+            windows.some((window) =>
+              window.selected.some((item) => samePath(item, target)),
             )
-              return true;
-            if (revealedFolderOnly(windows, titles, target)) return true;
+          ) {
+            return true;
           }
           const automation = automationExplorerWindows();
           seen = JSON.stringify({
@@ -523,15 +513,29 @@ async function waitForFileManager(
             automationProbe: lastAutomationProbe,
           });
           if (mode === "open") return automationShowsFolder(automation, target);
-          return (
-            automationShowsSelected(automation, target) ||
-            revealedFolderOnly(
-              windows,
-              titles,
-              target,
-              automationShowsFolder(automation, path.win32.dirname(target)),
-            )
+          if (automationShowsSelected(automation, target)) return true;
+          const folder = path.win32.dirname(target);
+          const folderOpen = explorerFolderIsOpen(
+            windows,
+            titles,
+            folder,
+            automationShowsFolder(automation, folder),
           );
+          if (
+            selectionGraceDecision(
+              folderOpen,
+              Date.now(),
+              grace,
+              SELECTION_GRACE_MS,
+              deadline,
+            ) === "accept"
+          ) {
+            console.log(
+              `Reveal opened ${folder} but Explorer did not report ${path.win32.basename(target)} as selected (#202)`,
+            );
+            return true;
+          }
+          return false;
         }
         if (mode === "open") {
           const opened = finderWindows();
@@ -546,7 +550,7 @@ async function waitForFileManager(
         seen = selection.join(", ");
         return selection.some((item) => samePath(item, target));
       },
-      { timeout: 20_000, interval: 500 },
+      { timeout, interval: 500 },
     );
   } catch (error) {
     // The message is built after the wait: `seen` holds the last probe.
