@@ -107,7 +107,7 @@ fn name(os: &str, arch: &str) -> Result<String> {
     ))
 }
 fn digest(path: &Path) -> Result<String> {
-    let mut input = File::open(path)?;
+    let mut input = File::open(path).map_err(|error| format!("{}: {error}", path.display()))?;
     let mut hash = Sha256::new();
     let mut buf = [0u8; 65536];
     loop {

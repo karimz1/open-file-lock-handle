@@ -152,4 +152,41 @@ mod tests {
         assert!(!root.join("bad").exists());
         fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn assemble_names_a_missing_windows_portable_zip() {
+        let root = std::env::temp_dir().join(format!(
+            "oflh-public-release-missing-zip-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let binary = root.join("binary");
+        fs::write(&binary, b"tested fixture").unwrap();
+        let cli = root.join("cli");
+        let desktop_dir = root.join("desktop");
+        let output = root.join("public");
+        for (os, arch) in TARGETS {
+            super::super::package(&binary, &cli, "v1.2.3", os, arch).unwrap();
+            let bundle = root.join(format!("{os}-{arch}"));
+            fs::create_dir_all(&bundle).unwrap();
+            for extension in desktop::extensions(os).unwrap() {
+                fs::write(
+                    bundle.join(format!("fixture.{extension}")),
+                    format!("installer-{os}-{arch}-{extension}").as_bytes(),
+                )
+                .unwrap();
+            }
+            desktop::package(&bundle, &binary, &desktop_dir, "v1.2.3", os, arch).unwrap();
+        }
+        fs::remove_file(desktop_dir.join("oflh-desktop.windows.amd64-portable.zip")).unwrap();
+        let message = assemble(&cli, &desktop_dir, &output, "v1.2.3")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains("oflh-desktop.windows.amd64-portable.zip"),
+            "{message}"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 }
