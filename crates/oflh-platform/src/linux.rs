@@ -87,6 +87,11 @@ fn permission(error: &std::io::Error, restricted: &mut bool) {
         *restricted = true
     }
 }
+/// Executable of a captured lifetime; `None` when unreadable or replaced.
+fn executable(identity: Identity) -> Option<PathBuf> {
+    let path = fs::read_link(format!("/proc/{}/exe", identity.pid)).ok()?;
+    (stat(identity.pid).ok()?.identity == identity).then_some(path)
+}
 /// Every readable, still-running process. Unreadable entries are skipped:
 /// the table only feeds an informational child list.
 fn process_table() -> Result<Vec<impact::ProcessEntry>> {
@@ -411,12 +416,56 @@ impl Backend for Native {
         // without X windows stays unknown instead of "no windows".
         let mut titles = crate::x11::window_titles();
         let complete = crate::x11::complete_for_absent_processes();
-        children_for(process_table(), ids)
+        let table = process_table();
+        let apps: Vec<_> = ids
+            .iter()
+            .map(|&id| {
+                let table = table.as_ref().ok()?;
+                let scope = |pid: u32| {
+                    std::fs::read_to_string(format!("/proc/{pid}/cgroup"))
+                        .ok()
+                        .and_then(|cgroup| oflh_core::app::desktop_app_scope(&cgroup))
+                };
+                let holder_scope = scope(id.pid);
+                crate::resolve_app(table, id, |entry, holder| {
+                    let pid = entry.identity.pid;
+                    let cgroup = std::fs::read_to_string(format!("/proc/{pid}/cgroup")).ok();
+                    let shown = titles
+                        .as_ref()
+                        .and_then(|titles| titles.get(&pid))
+                        .is_some_and(|windows| !windows.is_empty());
+                    let same_scope = !holder
+                        && holder_scope.is_some()
+                        && cgroup
+                            .as_deref()
+                            .and_then(oflh_core::app::desktop_app_scope)
+                            == holder_scope;
+                    oflh_core::app::Lineage {
+                        identity: entry.identity,
+                        parent: entry.parent,
+                        name: entry.name.clone(),
+                        executable: executable(entry.identity).unwrap_or_default(),
+                        owner: std::fs::metadata(format!("/proc/{pid}"))
+                            .ok()
+                            .map(|metadata| metadata.uid().to_string()),
+                        session: std::fs::read_to_string(format!("/proc/{pid}/sessionid"))
+                            .ok()
+                            .and_then(|session| session.trim().parse().ok()),
+                        service: cgroup.as_deref().and_then(impact::systemd_unit).is_some(),
+                        critical: false,
+                        visible: shown || same_scope,
+                    }
+                })
+            })
+            .collect();
+        children_for(table, ids)
             .into_iter()
             .zip(ids)
-            .map(|(children, &id)| {
+            .zip(apps)
+            .map(|((children, &id), app)| {
                 let live = stat(id.pid).is_ok_and(|live| live.identity == id);
                 impact::Impact {
+                    app: app.filter(|_| live),
                     windows: titles.as_mut().filter(|_| live).and_then(|titles| {
                         match titles.remove(&id.pid) {
                             Some(windows) => Some(windows),
@@ -432,6 +481,11 @@ impl Backend for Native {
                 }
             })
             .collect()
+    }
+    fn app_helpers(&mut self, root: Identity) -> Vec<Identity> {
+        process_table()
+            .map(|table| crate::same_image_helpers(&table, root, executable))
+            .unwrap_or_default()
     }
     fn terminate(&mut self, identity: Identity, force: bool, cancel: &Cancellation) -> Result<()> {
         identity.validate()?;

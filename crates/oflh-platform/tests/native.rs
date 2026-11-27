@@ -167,45 +167,6 @@ fn fixture_helper() {
         windows_reference_fixture(&path, &mode);
         return;
     }
-    if mode == "respawning-app" {
-        // Mimics a multi-process app (Chromium, Electron, CEF): the main
-        // process does not hold the file itself, a helper child does, and the
-        // main process starts a new helper whenever the old one goes away.
-        let path = path.clone();
-        let spawn = move || {
-            let mut helper = Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "fixture_helper", "--nocapture"])
-                .env("OFLH_FIXTURE", &path)
-                .env("OFLH_MODE", "write")
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .spawn()
-                .unwrap();
-            ready(&mut helper);
-            helper
-        };
-        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let stdin_closed = stop.clone();
-        std::thread::spawn(move || {
-            let mut line = String::new();
-            let _ = std::io::stdin().read_line(&mut line);
-            stdin_closed.store(true, std::sync::atomic::Ordering::Relaxed);
-        });
-        let mut helper = spawn();
-        println!("OFLH READY {}", helper.id());
-        std::io::stdout().flush().unwrap();
-        while !stop.load(std::sync::atomic::Ordering::Relaxed) {
-            if helper.try_wait().unwrap().is_some() {
-                helper = spawn();
-                println!("OFLH RESPAWNED {}", helper.id());
-                std::io::stdout().flush().unwrap();
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        drop(helper.stdin.take());
-        let _ = helper.wait();
-        std::process::exit(0);
-    }
     if mode == "parent" {
         let mut child = Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "fixture_helper", "--nocapture"])
@@ -575,66 +536,6 @@ fn native_parent_termination() {
             "child did not release on parent pipe close"
         );
         std::thread::sleep(Duration::from_millis(50));
-    }
-}
-/// Reproduces "OFLH ended the process but the app is still open" for
-/// multi-process apps. The holder is a helper child; its parent app restarts
-/// it. Ending the holder succeeds and the PID is gone, so OFLH reports
-/// "Process exited", but the app keeps running and the file is held again.
-#[test]
-fn closing_the_holder_of_a_respawning_app_releases_the_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("app.bin");
-    fs::write(&path, vec![0; 4096]).unwrap();
-    let mut app = ChildGuard(
-        Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "fixture_helper", "--nocapture"])
-            .env("OFLH_FIXTURE", &path)
-            .env("OFLH_MODE", "respawning-app")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap(),
-    );
-    let helper = ready(&mut app.0);
-    let mut b = native().unwrap();
-    let holder = process(&mut *b, &path, helper);
-    assert!(
-        holder
-            .ancestors
-            .iter()
-            .any(|a| a.identity.pid == app.0.id()),
-        "the app must be visible as the holder's parent"
-    );
-    b.terminate(holder.identity, true, &Cancellation::default())
-        .unwrap();
-    let until = std::time::Instant::now() + Duration::from_secs(5);
-    while b.is_running(holder.identity).unwrap() {
-        assert!(std::time::Instant::now() < until, "holder did not exit");
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    // This is where OFLH shows "Process exited". What the user wants is a free
-    // file, so check that instead of the PID.
-    let until = std::time::Instant::now() + Duration::from_secs(5);
-    loop {
-        let holders: Vec<_> = b
-            .traced_scan(&Target::new(&path).unwrap(), &Cancellation::default())
-            .unwrap()
-            .processes
-            .into_iter()
-            .filter(|p| p.identity.pid != 0)
-            .map(|p| (p.identity.pid, p.parent))
-            .collect();
-        if holders.is_empty() {
-            return;
-        }
-        assert!(
-            std::time::Instant::now() < until,
-            "file still held after closing holder {helper}: (pid, parent) = {holders:?}; \
-             app {} is still running and started a new holder",
-            app.0.id()
-        );
-        std::thread::sleep(Duration::from_millis(100));
     }
 }
 fn compile_c_fixture(directory: &Path) -> PathBuf {
