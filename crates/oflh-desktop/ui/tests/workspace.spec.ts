@@ -1733,14 +1733,21 @@ test("the search explanation grows in smoothly instead of pushing the grid down"
   // is what failed desktop / GUI E2E / macOS on v0.9.0-rc.1: the grid
   // had only moved 14.5 px, below both the 20 px floor and the finished
   // padding plus border (15 px). Wait for the animation to finish, then
-  // compare the grid movement to the explanation's actual height.
+  // compare the space inserted between the search toolbar and the grid
+  // to the explanation's actual height. The grid's raw top also moves
+  // when the query UI changes the toolbar height (clear button vs the
+  // search shortcut): on #265 that added a steady 2.6 px on Linux,
+  // Windows, and macOS, which is not part of the explanation.
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/");
   await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
   const search = page.getByRole("textbox", { name: "Search loaded results" });
   await search.click();
   const grid = page.locator("#results-grid");
-  const before = (await grid.boundingBox())!.y;
+  const toolbar = page.locator(".search-toolbar");
+  const beforeGrid = (await grid.boundingBox())!;
+  const beforeToolbar = (await toolbar.boundingBox())!;
+  const beforeGap = beforeGrid.y - (beforeToolbar.y + beforeToolbar.height);
   const animationStarted = page.evaluate(() => {
     return new Promise<{ names: string[]; durations: number[] }>(
       (resolve, reject) => {
@@ -1798,12 +1805,14 @@ test("the search explanation grows in smoothly instead of pushing the grid down"
   await expect(
     page.getByText("Search includes full paths", { exact: false }),
   ).toBeVisible();
-  const after = (await grid.boundingBox())!.y;
-  const explanationHeight = (
-    await page.locator(".search-explanation").boundingBox()
-  )!.height;
+  const afterGrid = (await grid.boundingBox())!;
+  const afterToolbar = (await toolbar.boundingBox())!;
+  const afterGap = afterGrid.y - (afterToolbar.y + afterToolbar.height);
+  const explanationHeight = (await page
+    .locator(".search-explanation")
+    .boundingBox())!.height;
   expect(
-    after - before,
+    afterGap - beforeGap,
     "the grid moves down by the height of the explanation",
   ).toBeCloseTo(explanationHeight, 0);
 });
