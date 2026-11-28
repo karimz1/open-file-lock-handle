@@ -1729,6 +1729,11 @@ test("the search explanation grows in smoothly instead of pushing the grid down"
   // 1147a14 and 4e8502f (25.6 px vs a 24.6 px 75% threshold; the full
   // movement was about 33 px, so the animation did run). Ask the Web
   // Animations API whether search-explanation-in is actually running.
+  // Visibility of the explanation text can become true mid-grow, which
+  // is what failed desktop / GUI E2E / macOS on v0.9.0-rc.1: the grid
+  // had only moved 14.5 px, below both the 20 px floor and the finished
+  // padding plus border (15 px). Wait for the animation to finish, then
+  // compare the grid movement to the explanation's actual height.
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/");
   await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
@@ -1777,14 +1782,30 @@ test("the search explanation grows in smoothly instead of pushing the grid down"
     Math.max(...running.durations, 0),
     "the grow is animated",
   ).toBeGreaterThan(0);
+  await page.evaluate(() => {
+    const explanation = document.querySelector(".search-explanation");
+    if (!explanation) {
+      throw new Error(
+        "the search explanation disappeared before it finished growing",
+      );
+    }
+    // Already finished animations are dropped from getAnimations(), so
+    // an empty list means the grow has completed.
+    return Promise.all(
+      explanation.getAnimations().map((animation) => animation.finished),
+    );
+  });
   await expect(
     page.getByText("Search includes full paths", { exact: false }),
   ).toBeVisible();
   const after = (await grid.boundingBox())!.y;
+  const explanationHeight = (
+    await page.locator(".search-explanation").boundingBox()
+  )!.height;
   expect(
     after - before,
     "the grid moves down by the height of the explanation",
-  ).toBeGreaterThan(20);
+  ).toBeCloseTo(explanationHeight, 0);
 });
 test("automatic refresh repeats at the selected interval", async ({ page }) => {
   await page.goto("/");
