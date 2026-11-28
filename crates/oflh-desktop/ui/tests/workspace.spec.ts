@@ -1729,13 +1729,25 @@ test("the search explanation grows in smoothly instead of pushing the grid down"
   // 1147a14 and 4e8502f (25.6 px vs a 24.6 px 75% threshold; the full
   // movement was about 33 px, so the animation did run). Ask the Web
   // Animations API whether search-explanation-in is actually running.
+  // Visibility of the explanation text can become true mid-grow, which
+  // is what failed desktop / GUI E2E / macOS on v0.9.0-rc.1: the grid
+  // had only moved 14.5 px, below both the 20 px floor and the finished
+  // padding plus border (15 px). Wait for the animation to finish, then
+  // compare the space inserted between the search toolbar and the grid
+  // to the explanation's actual height. The grid's raw top also moves
+  // when the query UI changes the toolbar height (clear button vs the
+  // search shortcut): on #265 that added a steady 2.6 px on Linux,
+  // Windows, and macOS, which is not part of the explanation.
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/");
   await expect(page.getByText("1500 results", { exact: true })).toBeVisible();
   const search = page.getByRole("textbox", { name: "Search loaded results" });
   await search.click();
   const grid = page.locator("#results-grid");
-  const before = (await grid.boundingBox())!.y;
+  const toolbar = page.locator(".search-toolbar");
+  const beforeGrid = (await grid.boundingBox())!;
+  const beforeToolbar = (await toolbar.boundingBox())!;
+  const beforeGap = beforeGrid.y - (beforeToolbar.y + beforeToolbar.height);
   const animationStarted = page.evaluate(() => {
     return new Promise<{ names: string[]; durations: number[] }>(
       (resolve, reject) => {
@@ -1777,14 +1789,32 @@ test("the search explanation grows in smoothly instead of pushing the grid down"
     Math.max(...running.durations, 0),
     "the grow is animated",
   ).toBeGreaterThan(0);
+  await page.evaluate(() => {
+    const explanation = document.querySelector(".search-explanation");
+    if (!explanation) {
+      throw new Error(
+        "the search explanation disappeared before it finished growing",
+      );
+    }
+    // Already finished animations are dropped from getAnimations(), so
+    // an empty list means the grow has completed.
+    return Promise.all(
+      explanation.getAnimations().map((animation) => animation.finished),
+    );
+  });
   await expect(
     page.getByText("Search includes full paths", { exact: false }),
   ).toBeVisible();
-  const after = (await grid.boundingBox())!.y;
+  const afterGrid = (await grid.boundingBox())!;
+  const afterToolbar = (await toolbar.boundingBox())!;
+  const afterGap = afterGrid.y - (afterToolbar.y + afterToolbar.height);
+  const explanationHeight = (await page
+    .locator(".search-explanation")
+    .boundingBox())!.height;
   expect(
-    after - before,
+    afterGap - beforeGap,
     "the grid moves down by the height of the explanation",
-  ).toBeGreaterThan(20);
+  ).toBeCloseTo(explanationHeight, 0);
 });
 test("automatic refresh repeats at the selected interval", async ({ page }) => {
   await page.goto("/");
